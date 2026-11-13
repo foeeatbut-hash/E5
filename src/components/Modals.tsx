@@ -77,6 +77,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка импорта файла.');
     } finally {
+      e.target.value = '';
       setBusy(false);
     }
   };

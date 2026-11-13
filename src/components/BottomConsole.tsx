@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  Check,
   ChevronDown,
   ChevronUp,
+  Copy,
   Download,
   FileCode2,
   Play,
@@ -64,6 +66,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   const [bomQuery, setBomQuery] = useState('');
   const [cableSubTab, setCableSubTab] = useState<'cables' | 'terminals'>('cables');
   const [logLevelFilter, setLogLevelFilter] = useState<'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'SYNC'>('ALL');
+  const [logQuery, setLogQuery] = useState('');
+  const [copiedLogs, setCopiedLogs] = useState(false);
+  const [expandedLogIds, setExpandedLogIds] = useState<Record<string, boolean>>({});
   const [apiBusy, setApiBusy] = useState(false);
 
   const filteredBom = useMemo(() => {
@@ -79,9 +84,35 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   }, [bom, bomQuery]);
 
   const filteredLogs = useMemo(() => {
-    if (logLevelFilter === 'ALL') return logs;
-    return logs.filter((l) => l.level === logLevelFilter);
-  }, [logs, logLevelFilter]);
+    const q = logQuery.trim().toLowerCase();
+    return logs.filter((l) => {
+      if (logLevelFilter !== 'ALL' && l.level !== logLevelFilter) return false;
+      if (!q) return true;
+      return (
+        l.message.toLowerCase().includes(q) ||
+        l.subsystem.toLowerCase().includes(q) ||
+        (l.details || '').toLowerCase().includes(q)
+      );
+    });
+  }, [logs, logLevelFilter, logQuery]);
+
+  const handleCopyAllLogs = async () => {
+    const txt = filteredLogs
+      .map(
+        (e) =>
+          `[${e.timestamp}] [${e.level}] [${e.subsystem}] ${e.message}${
+            e.details ? `\n  ${e.details.replace(/\n/g, '\n  ')}` : ''
+          }`
+      )
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(txt);
+      setCopiedLogs(true);
+      window.setTimeout(() => setCopiedLogs(false), 1800);
+    } catch {
+      // ignore
+    }
+  };
 
   const totalDevicesInBom = useMemo(() => bom.reduce((acc, r) => acc + r.quantity, 0), [bom]);
   const errorCount = erc.filter((i) => i.severity === 'error').length;
@@ -371,8 +402,8 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
 
           {activeTab === 'logs' && (
             <>
-              <div className="px-3 py-1.5 border-b border-[var(--flux-line)] flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1">
+              <div className="px-3 py-1.5 border-b border-[var(--flux-line)] flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {(['ALL', 'INFO', 'SYNC', 'WARN', 'ERROR'] as const).map((lvl) => (
                     <button
                       key={lvl}
@@ -387,46 +418,93 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                       {lvl}
                     </button>
                   ))}
+                  <input
+                    type="search"
+                    value={logQuery}
+                    onChange={(e) => setLogQuery(e.target.value)}
+                    placeholder="Поиск по логам и ошибкам…"
+                    aria-label="Поиск по логам процессов"
+                    className="w-52 h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={onDownloadLogs}
-                  className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] font-medium text-[var(--flux-text)]"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Скачать лог (.json)</span>
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCopyAllLogs}
+                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)]"
+                  >
+                    {copiedLogs ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedLogs ? 'Скопировано' : 'Копировать'}</span>
+                  </button>
+                  <a
+                    href="/api/v1/diagnostics/logs/download"
+                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)]"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Скачать diag.log</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={onDownloadLogs}
+                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)]"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>JSON</span>
+                  </button>
+                </div>
               </div>
               <div className="flex-1 overflow-auto font-mono text-[11px] divide-y divide-[var(--flux-line)]">
-                {filteredLogs.map((entry) => (
-                  <div key={entry.id} className="px-3 py-1.5 flex items-start gap-2.5 hover:bg-[var(--flux-hover)]">
-                    <span className="text-[var(--flux-text-muted)] tabular-nums shrink-0">
-                      {entry.timestamp.slice(11, 23)}
-                    </span>
-                    <span
-                      className={`w-11 shrink-0 font-medium ${
-                        entry.level === 'ERROR'
-                          ? 'text-rose-600 dark:text-rose-400'
-                          : entry.level === 'WARN'
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : entry.level === 'SYNC'
-                              ? 'text-[var(--flux-accent)]'
-                              : 'text-[var(--flux-text-muted)]'
-                      }`}
-                    >
-                      {entry.level}
-                    </span>
-                    <span className="w-24 shrink-0 text-[var(--flux-text-muted)]">
-                      [{entry.subsystem}]
-                    </span>
-                    <span className="flex-1 text-[var(--flux-text)]">{entry.message}</span>
-                    {entry.durationMs !== undefined && (
-                      <span className="tabular-nums text-[var(--flux-text-muted)] shrink-0">
-                        {entry.durationMs.toFixed(1)} мс
-                      </span>
-                    )}
-                  </div>
-                ))}
+                {filteredLogs.map((entry) => {
+                  const hasDetails = Boolean(entry.details && entry.details.trim().length > 0);
+                  const isExpanded = Boolean(expandedLogIds[entry.id] || (hasDetails && entry.level === 'ERROR'));
+                  return (
+                    <div key={entry.id} className="px-3 py-1.5 hover:bg-[var(--flux-hover)]">
+                      <div className="flex items-start gap-2.5">
+                        <span className="text-[var(--flux-text-muted)] tabular-nums shrink-0">
+                          {entry.timestamp.slice(11, 23)}
+                        </span>
+                        <span
+                          className={`w-11 shrink-0 font-medium ${
+                            entry.level === 'ERROR'
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : entry.level === 'WARN'
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : entry.level === 'SYNC'
+                                  ? 'text-[var(--flux-accent)]'
+                                  : 'text-[var(--flux-text-muted)]'
+                          }`}
+                        >
+                          {entry.level}
+                        </span>
+                        <span className="w-24 shrink-0 text-[var(--flux-text-muted)]">
+                          [{entry.subsystem}]
+                        </span>
+                        <span className="flex-1 text-[var(--flux-text)] break-words">{entry.message}</span>
+                        {hasDetails && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedLogIds((prev) => ({ ...prev, [entry.id]: !isExpanded }))
+                            }
+                            className="text-[10px] text-[var(--flux-accent)] hover:underline shrink-0"
+                          >
+                            {isExpanded ? 'Скрыть детали' : 'Детали'}
+                          </button>
+                        )}
+                        {entry.durationMs !== undefined && (
+                          <span className="tabular-nums text-[var(--flux-text-muted)] shrink-0">
+                            {entry.durationMs.toFixed(1)} мс
+                          </span>
+                        )}
+                      </div>
+                      {hasDetails && isExpanded && (
+                        <pre className="mt-1.5 ml-36 p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[10px] text-[var(--flux-text-muted)] whitespace-pre-wrap overflow-x-auto max-h-40">
+                          {entry.details}
+                        </pre>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}

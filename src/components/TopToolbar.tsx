@@ -20,6 +20,7 @@ import {
   Sun,
   Trash2,
   Undo2,
+  Upload,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -50,6 +51,7 @@ interface TopToolbarProps {
   onRunErc: () => void;
   onGenerateBom: () => void;
   onDirectOpenE3: () => void;
+  onImportE3sFile: (file: File) => void | Promise<void>;
   onOpenExchangeModal: () => void;
   onOpenVisualModal: () => void;
   onOpenReportModal: () => void;
@@ -81,6 +83,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onRunErc,
   onGenerateBom,
   onDirectOpenE3,
+  onImportE3sFile,
   onOpenExchangeModal,
   onOpenVisualModal,
   onOpenReportModal,
@@ -89,6 +92,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onDownloadCodebase,
 }) => {
   const isDark = project.visualSettings.theme === 'dark';
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   return (
     <header className="no-print shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] select-none">
@@ -113,6 +117,30 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         </div>
 
         <nav className="flex items-center gap-1.5 shrink-0" aria-label="Основные действия">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".e3s,.e3d,.xml,.json"
+            data-testid="toolbar-e3s-input"
+            className="sr-only"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                void onImportE3sFile(file);
+              }
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            title="Открыть файл проекта E³.series (.e3s / .e3d / XML / JSON) прямо в Flux E3"
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
+          >
+            <Upload className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <span>Открыть .e3s</span>
+          </button>
+
           <button
             type="button"
             onClick={onDirectOpenE3}

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import zlib from 'node:zlib';
 import JSZip from 'jszip';
 import {
   buildBom,
@@ -252,7 +253,7 @@ test('ZIP-packaged .e3s archive imports embedded E3 XML cleanly', async () => {
   assert.equal(parsed.project.wires.length, seed.wires.length);
 });
 
-test('E3.series 2022 COM VBScript embeds project sheets, graphics, wires, cables, Sheet.Display, silent flag, and SaveAs .e3s', () => {
+test('E3.series 2022 COM VBScript embeds project sheets, 1-based graphics/wires, integer Sheet.Create args, Prj.Open, and SaveAs .e3s', () => {
   const seed = createSeedProject();
   const buildVbs = generateE3ComScript(seed, 'build');
   assert.ok(buildVbs.includes('CreateObject("CT.Application")'));
@@ -262,14 +263,124 @@ test('E3.series 2022 COM VBScript embeds project sheets, graphics, wires, cables
   assert.ok(buildVbs.includes('"-W2"'));
   assert.ok(buildVbs.includes('DrawDeviceBox'));
   assert.ok(buildVbs.includes('DrawWireSeg'));
+  assert.ok(buildVbs.includes('GetSheetBounds'));
+  assert.ok(buildVbs.includes('MapX('));
+  assert.ok(buildVbs.includes('MapY('));
   assert.ok(buildVbs.includes('Sheet.Display'));
   assert.ok(buildVbs.includes('WScript.Arguments.Named.Exists("silent")'));
+  assert.ok(buildVbs.includes('flux_e3_com_debug.log'));
+  assert.ok(buildVbs.includes('Sub LogTrace('));
   assert.ok(buildVbs.includes('Prj.SaveAs(targetE3s)'));
   assert.ok(buildVbs.includes('Call BuildNativeE3sProject()'));
+  // Ensure Sheet.Create passes integer 0 for 'before' instead of empty string "" (Type Mismatch #13 fix)
+  assert.ok(buildVbs.includes('sh.Create(0, shName, cand, 0, 0)'));
+  assert.ok(!buildVbs.includes('sh.Create(0, shName, cand, 0, "")'));
+  // Ensure 1-based VBScript arrays for Zuken COM lines/wires
+  assert.ok(buildVbs.includes('Dim xs(2), ys(2)'));
+  assert.ok(buildVbs.includes('bx(5), by(5)'));
+  assert.ok(buildVbs.includes('xs(1) = x1 : xs(2) = x2'));
 
-  const exportVbs = generateE3ComScript(seed, 'export');
+  const exportVbs = generateE3ComScript(seed, 'export', 'D:\\Downloads\\ВЕЗА-ПВ1-Э3.001.e3s');
   assert.ok(exportVbs.includes('Call ExportActiveE3sToFluxJson()'));
   assert.ok(exportVbs.includes('ADODB.Stream'));
+  assert.ok(exportVbs.includes('Prj.Open(gImportFilePath)'));
+  assert.ok(exportVbs.includes('ВЕЗА-ПВ1-Э3.001.e3s'));
+});
+
+test('Native binary OLE2 .e3s with zlib-compressed Cyrillic/Latin designations unpacks via DecompressionStream', async () => {
+  const seed = createSeedProject();
+  const baseOle2 = new Uint8Array(buildOle2E3sContainer(seed));
+
+  // Clear ALL data sectors (before directory sector) and write a zlib-deflated UTF-8/Latin payload
+  const view = new DataView(baseOle2.buffer);
+  const dirSector = view.getUint32(0x30, true);
+  baseOle2.fill(0, 512, (1 + dirSector) * 512);
+  const compressed = zlib.deflateSync(Buffer.from('HEADER\x00-Щ1\x00-QF12\x00-КМ3\x00FLUX_ZLIB_TEST\x00', 'utf8'));
+  baseOle2.set(compressed, 512);
+
+  // Rename 'E3Project' to 'NativeZip' in the OLE2 directory so it triggers native + zlib extraction
+  const oldName = 'E3Project';
+  const newName = 'NativeZip';
+  const writeUtf16 = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      baseOle2[offset + i * 2] = code & 0xff;
+      baseOle2[offset + i * 2 + 1] = (code >> 8) & 0xff;
+    }
+  };
+  for (let i = 512; i < baseOle2.length - oldName.length * 2; i += 2) {
+    let match = true;
+    for (let j = 0; j < oldName.length; j++) {
+      if (baseOle2[i + j * 2] !== oldName.charCodeAt(j) || baseOle2[i + j * 2 + 1] !== 0) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      writeUtf16(i, newName);
+      break;
+    }
+  }
+
+  const parsed = await parseE3sInput(baseOle2, 'ВЕЗА-ПВ1-Э3.001.e3s');
+  assert.equal(parsed.sourceKind, 'e3s-ole2-native');
+  assert.equal(parsed.project.fluxProjectKey, 'FLUX_ZLIB_TEST');
+  assert.ok(parsed.project.devices.some((d) => d.designation === '-QF12'));
+  assert.ok(parsed.project.devices.some((d) => d.designation === '-Щ1'));
+  assert.ok(parsed.project.devices.some((d) => d.designation === '-КМ3'));
+});
+
+test('importFromFluxBridge replaces seed devices cleanly when fluxProjectKey differs or replaceAll is set', () => {
+  const seed = createSeedProject();
+  const imported = importFromFluxBridge(
+    {
+      format: 'flux-e3-bridge/v1',
+      fluxProjectKey: 'EXTERNAL_E3_PROJECT_99',
+      projectName: 'Внешний проект E3',
+      exportedAt: new Date().toISOString(),
+      revision: 1,
+      visualSettings: seed.visualSettings,
+      sheets: [
+        {
+          id: 's-ext-1',
+          number: 1,
+          name: 'Лист 1',
+          format: 'A3',
+          width: 1400,
+          height: 920,
+          titleBlock: {
+            documentCode: 'EXT-001',
+            organization: 'КБ',
+            designer: 'Инженер',
+            checker: '',
+            sheetTitle: 'Лист 1',
+          },
+        },
+      ],
+      nodes: [
+        {
+          elementId: 'e3-dev-100',
+          version: '1',
+          tag: '',
+          designation: '-QF10',
+          status: 'one',
+          solutionId: 'A9F74116',
+          solutionName: 'Автомат E3 16A',
+          rect: { x: 240, y: 240, width: 140, height: 110, rotation: 0, sheet: 's-ext-1' },
+          attrs: [{ name: 'Артикул', value: 'A9F74116', owner: '' }],
+          checked: true,
+        },
+      ],
+      wires: [],
+      cables: [],
+    },
+    seed
+  );
+
+  assert.equal(imported.fluxProjectKey, 'EXTERNAL_E3_PROJECT_99');
+  assert.equal(imported.devices.length, 1);
+  assert.equal(imported.devices[0].designation, '-QF10');
+  assert.equal(imported.sheets.length, 1);
 });
 
 test('encodeUtf16LeWithBom writes BOM (FF FE), CRLF line endings, and clean Cyrillic UTF-16LE bytes', () => {
@@ -281,12 +392,17 @@ test('encodeUtf16LeWithBom writes BOM (FF FE), CRLF line endings, and clean Cyri
   assert.equal(decoded, 'Привет\r\nE3');
 });
 
-test('generateWindowsBridgeCmd embeds server origin, polling/ack routes, Unicode VBScript write, and /silent execution', () => {
+test('generateWindowsBridgeCmd embeds server origin, polling/ack routes, connector.log, PS5.1 syntax, //U Unicode, and /silent execution', () => {
   const cmd = generateWindowsBridgeCmd('https://flux-e3.example.com/');
   assert.ok(cmd.includes("https://flux-e3.example.com"));
   assert.ok(!cmd.includes("https://flux-e3.example.com/"));
   assert.ok(cmd.includes('/api/v1/e3-bridge/poll?host='));
   assert.ok(cmd.includes('/api/v1/e3-bridge/ack'));
+  assert.ok(cmd.includes('connector.log'));
+  assert.ok(cmd.includes('flux_e3_com_debug.log'));
   assert.ok(cmd.includes('[Text.Encoding]::Unicode'));
-  assert.ok(cmd.includes('cscript.exe //Nologo $vbs /silent'));
+  assert.ok(cmd.includes('[Console]::OutputEncoding = [Text.Encoding]::Unicode'));
+  assert.ok(cmd.includes('cscript.exe //Nologo //U $vbs /silent'));
+  assert.ok(!cmd.includes(" ? 'INFO' : "));
 });
+

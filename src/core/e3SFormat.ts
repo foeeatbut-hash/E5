@@ -337,6 +337,62 @@ export function buildOle2E3sContainer(project: E3Project): Uint8Array {
   return out;
 }
 
+async function inflateDeflateBuffer(chunk: Uint8Array): Promise<Uint8Array | null> {
+  if (typeof DecompressionStream === 'undefined') return null;
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  try {
+    const ds = new DecompressionStream('deflate');
+    const writer = ds.writable.getWriter();
+    writer.write(chunk.slice()).catch(() => {});
+    writer.close().catch(() => {});
+    const reader = ds.readable.getReader();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (value) {
+        parts.push(value);
+        total += value.length;
+        if (total > 8 * 1024 * 1024) break;
+      }
+      if (done) break;
+    }
+  } catch {
+    // Trailing padding bytes inside an OLE2 sector after a valid zlib stream often throw on stream close
+  }
+  if (total === 0) return null;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const p of parts) {
+    out.set(p, offset);
+    offset += p.length;
+  }
+  return out;
+}
+
+async function decompressEmbeddedZlibStreams(streams: Ole2StreamInfo[]): Promise<Uint8Array[]> {
+  const inflated: Uint8Array[] = [];
+  for (const s of streams) {
+    const data = s.data;
+    if (data.length < 16) continue;
+    let hits = 0;
+    for (let i = 0; i < data.length - 6 && hits < 12; i++) {
+      // Standard zlib CMF=0x78 headers (0x01, 0x5E, 0x9C, 0xDA)
+      if (
+        data[i] === 0x78 &&
+        (data[i + 1] === 0x9c || data[i + 1] === 0xda || data[i + 1] === 0x01 || data[i + 1] === 0x5e)
+      ) {
+        const res = await inflateDeflateBuffer(data.subarray(i));
+        if (res && res.length >= 16) {
+          inflated.push(res);
+          hits++;
+          i += Math.min(res.length, 64);
+        }
+      }
+    }
+  }
+  return inflated;
+}
+
 function extractReadableStringsFromBinary(data: Uint8Array): string[] {
   const results = new Set<string>();
 
@@ -346,9 +402,7 @@ function extractReadableStringsFromBinary(data: Uint8Array): string[] {
     const code = data[i] | (data[i + 1] << 8);
     const printable =
       (code >= 0x20 && code <= 0x7e) ||
-      (code >= 0x0410 && code <= 0x044f) ||
-      code === 0x0401 ||
-      code === 0x0451;
+      (code >= 0x0400 && code <= 0x04ff);
     if (printable) {
       utf16Run += String.fromCharCode(code);
     } else {
@@ -358,31 +412,44 @@ function extractReadableStringsFromBinary(data: Uint8Array): string[] {
   }
   if (utf16Run.length >= 3) results.add(utf16Run.trim());
 
-  // Scan ASCII sequences
-  let asciiRun = '';
-  for (let i = 0; i < data.length; i++) {
-    const b = data[i];
-    if (b >= 0x20 && b <= 0x7e) {
-      asciiRun += String.fromCharCode(b);
-    } else {
-      if (asciiRun.length >= 3) results.add(asciiRun.trim());
-      asciiRun = '';
+  // Scan UTF-8 / ASCII sequences
+  try {
+    const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(data);
+    const matches = utf8Text.match(/[A-Za-zА-Яа-яЁё0-9_.+:/\\-]{3,}/g);
+    if (matches) {
+      for (const m of matches) results.add(m.trim());
     }
+  } catch {
+    // ignore
   }
-  if (asciiRun.length >= 3) results.add(asciiRun.trim());
 
   return Array.from(results);
 }
 
-function buildNativeOle2Project(streams: Ole2StreamInfo[], filename?: string): E3Project {
+async function buildNativeOle2Project(streams: Ole2StreamInfo[], filename?: string): Promise<E3Project> {
+  const inflatedChunks = await decompressEmbeddedZlibStreams(streams);
+  const dec = new TextDecoder('utf-8', { fatal: false });
+
+  // Check if any decompressed stream carries lossless E3Project XML
+  for (const chunk of inflatedChunks) {
+    const snippet = dec.decode(chunk.subarray(0, 512));
+    if (snippet.includes('<E3Project')) {
+      return parseE3Xml(dec.decode(chunk).replace(/\0+$/, ''));
+    }
+  }
+
   const allStrings: string[] = [];
   for (const s of streams) {
     allStrings.push(...extractReadableStringsFromBinary(s.data));
+  }
+  for (const chunk of inflatedChunks) {
+    allStrings.push(...extractReadableStringsFromBinary(chunk));
   }
 
   const base = createSeedProject();
   base.id = `proj-e3s-${Date.now()}`;
   base.name = filename ? filename.replace(/\.e3s$/i, '') : 'Импорт проекта E3.series (.e3s)';
+  base.projectCode = filename ? filename.replace(/\.e3s$/i, '') : base.projectCode;
   base.devices = [];
   base.wires = [];
   base.cables = [];
@@ -390,14 +457,16 @@ function buildNativeOle2Project(streams: Ole2StreamInfo[], filename?: string): E
   const fluxKeyMatch = allStrings.find((s) => /FLUX_[A-Z0-9_]+/i.test(s));
   if (fluxKeyMatch) base.fluxProjectKey = fluxKeyMatch;
 
-  // Detect Zuken E3.series device designations (-QF1, -KM2, -A1, -XT1, -M1, -BT1, -KA1, -HL1, -UZ1, -G1)
-  const desPattern = /^-[A-Z]{1,3}\d+[A-Z0-9.]*$/;
+  // Detect Zuken E3.series device designations (-QF1, -KM2, -A1, -XT1, -Щ1, -КМ1)
+  const desPattern = /^-[A-ZА-ЯЁ]{1,4}\d+[A-ZА-ЯЁ0-9.-]*$/i;
   const designations = Array.from(new Set(allStrings.filter((s) => desPattern.test(s))));
 
   const sheetId = base.sheets[0].id;
+  base.sheets[0].name = filename ? filename.replace(/\.e3s$/i, '') : base.sheets[0].name;
+
   if (designations.length > 0) {
     designations.slice(0, 200).forEach((des, idx) => {
-      const prefix = des.replace(/^-/, '').replace(/\d.*$/, '');
+      const prefix = des.replace(/^-/, '').replace(/\d.*$/, '').toUpperCase();
       const cat =
         E3_CATALOG.find((c) => c.defaultPrefix === prefix) || E3_CATALOG[idx % E3_CATALOG.length];
       const devId = `dev-ole2-${idx + 1}`;
@@ -420,13 +489,13 @@ function buildNativeOle2Project(streams: Ole2StreamInfo[], filename?: string): E
         pins: cat.pins.map((p, pIdx) => ({ ...p, id: `${devId}-p${pIdx + 1}` })),
         attributes: [
           ...structuredClone(cat.defaultAttributes),
-          { name: 'Источник импорта', value: 'OLE2 CFB (.e3s)', owner: '', conflict: 'script' },
+          { name: 'Источник импорта', value: `OLE2 CFB (${streams.length} потоков, zlib=${inflatedChunks.length})`, owner: '', conflict: 'script' },
         ],
       };
       base.devices.push(dev);
     });
   } else {
-    // Fallback if binary .e3s uses compressed/encoded segments: expose discovered CFB stream summary
+    // Fallback if binary .e3s uses proprietary E3 compression: expose discovered CFB stream summary
     const cat = E3_CATALOG[0];
     base.devices.push({
       id: 'dev-ole2-root',
@@ -445,12 +514,15 @@ function buildNativeOle2Project(streams: Ole2StreamInfo[], filename?: string): E
       e3BlockName: 'E3S_OLE2_CONTAINER',
       bindingState: 'PLACED',
       pins: cat.pins.map((p, pIdx) => ({ ...p, id: `dev-ole2-root-p${pIdx + 1}` })),
-      attributes: streams.slice(0, 12).map((st) => ({
-        name: `Поток CFB: ${st.name}`,
-        value: `${st.size} байт`,
-        owner: '',
-        conflict: 'script',
-      })),
+      attributes: [
+        { name: 'Рекомендация', value: 'Для полной схемы с координатами откройте этот .e3s в E³.series на Windows и нажмите «В E³.series» / «Импорт через COM»', owner: 'Flux', conflict: 'script' },
+        ...streams.slice(0, 12).map((st) => ({
+          name: `Поток CFB: ${st.name}`,
+          value: `${st.size} байт`,
+          owner: '',
+          conflict: 'script' as const,
+        })),
+      ],
     });
   }
 
@@ -465,7 +537,7 @@ export async function parseE3sInput(
   filename?: string
 ): Promise<E3sParseResult> {
   if (typeof input === 'string') {
-    const trimmed = input.trim();
+    const trimmed = input.replace(/^\uFEFF/, '').trim();
     if (trimmed.startsWith('<')) {
       return {
         project: parseE3Xml(trimmed),
@@ -476,7 +548,6 @@ export async function parseE3sInput(
     const parsed = JSON.parse(trimmed);
     if (parsed?.format === 'flux-e3-bridge/v1') {
       const project = parseE3Xml(serializeE3Xml(createSeedProject()));
-      // Merge via Flux Bridge rules
       const { importFromFluxBridge } = await import('./e3Engine.ts');
       return {
         project: importFromFluxBridge(parsed, project),
@@ -520,7 +591,7 @@ export async function parseE3sInput(
 
     // Native Zuken E3.series binary .e3s extraction
     return {
-      project: buildNativeOle2Project(streams, filename),
+      project: await buildNativeOle2Project(streams, filename),
       sourceKind: 'e3s-ole2-native',
       discoveredStreams: streamNames,
     };

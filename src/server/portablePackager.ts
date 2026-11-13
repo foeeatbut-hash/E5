@@ -28,7 +28,21 @@ export interface PortableBuildArtifact {
   projectCode: string;
   revision: number;
   stages: PortableBuildStage[];
+  buildLogs: string[];
   buffer: Buffer;
+}
+
+export class PortableBuildError extends Error {
+  public readonly buildLogs: string[];
+  public readonly stackTrace: string;
+
+  constructor(message: string, buildLogs: string[], cause?: unknown) {
+    super(message);
+    this.name = 'PortableBuildError';
+    this.buildLogs = buildLogs;
+    this.stackTrace =
+      cause instanceof Error ? cause.stack || cause.message : String(cause || message);
+  }
 }
 
 const MAX_CACHED_BUILDS = 3;
@@ -66,26 +80,48 @@ export async function buildPortableDistribution(
 async function runPortableBuild(project: E3Project, rootDir: string): Promise<PortableBuildArtifact> {
   const totalStart = performance.now();
   const stages: PortableBuildStage[] = [];
+  const buildLogs: string[] = [];
+
+  const trace = (lvl: 'INFO' | 'WARN' | 'ERROR', msg: string) => {
+    const ts = new Date().toISOString();
+    buildLogs.push(`[${ts}] [${lvl}] ${msg}`);
+  };
+
+  trace('INFO', `Старт сборки Portable Win64 для проекта "${project.name}" (${project.projectCode}, rev ${project.revision})`);
+  trace('INFO', `Среда сборки: Node ${process.version} | ${process.platform}/${process.arch} | Host=${os.hostname()}`);
+  trace('INFO', `Корневая директория исходников: ${rootDir}`);
+  trace(
+    'INFO',
+    `Состав модели: листов=${project.sheets.length}, изделий=${project.devices.length}, цепей=${project.wires.length}, кабелей=${project.cables.length}`
+  );
 
   if (process.env.FLUX_PORTABLE === '1') {
-    throw new Error(
-      'Вы уже запущены из готовой Portable-сборки. Пересборка из исходников выполняется в веб-студии разработки.'
+    trace('ERROR', 'Отказ: сборка запущена из уже собранного Portable runtime (отсутствуют исходники/Vite).');
+    throw new PortableBuildError(
+      'Вы уже запущены из готовой Portable-сборки. Пересборка из исходников выполняется в веб-студии разработки.',
+      buildLogs
     );
   }
 
   const serverEntry = path.resolve(rootDir, 'server.ts');
   const viteConfigPath = path.resolve(rootDir, 'vite.config.ts');
   if (!fs.existsSync(serverEntry) || !fs.existsSync(viteConfigPath)) {
-    throw new Error('Исходные файлы server.ts / vite.config.ts не найдены для пересборки.');
+    trace('ERROR', `Не найдены файлы: server.ts (${fs.existsSync(serverEntry)}), vite.config.ts (${fs.existsSync(viteConfigPath)})`);
+    throw new PortableBuildError(
+      'Исходные файлы server.ts / vite.config.ts не найдены для пересборки.',
+      buildLogs
+    );
   }
 
   const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flux-e3-portable-'));
   const distOutDir = path.join(stageDir, 'dist');
   const serverOutFile = path.join(stageDir, 'server.cjs');
+  trace('INFO', `Временный каталог сборки: ${stageDir}`);
 
   try {
     // 1. Build frontend SPA with Vite
     const tUi = performance.now();
+    trace('INFO', `Этап 1/3: запуск Vite build (config=${viteConfigPath} -> ${distOutDir})`);
     const { build: viteBuild } = await import('vite');
     await viteBuild({
       configFile: viteConfigPath,
@@ -97,11 +133,13 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
       },
     });
     const uiDuration = Math.round(performance.now() - tUi);
+    trace('INFO', `Vite build завершён за ${uiDuration} мс.`);
 
     // 2. Bundle backend server + all ECAD core engines into single server.cjs (zero node_modules)
     const tSrv = performance.now();
+    trace('INFO', `Этап 2/3: бандлинг esbuild (${serverEntry} -> ${serverOutFile}, external=[vite,esbuild])`);
     const esbuild = await import('esbuild');
-    await esbuild.build({
+    const esRes = await esbuild.build({
       entryPoints: [serverEntry],
       bundle: true,
       platform: 'node',
@@ -110,10 +148,22 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
       outfile: serverOutFile,
       external: ['vite', 'esbuild'],
       minify: true,
+      metafile: true,
       logLevel: 'silent',
     });
     const srvDuration = Math.round(performance.now() - tSrv);
     const serverBuffer = fs.readFileSync(serverOutFile);
+    const inputCount = esRes.metafile ? Object.keys(esRes.metafile.inputs).length : 0;
+
+    if (esRes.warnings.length > 0) {
+      for (const w of esRes.warnings) {
+        trace('WARN', `esbuild warning: ${w.text} (${w.location?.file || ''}:${w.location?.line || ''})`);
+      }
+    }
+    trace(
+      'INFO',
+      `esbuild завершён за ${srvDuration} мс: модулей=${inputCount}, размер server.cjs=${serverBuffer.length} байт`
+    );
 
     stages.push({
       name: 'Сборка интерфейса (Vite SPA)',
@@ -123,11 +173,12 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
     stages.push({
       name: 'Сборка сервера и ядра (esbuild)',
       durationMs: srvDuration,
-      detail: `app/server.cjs (${Math.round(serverBuffer.length / 1024)} КБ, без node_modules)`,
+      detail: `app/server.cjs (${Math.round(serverBuffer.length / 1024)} КБ, ${inputCount} модулей, без node_modules)`,
     });
 
     // 3. Package portable archive
     const tZip = performance.now();
+    trace('INFO', 'Этап 3/3: упаковка Portable ZIP (dist, server.cjs, seed-project, .vbs, .e3s, .cmd, logs/)...');
     const zip = new JSZip();
     const builtAt = new Date().toISOString();
 
@@ -138,12 +189,18 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
         if (entry.isDirectory()) {
           walkDist(full, `${prefix}${entry.name}/`);
         } else {
-          zip.file(`${prefix}${entry.name}`, fs.readFileSync(full));
+          const buf = fs.readFileSync(full);
+          zip.file(`${prefix}${entry.name}`, buf);
           uiFilesCount += 1;
+          trace('INFO', `  + ${prefix}${entry.name} (${buf.length} байт)`);
         }
       }
     };
     walkDist(distOutDir, 'app/dist/');
+
+    const seedSnapshot = JSON.stringify(project, null, 2) + '\n';
+    const vbsBytes = Buffer.from(encodeUtf16LeWithBom(generateE3ComScript(project, 'build')));
+    const e3sBytes = Buffer.from(buildOle2E3sContainer(project));
 
     zip.file('app/server.cjs', serverBuffer);
     zip.file(
@@ -159,15 +216,12 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
         2
       ) + '\n'
     );
-    zip.file('app/seed-project.json', JSON.stringify(project, null, 2) + '\n');
+    zip.file('app/seed-project.json', seedSnapshot);
 
     zip.file('FluxE3_Portable.cmd', generatePortableLauncherCmd());
     zip.file('FluxE3_Launch.vbs', Buffer.from(encodeUtf16LeWithBom(generatePortableSilentVbs())));
-    zip.file(
-      'e3-series-2022-sync.vbs',
-      Buffer.from(encodeUtf16LeWithBom(generateE3ComScript(project, 'build')))
-    );
-    zip.file('e3-seed-model.e3s', Buffer.from(buildOle2E3sContainer(project)));
+    zip.file('e3-series-2022-sync.vbs', vbsBytes);
+    zip.file('e3-seed-model.e3s', e3sBytes);
     zip.file(
       'README_PORTABLE.txt',
       generatePortableReadme({
@@ -179,6 +233,7 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
       })
     );
     zip.file('data/.keep', '');
+    zip.file('logs/.keep', '');
 
     const buffer = await zip.generateAsync({
       type: 'nodebuffer',
@@ -188,10 +243,22 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
     const zipDuration = Math.round(performance.now() - tZip);
     const totalDuration = Math.round(performance.now() - totalStart);
 
+    trace(
+      'INFO',
+      `Упаковка завершена за ${zipDuration} мс | Итого: ${uiFilesCount} UI-файлов, ZIP=${buffer.length} байт | Общее время=${totalDuration} мс`
+    );
+    zip.file('logs/portable-build.log', buildLogs.join('\r\n') + '\r\n');
+
+    const finalBuffer = await zip.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+    });
+
     stages.push({
       name: 'Упаковка Portable ZIP',
       durationMs: zipDuration,
-      detail: `${uiFilesCount} UI-файлов + COM-скрипты (${Math.round(buffer.length / 1024)} КБ)`,
+      detail: `${uiFilesCount} UI-файлов + COM-скрипты + логи (${Math.round(finalBuffer.length / 1024)} КБ)`,
     });
 
     const buildId = `ptb-${Date.now().toString(36)}`;
@@ -216,15 +283,23 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
       durationMs: totalDuration,
       uiFilesCount,
       serverBytes: serverBuffer.length,
-      zipBytes: buffer.length,
+      zipBytes: finalBuffer.length,
       projectCode: project.projectCode,
       revision: project.revision,
       stages,
-      buffer,
+      buildLogs,
+      buffer: finalBuffer,
     };
 
     storeBuildArtifact(artifact);
     return artifact;
+  } catch (err) {
+    if (err instanceof PortableBuildError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack || msg : msg;
+    trace('ERROR', `Сбой сборки: ${msg}`);
+    trace('ERROR', `StackTrace:\n${stack}`);
+    throw new PortableBuildError(msg, buildLogs, err);
   } finally {
     fs.rmSync(stageDir, { recursive: true, force: true });
   }

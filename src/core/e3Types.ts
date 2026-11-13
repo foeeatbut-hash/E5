@@ -202,7 +202,16 @@ export interface ProcessLogEntry {
   id: string;
   timestamp: string;
   level: LogLevel;
-  subsystem: 'E3-CORE' | 'WORKER' | 'SYNC-API' | 'E3-XML' | 'FLUX-BRIDGE' | 'CAD-DXF';
+  subsystem:
+    | 'E3-CORE'
+    | 'WORKER'
+    | 'SYNC-API'
+    | 'E3-XML'
+    | 'FLUX-BRIDGE'
+    | 'CAD-DXF'
+    | 'PORTABLE'
+    | 'SERVER'
+    | 'E3-COM';
   message: string;
   durationMs?: number;
   details?: string;

@@ -111,7 +111,8 @@ export default function App() {
       level: ProcessLogEntry['level'],
       subsystem: ProcessLogEntry['subsystem'],
       message: string,
-      durationMs?: number
+      durationMs?: number,
+      details?: string
     ) => {
       setLogs((prev) => [
         {
@@ -121,8 +122,9 @@ export default function App() {
           subsystem,
           message,
           durationMs,
+          details,
         },
-        ...prev.slice(0, 299),
+        ...prev.slice(0, 399),
       ]);
     },
     []
@@ -223,9 +225,15 @@ export default function App() {
           } else if (payload.type === 'e3-bridge-log') {
             appendLog(
               payload.ok ? 'INFO' : 'WARN',
-              'E3-XML',
+              'E3-COM',
               `[Мост ${payload.host || 'E3'}] ${payload.message}`
             );
+          } else if (payload.type === 'server-diag-log' && payload.entry) {
+            const srvEntry = payload.entry as ProcessLogEntry;
+            setLogs((prev) => {
+              if (prev.some((p) => p.id === srvEntry.id)) return prev;
+              return [srvEntry, ...prev.slice(0, 399)];
+            });
           }
         } catch {
           // ignore heartbeat
@@ -553,17 +561,72 @@ export default function App() {
     appendLog('INFO', 'E3-XML', `Экспортирован файл E3 XML ${project.projectCode}-xml.e3s.`, res.durationMs);
   };
 
-  const handleImportE3sBytes = async (bytes: ArrayBuffer, filename: string) => {
-    const res = await ecadAsync.importE3sBytes(bytes, filename);
-    commitProject(() => res.project);
-    if (res.project.sheets[0]) setActiveSheetId(res.project.sheets[0].id);
-    appendLog(
-      'SYNC',
-      'E3-XML',
-      `Импортирован файл ${filename} (${res.sourceKind}): ${res.project.devices.length} изд., потоки [${res.discoveredStreams.join(', ')}].`,
-      res.durationMs
-    );
-  };
+  const handleImportE3sBytes = useCallback(
+    async (bytes: ArrayBuffer, filename: string) => {
+      const t0 = performance.now();
+      const lowerName = filename.toLowerCase();
+      let importedProj: E3Project | null = null;
+      let sourceKind = '';
+      let discoveredStreams: string[] = [];
+      let comLog = '';
+      let durationMs = 0;
+
+      if (lowerName.endsWith('.e3s') || lowerName.endsWith('.e3d')) {
+        try {
+          const resp = await fetch(
+            `/api/v1/projects/${encodeURIComponent(project.id)}/import/e3s?filename=${encodeURIComponent(filename)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/octet-stream' },
+              body: bytes,
+            }
+          );
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data?.ok && data?.project) {
+              importedProj = data.project as E3Project;
+              sourceKind = String(data.sourceKind || 'e3s-server');
+              discoveredStreams = Array.isArray(data.discoveredStreams) ? data.discoveredStreams : [];
+              comLog = String(data.comLog || '');
+              durationMs = Math.round((performance.now() - t0) * 100) / 100;
+            }
+          } else if (resp.status === 400) {
+            const errData = await resp.json().catch(() => null);
+            if (errData?.error) {
+              throw new Error(String(errData.error));
+            }
+          }
+        } catch (err) {
+          // If server explicitly returned a parse error, rethrow; otherwise fall back to local Web Worker
+          if (err instanceof Error && !err.message.includes('fetch') && !err.message.includes('NetworkError')) {
+            // Try local Web Worker fallback before failing
+          }
+        }
+      }
+
+      if (!importedProj) {
+        const res = await ecadAsync.importE3sBytes(bytes, filename);
+        importedProj = res.project;
+        sourceKind = res.sourceKind;
+        discoveredStreams = res.discoveredStreams;
+        durationMs = res.durationMs;
+      }
+
+      commitProject(() => importedProj as E3Project);
+      if (importedProj.sheets[0]) setActiveSheetId(importedProj.sheets[0].id);
+      setSelectedDeviceId(importedProj.devices[0]?.id ?? null);
+      setSelectedWireId(null);
+
+      appendLog(
+        'SYNC',
+        sourceKind === 'e3s-com-native' ? 'E3-COM' : 'E3-XML',
+        `Импортирован файл ${filename} (${sourceKind}): листов=${importedProj.sheets.length}, изд.=${importedProj.devices.length}, цепей=${importedProj.wires.length}, потоки [${discoveredStreams.join(', ')}].`,
+        durationMs,
+        comLog || undefined
+      );
+    },
+    [project.id, commitProject, appendLog]
+  );
 
   const handleExportFluxBridge = async () => {
     const res = await ecadAsync.exportFluxBundle(project);
@@ -690,6 +753,22 @@ export default function App() {
         }
       })
       .catch(() => {});
+
+    fetch('/api/v1/diagnostics/logs')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.entries && Array.isArray(data.entries)) {
+          setLogs((prev) => {
+            const existing = new Set(prev.map((p) => p.id));
+            const merged = [...prev];
+            for (const entry of data.entries as ProcessLogEntry[]) {
+              if (!existing.has(entry.id)) merged.push(entry);
+            }
+            return merged.slice(0, 400);
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleDirectOpenE3 = async (mode: 'build' | 'export' = 'build') => {
@@ -712,15 +791,25 @@ export default function App() {
     if (data?.ok) {
       appendLog(
         'SYNC',
-        'E3-XML',
+        'E3-COM',
         data.execution === 'local-win32'
           ? `Встроенный COM-мост запустил E³.series на ${data.host}.`
-          : `Задание ${data.jobId} отправлено на коннектор ПК (${data.host}) для открытия в E³.series.`
+          : `Задание ${data.jobId} отправлено на коннектор ПК (${data.host}) для открытия в E³.series.`,
+        undefined,
+        data.output || undefined
+      );
+    } else if (data?.execution === 'local-win32-error') {
+      appendLog(
+        'ERROR',
+        'E3-COM',
+        `Ошибка локального COM-моста: ${data.error || 'сбой cscript.exe'}`,
+        undefined,
+        data.details || undefined
       );
     } else {
       appendLog(
         'INFO',
-        'E3-XML',
+        'E3-COM',
         'Встроенный COM-мост ожидает локального Windows-коннектора или запуска на Windows.'
       );
     }
@@ -776,6 +865,20 @@ export default function App() {
         onDirectOpenE3={async () => {
           const res = await handleDirectOpenE3('build');
           if (!res?.ok) setExchangeOpen(true);
+        }}
+        onImportE3sFile={async (file) => {
+          try {
+            const buf = await file.arrayBuffer();
+            await handleImportE3sBytes(buf, file.name);
+          } catch (err) {
+            appendLog(
+              'ERROR',
+              'E3-XML',
+              `Не удалось открыть файл ${file.name}: ${err instanceof Error ? err.message : String(err)}`
+            );
+            setConsoleTab('logs');
+            setConsoleCollapsed(false);
+          }
         }}
         onOpenExchangeModal={() => setExchangeOpen(true)}
         onOpenVisualModal={() => setVisualOpen(true)}
@@ -966,9 +1069,10 @@ export default function App() {
         onBuildFinished={(summary) => {
           appendLog(
             'INFO',
-            'E3-CORE',
+            'PORTABLE',
             `Собрана Portable-версия ${summary.filename} (${Math.round(summary.zipBytes / 1024)} КБ).`,
-            summary.durationMs
+            summary.durationMs,
+            summary.buildLogs?.join('\n')
           );
         }}
       />

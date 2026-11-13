@@ -1,13 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AlertTriangle,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   Download,
   Loader2,
   Package,
   RefreshCw,
   Terminal,
   X,
-  AlertTriangle,
 } from 'lucide-react';
 import type { E3Project } from '../core/e3Types';
 
@@ -29,15 +33,22 @@ interface BuildResult {
   projectCode?: string;
   revision?: number;
   stages?: BuildStage[];
+  buildLogs?: string[];
   downloadUrl?: string;
   error?: string;
+  stack?: string;
 }
 
 interface PortableBuildModalProps {
   open: boolean;
   project: E3Project;
   onClose: () => void;
-  onBuildFinished?: (summary: { filename: string; durationMs: number; zipBytes: number }) => void;
+  onBuildFinished?: (summary: {
+    filename: string;
+    durationMs: number;
+    zipBytes: number;
+    buildLogs?: string[];
+  }) => void;
 }
 
 export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
@@ -48,6 +59,8 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
 }) => {
   const [building, setBuilding] = useState(false);
   const [result, setResult] = useState<BuildResult | null>(null);
+  const [showBuildLogs, setShowBuildLogs] = useState(false);
+  const [copiedLogs, setCopiedLogs] = useState(false);
   const projectRef = useRef(project);
   projectRef.current = project;
   const onBuildFinishedRef = useRef(onBuildFinished);
@@ -65,6 +78,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
   const runBuild = useCallback(async () => {
     setBuilding(true);
     setResult(null);
+    setShowBuildLogs(false);
     try {
       const res = await fetch('/api/build/portable', {
         method: 'POST',
@@ -76,7 +90,10 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
         setResult({
           ok: false,
           error: data.error || `Ошибка сборки (HTTP ${res.status})`,
+          buildLogs: data.buildLogs || [],
+          stack: data.stack,
         });
+        setShowBuildLogs(true);
         return;
       }
       setResult(data);
@@ -84,13 +101,16 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
         filename: data.filename,
         durationMs: data.durationMs || 0,
         zipBytes: data.zipBytes || 0,
+        buildLogs: data.buildLogs,
       });
       triggerDownload(data.downloadUrl, data.filename);
     } catch (err) {
       setResult({
         ok: false,
         error: err instanceof Error ? err.message : 'Сбой сети при сборке Portable-архива.',
+        stack: err instanceof Error ? err.stack : undefined,
       });
+      setShowBuildLogs(true);
     } finally {
       setBuilding(false);
     }
@@ -104,6 +124,33 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
 
   if (!open) return null;
 
+  const fullBuildLogText = [
+    ...(result?.buildLogs || []),
+    ...(result?.stack ? ['', '=== STACK TRACE ===', result.stack] : []),
+  ].join('\n');
+
+  const handleCopyLogs = async () => {
+    if (!fullBuildLogText) return;
+    try {
+      await navigator.clipboard.writeText(fullBuildLogText);
+      setCopiedLogs(true);
+      window.setTimeout(() => setCopiedLogs(false), 1800);
+    } catch {
+      // clipboard fallback ignored
+    }
+  };
+
+  const handleDownloadBuildLog = () => {
+    if (!fullBuildLogText) return;
+    const blob = new Blob([fullBuildLogText + '\n'], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `flux-e3-portable-build-${Date.now()}.log`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div
       role="dialog"
@@ -111,7 +158,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
       aria-labelledby="portable-build-title"
       className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
     >
-      <div className="w-full max-w-xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden">
+      <div className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden">
         <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-[var(--flux-accent)]" />
@@ -129,7 +176,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
           </button>
         </div>
 
-        <div className="p-4 space-y-4 text-[12px]">
+        <div className="p-4 space-y-4 max-h-[84vh] overflow-y-auto text-[12px]">
           <div className="p-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="font-medium text-[var(--flux-text)] truncate">{project.name}</div>
@@ -152,7 +199,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
               <div className="text-[11px] text-[var(--flux-text-muted)] space-y-1 pl-6">
                 <div>1. Компиляция интерфейса React + Tailwind (Vite SPA)</div>
                 <div>2. Бандлинг сервера, API и COM-моста в автономный server.cjs (без node_modules)</div>
-                <div>3. Вшивание текущей схемы, .e3s, .vbs и лаунчера FluxE3_Portable.cmd</div>
+                <div>3. Вшивание текущей схемы, .e3s, .vbs, логов и лаунчера FluxE3_Portable.cmd</div>
               </div>
             </div>
           )}
@@ -191,7 +238,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
               <div className="p-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-1.5 text-[11px] text-[var(--flux-text-muted)]">
                 <div className="flex items-center gap-1.5 font-semibold text-[var(--flux-text)]">
                   <Terminal className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                  <span>Запуск на вашем Windows-ПК</span>
+                  <span>Запуск и диагностика на Windows-ПК</span>
                 </div>
                 <div>1. Распакуйте ZIP-архив в любую папку (например, D:\FluxE3_Portable).</div>
                 <div>
@@ -201,8 +248,10 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                   <span className="font-mono text-[var(--flux-text)]">runtime\</span>.
                 </div>
                 <div>
-                  3. Браузер откроется сам, а кнопка <strong>«В E³.series»</strong> будет работать напрямую через
-                  локальный COM без отдельного коннектора.
+                  3. Подробные логи на ПК пишутся в{' '}
+                  <span className="font-mono text-[var(--flux-text)]">logs\portable-launcher.log</span>,{' '}
+                  <span className="font-mono text-[var(--flux-text)]">logs\flux-e3-server.log</span> и{' '}
+                  <span className="font-mono text-[var(--flux-text)]">flux_e3_com_debug.log</span>.
                 </div>
               </div>
             </div>
@@ -211,7 +260,50 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
           {!building && result && !result.ok && (
             <div className="p-3 rounded border border-rose-500/40 bg-rose-500/10 flex items-start gap-2.5 text-[12px]">
               <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-              <div className="text-[var(--flux-text)]">{result.error}</div>
+              <div className="text-[var(--flux-text)] font-medium">{result.error}</div>
+            </div>
+          )}
+
+          {!building && fullBuildLogText && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBuildLogs((v) => !v)}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--flux-accent)] hover:underline"
+                >
+                  {showBuildLogs ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  <span>
+                    {showBuildLogs
+                      ? 'Скрыть подробный лог сборки'
+                      : `Показать подробный лог сборки (${result?.buildLogs?.length || 0} строк)`}
+                  </span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyLogs}
+                    className="inline-flex items-center gap-1 text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+                  >
+                    {copiedLogs ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedLogs ? 'Скопировано' : 'Копировать лог'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadBuildLog}
+                    className="inline-flex items-center gap-1 text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Скачать build.log</span>
+                  </button>
+                </div>
+              </div>
+
+              {showBuildLogs && (
+                <pre className="p-2.5 max-h-48 overflow-auto rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-text)] leading-relaxed whitespace-pre-wrap">
+                  {fullBuildLogText}
+                </pre>
+              )}
             </div>
           )}
 

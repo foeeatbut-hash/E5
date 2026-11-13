@@ -24,12 +24,29 @@ import {
 import { buildOle2E3sContainer, parseE3sInput } from './src/core/e3SFormat.ts';
 import { createSeedProject } from './src/core/e3Seed.ts';
 import type { E3Device, E3Project } from './src/core/e3Types.ts';
-import { buildPortableDistribution, getCachedPortableBuild } from './src/server/portablePackager.ts';
+import { diagLogger } from './src/server/diagLogger.ts';
+import {
+  buildPortableDistribution,
+  getCachedPortableBuild,
+  PortableBuildError,
+} from './src/server/portablePackager.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 app.use(express.text({ type: ['application/xml', 'text/xml', 'text/plain'], limit: '25mb' }));
+
+process.on('uncaughtException', (err) => {
+  diagLogger.log('ERROR', 'SERVER', `UncaughtException: ${err.message}`, {
+    details: err.stack || String(err),
+  });
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack || msg : String(reason);
+  diagLogger.log('ERROR', 'SERVER', `UnhandledRejection: ${msg}`, { details: stack });
+});
 
 function loadInitialProject(): E3Project {
   const candidates = [
@@ -43,27 +60,33 @@ function loadInitialProject(): E3Project {
       if (fs.existsSync(filePath)) {
         const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as E3Project;
         if (raw?.id && Array.isArray(raw.devices)) {
+          diagLogger.log('INFO', 'SERVER', `Загружен проект из файла: ${filePath}`, {
+            details: `projectCode=${raw.projectCode}, revision=${raw.revision}, devices=${raw.devices.length}, wires=${raw.wires?.length || 0}`,
+          });
           return raw;
         }
       }
-    } catch {
-      // ignore corrupted snapshot and fall through to next source
+    } catch (err) {
+      diagLogger.log('WARN', 'SERVER', `Ошибка чтения снимка проекта ${filePath}`, {
+        details: err instanceof Error ? err.stack || err.message : String(err),
+      });
     }
   }
-  return createSeedProject();
+  const def = createSeedProject();
+  diagLogger.log('INFO', 'SERVER', `Загружен встроенный стартовый проект ${def.projectCode} (rev ${def.revision}).`);
+  return def;
 }
 
 function persistPortableProject(project: E3Project) {
   if (!process.env.FLUX_DATA_DIR) return;
+  const targetFile = path.join(process.env.FLUX_DATA_DIR, 'project.json');
   try {
     fs.mkdirSync(process.env.FLUX_DATA_DIR, { recursive: true });
-    fs.writeFileSync(
-      path.join(process.env.FLUX_DATA_DIR, 'project.json'),
-      JSON.stringify(project, null, 2),
-      'utf8'
-    );
-  } catch {
-    // ignore non-fatal local persistence error
+    fs.writeFileSync(targetFile, JSON.stringify(project, null, 2), 'utf8');
+  } catch (err) {
+    diagLogger.log('ERROR', 'PORTABLE', `Не удалось сохранить ${targetFile}`, {
+      details: err instanceof Error ? err.stack || err.message : String(err),
+    });
   }
 }
 
@@ -81,6 +104,10 @@ function broadcastSseEvent(eventObj: Record<string, unknown>) {
     res.write(`data: ${payload}\n\n`);
   }
 }
+
+diagLogger.subscribe((entry) => {
+  broadcastSseEvent({ type: 'server-diag-log', entry });
+});
 
 function broadcastUpdate(project: E3Project, source: string, sender = 'server') {
   persistPortableProject(project);
@@ -332,12 +359,35 @@ app.get('/api/v1/e3-bridge/connector.cmd', (req, res) => {
   res.send(generateWindowsBridgeCmd(origin));
 });
 
+app.get('/api/v1/diagnostics/logs', (_req, res) => {
+  res.json({
+    ok: true,
+    logFilePath: diagLogger.getLogFilePath(),
+    serverInfo: {
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      cwd: process.cwd(),
+      portable: process.env.FLUX_PORTABLE === '1',
+      pid: process.pid,
+    },
+    entries: diagLogger.getEntries(),
+  });
+});
+
+app.get('/api/v1/diagnostics/logs/download', (_req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  setDownloadDisposition(res, `flux-e3-diag-${Date.now()}.log`);
+  res.send(diagLogger.formatPlainTextReport());
+});
+
 app.get('/api/v1/e3-bridge/poll', (req, res) => {
   const hostName = String(req.query.host || 'WINDOWS-E3');
   const wasOnline = isBridgeOnline();
   bridgeState.connectedHost = hostName;
   bridgeState.lastPollAt = Date.now();
   if (!wasOnline) {
+    diagLogger.log('SYNC', 'E3-COM', `Подключился Windows-коннектор моста E³.series: ${hostName}`);
     broadcastSseEvent({ type: 'e3-bridge-status', bridgeConnected: true, bridgeHost: hostName });
   }
   const job = e3JobQueue.shift() || null;
@@ -355,10 +405,18 @@ app.post('/api/v1/e3-bridge/ack', (req, res) => {
         projects.set(merged.id, merged);
         broadcastUpdate(merged, `E³.series (${host || 'ПК'})`, 'e3-bridge');
       }
-    } catch {
-      // ignore malformed export JSON
+    } catch (err) {
+      diagLogger.log('ERROR', 'E3-COM', `Ошибка разбора exportedJson от ${host || 'ПК'}`, {
+        details: err instanceof Error ? err.stack || err.message : String(err),
+      });
     }
   }
+  diagLogger.log(
+    ok ? 'INFO' : 'ERROR',
+    'E3-COM',
+    `Результат задания ${jobId || '?'} от ПК ${host || bridgeState.connectedHost || 'Windows'} (${ok ? 'OK' : 'FAIL'})`,
+    { details: String(message || '') }
+  );
   broadcastSseEvent({
     type: 'e3-bridge-log',
     jobId,
@@ -369,7 +427,55 @@ app.post('/api/v1/e3-bridge/ack', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/v1/projects/:id/e3-direct-open', (req, res) => {
+function decodeWindowsOutput(buf: Buffer | string | undefined): string {
+  if (!buf) return '';
+  if (typeof buf === 'string') return buf.replace(/^\uFEFF/, '');
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return buf.subarray(2).toString('utf16le').replace(/^\uFEFF/, '');
+  }
+  // Heuristic: UTF-16LE without BOM has zero high bytes for ASCII timestamps "[2026-"
+  if (buf.length >= 4 && buf[1] === 0x00 && buf[3] === 0x00) {
+    return buf.toString('utf16le').replace(/^\uFEFF/, '');
+  }
+  return buf.toString('utf8').replace(/^\uFEFF/, '');
+}
+
+function readTraceLogFile(filePath: string): string {
+  if (!fs.existsSync(filePath)) return '';
+  const raw = fs.readFileSync(filePath);
+  if (raw.length >= 2 && raw[0] === 0xff && raw[1] === 0xfe) {
+    return raw.subarray(2).toString('utf16le').replace(/^\uFEFF/, '');
+  }
+  if (raw.length >= 4 && raw[1] === 0x00 && raw[3] === 0x00) {
+    return raw.toString('utf16le').replace(/^\uFEFF/, '');
+  }
+  return raw.toString('utf8').replace(/^\uFEFF/, '');
+}
+
+function execCscriptUnicode(
+  vbsPath: string,
+  extraArgs: string[] = []
+): Promise<{ err: Error | null; stdout: string; stderr: string; traceLog: string; fullOut: string; durationMs: number }> {
+  return new Promise((resolve) => {
+    const tmpDir = path.dirname(vbsPath);
+    const t0 = performance.now();
+    execFile(
+      'cscript.exe',
+      ['//Nologo', '//U', vbsPath, '/silent', ...extraArgs],
+      { timeout: 45000, encoding: 'buffer', maxBuffer: 10 * 1024 * 1024 },
+      (err, stdoutBuf, stderrBuf) => {
+        const dt = Math.round((performance.now() - t0) * 100) / 100;
+        const stdout = decodeWindowsOutput(stdoutBuf as unknown as Buffer).trim();
+        const stderr = decodeWindowsOutput(stderrBuf as unknown as Buffer).trim();
+        const traceLog = readTraceLogFile(path.join(tmpDir, 'flux_e3_com_debug.log')).trim();
+        const fullOut = [traceLog || stdout, stderr].filter(Boolean).join('\n--- STDERR ---\n');
+        resolve({ err: err as Error | null, stdout, stderr, traceLog, fullOut, durationMs: dt });
+      }
+    );
+  });
+}
+
+app.post('/api/v1/projects/:id/e3-direct-open', async (req, res) => {
   const proj = getOrDefaultProject(req.params.id);
   const mode = req.body?.mode === 'export' ? 'export' : 'build';
   const script = generateE3ComScript(proj, mode);
@@ -378,36 +484,52 @@ app.post('/api/v1/projects/:id/e3-direct-open', (req, res) => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flux-e3-'));
     const vbsPath = path.join(tmpDir, `${mode}_e3.vbs`);
     fs.writeFileSync(vbsPath, Buffer.from(encodeUtf16LeWithBom(script)));
-    execFile('cscript.exe', ['//Nologo', vbsPath, '/silent'], { timeout: 30000 }, (err, stdout, stderr) => {
-      if (err) {
-        broadcastSseEvent({
-          type: 'e3-bridge-log',
-          host: os.hostname(),
-          ok: false,
-          message: stderr || err.message,
-        });
-        res.json({ ok: false, execution: 'local-win32-error', error: stderr || err.message, script });
-        return;
-      }
-      if (mode === 'export') {
-        const expPath = path.join(tmpDir, 'flux_e3_export.json');
-        if (fs.existsSync(expPath)) {
-          try {
-            const parsed = JSON.parse(fs.readFileSync(expPath, 'utf8'));
-            const merged = importFromFluxBridge(parsed, proj);
-            projects.set(merged.id, merged);
-            broadcastUpdate(merged, 'Локальный E³.series (Win32 COM)', 'e3-bridge');
-          } catch {
-            // ignore
-          }
+    diagLogger.log('INFO', 'E3-COM', `Запуск cscript.exe //Nologo //U "${vbsPath}" /silent`);
+    const result = await execCscriptUnicode(vbsPath);
+    if (result.err) {
+      diagLogger.log('ERROR', 'E3-COM', `Сбой локального cscript.exe (${result.err.message})`, {
+        durationMs: result.durationMs,
+        details: result.fullOut || result.err.stack || result.err.message,
+      });
+      broadcastSseEvent({
+        type: 'e3-bridge-log',
+        host: os.hostname(),
+        ok: false,
+        message: result.stderr || result.err.message,
+      });
+      res.json({
+        ok: false,
+        execution: 'local-win32-error',
+        error: result.stderr || result.err.message,
+        details: result.fullOut,
+        script,
+      });
+      return;
+    }
+    diagLogger.log('SYNC', 'E3-COM', `Локальный Win32 COM выполнен (${mode})`, {
+      durationMs: result.durationMs,
+      details: result.fullOut,
+    });
+    if (mode === 'export') {
+      const expPath = path.join(tmpDir, 'flux_e3_export.json');
+      if (fs.existsSync(expPath)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(expPath, 'utf8').replace(/^\uFEFF/, ''));
+          const merged = importFromFluxBridge(parsed, proj);
+          projects.set(merged.id, merged);
+          broadcastUpdate(merged, 'Локальный E³.series (Win32 COM)', 'e3-bridge');
+        } catch (expErr) {
+          diagLogger.log('ERROR', 'E3-COM', 'Ошибка импорта flux_e3_export.json', {
+            details: expErr instanceof Error ? expErr.stack || expErr.message : String(expErr),
+          });
         }
       }
-      res.json({
-        ok: true,
-        execution: 'local-win32',
-        host: os.hostname(),
-        output: stdout,
-      });
+    }
+    res.json({
+      ok: true,
+      execution: 'local-win32',
+      host: os.hostname(),
+      output: result.fullOut,
     });
     return;
   }
@@ -422,6 +544,7 @@ app.post('/api/v1/projects/:id/e3-direct-open', (req, res) => {
       script,
       createdAt: Date.now(),
     });
+    diagLogger.log('SYNC', 'E3-COM', `Задание ${jobId} (${mode}) поставлено в очередь для ${bridgeState.connectedHost}`);
     res.json({
       ok: true,
       execution: 'remote-connector',
@@ -431,6 +554,11 @@ app.post('/api/v1/projects/:id/e3-direct-open', (req, res) => {
     return;
   }
 
+  diagLogger.log(
+    'INFO',
+    'E3-COM',
+    `COM-вызов (${mode}) не выполнен напрямую: сервер на ${process.platform}, локальный ПК-коннектор не подключён.`
+  );
   res.json({
     ok: false,
     execution: 'needs-connector',
@@ -441,16 +569,76 @@ app.post('/api/v1/projects/:id/e3-direct-open', (req, res) => {
 
 app.post('/api/v1/projects/:id/import/e3s', express.raw({ type: '*/*', limit: '25mb' }), async (req, res) => {
   try {
+    const rawFilename = String(req.query.filename || req.headers['x-flux-filename'] || 'imported.e3s');
+    const safeBaseName = path.basename(rawFilename).replace(/[<>:"/\\|?*]+/g, '_') || 'imported.e3s';
     const raw = Buffer.isBuffer(req.body)
       ? new Uint8Array(req.body)
       : typeof req.body === 'string'
       ? req.body
       : JSON.stringify(req.body || {});
-    const parsed = await parseE3sInput(raw);
+
+    const parsed = await parseE3sInput(raw, rawFilename);
+    diagLogger.log(
+      'INFO',
+      'E3-XML',
+      `Импорт файла ${rawFilename}: kind=${parsed.sourceKind}, потоков=${parsed.discoveredStreams.length}, устройств=${parsed.project.devices.length}`,
+      { details: `Потоки: [${parsed.discoveredStreams.join(', ')}]` }
+    );
+
+    // If native Zuken binary .e3s on Windows, try reading full schematic directly via E3.series COM API
+    if (parsed.sourceKind === 'e3s-ole2-native' && process.platform === 'win32' && raw instanceof Uint8Array) {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flux-e3-imp-'));
+      const tempE3sPath = path.join(tmpDir, safeBaseName.endsWith('.e3s') ? safeBaseName : `${safeBaseName}.e3s`);
+      fs.writeFileSync(tempE3sPath, Buffer.from(raw));
+      const comScript = generateE3ComScript(undefined, 'export', tempE3sPath);
+      const vbsPath = path.join(tmpDir, 'import_e3s.vbs');
+      fs.writeFileSync(vbsPath, Buffer.from(encodeUtf16LeWithBom(comScript)));
+      diagLogger.log('INFO', 'E3-COM', `Попытка прямого чтения нативного .e3s через COM: "${tempE3sPath}"`);
+      const comRes = await execCscriptUnicode(vbsPath);
+      const expPath = path.join(tmpDir, 'flux_e3_export.json');
+      if (!comRes.err && fs.existsSync(expPath)) {
+        try {
+          const comJson = JSON.parse(fs.readFileSync(expPath, 'utf8').replace(/^\uFEFF/, ''));
+          const merged = importFromFluxBridge(comJson, parsed.project);
+          merged.projectCode = safeBaseName.replace(/\.e3s$/i, '');
+          projects.set(merged.id, merged);
+          diagLogger.log(
+            'SYNC',
+            'E3-COM',
+            `Нативный .e3s прочитан через E³.series COM: листов=${merged.sheets.length}, изделий=${merged.devices.length}, цепей=${merged.wires.length}`,
+            { durationMs: comRes.durationMs, details: comRes.fullOut }
+          );
+          broadcastUpdate(merged, `E³.series COM (${safeBaseName})`, 'e3-bridge');
+          res.json({
+            ok: true,
+            sourceKind: 'e3s-com-native',
+            discoveredStreams: parsed.discoveredStreams,
+            comLog: comRes.fullOut,
+            project: merged,
+          });
+          return;
+        } catch (comParseErr) {
+          diagLogger.log('WARN', 'E3-COM', 'Ошибка разбора JSON от E³.series COM, используем OLE2-резерв', {
+            details: `${comParseErr instanceof Error ? comParseErr.message : String(comParseErr)}\n${comRes.fullOut}`,
+          });
+        }
+      } else {
+        diagLogger.log(
+          'WARN',
+          'E3-COM',
+          `E³.series COM не смог открыть "${safeBaseName}" напрямую — загружена модель из потоков OLE2/zlib`,
+          { durationMs: comRes.durationMs, details: comRes.fullOut || comRes.err?.message || '' }
+        );
+      }
+    }
+
     projects.set(parsed.project.id, parsed.project);
     broadcastUpdate(parsed.project, `REST API POST /import/e3s (${parsed.sourceKind})`, 'api');
     res.json({ ok: true, sourceKind: parsed.sourceKind, discoveredStreams: parsed.discoveredStreams, project: parsed.project });
   } catch (err) {
+    diagLogger.log('ERROR', 'E3-XML', `Ошибка импорта .e3s: ${err instanceof Error ? err.message : String(err)}`, {
+      details: err instanceof Error ? err.stack || err.message : String(err),
+    });
     res.status(400).json({ error: err instanceof Error ? err.message : 'E3S parse error' });
   }
 });
@@ -602,7 +790,18 @@ app.post('/api/build/portable', async (req, res) => {
       targetProject = incomingProject;
     }
 
+    diagLogger.log('INFO', 'PORTABLE', `Запущена сборка Portable для ${targetProject.projectCode} (rev ${targetProject.revision})...`);
     const artifact = await buildPortableDistribution(targetProject);
+    diagLogger.log(
+      'INFO',
+      'PORTABLE',
+      `Portable-сборка готова: ${artifact.filename} (${Math.round(artifact.zipBytes / 1024)} КБ)`,
+      {
+        durationMs: artifact.durationMs,
+        details: artifact.buildLogs.join('\n'),
+      }
+    );
+
     broadcastSseEvent({
       type: 'portable-built',
       buildId: artifact.buildId,
@@ -624,12 +823,21 @@ app.post('/api/build/portable', async (req, res) => {
       projectCode: artifact.projectCode,
       revision: artifact.revision,
       stages: artifact.stages,
+      buildLogs: artifact.buildLogs,
       downloadUrl: `/api/build/portable/${encodeURIComponent(artifact.buildId)}/download`,
     });
   } catch (err) {
+    const buildLogs = err instanceof PortableBuildError ? err.buildLogs : [];
+    const stack = err instanceof PortableBuildError ? err.stackTrace : err instanceof Error ? err.stack || err.message : String(err);
+    const msg = err instanceof Error ? err.message : 'Ошибка сборки Portable-версии';
+    diagLogger.log('ERROR', 'PORTABLE', `Ошибка сборки Portable: ${msg}`, {
+      details: [...buildLogs, '--- STACK ---', stack].join('\n'),
+    });
     res.status(500).json({
       ok: false,
-      error: err instanceof Error ? err.message : 'Ошибка сборки Portable-версии',
+      error: msg,
+      buildLogs,
+      stack,
     });
   }
 });
@@ -658,6 +866,13 @@ app.get('/api/export/portable', async (req, res) => {
   }
 });
 
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  diagLogger.log('ERROR', 'SERVER', `HTTP ${req.method} ${req.originalUrl}: ${err.message}`, {
+    details: err.stack || err.message,
+  });
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
+
 function resolveDistDir(): string {
   const cwdDist = path.resolve(process.cwd(), 'dist');
   if (fs.existsSync(path.join(cwdDist, 'index.html'))) return cwdDist;
@@ -676,6 +891,7 @@ function listenWithFallback(preferredPort: number): Promise<number> {
       });
       srv.on('error', (err: NodeJS.ErrnoException) => {
         if (err.code === 'EADDRINUSE' && offset < maxOffset) {
+          diagLogger.log('WARN', 'PORTABLE', `Порт ${candidate} занят, пробуем ${candidate + 1}...`);
           tryListen(offset + 1);
         } else {
           reject(err);
@@ -687,8 +903,9 @@ function listenWithFallback(preferredPort: number): Promise<number> {
 }
 
 async function start() {
+  let distDir = '';
   if (process.env.NODE_ENV === 'production') {
-    const distDir = resolveDistDir();
+    distDir = resolveDistDir();
     app.use(express.static(distDir));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distDir, 'index.html'));
@@ -704,13 +921,30 @@ async function start() {
 
   const actualPort = await listenWithFallback(PORT);
   const localUrl = `http://127.0.0.1:${actualPort}`;
+  diagLogger.log('INFO', 'SERVER', `Сервер Flux E3 запущен на ${localUrl}`, {
+    details: [
+      `Node=${process.version}, Platform=${process.platform}/${process.arch}, PID=${process.pid}`,
+      `Mode=${process.env.NODE_ENV || 'development'}, Portable=${process.env.FLUX_PORTABLE === '1' ? 'YES' : 'NO'}`,
+      `CWD=${process.cwd()}`,
+      `DistDir=${distDir || '(Vite HMR middleware)'}`,
+      `DataDir=${process.env.FLUX_DATA_DIR || '(in-memory)'}`,
+      `LogFile=${diagLogger.getLogFilePath() || '(memory-only)'}`,
+    ].join('\n'),
+  });
   console.log(`Flux E3 server running on http://0.0.0.0:${actualPort} (${localUrl})`);
 
   if (process.env.FLUX_OPEN_BROWSER === '1' && process.platform === 'win32') {
-    execFile('cmd.exe', ['/c', 'start', '', localUrl], () => {
-      // best-effort browser launch in portable Windows mode
+    execFile('cmd.exe', ['/c', 'start', '', localUrl], (err) => {
+      if (err) {
+        diagLogger.log('WARN', 'PORTABLE', `Не удалось автооткрыть браузер: ${err.message}`);
+      }
     });
   }
 }
 
-start();
+start().catch((err) => {
+  diagLogger.log('ERROR', 'SERVER', `Критическая ошибка запуска сервера: ${err?.message || err}`, {
+    details: err instanceof Error ? err.stack || err.message : String(err),
+  });
+  process.exit(1);
+});
