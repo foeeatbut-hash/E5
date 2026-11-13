@@ -15,6 +15,8 @@ import type {
   FluxBridgeBundle,
   FluxExportNode,
   PinDirection,
+  SchematicFontFamily,
+  SheetFormat,
   SignalType,
   TerminalPlanRow,
 } from './e3Types.ts';
@@ -49,39 +51,217 @@ export function getAbsolutePinPos(device: E3Device, pin: E3Pin): { x: number; y:
   };
 }
 
+export interface RoutingRect {
+  id?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function segmentIntersectsRect(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  r: RoutingRect,
+  pad = 8
+): boolean {
+  const minX = Math.min(a.x, b.x);
+  const maxX = Math.max(a.x, b.x);
+  const minY = Math.min(a.y, b.y);
+  const maxY = Math.max(a.y, b.y);
+  const rx1 = r.x - pad;
+  const ry1 = r.y - pad;
+  const rx2 = r.x + r.width + pad;
+  const ry2 = r.y + r.height + pad;
+  return maxX > rx1 && minX < rx2 && maxY > ry1 && minY < ry2;
+}
+
+function pathHitsAnyObstacle(
+  pts: Array<{ x: number; y: number }>,
+  obstacles: RoutingRect[]
+): RoutingRect | undefined {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    for (const obs of obstacles) {
+      if (segmentIntersectsRect(a, b, obs, 6)) {
+        return obs;
+      }
+    }
+  }
+  return undefined;
+}
+
 export function autoRouteOrthogonal(
   p1: { x: number; y: number; direction: PinDirection },
   p2: { x: number; y: number; direction: PinDirection },
-  stub = 20
+  stub = 20,
+  obstacles: RoutingRect[] = [],
+  laneOffset = 0
 ): Array<{ x: number; y: number }> {
+  const step = Math.max(12, stub);
+  const isHoriz1 = p1.direction === 'left' || p1.direction === 'right';
+  const isHoriz2 = p2.direction === 'left' || p2.direction === 'right';
+
+  // 1. Direct straight line when facing pins are colinear (no useless zigzags)
+  if (
+    ((p1.direction === 'right' && p2.direction === 'left' && p2.x >= p1.x) ||
+      (p1.direction === 'left' && p2.direction === 'right' && p2.x <= p1.x)) &&
+    Math.abs(p1.y - p2.y) <= 2
+  ) {
+    const direct = [{ x: p1.x, y: p1.y }, { x: p2.x, y: p1.y }];
+    if (!pathHitsAnyObstacle(direct, obstacles)) return deduplicatePoints(direct);
+  }
+  if (
+    ((p1.direction === 'bottom' && p2.direction === 'top' && p2.y >= p1.y) ||
+      (p1.direction === 'top' && p2.direction === 'bottom' && p2.y <= p1.y)) &&
+    Math.abs(p1.x - p2.x) <= 2
+  ) {
+    const direct = [{ x: p1.x, y: p1.y }, { x: p1.x, y: p2.y }];
+    if (!pathHitsAnyObstacle(direct, obstacles)) return deduplicatePoints(direct);
+  }
+
+  // 2. Clean 1-bend L-route for perpendicular facing pins in forward quadrant
+  if (isHoriz1 && !isHoriz2) {
+    const forwardX = p1.direction === 'right' ? p2.x >= p1.x + 8 : p2.x <= p1.x - 8;
+    const forwardY = p2.direction === 'top' ? p1.y <= p2.y - 8 : p1.y >= p2.y + 8;
+    if (forwardX && forwardY) {
+      const lRoute = [{ x: p1.x, y: p1.y }, { x: p2.x, y: p1.y }, { x: p2.x, y: p2.y }];
+      if (!pathHitsAnyObstacle(lRoute, obstacles)) return deduplicatePoints(lRoute);
+    }
+  } else if (!isHoriz1 && isHoriz2) {
+    const forwardY = p1.direction === 'bottom' ? p2.y >= p1.y + 8 : p2.y <= p1.y - 8;
+    const forwardX = p2.direction === 'left' ? p1.x <= p2.x - 8 : p1.x >= p2.x + 8;
+    if (forwardX && forwardY) {
+      const lRoute = [{ x: p1.x, y: p1.y }, { x: p1.x, y: p2.y }, { x: p2.x, y: p2.y }];
+      if (!pathHitsAnyObstacle(lRoute, obstacles)) return deduplicatePoints(lRoute);
+    }
+  }
+
   const offset = (p: { x: number; y: number; direction: PinDirection }) => {
-    if (p.direction === 'top') return { x: p.x, y: p.y - stub };
-    if (p.direction === 'bottom') return { x: p.x, y: p.y + stub };
-    if (p.direction === 'left') return { x: p.x - stub, y: p.y };
-    return { x: p.x + stub, y: p.y };
+    if (p.direction === 'top') return { x: p.x, y: p.y - step };
+    if (p.direction === 'bottom') return { x: p.x, y: p.y + step };
+    if (p.direction === 'left') return { x: p.x - step, y: p.y };
+    return { x: p.x + step, y: p.y };
   };
 
   const s1 = offset(p1);
   const s2 = offset(p2);
-  const midX = Math.round((s1.x + s2.x) / 2);
-  const midY = Math.round((s1.y + s2.y) / 2);
+  let midX = Math.round((s1.x + s2.x) / 2) + laneOffset;
+  let midY = Math.round((s1.y + s2.y) / 2) + laneOffset;
 
-  const pts: Array<{ x: number; y: number }> = [{ x: p1.x, y: p1.y }, s1];
-  const isHoriz1 = p1.direction === 'left' || p1.direction === 'right';
-  const isHoriz2 = p2.direction === 'left' || p2.direction === 'right';
+  const buildStandard = (mx: number, my: number): Array<{ x: number; y: number }> => {
+    const pts: Array<{ x: number; y: number }> = [{ x: p1.x, y: p1.y }, s1];
+    if (isHoriz1 && isHoriz2) {
+      pts.push({ x: mx, y: s1.y }, { x: mx, y: s2.y });
+    } else if (!isHoriz1 && !isHoriz2) {
+      pts.push({ x: s1.x, y: my }, { x: s2.x, y: my });
+    } else if (isHoriz1) {
+      pts.push({ x: s2.x, y: s1.y });
+    } else {
+      pts.push({ x: s1.x, y: s2.y });
+    }
+    pts.push(s2, { x: p2.x, y: p2.y });
+    return deduplicatePoints(pts);
+  };
 
-  if (isHoriz1 && isHoriz2) {
-    pts.push({ x: midX, y: s1.y }, { x: midX, y: s2.y });
-  } else if (!isHoriz1 && !isHoriz2) {
-    pts.push({ x: s1.x, y: midY }, { x: s2.x, y: midY });
-  } else if (isHoriz1) {
-    pts.push({ x: s2.x, y: s1.y });
-  } else {
-    pts.push({ x: s1.x, y: s2.y });
+  let candidate = buildStandard(midX, midY);
+  const hit = pathHitsAnyObstacle(candidate, obstacles);
+  if (hit) {
+    if (isHoriz1 && isHoriz2) {
+      // Try routing above or below the blocking device
+      const topLane = hit.y - 24 - Math.abs(laneOffset);
+      const botLane = hit.y + hit.height + 24 + Math.abs(laneOffset);
+      const laneY = Math.abs(s1.y - topLane) <= Math.abs(s1.y - botLane) ? topLane : botLane;
+      candidate = deduplicatePoints([
+        { x: p1.x, y: p1.y },
+        s1,
+        { x: s1.x, y: laneY },
+        { x: s2.x, y: laneY },
+        s2,
+        { x: p2.x, y: p2.y },
+      ]);
+    } else {
+      // Shift vertical/horizontal trunk outside obstacle bounds
+      const leftLane = hit.x - 24 - Math.abs(laneOffset);
+      const rightLane = hit.x + hit.width + 24 + Math.abs(laneOffset);
+      const altX = Math.abs(s1.x - leftLane) <= Math.abs(s1.x - rightLane) ? leftLane : rightLane;
+      const topLane = hit.y - 24 - Math.abs(laneOffset);
+      const botLane = hit.y + hit.height + 24 + Math.abs(laneOffset);
+      const altY = Math.abs(s1.y - topLane) <= Math.abs(s1.y - botLane) ? topLane : botLane;
+      if (!isHoriz1 && !isHoriz2) {
+        candidate = deduplicatePoints([
+          { x: p1.x, y: p1.y },
+          s1,
+          { x: altX, y: s1.y },
+          { x: altX, y: s2.y },
+          s2,
+          { x: p2.x, y: p2.y },
+        ]);
+      } else {
+        candidate = buildStandard(altX, altY);
+      }
+    }
   }
 
-  pts.push(s2, { x: p2.x, y: p2.y });
-  return deduplicatePoints(pts);
+  return simplifyColinearPoints(candidate);
+}
+
+function simplifyColinearPoints(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
+  if (points.length <= 2) return points;
+  const out: Array<{ x: number; y: number }> = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = out[out.length - 1];
+    const curr = points[i];
+    const next = points[i + 1];
+    const sameX = prev.x === curr.x && curr.x === next.x;
+    const sameY = prev.y === curr.y && curr.y === next.y;
+    if (!sameX && !sameY) {
+      out.push(curr);
+    }
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+/** Re-routes all wires on a sheet with device collision avoidance and non-overlapping trunk lanes. */
+export function routeSheetWiresCleanly(
+  devices: E3Device[],
+  wires: E3Wire[],
+  targetSheetId: string,
+  gridSize = 20
+): E3Wire[] {
+  const sheetDevices = devices.filter(
+    (d) => d.sheetId === targetSheetId && d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix'
+  );
+  const devMap = new Map(sheetDevices.map((d) => [d.id, d]));
+  const laneStep = Math.max(8, Math.round(gridSize * 0.6));
+  const usedMidKeys = new Map<string, number>();
+
+  return wires.map((w) => {
+    if (w.sheetId !== targetSheetId) return w;
+    const d1 = devMap.get(w.fromDeviceId);
+    const d2 = devMap.get(w.toDeviceId);
+    const p1 = d1?.pins.find((p) => p.id === w.fromPinId);
+    const p2 = d2?.pins.find((p) => p.id === w.toPinId);
+    if (!d1 || !d2 || !p1 || !p2) return w;
+
+    const abs1 = getAbsolutePinPos(d1, p1);
+    const abs2 = getAbsolutePinPos(d2, p2);
+    const bucketKey = `${Math.round((abs1.x + abs2.x) / 80)}:${Math.round((abs1.y + abs2.y) / 80)}:${abs1.direction}:${abs2.direction}`;
+    const idxInBucket = usedMidKeys.get(bucketKey) || 0;
+    usedMidKeys.set(bucketKey, idxInBucket + 1);
+    const laneOffset = idxInBucket === 0 ? 0 : (idxInBucket % 2 === 1 ? 1 : -1) * Math.ceil(idxInBucket / 2) * laneStep;
+
+    const obstacles: RoutingRect[] = sheetDevices
+      .filter((d) => d.id !== d1.id && d.id !== d2.id)
+      .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
+
+    return {
+      ...w,
+      waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles, laneOffset),
+    };
+  });
 }
 
 function deduplicatePoints(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
@@ -105,6 +285,13 @@ export function buildBom(project: E3Project): BomRow[] {
 
   for (const dev of project.devices) {
     if (dev.bindingState === 'REMOVED_IN_FLUX') continue;
+    if (
+      dev.category === 'airflow_arrow' ||
+      dev.category === 'io_matrix' ||
+      dev.e3BlockName === 'EXT_FIELD_UNIT'
+    ) {
+      continue;
+    }
     const key = `${dev.article.trim()}||${dev.manufacturer.trim()}||${dev.componentName.trim()}`;
     const existing = groups.get(key);
     if (existing) {
@@ -219,6 +406,14 @@ export function runErc(project: E3Project): ErcIssue[] {
   const designationCounts = new Map<string, E3Device[]>();
   const devMap = new Map(project.devices.map((d) => [d.id, d]));
 
+  const primaryDesignations = new Set<string>();
+  for (const dev of project.devices) {
+    if (dev.bindingState === 'REMOVED_IN_FLUX') continue;
+    if (dev.e3BlockName !== 'EXT_FIELD_UNIT') {
+      primaryDesignations.add(dev.designation.trim().toUpperCase());
+    }
+  }
+
   for (const dev of project.devices) {
     if (dev.bindingState === 'REMOVED_IN_FLUX') {
       issues.push({
@@ -233,9 +428,12 @@ export function runErc(project: E3Project): ErcIssue[] {
     }
 
     const normDes = dev.designation.trim().toUpperCase();
-    const list = designationCounts.get(normDes) || [];
-    list.push(dev);
-    designationCounts.set(normDes, list);
+    // EXT_FIELD_UNIT represents a linked cross-sheet terminal view of the primary FSA unit
+    if (!(dev.e3BlockName === 'EXT_FIELD_UNIT' && primaryDesignations.has(normDes))) {
+      const list = designationCounts.get(normDes) || [];
+      list.push(dev);
+      designationCounts.set(normDes, list);
+    }
 
     if (!dev.article.trim() || !dev.manufacturer.trim()) {
       issues.push({
@@ -365,7 +563,7 @@ export function serializeE3Xml(project: E3Project): string {
   // Visual Settings synchronization block
   const vs = project.visualSettings;
   lines.push(
-    `  <VisualSettings schemaVersion="${vs.schemaVersion}" presetName="${xmlEscape(vs.presetName)}" theme="${vs.theme}" gridSize="${vs.gridSize}" snapToGrid="${vs.snapToGrid}" showGrid="${vs.showGrid}" showGostFrame="${vs.showGostFrame}" showPinNumbers="${vs.showPinNumbers}" showWireNumbers="${vs.showWireNumbers}" showCrossRefs="${vs.showCrossRefs}" wireWidth="${vs.wireWidth}" symbolStrokeWidth="${vs.symbolStrokeWidth}" fontScale="${vs.fontScale}">`
+    `  <VisualSettings schemaVersion="${vs.schemaVersion}" presetName="${xmlEscape(vs.presetName)}" theme="${vs.theme}" gridSize="${vs.gridSize}" snapToGrid="${vs.snapToGrid}" showGrid="${vs.showGrid}" showGostFrame="${vs.showGostFrame}" showPinNumbers="${vs.showPinNumbers}" showWireNumbers="${vs.showWireNumbers}" showCrossRefs="${vs.showCrossRefs}" wireWidth="${vs.wireWidth}" symbolStrokeWidth="${vs.symbolStrokeWidth}" fontScale="${vs.fontScale}" fontFamily="${xmlEscape(vs.fontFamily || 'GOST')}">`
   );
   for (const [sig, color] of Object.entries(vs.netColors)) {
     lines.push(`    <NetColor signalType="${xmlEscape(sig)}" hex="${xmlEscape(color)}" />`);
@@ -463,6 +661,9 @@ export function parseE3Xml(xml: string): E3Project {
     visualSettings.wireWidth = Number(va.wireWidth || 2);
     visualSettings.symbolStrokeWidth = Number(va.symbolStrokeWidth || 1.75);
     visualSettings.fontScale = Number(va.fontScale || 1);
+    if (va.fontFamily) {
+      visualSettings.fontFamily = va.fontFamily as SchematicFontFamily;
+    }
 
     const netColorRe = /<NetColor\s+([^>]+?)\s*\/?>/g;
     let ncm: RegExpExecArray | null;
@@ -480,11 +681,15 @@ export function parseE3Xml(xml: string): E3Project {
   let sm: RegExpExecArray | null;
   while ((sm = sheetRe.exec(xml)) !== null) {
     const sa = parseXmlAttrs(sm[1]);
+    const validFmt: SheetFormat =
+      sa.format === 'A4' || sa.format === 'A3' || sa.format === 'A2' || sa.format === 'A1'
+        ? sa.format
+        : 'A3';
     sheets.push({
       id: sa.id,
       number: Number(sa.number || sheets.length + 1),
       name: sa.name || `Лист ${sheets.length + 1}`,
-      format: sa.format === 'A4' ? 'A4' : 'A3',
+      format: validFmt,
       width: Number(sa.width || 1400),
       height: Number(sa.height || 920),
       titleBlock: {
@@ -963,7 +1168,7 @@ export function generateE3ComScript(
   importFilePath?: string
 ): string {
   const code = project?.projectCode || 'FLUX-E3-PRJ';
-  const name = project?.name || 'Проект Flux E3';
+  const name = project?.name || 'Проект E3ProMax';
   const fluxKey = project?.fluxProjectKey || 'FLUX_KEY';
   const author = project?.author || 'Инженер';
   const sheets = project?.sheets || [];
@@ -988,7 +1193,7 @@ export function generateE3ComScript(
     .join('\n');
 
   const devLines = devices
-    .filter((d) => d.bindingState !== 'REMOVED_IN_FLUX')
+    .filter((d) => d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
     .map((d) => {
       const shEntry = sheetMap.get(d.sheetId);
       const sw = shEntry?.sheet.width || 1400;
@@ -996,34 +1201,58 @@ export function generateE3ComScript(
       const idx = shEntry?.idx || (sheets.length > 0 ? 1 : 0);
       const shVar = idx > 0 ? `shId_${idx}` : '0';
 
-      const attrsPairs = [
+      const rawAttrs: Array<[string, string]> = [
         ['Артикул', d.article],
         ['Производитель', d.manufacturer],
         ['Наименование', d.componentName],
+        ['Категория', d.category],
         ['FLUX_ELEMENT_ID', d.elementId],
         ['FLUX_BLOCK', d.e3BlockName],
-        ...d.attributes.map((a) => [a.name, a.value]),
-      ]
-        .filter(([, v]) => String(v || '').trim() !== '')
+        ...d.attributes.filter((a) => !a.service).map((a): [string, string] => [a.name, a.value]),
+      ];
+      const attrList = rawAttrs.filter(([, v]) => String(v || '').trim() !== '');
+
+      const attrsOnDevLines = attrList
         .map(([k, v]) => `    Call SafeSetDevAttr(Dev, "${vbsEsc(k)}", "${vbsEsc(v)}")`)
+        .join('\n');
+
+      const attrsOnGrpLines = attrList
+        .map(([k, v]) => `      Call SafeSetGraphAttr(Graph, "${vbsEsc(k)}", "${vbsEsc(v)}")`)
+        .join('\n');
+
+      const pinCreateLines = d.pins
+        .map((p) => {
+          const abs = getAbsolutePinPos(d, p);
+          return `    Call SafeCreateDevicePin(Prj, PinObj, curDevId, ${shVar}, "${vbsEsc(p.name)}", MapX(shX1_${idx}, shX2_${idx}, ${abs.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${abs.y}, ${sh}))`;
+        })
         .join('\n');
 
       const pinDrawLines = d.pins
         .map((p) => {
           const abs = getAbsolutePinPos(d, p);
-          return `    Call DrawPinTick(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${abs.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${abs.y}, ${sh}), "${vbsEsc(abs.direction)}", "${vbsEsc(p.name)}")`;
+          return `    Call DrawPinTickGrouped(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${abs.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${abs.y}, ${sh}), "${vbsEsc(abs.direction)}", "${vbsEsc(p.name)}", gIds, gCnt)`;
         })
         .join('\n');
 
-      return `  ' --- Элемент ${vbsEsc(d.designation)} (${vbsEsc(d.componentName)}) ---
-  If CreateFluxDevice(Prj, Dev, "${vbsEsc(d.designation)}", "${vbsEsc(d.componentName)}", "${vbsEsc(d.article)}", "${vbsEsc(d.e3BlockName)}") Then
+      return `  ' --- Цельное изделие ${vbsEsc(d.designation)} (${vbsEsc(d.componentName)}) ---
+  curDevId = CreateFluxDevice(Prj, Dev, Sym, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${d.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y + d.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${d.x + d.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.componentName)}", "${vbsEsc(d.article)}", "${vbsEsc(d.e3BlockName)}", "${vbsEsc(d.manufacturer)}")
+  If curDevId > 0 Then
     devDbOk = devDbOk + 1
-${attrsPairs}
+${attrsOnDevLines}
+${pinCreateLines}
   End If
   If ${shVar} > 0 Then
-    Call DrawDeviceBox(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${d.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y + d.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${d.x + d.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.article)}")
-    devGfxOk = devGfxOk + 1
+    gCnt = 0
+    ReDim gIds(128)
+    Call DrawDeviceBox(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${d.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y + d.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${d.x + d.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.article)}", "${vbsEsc(d.category)}", gIds, gCnt)
 ${pinDrawLines}
+    curGrpId = FinalizeIntegralDeviceGroup(Graph, ${shVar}, gIds, gCnt, curDevId)
+    If curGrpId > 0 Then
+      Graph.SetId curGrpId
+      Call SafeSetGraphAttr(Graph, "Обозначение", "${vbsEsc(d.designation)}")
+${attrsOnGrpLines}
+    End If
+    devGfxOk = devGfxOk + 1
   End If`;
     })
     .join('\n');
@@ -1065,10 +1294,10 @@ ${pinDrawLines}
     scriptMode === 'export' ? 'Call ExportActiveE3sToFluxJson()' : 'Call BuildNativeE3sProject()';
 
   return `' ============================================================================
-' Flux E3 <-> Zuken E3.series 2022 SP2 (Build 23.20+) COM Bridge Script
+' E3ProMax <-> Zuken E3.series 2022 SP2 (Build 23.20+) COM Bridge Script
 ' Проект: ${vbsEsc(name)} (${vbsEsc(code)})
 ' Ключ синхронизации: ${vbsEsc(fluxKey)}
-' Режим скрипта: ${scriptMode === 'export' ? 'Выгрузка из E3.series в Flux (.json)' : 'Прямой перенос и открытие в E3.series (.e3s)'}
+' Режим скрипта: ${scriptMode === 'export' ? 'Выгрузка из E3.series в E3ProMax (.json)' : 'Прямой перенос и открытие в E3.series (.e3s)'}
 '
 ' КАК ЗАПУСТИТЬ:
 '   Двойной клик по файлу .vbs (при открытом E3.series / E3.cable)
@@ -1077,7 +1306,8 @@ ${pinDrawLines}
 ' ============================================================================
 Option Explicit
 
-Dim App, Prj, Sheet, Dev, Graph, Con, outFolder, fso, logFilePath, gImportFilePath
+Dim App, Prj, Sheet, Dev, Sym, PinObj, Graph, Con, outFolder, fso, logFilePath, gImportFilePath
+Dim curDevId, curGrpId, gIds(), gCnt
 ${sheetDecl ? `Dim ${sheetDecl}` : ''}
 Set fso = CreateObject("Scripting.FileSystemObject")
 
@@ -1090,7 +1320,7 @@ If WScript.Arguments.Named.Exists("file") Then
 End If
 
 Call InitUtf8Log()
-Call LogTrace("INFO", "=== Старт Flux E3 COM Bridge (${scriptMode}) ===")
+Call LogTrace("INFO", "=== Старт E3ProMax COM Bridge (${scriptMode}) ===")
 Call LogTrace("INFO", "WSH=" & WScript.FullName & " v" & WScript.Version & " | outFolder=" & outFolder)
 Call LogTrace("INFO", "Проект: ${vbsEsc(code)} (${vbsEsc(name)}) | Листов=${sheets.length}, Изделий=${devices.length}, Цепей=${wires.length}, Кабелей=${cables.length}")
 
@@ -1113,7 +1343,7 @@ On Error GoTo 0
 If App Is Nothing Then
   Call LogTrace("ERROR", "КРИТИЧЕСКАЯ ОШИБКА: не удалось подключиться к Zuken E3.series (CT.Application). Проверьте запуск E3.series и разрядность (64/32 bit).")
   If Not WScript.Arguments.Named.Exists("silent") Then
-    MsgBox "Не удалось подключиться к Zuken E3.series (CT.Application)." & vbCrLf & "Запустите E3.series и проверьте лог: " & logFilePath, vbCritical, "Flux E3 Bridge"
+    MsgBox "Не удалось подключиться к Zuken E3.series (CT.Application)." & vbCrLf & "Запустите E3.series и проверьте лог: " & logFilePath, vbCritical, "E3ProMax Bridge"
   End If
   WScript.Quit 1
 End If
@@ -1122,11 +1352,13 @@ Call LogTrace("INFO", "Подключено к CT.Application успешно.")
 Set Prj = App.CreateJobObject()
 Set Sheet = Prj.CreateSheetObject()
 Set Dev = Prj.CreateDeviceObject()
+Set Sym = Prj.CreateSymbolObject()
+Set PinObj = Prj.CreatePinObject()
 Set Graph = Prj.CreateGraphObject()
 Set Con = Prj.CreateConnectionObject()
 
 ${entryCall}
-Call LogTrace("INFO", "=== Завершение Flux E3 COM Bridge ===")
+Call LogTrace("INFO", "=== Завершение E3ProMax COM Bridge ===")
 
 Sub InitUtf8Log()
   On Error Resume Next
@@ -1176,11 +1408,11 @@ Sub LogTrace(ByVal lvl, ByVal msg)
   Err.Clear
   If Not (App Is Nothing) Then
     If lvl = "ERROR" Then
-      App.PutInfo 2, "[Flux E3] " & msg
+      App.PutInfo 2, "[E3ProMax] " & msg
     ElseIf lvl = "WARN" Then
-      App.PutInfo 1, "[Flux E3] " & msg
+      App.PutInfo 1, "[E3ProMax] " & msg
     Else
-      App.PutInfo 0, "[Flux E3] " & msg
+      App.PutInfo 0, "[E3ProMax] " & msg
     End If
     Err.Clear
   End If
@@ -1224,7 +1456,7 @@ Sub BuildNativeE3sProject()
       Call LogTrace("INFO", "Silent-режим: закрыт предыдущий проект, вызываем Prj.Create('" & prjName & "')")
       Prj.Create prjName
     Else
-      ans = MsgBox("В E3.series уже открыт проект '" & Prj.GetName() & "'." & vbCrLf & vbCrLf & "Да = закрыть его и создать новый '" & prjName & "'" & vbCrLf & "Нет = добавить элементы Flux в текущий проект", vbYesNoCancel + vbQuestion, "Flux E3 -> E3.series")
+      ans = MsgBox("В E3.series уже открыт проект '" & Prj.GetName() & "'." & vbCrLf & vbCrLf & "Да = закрыть его и создать новый '" & prjName & "'" & vbCrLf & "Нет = добавить элементы E3ProMax в текущий проект", vbYesNoCancel + vbQuestion, "E3ProMax -> E3.series")
       If ans = vbCancel Then Exit Sub
       If ans = vbYes Then
         Prj.Close
@@ -1360,7 +1592,11 @@ Sub GetSheetBounds(ByRef sh, ByVal shId, ByVal fmt, ByRef xMin, ByRef yMin, ByRe
   Else
     Err.Clear
     If fmt = "A4" Then
-      xMin = 10 : yMin = 10 : xMax = 200 : yMax = 287
+      xMin = 10 : yMin = 10 : xMax = 287 : yMax = 200
+    ElseIf fmt = "A2" Then
+      xMin = 10 : yMin = 10 : xMax = 584 : yMax = 410
+    ElseIf fmt = "A1" Then
+      xMin = 10 : yMin = 10 : xMax = 831 : yMax = 584
     Else
       xMin = 10 : yMin = 10 : xMax = 410 : yMax = 287
     End If
@@ -1391,37 +1627,123 @@ Sub DrawGostFrame(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, B
   On Error GoTo 0
 End Sub
 
-Sub DrawDeviceBox(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal des, ByVal art)
-  On Error Resume Next
-  Dim gid, bx(5), by(5)
-  gid = g.CreateRectangle(shId, x1, y1, x2, y2)
-  If gid <= 0 Or Err.Number <> 0 Then
-    Err.Clear
-    bx(1) = x1 : by(1) = y1 : bx(2) = x2 : by(2) = y1 : bx(3) = x2 : by(3) = y2 : bx(4) = x1 : by(4) = y2 : bx(5) = x1 : by(5) = y1
-    gid = g.CreateLine(shId, 5, bx, by)
-  End If
+Sub AddGraphicId(ByRef gIds, ByRef gCnt, ByVal gid)
   If gid > 0 Then
-    g.SetId gid
-    g.SetColour 0
-    g.SetLineWidth 0.35
+    gCnt = gCnt + 1
+    If gCnt > UBound(gIds) Then ReDim Preserve gIds(gCnt + 32)
+    gIds(gCnt) = gid
   End If
+End Sub
+
+Function FinalizeIntegralDeviceGroup(ByRef g, ByVal shId, ByRef gIds, ByVal gCnt, ByVal devId)
+  On Error Resume Next
+  Dim exactArr(), i, grpId
+  FinalizeIntegralDeviceGroup = 0
+  If gCnt <= 0 Then Exit Function
+  ReDim exactArr(gCnt)
+  For i = 1 To gCnt
+    exactArr(i) = gIds(i)
+  Next
+  Err.Clear
+  grpId = g.CreateGroup(gCnt, exactArr)
+  If Err.Number <> 0 Or grpId <= 0 Then
+    Err.Clear
+    grpId = g.CreateGroup(exactArr)
+  End If
+  If Err.Number = 0 And grpId > 0 Then
+    g.SetId grpId
+    If devId > 0 Then
+      Call g.SetAttributeValue("E3_DEVICE_ID", CStr(devId))
+    End If
+    FinalizeIntegralDeviceGroup = grpId
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Function
+
+Sub DrawDeviceBox(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal des, ByVal art, ByVal cat, ByRef gIds, ByRef gCnt)
+  On Error Resume Next
+  Dim gid, bx(5), by(5), cx, cy, r, fx(2), fy(2), w, h
+  cx = (x1 + x2) / 2
+  cy = (y1 + y2) / 2
+  w = Abs(x2 - x1)
+  h = Abs(y2 - y1)
+
+  If cat = "fan" Or cat = "motor" Then
+    r = w * 0.32
+    If h * 0.32 < r Then r = h * 0.32
+    If r < 4 Then r = 4
+    gid = g.CreateCircle(shId, cx, cy, r)
+    If gid > 0 Then
+      g.SetId gid : g.SetColour 0 : g.SetLineWidth 0.35
+      Call AddGraphicId(gIds, gCnt, gid)
+    End If
+    fx(1) = cx - r * 0.65 : fy(1) = cy - r * 0.7
+    fx(2) = cx + r * 0.85 : fy(2) = cy - r * 0.25
+    gid = g.CreateLine(shId, 2, fx, fy)
+    If gid > 0 Then g.SetId gid : g.SetColour 0 : Call AddGraphicId(gIds, gCnt, gid)
+    fx(1) = cx - r * 0.65 : fy(1) = cy + r * 0.7
+    fx(2) = cx + r * 0.85 : fy(2) = cy + r * 0.25
+    gid = g.CreateLine(shId, 2, fx, fy)
+    If gid > 0 Then g.SetId gid : g.SetColour 0 : Call AddGraphicId(gIds, gCnt, gid)
+  ElseIf cat = "kip_circle" Or cat = "lamp" Then
+    r = w * 0.35
+    If h * 0.35 < r Then r = h * 0.35
+    If r < 3.5 Then r = 3.5
+    gid = g.CreateCircle(shId, cx, cy, r)
+    If gid > 0 Then
+      g.SetId gid : g.SetColour 3 : g.SetLineWidth 0.35
+      Call AddGraphicId(gIds, gCnt, gid)
+    End If
+    fx(1) = cx - r : fy(1) = cy : fx(2) = cx + r : fy(2) = cy
+    gid = g.CreateLine(shId, 2, fx, fy)
+    If gid > 0 Then g.SetId gid : g.SetColour 3 : Call AddGraphicId(gIds, gCnt, gid)
+  Else
+    gid = g.CreateRectangle(shId, x1, y1, x2, y2)
+    If gid <= 0 Or Err.Number <> 0 Then
+      Err.Clear
+      bx(1) = x1 : by(1) = y1 : bx(2) = x2 : by(2) = y1 : bx(3) = x2 : by(3) = y2 : bx(4) = x1 : by(4) = y2 : bx(5) = x1 : by(5) = y1
+      gid = g.CreateLine(shId, 5, bx, by)
+    End If
+    If gid > 0 Then
+      g.SetId gid
+      g.SetColour 0
+      g.SetLineWidth 0.35
+      Call AddGraphicId(gIds, gCnt, gid)
+    End If
+    If cat = "damper" Or cat = "filter" Then
+      fx(1) = x1 : fy(1) = y1 : fx(2) = x2 : fy(2) = y2
+      gid = g.CreateLine(shId, 2, fx, fy)
+      If gid > 0 Then g.SetId gid : g.SetColour 3 : Call AddGraphicId(gIds, gCnt, gid)
+    ElseIf cat = "heater" Or cat = "cooler" Then
+      fx(1) = x1 : fy(1) = y1 : fx(2) = x2 : fy(2) = y2
+      gid = g.CreateLine(shId, 2, fx, fy)
+      If gid > 0 Then g.SetId gid : g.SetColour 1 : Call AddGraphicId(gIds, gCnt, gid)
+      fx(1) = x1 : fy(1) = y2 : fx(2) = x2 : fy(2) = y1
+      gid = g.CreateLine(shId, 2, fx, fy)
+      If gid > 0 Then g.SetId gid : g.SetColour 1 : Call AddGraphicId(gIds, gCnt, gid)
+    End If
+  End If
+
   gid = g.CreateText(shId, des, x1, y2 + 2)
   If gid > 0 Then
     g.SetId gid
     g.SetTextHeight 3.5
+    Call AddGraphicId(gIds, gCnt, gid)
   End If
   If art <> "" Then
     gid = g.CreateText(shId, art, x1, y1 - 4)
     If gid > 0 Then
       g.SetId gid
       g.SetTextHeight 2.5
+      Call AddGraphicId(gIds, gCnt, gid)
     End If
   End If
   Err.Clear
   On Error GoTo 0
 End Sub
 
-Sub DrawPinTick(ByRef g, ByVal shId, ByVal px, ByVal py, ByVal dir, ByVal pName)
+Sub DrawPinTickGrouped(ByRef g, ByVal shId, ByVal px, ByVal py, ByVal dir, ByVal pName, ByRef gIds, ByRef gCnt)
   On Error Resume Next
   Dim gid, lx(2), ly(2), dx, dy
   dx = 0 : dy = 0
@@ -1436,16 +1758,24 @@ Sub DrawPinTick(ByRef g, ByVal shId, ByVal px, ByVal py, ByVal dir, ByVal pName)
     g.SetId gid
     g.SetColour 1
     g.SetLineWidth 0.25
+    Call AddGraphicId(gIds, gCnt, gid)
   End If
   If pName <> "" Then
     gid = g.CreateText(shId, pName, px + 1, py + 1)
     If gid > 0 Then
       g.SetId gid
       g.SetTextHeight 2.0
+      Call AddGraphicId(gIds, gCnt, gid)
     End If
   End If
   Err.Clear
   On Error GoTo 0
+End Sub
+
+Sub DrawPinTick(ByRef g, ByVal shId, ByVal px, ByVal py, ByVal dir, ByVal pName)
+  Dim tmp(4), cnt
+  cnt = 0
+  Call DrawPinTickGrouped(g, shId, px, py, dir, pName, tmp, cnt)
 End Sub
 
 Function DrawWireSeg(ByRef p, ByRef cn, ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal colIdx)
@@ -1484,11 +1814,27 @@ Sub DrawWireLabel(ByRef g, ByVal shId, ByVal x, ByVal y, ByVal lbl, ByVal colIdx
   On Error GoTo 0
 End Sub
 
-Function CreateFluxDevice(ByRef p, ByRef d, ByVal des, ByVal compName, ByVal article, ByVal blockName)
+Function CreateFluxDevice(ByRef p, ByRef d, ByRef sm, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal des, ByVal compName, ByVal article, ByVal blockName, ByVal mfr)
   On Error Resume Next
-  Dim devId
+  Dim devId, allIds, allCnt, i, dynComp, symId
   devId = 0
-  If article <> "" Then
+  CreateFluxDevice = 0
+
+  ' 0. Проверяем, существует ли уже такое изделие в открытом проекте E3
+  Err.Clear
+  allCnt = p.GetAllDeviceIds(allIds)
+  If Err.Number = 0 And allCnt > 0 Then
+    For i = 1 To allCnt
+      d.SetId allIds(i)
+      If UCase(Trim(d.GetName())) = UCase(Trim(des)) Then
+        devId = allIds(i)
+        Exit For
+      End If
+    Next
+  End If
+
+  ' 1. Создаём по артикулу / имени блока / имени компонента из БД E3
+  If devId <= 0 And article <> "" Then
     Err.Clear
     devId = d.Create(des, "", "", article, "", 0)
   End If
@@ -1500,25 +1846,76 @@ Function CreateFluxDevice(ByRef p, ByRef d, ByVal des, ByVal compName, ByVal art
     Err.Clear
     devId = d.Create(des, "", "", compName, "", 0)
   End If
+
+  ' 2. Динамическое создание цельного изделия E3 (без обязательной записи в SQL БД компонентов)
+  If devId <= 0 Then
+    dynComp = article
+    If dynComp = "" Then dynComp = blockName
+    If dynComp = "" Then dynComp = compName
+    Err.Clear
+    devId = d.CreateDynamic(des, "", "", dynComp, "", 0)
+  End If
   If devId <= 0 Then
     Err.Clear
     devId = d.Create(des, "", "", "", "", 0)
   End If
+
+  ' 3. Fallback через динамический блок на листе (Sym.PlaceBlock), создающий полноценное Device-изделие
+  If devId <= 0 And shId > 0 Then
+    Err.Clear
+    symId = sm.PlaceBlock(shId, x1, y1, x2, y2)
+    If Err.Number = 0 And symId > 0 Then
+      d.SetId symId
+      If d.GetId() > 0 Then
+        devId = d.GetId()
+        Call d.SetName(des)
+      End If
+    End If
+  End If
+
   If devId > 0 Then
     d.SetId devId
-    Call LogTrace("INFO", "Устройство " & des & " создано в базе E3 ID=" & devId & " (" & article & ")")
-    CreateFluxDevice = True
+    If compName <> "" Then
+      If d.GetComponentName() = "" Then Call d.SetComponentName(compName)
+    End If
+    Call LogTrace("INFO", "Цельное изделие " & des & " создано в E3 ID=" & devId & " (" & article & ")")
+    CreateFluxDevice = devId
   Else
-    Call LogTrace("INFO", "Устройство " & des & " (" & article & ") отсутствует в БД E3 — перенесено графикой УГО на лист (d.Create=0)")
-    CreateFluxDevice = False
+    Call LogTrace("WARN", "Изделие " & des & " (" & article & ") размещено только сгруппированной графикой УГО на листе")
+    CreateFluxDevice = 0
   End If
   Err.Clear
   On Error GoTo 0
 End Function
 
+Sub SafeCreateDevicePin(ByRef p, ByRef pinO, ByVal devId, ByVal shId, ByVal pName, ByVal px, ByVal py)
+  On Error Resume Next
+  Dim pid
+  If devId <= 0 Or pName = "" Then Exit Sub
+  Err.Clear
+  pid = pinO.Create(devId, pName, 0, 0, 0)
+  If Err.Number <> 0 Or pid <= 0 Then
+    Err.Clear
+    pid = pinO.Create(devId, pName)
+  End If
+  If pid > 0 And shId > 0 Then
+    pinO.SetId pid
+    Call pinO.SetSchemaLocation(shId, px, py)
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
 Sub SafeSetDevAttr(ByRef d, ByVal attrName, ByVal attrVal)
   On Error Resume Next
   Call d.SetAttributeValue(attrName, attrVal)
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub SafeSetGraphAttr(ByRef g, ByVal attrName, ByVal attrVal)
+  On Error Resume Next
+  Call g.SetAttributeValue(attrName, attrVal)
   Err.Clear
   On Error GoTo 0
 End Sub
@@ -1529,15 +1926,20 @@ Function CreateFluxCable(ByRef p, ByRef d, ByVal des, ByVal cabType, ByVal fDev,
   cid = 0
   If cabType <> "" Then
     Err.Clear
-    cid = d.Create(des, "", "", cabType, "", 1)
+    cid = d.Create(des, "", "", cabType, "", 0)
   End If
   If cid <= 0 Then
     Err.Clear
-    cid = d.Create(des, "", "", "", "", 1)
+    cid = d.CreateDynamic(des, "", "", cabType, "", 0)
+  End If
+  If cid <= 0 Then
+    Err.Clear
+    cid = d.Create(des, "", "", "", "", 0)
   End If
   If cid > 0 Then
     d.SetId cid
     Call d.SetAttributeValue("Наименование", cabType)
+    Call d.SetAttributeValue("Марка кабеля", cabType)
     Call d.SetAttributeValue("Длина", CStr(lenM))
     Call d.SetAttributeValue("Откуда", fDev)
     Call d.SetAttributeValue("Куда", tDev)
@@ -1587,7 +1989,7 @@ Sub ExportActiveE3sToFluxJson()
   If Prj.GetId() = 0 Then
     Call LogTrace("WARN", "Попытка выгрузки без открытого проекта .e3s в E3.series.")
     If Not WScript.Arguments.Named.Exists("silent") Then
-      MsgBox "Сначала откройте проект .e3s в E3.series!", vbExclamation, "Flux E3"
+      MsgBox "Сначала откройте проект .e3s в E3.series!", vbExclamation, "E3ProMax"
     End If
     Exit Sub
   End If
@@ -1848,7 +2250,7 @@ Sub ExportActiveE3sToFluxJson()
 
   Call LogTrace("INFO", "Экспортировано: листов=" & scnt & ", устройств=" & cnt & ", цепей=" & wireIdx & " -> " & jsonPath)
   If Not WScript.Arguments.Named.Exists("silent") Then
-    MsgBox "Проект E3.series выгружен для Flux E3:" & vbCrLf & jsonPath & vbCrLf & vbCrLf & "Откройте этот .json файл в окне 'Обмен E3'.", vbInformation, "Flux E3"
+    MsgBox "Проект E3.series выгружен для E3ProMax:" & vbCrLf & jsonPath & vbCrLf & vbCrLf & "Откройте этот .json файл в окне 'Обмен E3'.", vbInformation, "E3ProMax"
   End If
 End Sub
 
@@ -1881,7 +2283,7 @@ export function encodeUtf16LeWithBom(text: string): Uint8Array {
 /** Generates a 1-file Windows background bridge (.cmd + PowerShell) with verbose connector.log diagnostics. */
 export function generateWindowsBridgeCmd(serverOrigin: string): string {
   const cleanOrigin = serverOrigin.replace(/\/+$/, '');
-  return `@echo off\r\nchcp 65001 >nul\r\ntitle Flux E3 <-> E3.series 2022 Bridge Agent\r\necho [Flux E3] Connecting to ${cleanOrigin} ...\r\npowershell -NoProfile -ExecutionPolicy Bypass -Command ^"\r\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^\r\n[Console]::OutputEncoding = [Text.Encoding]::Unicode; ^\r\n$base = '${cleanOrigin}'; $pc = $env:COMPUTERNAME; ^\r\n$work = Join-Path $env:TEMP 'flux_e3_bridge'; New-Item -ItemType Directory -Force -Path $work | Out-Null; ^\r\n$logFile = Join-Path $work 'connector.log'; ^\r\nfunction Write-BridgeLog($lvl, $msg) { $line = '[' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '] [' + $lvl + '] ' + $msg; Write-Host $line; Add-Content -Path $logFile -Value $line -Encoding UTF8; } ^\r\nWrite-BridgeLog 'INFO' ('Bridge active on ' + $pc + ' | Target=' + $base + ' | Log=' + $logFile); ^\r\nwhile ($true) { ^\r\n  try { ^\r\n    $resp = Invoke-RestMethod -Uri ($base + '/api/v1/e3-bridge/poll?host=' + [uri]::EscapeDataString($pc)) -TimeoutSec 10; ^\r\n    if ($resp.job) { ^\r\n      Write-BridgeLog 'INFO' ('Executing job ' + $resp.job.jobId + ' mode=' + $resp.job.mode + ' scriptLen=' + $resp.job.script.Length); ^\r\n      $vbs = Join-Path $work 'flux_job.vbs'; ^\r\n      $dbgFile = Join-Path $work 'flux_e3_com_debug.log'; if (Test-Path $dbgFile) { Remove-Item $dbgFile -Force; } ^\r\n      [IO.File]::WriteAllText($vbs, $resp.job.script, [Text.Encoding]::Unicode); ^\r\n      $out = & cscript.exe //Nologo //U $vbs /silent 2>&1 | Out-String; ^\r\n      $ec = $LASTEXITCODE; ^\r\n      $lvl = if ($ec -eq 0) { 'INFO' } else { 'ERROR' }; ^\r\n      $dbgTxt = if (Test-Path $dbgFile) { Get-Content $dbgFile -Raw -Encoding UTF8 } else { '' }; ^\r\n      $combined = if ($dbgTxt) { $dbgTxt } else { $out }; ^\r\n      Write-BridgeLog $lvl ('cscript exit=' + $ec + ' output=' + ($combined -replace '[\r\n]+', ' | ')); ^\r\n      $expFile = Join-Path $work 'flux_e3_export.json'; ^\r\n      $expJson = $null; if (($resp.job.mode -eq 'export') -and (Test-Path $expFile)) { $expJson = Get-Content $expFile -Raw -Encoding UTF8; Remove-Item $expFile -Force; } ^\r\n      $ack = @{ jobId = $resp.job.jobId; host = $pc; ok = ($ec -eq 0); message = ('exit=' + $ec + [Environment]::NewLine + $combined); exportedJson = $expJson } | ConvertTo-Json -Depth 4; ^\r\n      $bytes = [Text.Encoding]::UTF8.GetBytes($ack); ^\r\n      Invoke-RestMethod -Method Post -Uri ($base + '/api/v1/e3-bridge/ack') -ContentType 'application/json; charset=utf-8' -Body $bytes | Out-Null; ^\r\n      Write-BridgeLog 'INFO' ('Ack sent for job ' + $resp.job.jobId); ^\r\n    } ^\r\n  } catch { Write-BridgeLog 'ERROR' ('Poll/exec exception: ' + $_.Exception.Message); Start-Sleep -Seconds 2; } ^\r\n  Start-Sleep -Milliseconds 1500; ^\r\n}\r\n"\r\n`;
+  return `@echo off\r\nchcp 65001 >nul\r\ntitle E3ProMax <-> E3.series 2022 Bridge Agent\r\necho [E3ProMax] Connecting to ${cleanOrigin} ...\r\npowershell -NoProfile -ExecutionPolicy Bypass -Command ^"\r\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^\r\n[Console]::OutputEncoding = [Text.Encoding]::Unicode; ^\r\n$base = '${cleanOrigin}'; $pc = $env:COMPUTERNAME; ^\r\n$work = Join-Path $env:TEMP 'flux_e3_bridge'; New-Item -ItemType Directory -Force -Path $work | Out-Null; ^\r\n$logFile = Join-Path $work 'connector.log'; ^\r\nfunction Write-BridgeLog($lvl, $msg) { $line = '[' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '] [' + $lvl + '] ' + $msg; Write-Host $line; Add-Content -Path $logFile -Value $line -Encoding UTF8; } ^\r\nWrite-BridgeLog 'INFO' ('Bridge active on ' + $pc + ' | Target=' + $base + ' | Log=' + $logFile); ^\r\nwhile ($true) { ^\r\n  try { ^\r\n    $resp = Invoke-RestMethod -Uri ($base + '/api/v1/e3-bridge/poll?host=' + [uri]::EscapeDataString($pc)) -TimeoutSec 10; ^\r\n    if ($resp.job) { ^\r\n      Write-BridgeLog 'INFO' ('Executing job ' + $resp.job.jobId + ' mode=' + $resp.job.mode + ' scriptLen=' + $resp.job.script.Length); ^\r\n      $vbs = Join-Path $work 'flux_job.vbs'; ^\r\n      $dbgFile = Join-Path $work 'flux_e3_com_debug.log'; if (Test-Path $dbgFile) { Remove-Item $dbgFile -Force; } ^\r\n      [IO.File]::WriteAllText($vbs, $resp.job.script, [Text.Encoding]::Unicode); ^\r\n      $out = & cscript.exe //Nologo //U $vbs /silent 2>&1 | Out-String; ^\r\n      $ec = $LASTEXITCODE; ^\r\n      $lvl = if ($ec -eq 0) { 'INFO' } else { 'ERROR' }; ^\r\n      $dbgTxt = if (Test-Path $dbgFile) { Get-Content $dbgFile -Raw -Encoding UTF8 } else { '' }; ^\r\n      $combined = if ($dbgTxt) { $dbgTxt } else { $out }; ^\r\n      Write-BridgeLog $lvl ('cscript exit=' + $ec + ' output=' + ($combined -replace '[\r\n]+', ' | ')); ^\r\n      $expFile = Join-Path $work 'flux_e3_export.json'; ^\r\n      $expJson = $null; if (($resp.job.mode -eq 'export') -and (Test-Path $expFile)) { $expJson = Get-Content $expFile -Raw -Encoding UTF8; Remove-Item $expFile -Force; } ^\r\n      $ack = @{ jobId = $resp.job.jobId; host = $pc; ok = ($ec -eq 0); message = ('exit=' + $ec + [Environment]::NewLine + $combined); exportedJson = $expJson } | ConvertTo-Json -Depth 4; ^\r\n      $bytes = [Text.Encoding]::UTF8.GetBytes($ack); ^\r\n      Invoke-RestMethod -Method Post -Uri ($base + '/api/v1/e3-bridge/ack') -ContentType 'application/json; charset=utf-8' -Body $bytes | Out-Null; ^\r\n      Write-BridgeLog 'INFO' ('Ack sent for job ' + $resp.job.jobId); ^\r\n    } ^\r\n  } catch { Write-BridgeLog 'ERROR' ('Poll/exec exception: ' + $_.Exception.Message); Start-Sleep -Seconds 2; } ^\r\n  Start-Sleep -Milliseconds 1500; ^\r\n}\r\n"\r\n`;
 }
 
 // ============================================================================

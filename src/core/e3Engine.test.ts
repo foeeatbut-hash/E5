@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
 import JSZip from 'jszip';
 import {
+  autoRouteOrthogonal,
   buildBom,
   buildCableJournal,
   buildTerminalPlan,
@@ -17,6 +18,7 @@ import {
   importFromFluxBridge,
   parseE3Xml,
   parseVisualSettings,
+  routeSheetWiresCleanly,
   runErc,
   serializeE3Xml,
 } from './e3Engine';
@@ -262,6 +264,13 @@ test('E3.series 2022 COM VBScript embeds project sheets, 1-based graphics/wires,
   assert.ok(buildVbs.includes('"A9F74325"'));
   assert.ok(buildVbs.includes('"-W2"'));
   assert.ok(buildVbs.includes('DrawDeviceBox'));
+  assert.ok(buildVbs.includes('FinalizeIntegralDeviceGroup'));
+  assert.ok(buildVbs.includes('g.CreateGroup('));
+  assert.ok(buildVbs.includes('d.CreateDynamic('));
+  assert.ok(buildVbs.includes('sm.PlaceBlock('));
+  assert.ok(buildVbs.includes('Prj.CreatePinObject()'));
+  assert.ok(buildVbs.includes('SafeSetGraphAttr'));
+  assert.ok(buildVbs.includes('d.Create(des, "", "", cabType, "", 0)'));
   assert.ok(buildVbs.includes('DrawWireSeg'));
   assert.ok(buildVbs.includes('GetSheetBounds'));
   assert.ok(buildVbs.includes('MapX('));
@@ -405,4 +414,41 @@ test('generateWindowsBridgeCmd embeds server origin, polling/ack routes, connect
   assert.ok(cmd.includes('cscript.exe //Nologo //U $vbs /silent'));
   assert.ok(!cmd.includes(" ? 'INFO' : "));
 });
+
+test('autoRouteOrthogonal builds direct 2-point segments for aligned pins and avoids obstacle boxes', () => {
+  const direct = autoRouteOrthogonal(
+    { x: 100, y: 200, direction: 'right' },
+    { x: 300, y: 200, direction: 'left' }
+  );
+  assert.deepEqual(direct, [
+    { x: 100, y: 200 },
+    { x: 300, y: 200 },
+  ]);
+
+  // Obstacle sits directly between x=100 and x=300 on y=200
+  const detoured = autoRouteOrthogonal(
+    { x: 100, y: 200, direction: 'right' },
+    { x: 300, y: 200, direction: 'left' },
+    20,
+    [{ x: 160, y: 150, width: 80, height: 100 }]
+  );
+  assert.ok(detoured.length > 2);
+  // Ensure intermediate lane stays clear of y=[150..250]
+  assert.ok(detoured.some((pt) => pt.y < 150 || pt.y > 250));
+});
+
+test('routeSheetWiresCleanly separates parallel trunks and XML round-trip keeps A2 + fontFamily', () => {
+  const seed = createSeedProject();
+  seed.sheets[0].format = 'A2';
+  seed.visualSettings.fontFamily = 'JetBrains Mono';
+
+  const routed = routeSheetWiresCleanly(seed.devices, seed.wires, 'sheet-1', 20);
+  assert.equal(routed.length, seed.wires.length);
+
+  const xml = serializeE3Xml(seed);
+  const parsed = parseE3Xml(xml);
+  assert.equal(parsed.sheets[0].format, 'A2');
+  assert.equal(parsed.visualSettings.fontFamily, 'JetBrains Mono');
+});
+
 

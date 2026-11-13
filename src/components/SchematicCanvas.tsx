@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { E3_CATALOG } from '../core/e3Catalog';
+import { resolveSchematicCssFont } from '../core/e3Catalog';
 import { autoRouteOrthogonal, getAbsolutePinPos } from '../core/e3Engine';
 import type { CatalogItem, E3Device, E3Project, E3Wire } from '../core/e3Types';
 import type { CadTool } from './TopToolbar';
@@ -8,6 +8,7 @@ import { SchematicSymbol } from './SchematicSymbol';
 
 interface SchematicCanvasProps {
   project: E3Project;
+  catalog: CatalogItem[];
   activeSheetId: string;
   tool: CadTool;
   zoom: number;
@@ -27,6 +28,7 @@ interface SchematicCanvasProps {
 
 export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   project,
+  catalog,
   activeSheetId,
   tool,
   zoom,
@@ -169,7 +171,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   const handleWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey || Math.abs(e.deltaY) > 0) {
       const delta = e.deltaY < 0 ? 0.1 : -0.1;
-      const nextZoom = Math.min(2.5, Math.max(0.3, Math.round((zoom + delta) * 100) / 100));
+      const nextZoom = Math.min(2.5, Math.max(0.18, Math.round((zoom + delta) * 100) / 100));
       onSetZoom(nextZoom);
     }
   };
@@ -202,7 +204,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     e.preventDefault();
     const catId = e.dataTransfer.getData('application/x-flux-catalog-id');
     if (!catId) return;
-    const item = E3_CATALOG.find((c) => c.id === catId);
+    const item = catalog.find((c) => c.id === catId);
     if (!item) return;
     const world = toWorld(e.clientX, e.clientY);
     onDropCatalogItem(item, snap(world.x - item.width / 2), snap(world.y - item.height / 2));
@@ -210,14 +212,20 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
 
   const previewWirePoints = useMemo(() => {
     if (!wireStart) return '';
+    const obstacles = sheetDevices
+      .filter((d) => d.id !== wireStart.deviceId && d.category !== 'io_matrix')
+      .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
     const pts = autoRouteOrthogonal(
       { x: wireStart.x, y: wireStart.y, direction: wireStart.direction },
-      { x: cursorWorld.x, y: cursorWorld.y, direction: 'left' }
+      { x: cursorWorld.x, y: cursorWorld.y, direction: 'left' },
+      20,
+      obstacles
     );
     return pts.map((p) => `${p.x},${p.y}`).join(' ');
-  }, [wireStart, cursorWorld]);
+  }, [wireStart, cursorWorld, sheetDevices]);
 
   const vs = project.visualSettings;
+  const fontCss = resolveSchematicCssFont(vs.fontFamily);
 
   return (
     <section
@@ -225,8 +233,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       className="flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--flux-canvas-bg)] relative"
     >
       {/* Sheet Tabs Bar */}
-      <div className="no-print h-8 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] px-2 flex items-center justify-between gap-2 overflow-x-auto">
-        <div className="flex items-center gap-1 min-w-0">
+      <div className="no-print h-8 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] px-2 flex items-center justify-between gap-2 overflow-hidden">
+        <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto no-scrollbar">
           {project.sheets.map((s) => {
             const active = s.id === sheet?.id;
             return (
@@ -356,28 +364,28 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       <line x1={0} y1={56} x2={520} y2={56} stroke="var(--flux-text)" strokeWidth={1} />
                       <line x1={180} y1={0} x2={180} y2={85} stroke="var(--flux-text)" strokeWidth={1} />
                       <line x1={420} y1={28} x2={420} y2={85} stroke="var(--flux-text)" strokeWidth={1} />
-                      <text x={10} y={18} fill="var(--flux-text)" fontSize={11} fontFamily="var(--font-mono)" fontWeight={600}>
+                      <text x={10} y={18} fill="var(--flux-text)" fontSize={11} fontFamily={fontCss} fontWeight={600}>
                         {sheet.titleBlock.documentCode}
                       </text>
-                      <text x={190} y={18} fill="var(--flux-text)" fontSize={11} fontWeight={500}>
+                      <text x={190} y={18} fill="var(--flux-text)" fontSize={11} fontFamily={fontCss} fontWeight={500}>
                         {sheet.titleBlock.sheetTitle}
                       </text>
-                      <text x={10} y={46} fill="var(--flux-text-muted)" fontSize={10}>
+                      <text x={10} y={46} fill="var(--flux-text-muted)" fontSize={10} fontFamily={fontCss}>
                         Разраб.: {sheet.titleBlock.designer}
                       </text>
-                      <text x={190} y={46} fill="var(--flux-text-muted)" fontSize={10}>
+                      <text x={190} y={46} fill="var(--flux-text-muted)" fontSize={10} fontFamily={fontCss}>
                         {sheet.titleBlock.organization}
                       </text>
-                      <text x={430} y={46} fill="var(--flux-text)" fontSize={10} fontFamily="var(--font-mono)">
+                      <text x={430} y={46} fill="var(--flux-text)" fontSize={10} fontFamily={fontCss}>
                         Лист {sheet.number}
                       </text>
-                      <text x={10} y={74} fill="var(--flux-text-muted)" fontSize={10}>
+                      <text x={10} y={74} fill="var(--flux-text-muted)" fontSize={10} fontFamily={fontCss}>
                         Пров.: {sheet.titleBlock.checker}
                       </text>
-                      <text x={190} y={74} fill="var(--flux-text-muted)" fontSize={10} fontFamily="var(--font-mono)">
+                      <text x={190} y={74} fill="var(--flux-text-muted)" fontSize={10} fontFamily={fontCss}>
                         FLUX: {project.fluxProjectKey}
                       </text>
-                      <text x={430} y={74} fill="var(--flux-text)" fontSize={10} fontFamily="var(--font-mono)">
+                      <text x={430} y={74} fill="var(--flux-text)" fontSize={10} fontFamily={fontCss}>
                         {sheet.format}
                       </text>
                     </g>
@@ -393,8 +401,19 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               const color = selected
                 ? 'var(--flux-accent)'
                 : vs.netColors[wire.signalType] || 'var(--flux-text)';
-              const midIdx = Math.floor(wire.waypoints.length / 2);
-              const midPt = wire.waypoints[midIdx] || wire.waypoints[0];
+              let midPt = wire.waypoints[0];
+              if (wire.waypoints.length >= 2) {
+                let bestLen = -1;
+                for (let i = 0; i < wire.waypoints.length - 1; i++) {
+                  const a = wire.waypoints[i];
+                  const b = wire.waypoints[i + 1];
+                  const len = Math.hypot(b.x - a.x, b.y - a.y);
+                  if (len > bestLen) {
+                    bestLen = len;
+                    midPt = { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) };
+                  }
+                }
+              }
               return (
                 <g
                   key={wire.id}
@@ -419,29 +438,33 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                     strokeWidth={selected ? vs.wireWidth + 1.5 : vs.wireWidth}
                     strokeLinejoin="round"
                   />
-                  {vs.showWireNumbers && midPt && (
-                    <g transform={`translate(${midPt.x}, ${midPt.y - 6})`}>
-                      <rect
-                        x={-2}
-                        y={-10}
-                        width={Math.max(24, wire.wireNumber.length * 6.8 + 6)}
-                        height={13}
-                        rx={2}
-                        fill="var(--flux-surface)"
-                        opacity={0.9}
-                      />
-                      <text
-                        x={2}
-                        y={0}
-                        fill={color}
-                        fontSize={10 * vs.fontScale}
-                        fontFamily="var(--font-mono)"
-                        fontWeight={500}
-                      >
-                        {wire.wireNumber}
-                      </text>
-                    </g>
-                  )}
+                  {vs.showWireNumbers && midPt && (() => {
+                    const boxW = Math.max(24, wire.wireNumber.length * 6.2 + 8);
+                    return (
+                      <g transform={`translate(${midPt.x - boxW / 2}, ${midPt.y - 6})`}>
+                        <rect
+                          x={0}
+                          y={-10}
+                          width={boxW}
+                          height={13}
+                          rx={2}
+                          fill="var(--flux-surface)"
+                          opacity={0.92}
+                        />
+                        <text
+                          x={boxW / 2}
+                          y={0}
+                          textAnchor="middle"
+                          fill={color}
+                          fontSize={9.5 * vs.fontScale}
+                          fontFamily={fontCss}
+                          fontWeight={500}
+                        >
+                          {wire.wireNumber}
+                        </text>
+                      </g>
+                    );
+                  })()}
                 </g>
               );
             })}

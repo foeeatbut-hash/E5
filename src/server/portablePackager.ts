@@ -207,7 +207,7 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
       'app/package.json',
       JSON.stringify(
         {
-          name: 'flux-e3-portable',
+          name: 'e3promax-portable',
           private: true,
           version: `1.0.${project.revision}`,
           type: 'commonjs',
@@ -218,8 +218,8 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
     );
     zip.file('app/seed-project.json', seedSnapshot);
 
-    zip.file('FluxE3_Portable.cmd', generatePortableLauncherCmd());
-    zip.file('FluxE3_Launch.vbs', Buffer.from(encodeUtf16LeWithBom(generatePortableSilentVbs())));
+    zip.file('E3ProMax_Portable.cmd', generatePortableLauncherCmd());
+    zip.file('E3ProMax_Launch.vbs', Buffer.from(encodeUtf16LeWithBom(generatePortableSilentVbs())));
     zip.file('e3-series-2022-sync.vbs', vbsBytes);
     zip.file('e3-seed-model.e3s', e3sBytes);
     zip.file(
@@ -275,10 +275,10 @@ async function runPortableBuild(project: E3Project, rootDir: string): Promise<Po
         .split('')
         .map((c) => cyrMap[c] ?? c)
         .join('')
-        .replace(/[^\w.-]+/g, '_') || 'FluxE3';
+        .replace(/[^\w.-]+/g, '_') || 'E3ProMax';
     const artifact: PortableBuildArtifact = {
       buildId,
-      filename: `FluxE3-Portable-${safeCode}-r${project.revision}.zip`,
+      filename: `E3ProMax-Portable-${safeCode}-r${project.revision}.zip`,
       builtAt,
       durationMs: totalDuration,
       uiFilesCount,

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Archive, Check, Copy, Download, ExternalLink, FileCode2, Package, Printer, Terminal, Upload, X } from 'lucide-react';
+import { SCHEMATIC_FONT_OPTIONS } from '../core/e3Catalog';
 import {
   encodeUtf16LeWithBom,
   exportVisualSettings,
@@ -12,6 +13,7 @@ import type {
   E3Project,
   E3VisualSettings,
   ErcIssue,
+  SchematicFontFamily,
   SignalType,
 } from '../core/e3Types';
 
@@ -125,7 +127,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
         );
       } else {
         setBridgeMsg(
-          'Сервер сейчас в облаке (Linux). Запустите 1 раз локальный коннектор FluxE3_Connector.cmd на вашем Windows-ПК (или скачайте разовый .vbs), чтобы кнопка открывала E³.series напрямую.'
+          'Сервер сейчас в облаке (Linux). Запустите 1 раз локальный коннектор E3ProMax_Connector.cmd на вашем Windows-ПК (или скачайте разовый .vbs), чтобы кнопка открывала E³.series напрямую.'
         );
       }
     } finally {
@@ -190,7 +192,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
 
             <div className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] leading-relaxed text-[var(--flux-text-muted)]">
               Скрипт уже встроен в программу. При локальном запуске на Windows (или при запущенном{' '}
-              <span className="font-mono text-[var(--flux-text)]">FluxE3_Connector.cmd</span> в облачном режиме) нажатие кнопки ниже автоматически создаёт листы, изделия, кабели и открывает проект в <span className="font-medium text-[var(--flux-text)]">E³.series</span>.
+              <span className="font-mono text-[var(--flux-text)]">E3ProMax_Connector.cmd</span> в облачном режиме) нажатие кнопки ниже автоматически создаёт листы, изделия, кабели и открывает проект в <span className="font-medium text-[var(--flux-text)]">E³.series</span>.
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -273,7 +275,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
                 onClick={onExportE3sOle2}
                 className="flex items-center justify-between px-3 h-9 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-left"
               >
-                <span className="font-medium text-[var(--flux-text)]">Контейнер Flux E3 (.e3s OLE2)</span>
+                <span className="font-medium text-[var(--flux-text)]">Контейнер E3ProMax (.e3s OLE2)</span>
                 <Download className="w-4 h-4 text-[var(--flux-text-muted)]" />
               </button>
               <button
@@ -281,7 +283,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
                 onClick={onExportFluxBridge}
                 className="flex items-center justify-between px-3 h-9 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-left"
               >
-                <span className="font-medium text-[var(--flux-text)]">Мост Flux E3 (.json)</span>
+                <span className="font-medium text-[var(--flux-text)]">Мост E3ProMax (.json)</span>
                 <Download className="w-4 h-4 text-[var(--flux-accent)]" />
               </button>
               <button
@@ -537,6 +539,23 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                 onChange={(e) => setDraft({ ...draft, fontScale: Number(e.target.value) || 1 })}
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
               />
+            </div>
+            <div className="col-span-2">
+              <label htmlFor="vs-font" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+                Шрифт обозначений и штампа
+              </label>
+              <select
+                id="vs-font"
+                value={draft.fontFamily || 'GOST'}
+                onChange={(e) => setDraft({ ...draft, fontFamily: e.target.value as SchematicFontFamily })}
+                className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[var(--flux-text)]"
+              >
+                {SCHEMATIC_FONT_OPTIONS.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

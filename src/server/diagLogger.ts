@@ -27,7 +27,7 @@ class ServerDiagLogger {
     }
     try {
       fs.mkdirSync(dir, { recursive: true });
-      this.logFilePath = path.join(dir, 'flux-e3-server.log');
+      this.logFilePath = path.join(dir, 'e3promax-server.log');
     } catch {
       this.logFilePath = null;
     }
@@ -99,7 +99,7 @@ class ServerDiagLogger {
 
   public formatPlainTextReport(): string {
     const header = [
-      '=== Flux E3 Diagnostic Server Log ===',
+      '=== E3ProMax Diagnostic Server Log ===',
       `Generated: ${new Date().toISOString()}`,
       `Node: ${process.version} | Platform: ${process.platform} (${process.arch})`,
       `Host: ${os.hostname()} | PID: ${process.pid}`,

@@ -1,5 +1,7 @@
 import React from 'react';
+import { resolveSchematicCssFont } from '../core/e3Catalog';
 import type { E3Device, E3VisualSettings } from '../core/e3Types';
+import type { FsaMatrixData } from '../core/hvacBuilder';
 
 interface SchematicSymbolProps {
   device: E3Device;
@@ -24,13 +26,411 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
   const cy = device.height / 2;
   const stroke = selected ? 'var(--flux-accent)' : 'var(--flux-text)';
   const muted = 'var(--flux-text-muted)';
+  const kipGreen = '#15803d';
   const sw = visual.symbolStrokeWidth;
   const isRemoved = device.bindingState === 'REMOVED_IN_FLUX';
+  const fontCss = resolveSchematicCssFont(visual.fontFamily);
 
   const renderBody = () => {
     const w = device.width;
     const h = device.height;
     switch (device.category) {
+      case 'airflow_arrow': {
+        const isOut = device.e3BlockName.includes('OUT');
+        return (
+          <g>
+            <line x1={0} y1={cy} x2={w} y2={cy} stroke={kipGreen} strokeWidth={2.5} />
+            <polygon
+              points={isOut ? `${w - 18},${cy - 8} ${w},${cy} ${w - 18},${cy + 8}` : `10,${cy - 8} 28,${cy} 10,${cy + 8}`}
+              fill={kipGreen}
+            />
+          </g>
+        );
+      }
+      case 'damper': {
+        const hasHeat =
+          device.e3BlockName.includes('HEAT') ||
+          device.attributes.some((a) => /обогрев/i.test(a.name) && /да|230/i.test(a.value));
+        const ductY = 105;
+        return (
+          <g>
+            {/* Actuator circle (M) above damper */}
+            <circle cx={cx} cy={28} r={16} fill="var(--flux-surface)" stroke={kipGreen} strokeWidth={sw} />
+            <text
+              x={cx}
+              y={34}
+              textAnchor="middle"
+              fill={kipGreen}
+              fontSize={14 * visual.fontScale}
+              fontWeight={700}
+              fontFamily={fontCss}
+            >
+              M
+            </text>
+            <line x1={cx} y1={0} x2={cx} y2={12} stroke={kipGreen} strokeWidth={1.3} />
+            <line x1={cx} y1={44} x2={cx} y2={62} stroke={stroke} strokeWidth={sw} />
+            {/* Damper frame */}
+            <rect
+              x={cx - 24}
+              y={62}
+              width={48}
+              height={84}
+              fill="var(--flux-surface)"
+              stroke={stroke}
+              strokeWidth={sw}
+            />
+            {/* Air inlet/outlet stubs */}
+            <line x1={0} y1={ductY} x2={cx - 24} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            <line x1={cx + 24} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            {/* Diagonal flap + pivot */}
+            <line x1={cx - 16} y1={134} x2={cx + 16} y2={76} stroke={stroke} strokeWidth={sw + 0.5} />
+            <circle cx={cx} cy={ductY} r={5} fill={stroke} />
+            {hasHeat && (
+              <path
+                d={`M ${cx - 16} 142 L ${cx - 8} 135 L ${cx} 142 L ${cx + 8} 135 L ${cx + 16} 142`}
+                fill="none"
+                stroke={kipGreen}
+                strokeWidth={1.4}
+              />
+            )}
+          </g>
+        );
+      }
+      case 'filter': {
+        const ductY = 105;
+        return (
+          <g>
+            {/* PDHS circle at top */}
+            <circle cx={cx} cy={24} r={14} fill="var(--flux-surface)" stroke={kipGreen} strokeWidth={sw} />
+            <text
+              x={cx}
+              y={28}
+              textAnchor="middle"
+              fill={kipGreen}
+              fontSize={9 * visual.fontScale}
+              fontWeight={700}
+              fontFamily={fontCss}
+            >
+              ΔP
+            </text>
+            <line x1={cx} y1={0} x2={cx} y2={10} stroke={kipGreen} strokeWidth={1.2} />
+            <line x1={cx} y1={38} x2={cx} y2={65} stroke={stroke} strokeWidth={1.3} strokeDasharray="3 2" />
+            {/* Filter box split diagonally green/white (VEZA standard) */}
+            <rect x={cx - 24} y={65} width={48} height={80} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
+            <polygon points={`${cx - 24},65 ${cx + 24},65 ${cx - 24},145`} fill={kipGreen} />
+            <line x1={cx - 24} y1={145} x2={cx + 24} y2={65} stroke={stroke} strokeWidth={sw} />
+            <line x1={0} y1={ductY} x2={cx - 24} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            <line x1={cx + 24} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+          </g>
+        );
+      }
+      case 'heater': {
+        const isElec = device.e3BlockName.includes('ELEC') || device.designation.includes('EK');
+        const ductY = 90;
+        return (
+          <g>
+            {/* Top freeze protection stem */}
+            <line x1={cx} y1={0} x2={cx} y2={46} stroke={kipGreen} strokeWidth={1.3} />
+            <circle cx={cx} cy={22} r={12} fill="var(--flux-surface)" stroke={kipGreen} strokeWidth={1.3} />
+            <text x={cx} y={25} textAnchor="middle" fill={kipGreen} fontSize={8.5 * visual.fontScale} fontWeight={700} fontFamily={fontCss}>
+              {isElec ? 'TS' : 'THT'}
+            </text>
+            {/* Main heater heat exchanger */}
+            <rect x={cx - 32} y={46} width={64} height={88} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
+            <line x1={0} y1={ductY} x2={cx - 32} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            <line x1={cx + 32} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            {isElec ? (
+              <path
+                d={`M ${cx - 18} 62 L ${cx + 16} 80 L ${cx - 16} 98 L ${cx + 18} 118`}
+                fill="none"
+                stroke="#dc2626"
+                strokeWidth={2}
+              />
+            ) : (
+              <g>
+                <line x1={cx - 32} y1={46} x2={cx + 32} y2={134} stroke="#dc2626" strokeWidth={1.6} />
+                <circle cx={cx} cy={ductY} r={12} fill="var(--flux-surface)" stroke="#dc2626" strokeWidth={1.5} />
+                <text x={cx} y={ductY + 4} textAnchor="middle" fill="#dc2626" fontSize={10 * visual.fontScale} fontWeight={700} fontFamily={fontCss}>
+                  +
+                </text>
+              </g>
+            )}
+            {/* Bottom 3-way mixing valve / protection */}
+            <line x1={cx} y1={134} x2={cx} y2={h} stroke={kipGreen} strokeWidth={1.3} />
+            <polygon points={`${cx - 10},148 ${cx + 10},160 ${cx - 10},160 ${cx + 10},148`} fill="var(--flux-surface)" stroke={stroke} strokeWidth={1.3} />
+          </g>
+        );
+      }
+      case 'cooler': {
+        const ductY = 90;
+        return (
+          <g>
+            <line x1={cx} y1={0} x2={cx} y2={46} stroke={kipGreen} strokeWidth={1.3} />
+            <rect x={cx - 30} y={46} width={60} height={88} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
+            <line x1={0} y1={ductY} x2={cx - 30} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            <line x1={cx + 30} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            {/* Cooling symbol (blue diagonals + snowflake) */}
+            <line x1={cx - 16} y1={ductY} x2={cx + 16} y2={ductY} stroke="#0284c7" strokeWidth={1.6} />
+            <line x1={cx} y1={ductY - 16} x2={cx} y2={ductY + 16} stroke="#0284c7" strokeWidth={1.6} />
+            <line x1={cx - 11} y1={ductY - 11} x2={cx + 11} y2={ductY + 11} stroke="#0284c7" strokeWidth={1.3} />
+            <line x1={cx + 11} y1={ductY - 11} x2={cx - 11} y2={ductY + 11} stroke="#0284c7" strokeWidth={1.3} />
+            <line x1={cx} y1={134} x2={cx} y2={h} stroke={kipGreen} strokeWidth={1.3} />
+          </g>
+        );
+      }
+      case 'fan': {
+        const fanCy = 85;
+        const r = 30;
+        return (
+          <g>
+            {/* Top DP stem */}
+            <line x1={cx} y1={0} x2={cx} y2={fanCy - r} stroke={kipGreen} strokeWidth={1.3} />
+            {/* Duct lines */}
+            <line x1={0} y1={fanCy} x2={cx - r} y2={fanCy} stroke={kipGreen} strokeWidth={2} />
+            <line x1={cx + r} y1={fanCy} x2={w} y2={fanCy} stroke={kipGreen} strokeWidth={2} />
+            {/* GOST centrifugal fan circle with tangential blades */}
+            <circle cx={cx} cy={fanCy} r={r} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw + 0.3} />
+            <line x1={cx - 18} y1={fanCy - 22} x2={cx + 26} y2={fanCy - 8} stroke={stroke} strokeWidth={1.6} />
+            <line x1={cx - 18} y1={fanCy + 22} x2={cx + 26} y2={fanCy + 8} stroke={stroke} strokeWidth={1.6} />
+            {/* Motor (M) below fan */}
+            <line x1={cx} y1={fanCy + r} x2={cx} y2={132} stroke={kipGreen} strokeWidth={1.5} />
+            <circle cx={cx} cy={148} r={16} fill="var(--flux-surface)" stroke={kipGreen} strokeWidth={sw} />
+            <text x={cx} y={154} textAnchor="middle" fill={kipGreen} fontSize={14 * visual.fontScale} fontWeight={700} fontFamily={fontCss}>
+              M
+            </text>
+            <line x1={cx} y1={164} x2={cx} y2={h} stroke={kipGreen} strokeWidth={1.4} />
+          </g>
+        );
+      }
+      case 'kip_circle': {
+        const isPost = device.e3BlockName.includes('HHS') || device.designation.includes('HHS');
+        const circY = isPost ? cy : 44;
+        const r = 24;
+        const kipCode = isPost
+          ? 'HHS'
+          : device.designation.includes('PDHS')
+          ? 'PDHS'
+          : device.designation.includes('THT')
+          ? 'THT'
+          : 'KIP';
+        return (
+          <g>
+            <line x1={cx} y1={0} x2={cx} y2={circY - r} stroke={kipGreen} strokeWidth={1.3} />
+            <line x1={cx} y1={circY + r} x2={cx} y2={h} stroke={kipGreen} strokeWidth={1.3} />
+            {!isPost && (
+              <>
+                <line x1={0} y1={90} x2={w} y2={90} stroke={kipGreen} strokeWidth={2} />
+                <circle cx={cx} cy={90} r={4} fill={kipGreen} />
+              </>
+            )}
+            <circle cx={cx} cy={circY} r={r} fill="var(--flux-surface)" stroke={kipGreen} strokeWidth={sw} />
+            <line x1={cx - r + 2} y1={circY} x2={cx + r - 2} y2={circY} stroke={kipGreen} strokeWidth={1} />
+            <text
+              x={cx}
+              y={circY - 4}
+              textAnchor="middle"
+              fill={kipGreen}
+              fontSize={10.5 * visual.fontScale}
+              fontWeight={700}
+              fontFamily={fontCss}
+            >
+              {kipCode}
+            </text>
+            <text
+              x={cx}
+              y={circY + 13}
+              textAnchor="middle"
+              fill={stroke}
+              fontSize={9.5 * visual.fontScale}
+              fontFamily={fontCss}
+            >
+              {device.designation.split('-').pop() || '01'}
+            </text>
+          </g>
+        );
+      }
+      case 'junction_box': {
+        const cleanName = device.componentName.replace(/^Полевое подключение:\s*/i, '').trim();
+        const cableAttr = device.attributes.find((a) => a.name === 'Марка кабеля')?.value || '';
+        const artText = device.article.length > 18 ? `${device.article.slice(0, 17)}…` : device.article;
+        const nameText = cleanName.length > 19 ? `${cleanName.slice(0, 18)}…` : cleanName;
+        const cabText = cableAttr.length > 19 ? `${cableAttr.slice(0, 18)}…` : cableAttr;
+        return (
+          <g>
+            <rect
+              x={4}
+              y={4}
+              width={w - 8}
+              height={h - 16}
+              rx={3}
+              fill="var(--flux-surface)"
+              stroke={stroke}
+              strokeWidth={sw}
+            />
+            <rect x={4} y={4} width={w - 8} height={22} rx={2} fill="var(--flux-bg)" />
+            <line x1={4} y1={26} x2={w - 4} y2={26} stroke="var(--flux-line-strong)" strokeWidth={1} />
+            <text x={cx} y={19} textAnchor="middle" fill={stroke} fontSize={8.8 * visual.fontScale} fontWeight={600} fontFamily={fontCss}>
+              {artText}
+            </text>
+            <text x={cx} y={40} textAnchor="middle" fill={stroke} fontSize={8.2 * visual.fontScale} fontFamily={fontCss}>
+              {nameText}
+            </text>
+            {cabText && (
+              <text x={cx} y={53} textAnchor="middle" fill={kipGreen} fontSize={7.8 * visual.fontScale} fontFamily={fontCss}>
+                {cabText}
+              </text>
+            )}
+            {/* Internal terminal points */}
+            {[25, 55, 85, 115].map((px, i) => (
+              <g key={i}>
+                <circle cx={px} cy={66} r={3.5} fill="var(--flux-surface)" stroke={stroke} strokeWidth={1.3} />
+                <line x1={px} y1={69.5} x2={px} y2={h} stroke={stroke} strokeWidth={1.2} />
+              </g>
+            ))}
+          </g>
+        );
+      }
+      case 'io_matrix': {
+        const rawJson = device.attributes.find((a) => a.name === 'FSA_MATRIX_JSON')?.value;
+        let data: FsaMatrixData | null = null;
+        if (rawJson) {
+          try {
+            data = JSON.parse(rawJson) as FsaMatrixData;
+          } catch {
+            data = null;
+          }
+        }
+        const cols = data?.columns || [];
+        const leftPanelW = 240;
+        const colW = cols.length > 0 ? Math.max(46, Math.floor((w - leftPanelW - 12) / cols.length)) : 60;
+        const headerH = 110;
+        const rowNames = ['DI', 'DO', 'AI', 'AO', 'Цифр. шина', 'Измерение', 'Регулиров.', 'Сигнализ.', 'Управление'];
+        const rowH = 21;
+        const tableTop = headerH;
+        const tableH = rowNames.length * rowH;
+
+        return (
+          <g>
+            <rect
+              x={0}
+              y={0}
+              width={w}
+              height={h}
+              rx={3}
+              fill="var(--flux-surface)"
+              stroke={stroke}
+              strokeWidth={1.4}
+            />
+            {/* Cabinet left vertical box */}
+            <rect x={8} y={tableTop} width={54} height={tableH} fill="var(--flux-bg)" stroke={stroke} strokeWidth={1.1} />
+            <text
+              x={35}
+              y={tableTop + tableH / 2}
+              textAnchor="middle"
+              fill={stroke}
+              fontSize={9.5 * visual.fontScale}
+              fontWeight={700}
+              fontFamily={fontCss}
+              transform={`rotate(-90 35 ${tableTop + tableH / 2})`}
+            >
+              {data?.cabinetTag || 'ШУ / ПЛК'}
+            </text>
+
+            {/* Row headers */}
+            <rect x={62} y={tableTop} width={leftPanelW - 62} height={tableH} fill="none" stroke={stroke} strokeWidth={1.1} />
+            {rowNames.map((rn, rIdx) => {
+              const ry = tableTop + rIdx * rowH;
+              const totVal =
+                rIdx === 0
+                  ? data?.totals.di
+                  : rIdx === 1
+                  ? data?.totals.do
+                  : rIdx === 2
+                  ? data?.totals.ai
+                  : rIdx === 3
+                  ? data?.totals.ao
+                  : '';
+              const resVal =
+                rIdx === 0
+                  ? data?.reserve20.di
+                  : rIdx === 1
+                  ? data?.reserve20.do
+                  : rIdx === 2
+                  ? data?.reserve20.ai
+                  : rIdx === 3
+                  ? data?.reserve20.ao
+                  : '';
+              return (
+                <g key={rn}>
+                  <line x1={62} y1={ry} x2={w - 8} y2={ry} stroke="var(--flux-line-strong)" strokeWidth={0.9} />
+                  <text x={70} y={ry + 14} fill={stroke} fontSize={9.5 * visual.fontScale} fontFamily={fontCss}>
+                    {rn}
+                  </text>
+                  {totVal !== '' && (
+                    <text x={leftPanelW - 10} y={ry + 14} textAnchor="end" fill={kipGreen} fontSize={9.5 * visual.fontScale} fontWeight={700} fontFamily={fontCss}>
+                      {totVal} ({resVal})
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+            <text x={leftPanelW - 8} y={tableTop - 8} textAnchor="end" fill={muted} fontSize={8.5 * visual.fontScale} fontFamily={fontCss}>
+              Итого (+20%):
+            </text>
+
+            {/* Vertical I/O stems per device */}
+            {cols.map((col, cIdx) => {
+              const cxCol = leftPanelW + cIdx * colW + Math.round(colW / 2);
+              const flags = [
+                col.di > 0 ? String(col.di) : '',
+                col.do > 0 ? String(col.do) : '',
+                col.ai > 0 ? String(col.ai) : '',
+                col.ao > 0 ? String(col.ao) : '',
+                '',
+                col.measure ? 'dot' : '',
+                col.regulate ? 'dot' : '',
+                col.alarm ? 'dot' : '',
+                col.control ? 'dot' : '',
+              ];
+              return (
+                <g key={col.num}>
+                  <line x1={leftPanelW + cIdx * colW} y1={tableTop} x2={leftPanelW + cIdx * colW} y2={tableTop + tableH} stroke="var(--flux-line)" strokeWidth={0.8} />
+                  {/* Green vertical line from tag down through rows */}
+                  <line x1={cxCol} y1={14} x2={cxCol} y2={tableTop + tableH - 6} stroke={kipGreen} strokeWidth={1.3} />
+                  <text x={cxCol + 3} y={16} fill={muted} fontSize={8.5 * visual.fontScale} fontFamily={fontCss}>
+                    {col.num}
+                  </text>
+                  <text
+                    x={cxCol - 4}
+                    y={tableTop - 6}
+                    fill={kipGreen}
+                    fontSize={9 * visual.fontScale}
+                    fontWeight={600}
+                    fontFamily={fontCss}
+                    transform={`rotate(-90 ${cxCol - 4} ${tableTop - 6})`}
+                  >
+                    {col.tag}
+                  </text>
+                  {flags.map((fl, fIdx) => {
+                    if (!fl) return null;
+                    const fy = tableTop + fIdx * rowH + 10.5;
+                    return (
+                      <g key={fIdx}>
+                        <circle cx={cxCol} cy={fy} r={4} fill={kipGreen} />
+                        {fl !== 'dot' && (
+                          <text x={cxCol - 11} y={fy + 3.5} textAnchor="end" fill={stroke} fontSize={8.5 * visual.fontScale} fontFamily={fontCss}>
+                            {fl}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </g>
+        );
+      }
       case 'breaker': {
         const xs = device.pins.filter((p) => p.direction === 'top').map((p) => p.dx);
         return (
@@ -87,11 +487,9 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               stroke={stroke}
               strokeWidth={sw}
             />
-            {/* Coil box on left */}
             <rect x={14} y={32} width={22} height={56} fill="none" stroke={stroke} strokeWidth={1.3} />
             <line x1={0} y1={40} x2={14} y2={40} stroke={stroke} strokeWidth={sw} />
             <line x1={0} y1={80} x2={14} y2={80} stroke={stroke} strokeWidth={sw} />
-            {/* 3 main contacts */}
             {[30, 60, 90].map((px, idx) => (
               <g key={idx}>
                 <line x1={px} y1={0} x2={px} y2={35} stroke={stroke} strokeWidth={sw} />
@@ -116,7 +514,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               fill={stroke}
               fontSize={16 * visual.fontScale}
               fontWeight={600}
-              fontFamily="var(--font-mono)"
+              fontFamily={fontCss}
             >
               M 3~
             </text>
@@ -140,10 +538,12 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         );
       }
       case 'terminal': {
+        const pinXs = device.pins.filter((p) => p.direction === 'top').map((p) => p.dx);
+        const xs = pinXs.length > 0 ? pinXs : [20, 45, 75, 100];
         return (
           <g>
             <rect x={4} y={12} width={w - 8} height={h - 24} rx={2} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
-            {[20, 45, 75, 100].map((px, i) => (
+            {xs.map((px, i) => (
               <g key={i}>
                 <line x1={px} y1={0} x2={px} y2={h} stroke={stroke} strokeWidth={1.3} />
                 <circle cx={px} cy={h / 2} r={4} fill="var(--flux-surface)" stroke={stroke} strokeWidth={1.5} />
@@ -167,7 +567,6 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         );
       }
       default: {
-        // PLC, VFD Drive, PSU, Sensor: structured IEC functional block
         return (
           <g>
             <rect
@@ -189,7 +588,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               fill={muted}
               fontSize={10 * visual.fontScale}
               fontWeight={600}
-              fontFamily="var(--font-mono)"
+              fontFamily={fontCss}
             >
               {device.category.toUpperCase()}
             </text>
@@ -199,7 +598,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               textAnchor="middle"
               fill={muted}
               fontSize={(device.article.length > 12 ? 8.8 : 10.2) * visual.fontScale}
-              fontFamily="var(--font-mono)"
+              fontFamily={fontCss}
             >
               {device.article}
             </text>
@@ -272,7 +671,6 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               }}
               className="cursor-crosshair"
             >
-              {/* Invisible generous hit target for crisp clicking */}
               <circle cx={pin.dx} cy={pin.dy} r={9} fill="transparent" />
               <circle
                 cx={pin.dx}
@@ -282,7 +680,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                 stroke={isStart ? 'var(--flux-accent)' : sigColor}
                 strokeWidth={1.5}
               />
-              {visual.showPinNumbers && (
+              {visual.showPinNumbers && device.category !== 'airflow_arrow' && (
                 <text
                   x={pin.dx + labelDx}
                   y={pin.dy + labelDy}
@@ -292,7 +690,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                   strokeWidth={3}
                   paintOrder="stroke"
                   fontSize={9.5 * visual.fontScale}
-                  fontFamily="var(--font-mono)"
+                  fontFamily={fontCss}
                   pointerEvents="none"
                 >
                   {pin.name}
@@ -303,21 +701,23 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         })}
       </g>
 
-      {/* Designation & Cross-reference Labels (separated cleanly, never overlapping) */}
-      <text
-        x={0}
-        y={-8}
-        fill={selected ? 'var(--flux-accent)' : 'var(--flux-text)'}
-        stroke="var(--flux-surface)"
-        strokeWidth={3.5}
-        paintOrder="stroke"
-        fontSize={12.5 * visual.fontScale}
-        fontWeight={600}
-        fontFamily="var(--font-mono)"
-      >
-        {device.designation}
-      </text>
-      {visual.showCrossRefs && (
+      {/* Designation & Cross-reference Labels */}
+      {device.category !== 'airflow_arrow' && (
+        <text
+          x={0}
+          y={-8}
+          fill={selected ? 'var(--flux-accent)' : 'var(--flux-text)'}
+          stroke="var(--flux-surface)"
+          strokeWidth={3.5}
+          paintOrder="stroke"
+          fontSize={12 * visual.fontScale}
+          fontWeight={600}
+          fontFamily={fontCss}
+        >
+          {device.designation}
+        </text>
+      )}
+      {visual.showCrossRefs && device.category !== 'airflow_arrow' && device.category !== 'io_matrix' && (
         <text
           x={cx}
           y={device.height + 14}
@@ -327,7 +727,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
           strokeWidth={3}
           paintOrder="stroke"
           fontSize={9 * visual.fontScale}
-          fontFamily="var(--font-mono)"
+          fontFamily={fontCss}
         >
           {device.e3BlockName}
         </text>

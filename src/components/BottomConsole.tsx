@@ -549,7 +549,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                   </div>
                   <div className="px-2.5 py-1.5 flex justify-between gap-2">
                     <span className="text-[var(--flux-accent)]">GET /api/v1/projects/{project.id}/export/e3s</span>
-                    <span className="text-[var(--flux-text-muted)]">Контейнер Flux E3 .e3s (OLE2 / XML)</span>
+                    <span className="text-[var(--flux-text-muted)]">Контейнер E3ProMax .e3s (OLE2 / XML)</span>
                   </div>
                   <div className="px-2.5 py-1.5 flex justify-between gap-2">
                     <span className="text-[var(--flux-accent)]">GET /api/v1/projects/{project.id}/export/e3vbs</span>

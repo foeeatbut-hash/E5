@@ -1,5 +1,9 @@
 export type StandardType = 'GOST' | 'IEC';
 
+export type SheetFormat = 'A4' | 'A3' | 'A2' | 'A1';
+
+export type SchematicFontFamily = 'GOST' | 'DM Sans' | 'JetBrains Mono' | 'Plus Jakarta Sans' | 'Arial';
+
 export type SignalType = 'power' | 'neutral' | 'pe' | 'dc24' | 'dc0' | 'signal' | 'bus';
 
 export type DeviceCategory =
@@ -12,7 +16,18 @@ export type DeviceCategory =
   | 'terminal'
   | 'relay'
   | 'drive'
-  | 'lamp';
+  | 'lamp'
+  | 'fan'
+  | 'damper'
+  | 'filter'
+  | 'heater'
+  | 'cooler'
+  | 'pump'
+  | 'valve'
+  | 'kip_circle'
+  | 'junction_box'
+  | 'io_matrix'
+  | 'airflow_arrow';
 
 export type PinDirection = 'left' | 'right' | 'top' | 'bottom';
 
@@ -95,7 +110,7 @@ export interface E3Sheet {
   id: string;
   number: number;
   name: string;
-  format: 'A3' | 'A4';
+  format: SheetFormat;
   width: number;
   height: number;
   titleBlock: E3TitleBlock;
@@ -115,6 +130,7 @@ export interface E3VisualSettings {
   wireWidth: number;
   symbolStrokeWidth: number;
   fontScale: number;
+  fontFamily?: SchematicFontFamily;
   netColors: Record<SignalType, string>;
 }
 
@@ -135,6 +151,21 @@ export interface E3Project {
   visualSettings: E3VisualSettings;
 }
 
+export type HvacStageRole =
+  | 'intake_damper'
+  | 'filter'
+  | 'water_heater'
+  | 'electric_heater'
+  | 'cooler'
+  | 'supply_fan'
+  | 'exhaust_fan'
+  | 'temp_sensor'
+  | 'pressure_sensor'
+  | 'control_post'
+  | 'outlet_damper'
+  | 'fire_signal'
+  | 'custom';
+
 export interface CatalogItem {
   id: string;
   category: DeviceCategory;
@@ -147,6 +178,17 @@ export interface CatalogItem {
   height: number;
   pins: Omit<E3Pin, 'id'>[];
   defaultAttributes: E3Attribute[];
+  isCustom?: boolean;
+  stageRole?: HvacStageRole;
+  ioProfile?: { di: number; do: number; ai: number; ao: number };
+  fluxMatch?: {
+    minPowerKw?: number;
+    maxPowerKw?: number;
+    voltage?: string;
+    exZone?: 'non-Ex' | 'Exd';
+    signalKind?: string;
+  };
+  defaultCable?: string;
 }
 
 export interface BomRow {

@@ -355,7 +355,7 @@ app.get('/api/v1/e3-bridge/connector.cmd', (req, res) => {
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`);
   const origin = `${proto}://${host}`;
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  setDownloadDisposition(res, 'FluxE3_Connector.cmd');
+  setDownloadDisposition(res, 'E3ProMax_Connector.cmd');
   res.send(generateWindowsBridgeCmd(origin));
 });
 
@@ -377,7 +377,7 @@ app.get('/api/v1/diagnostics/logs', (_req, res) => {
 
 app.get('/api/v1/diagnostics/logs/download', (_req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  setDownloadDisposition(res, `flux-e3-diag-${Date.now()}.log`);
+  setDownloadDisposition(res, `e3promax-diag-${Date.now()}.log`);
   res.send(diagLogger.formatPlainTextReport());
 });
 
@@ -685,8 +685,8 @@ app.get('/api/export/flux-studio', async (req, res) => {
     const zip = new JSZip();
 
     const manifest = {
-      id: 'flux-e3-ecad',
-      name: 'Flux E3 — САПР электросхем',
+      id: 'e3promax-ecad',
+      name: 'E3ProMax — САПР электросхем',
       version: '1.0.0',
       author: proj.author || 'Инженер КИП',
       contractVersion: 2,
@@ -719,7 +719,7 @@ app.get('/api/export/flux-studio', async (req, res) => {
     } else {
       zip.file(
         'ui/index.html',
-        `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Flux E3</title><link rel="stylesheet" href="/_flux/flux-ui.v1.css"></head><body class="fx-body"><main class="fx-stack"><h1 class="fx-title">Flux E3 — ${proj.name}</h1><p class="fx-muted">Соберите проект (npm run build) перед публикацией для включения полного SPA в ui/ или откройте приложенную модель.</p><pre id="model" class="fx-card"></pre></main><script src="/_flux/flux.v1.js"></script><script src="/ui/app.js"></script></body></html>`
+        `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>E3ProMax</title><link rel="stylesheet" href="/_flux/flux-ui.v1.css"></head><body class="fx-body"><main class="fx-stack"><h1 class="fx-title">E3ProMax — ${proj.name}</h1><p class="fx-muted">Соберите проект (npm run build) перед публикацией для включения полного SPA в ui/ или откройте приложенную модель.</p><pre id="model" class="fx-card"></pre></main><script src="/_flux/flux.v1.js"></script><script src="/ui/app.js"></script></body></html>`
       );
       zip.file(
         'ui/app.js',
@@ -731,11 +731,11 @@ app.get('/api/export/flux-studio', async (req, res) => {
     zip.file('e3-seed-model.xml', serializeE3Xml(proj));
     zip.file('e3-bridge.json', JSON.stringify(exportToFluxBridge(proj), null, 2));
     zip.file('e3-series-2022-sync.vbs', Buffer.from(encodeUtf16LeWithBom(generateE3ComScript(proj))));
-    zip.file('FluxE3_Connector.cmd', generateWindowsBridgeCmd(`http://localhost:${PORT}`));
+    zip.file('E3ProMax_Connector.cmd', generateWindowsBridgeCmd(`http://localhost:${PORT}`));
 
     const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="flux-e3-studio-module.zip"');
+    res.setHeader('Content-Disposition', 'attachment; filename="e3promax-studio-module.zip"');
     res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Zip error' });
@@ -771,7 +771,7 @@ app.get('/api/export/codebase', async (_req, res) => {
 
     const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="flux-e3-codebase.zip"');
+    res.setHeader('Content-Disposition', 'attachment; filename="e3promax-codebase.zip"');
     res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Codebase zip error' });
@@ -921,7 +921,7 @@ async function start() {
 
   const actualPort = await listenWithFallback(PORT);
   const localUrl = `http://127.0.0.1:${actualPort}`;
-  diagLogger.log('INFO', 'SERVER', `Сервер Flux E3 запущен на ${localUrl}`, {
+  diagLogger.log('INFO', 'SERVER', `Сервер E3ProMax запущен на ${localUrl}`, {
     details: [
       `Node=${process.version}, Platform=${process.platform}/${process.arch}, PID=${process.pid}`,
       `Mode=${process.env.NODE_ENV || 'development'}, Portable=${process.env.FLUX_PORTABLE === '1' ? 'YES' : 'NO'}`,
@@ -931,7 +931,7 @@ async function start() {
       `LogFile=${diagLogger.getLogFilePath() || '(memory-only)'}`,
     ].join('\n'),
   });
-  console.log(`Flux E3 server running on http://0.0.0.0:${actualPort} (${localUrl})`);
+  console.log(`E3ProMax server running on http://0.0.0.0:${actualPort} (${localUrl})`);
 
   if (process.env.FLUX_OPEN_BROWSER === '1' && process.platform === 'win32') {
     execFile('cmd.exe', ['/c', 'start', '', localUrl], (err) => {

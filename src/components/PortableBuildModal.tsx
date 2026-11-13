@@ -146,7 +146,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `flux-e3-portable-build-${Date.now()}.log`;
+    a.download = `e3promax-portable-build-${Date.now()}.log`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -163,7 +163,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-[var(--flux-accent)]" />
             <h2 id="portable-build-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
-              Сборка Portable-версии Flux E3
+              Сборка Portable-версии E3ProMax
             </h2>
           </div>
           <button
@@ -199,7 +199,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
               <div className="text-[11px] text-[var(--flux-text-muted)] space-y-1 pl-6">
                 <div>1. Компиляция интерфейса React + Tailwind (Vite SPA)</div>
                 <div>2. Бандлинг сервера, API и COM-моста в автономный server.cjs (без node_modules)</div>
-                <div>3. Вшивание текущей схемы, .e3s, .vbs, логов и лаунчера FluxE3_Portable.cmd</div>
+                <div>3. Вшивание текущей схемы, .e3s, .vbs, логов и лаунчера E3ProMax_Portable.cmd</div>
               </div>
             </div>
           )}
@@ -240,9 +240,9 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                   <Terminal className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                   <span>Запуск и диагностика на Windows-ПК</span>
                 </div>
-                <div>1. Распакуйте ZIP-архив в любую папку (например, D:\FluxE3_Portable).</div>
+                <div>1. Распакуйте ZIP-архив в любую папку (например, D:\E3ProMax_Portable).</div>
                 <div>
-                  2. Запустите <span className="font-mono text-[var(--flux-text)]">FluxE3_Portable.cmd</span> —
+                  2. Запустите <span className="font-mono text-[var(--flux-text)]">E3ProMax_Portable.cmd</span> —
                   если на ПК нет Node.js 18+, лаунчер 1 раз сам скачает портативный{' '}
                   <span className="font-mono text-[var(--flux-text)]">node.exe</span> в папку{' '}
                   <span className="font-mono text-[var(--flux-text)]">runtime\</span>.
@@ -250,7 +250,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                 <div>
                   3. Подробные логи на ПК пишутся в{' '}
                   <span className="font-mono text-[var(--flux-text)]">logs\portable-launcher.log</span>,{' '}
-                  <span className="font-mono text-[var(--flux-text)]">logs\flux-e3-server.log</span> и{' '}
+                  <span className="font-mono text-[var(--flux-text)]">logs\e3promax-server.log</span> и{' '}
                   <span className="font-mono text-[var(--flux-text)]">flux_e3_com_debug.log</span>.
                 </div>
               </div>

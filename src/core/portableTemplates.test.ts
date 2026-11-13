@@ -15,7 +15,7 @@ test('generatePortableLauncherCmd configures portable paths, verbose launcher lo
   assert.ok(cmd.includes('set "FLUX_DEBUG=1"'));
   assert.ok(cmd.includes('set "FLUX_LOG_DIR=%LOG_DIR%"'));
   assert.ok(cmd.includes('portable-launcher.log'));
-  assert.ok(cmd.includes('flux-e3-server.log'));
+  assert.ok(cmd.includes('e3promax-server.log'));
   assert.ok(cmd.includes('server.cjs'));
   assert.ok(cmd.includes('https://nodejs.org/dist/v22.14.0/win-x64/node.exe'));
   assert.ok(cmd.includes(':fetch_node'));
@@ -23,9 +23,9 @@ test('generatePortableLauncherCmd configures portable paths, verbose launcher lo
   assert.ok(cmd.includes(':fail_pause'));
 });
 
-test('generatePortableSilentVbs and README reference FluxE3_Portable.cmd, project metadata, and log files', () => {
+test('generatePortableSilentVbs and README reference E3ProMax_Portable.cmd, project metadata, and log files', () => {
   const vbs = generatePortableSilentVbs();
-  assert.ok(vbs.includes('FluxE3_Portable.cmd'));
+  assert.ok(vbs.includes('E3ProMax_Portable.cmd'));
   assert.ok(vbs.includes('WScript.Shell'));
 
   const readme = generatePortableReadme({
@@ -40,6 +40,6 @@ test('generatePortableSilentVbs and README reference FluxE3_Portable.cmd, projec
   assert.ok(readme.includes('app\\server.cjs'));
   assert.ok(readme.includes('data\\project.json'));
   assert.ok(readme.includes('logs\\portable-launcher.log'));
-  assert.ok(readme.includes('logs\\flux-e3-server.log'));
+  assert.ok(readme.includes('logs\\e3promax-server.log'));
   assert.ok(readme.includes('flux_e3_com_debug.log'));
 });

@@ -7,33 +7,54 @@ import {
   Database,
   FileText,
   FolderTree,
+  Pencil,
   Plus,
   Search,
+  Trash2,
+  Wand2,
   Zap,
 } from 'lucide-react';
-import { E3_CATALOG } from '../core/e3Catalog';
 import type { CatalogItem, E3Device, E3Project } from '../core/e3Types';
 
 interface LeftExplorerProps {
   project: E3Project;
+  catalog: CatalogItem[];
   activeSheetId: string;
   selectedDeviceId: string | null;
+  activeTab?: 'project' | 'library';
+  onTabChange?: (tab: 'project' | 'library') => void;
   onSelectSheet: (sheetId: string) => void;
   onSelectDevice: (device: E3Device) => void;
   onPlaceCatalogItem: (item: CatalogItem) => void;
+  onOpenAddCatalogItem: () => void;
+  onEditCatalogItem: (item: CatalogItem) => void;
+  onDeleteCustomCatalogItem: (itemId: string) => void;
+  onOpenHvacWizard: () => void;
   onRunStressBatch: (count: number) => void;
 }
 
 export const LeftExplorer: React.FC<LeftExplorerProps> = ({
   project,
+  catalog,
   activeSheetId,
   selectedDeviceId,
+  activeTab,
+  onTabChange,
   onSelectSheet,
   onSelectDevice,
   onPlaceCatalogItem,
+  onOpenAddCatalogItem,
+  onEditCatalogItem,
+  onDeleteCustomCatalogItem,
+  onOpenHvacWizard,
   onRunStressBatch,
 }) => {
-  const [tab, setTab] = useState<'project' | 'library'>('project');
+  const [internalTab, setInternalTab] = useState<'project' | 'library'>('project');
+  const tab = activeTab ?? internalTab;
+  const setTab = (next: 'project' | 'library') => {
+    if (onTabChange) onTabChange(next);
+    else setInternalTab(next);
+  };
   const [query, setQuery] = useState('');
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     sheets: true,
@@ -57,15 +78,15 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
   }, [project.devices, q]);
 
   const filteredCatalog = useMemo(() => {
-    if (!q) return E3_CATALOG;
-    return E3_CATALOG.filter(
+    if (!q) return catalog;
+    return catalog.filter(
       (c) =>
         c.componentName.toLowerCase().includes(q) ||
         c.article.toLowerCase().includes(q) ||
         c.manufacturer.toLowerCase().includes(q) ||
         c.defaultPrefix.toLowerCase().includes(q)
     );
-  }, [q]);
+  }, [catalog, q]);
 
   const toggleSection = (key: string) =>
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -99,7 +120,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
           }`}
         >
           <Database className="w-3.5 h-3.5" />
-          <span>База УГО ({E3_CATALOG.length})</span>
+          <span>База ({catalog.length})</span>
         </button>
       </div>
 
@@ -286,7 +307,25 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
           </>
         ) : (
           /* Component Catalog Library */
-          <div className="space-y-1">
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-2 gap-1 px-0.5 pb-1">
+              <button
+                type="button"
+                onClick={onOpenAddCatalogItem}
+                className="inline-flex items-center justify-center gap-1 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap"
+              >
+                <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                <span>+ Изделие</span>
+              </button>
+              <button
+                type="button"
+                onClick={onOpenHvacWizard}
+                className="inline-flex items-center justify-center gap-1 h-7 px-2 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-[11px] font-medium text-white whitespace-nowrap"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                <span>Схема ПВ</span>
+              </button>
+            </div>
             {filteredCatalog.length === 0 ? (
               <div className="px-2 py-4 text-[12px] text-[var(--flux-text-muted)]">
                 Компонент не найден.
@@ -302,26 +341,57 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
                   }}
                   className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] transition-colors flex flex-col gap-1"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[12px] font-medium text-[var(--flux-text)]">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="font-mono text-[11px] font-medium text-[var(--flux-text)] truncate">
                       -{item.defaultPrefix}? · {item.article}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onPlaceCatalogItem(item)}
-                      className="inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium text-white bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] transition-colors whitespace-nowrap shrink-0"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>На лист</span>
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onEditCatalogItem(item)}
+                        title="Редактировать изделие и его атрибуты"
+                        aria-label={`Редактировать ${item.componentName}`}
+                        className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-bg)]"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      {item.isCustom && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteCustomCatalogItem(item.id)}
+                          aria-label={`Удалить ${item.componentName}`}
+                          className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 hover:bg-[var(--flux-bg)]"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onPlaceCatalogItem(item)}
+                        className="inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium text-white bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] transition-colors whitespace-nowrap shrink-0"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>На лист</span>
+                      </button>
+                    </div>
                   </div>
                   <div className="text-[12px] text-[var(--flux-text)] leading-snug">
                     {item.componentName}
                   </div>
                   <div className="text-[11px] text-[var(--flux-text-muted)] flex items-center gap-1.5">
-                    <span>{item.manufacturer}</span>
+                    <span className="truncate">{item.manufacturer}</span>
                     <span aria-hidden="true">·</span>
-                    <span className="font-mono">{item.pins.length} выв.</span>
+                    <span className="font-mono shrink-0">{item.defaultAttributes.length} атр.</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-mono shrink-0">{item.pins.length} выв.</span>
+                    {item.ioProfile && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono shrink-0">
+                          {item.ioProfile.di}DI/{item.ioProfile.do}DO
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               ))

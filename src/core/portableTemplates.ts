@@ -8,14 +8,14 @@ export interface PortableBuildMeta {
 
 /**
  * Generates a verbose Windows .cmd launcher with complete diagnostic logging to logs\portable-launcher.log
- * and server logs to logs\flux-e3-server.log. Uses goto labels for path safety (spaces/parens).
+ * and server logs to logs\e3promax-server.log. Uses goto labels for path safety (spaces/parens).
  */
 export function generatePortableLauncherCmd(): string {
   const lines = [
     '@echo off',
     'chcp 65001 >nul',
     'setlocal EnableExtensions EnableDelayedExpansion',
-    'title Flux E3 Portable — ECAD & E3.series 2022 Bridge',
+    'title E3ProMax Portable — ECAD & E3.series 2022 Bridge',
     'set "ROOT=%~dp0"',
     'if "%ROOT:~-1%"=="\\" set "ROOT=%ROOT:~0,-1%"',
     'set "APP_DIR=%ROOT%\\app"',
@@ -24,13 +24,13 @@ export function generatePortableLauncherCmd(): string {
     'set "RUNTIME_DIR=%ROOT%\\runtime"',
     'set "NODE_EXE=%RUNTIME_DIR%\\node.exe"',
     'set "LAUNCHER_LOG=%LOG_DIR%\\portable-launcher.log"',
-    'set "SERVER_LOG=%LOG_DIR%\\flux-e3-server.log"',
+    'set "SERVER_LOG=%LOG_DIR%\\e3promax-server.log"',
     '',
     'if not exist "%DATA_DIR%" mkdir "%DATA_DIR%" >nul 2>&1',
     'if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1',
     '',
     'call :log "===================================================================="',
-    'call :log "[BOOT] Запуск Flux E3 Portable"',
+    'call :log "[BOOT] Запуск E3ProMax Portable"',
     'call :log "[ENV] DATE=%DATE% TIME=%TIME% USER=%USERNAME% PC=%COMPUTERNAME%"',
     'call :log "[ENV] OS=%OS% ARCH=%PROCESSOR_ARCHITECTURE%"',
     'call :log "[PATH] ROOT=%ROOT%"',
@@ -41,12 +41,12 @@ export function generatePortableLauncherCmd(): string {
     '',
     'if not exist "%APP_DIR%\\server.cjs" (',
     '  call :log "[ERROR] Не найден файл %APP_DIR%\\server.cjs"',
-    '  echo [Flux E3] ОШИБКА: не найден файл "%APP_DIR%\\server.cjs". Архив распакован не полностью.',
+    '  echo [E3ProMax] ОШИБКА: не найден файл "%APP_DIR%\\server.cjs". Архив распакован не полностью.',
     '  goto :fail_pause',
     ')',
     'if not exist "%APP_DIR%\\dist\\index.html" (',
     '  call :log "[ERROR] Не найден файл %APP_DIR%\\dist\\index.html"',
-    '  echo [Flux E3] ОШИБКА: не найден интерфейс "%APP_DIR%\\dist\\index.html".',
+    '  echo [E3ProMax] ОШИБКА: не найден интерфейс "%APP_DIR%\\dist\\index.html".',
     '  goto :fail_pause',
     ')',
     'call :log "[CHECK] server.cjs и dist\\index.html найдены."',
@@ -73,28 +73,28 @@ export function generatePortableLauncherCmd(): string {
     'call :log "[WARN] Системный Node.js ниже v18, требуется портативный v22.14.0."',
     '',
     ':fetch_node',
-    'echo [Flux E3 Portable] Локальный Node.js ^>= 18 не найден.',
-    'echo [Flux E3 Portable] Первичная загрузка портативного Node.js v22.14.0 Win64 в runtime\\ ...',
+    'echo [E3ProMax Portable] Локальный Node.js ^>= 18 не найден.',
+    'echo [E3ProMax Portable] Первичная загрузка портативного Node.js v22.14.0 Win64 в runtime\\ ...',
     'call :log "[NODE] Скачивание https://nodejs.org/dist/v22.14.0/win-x64/node.exe -> %NODE_EXE%"',
     'if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%" >nul 2>&1',
     'powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference = \'SilentlyContinue\'; Invoke-WebRequest -Uri \'https://nodejs.org/dist/v22.14.0/win-x64/node.exe\' -OutFile \'%NODE_EXE%\' -UseBasicParsing; Write-Host \'OK_NODE_DOWNLOAD\' } catch { Write-Error $_.Exception.ToString(); exit 1 }" >> "%LAUNCHER_LOG%" 2>&1',
     'if errorlevel 1 (',
     '  call :log "[ERROR] Сбой загрузки node.exe через PowerShell (см. вывод выше)."',
-    '  echo [Flux E3] ОШИБКА: не удалось скачать runtime\\node.exe.',
+    '  echo [E3ProMax] ОШИБКА: не удалось скачать runtime\\node.exe.',
     '  goto :fail_pause',
     ')',
     'if not exist "%NODE_EXE%" (',
     '  call :log "[ERROR] Файл %NODE_EXE% отсутствует после загрузки."',
-    '  echo [Flux E3] ОШИБКА: runtime\\node.exe не создан.',
+    '  echo [E3ProMax] ОШИБКА: runtime\\node.exe не создан.',
     '  goto :fail_pause',
     ')',
     'for /f "delims=" %%V in (\'"%NODE_EXE%" -v 2^>^&1\') do call :log "[NODE] Успешно загружен runtime: %%V"',
     '',
     ':run_app',
-    'echo [Flux E3 Portable] Логи лаунчера: %LAUNCHER_LOG%',
-    'echo [Flux E3 Portable] Логи сервера:  %SERVER_LOG%',
-    'echo [Flux E3 Portable] Запуск сервера из %APP_DIR% ...',
-    'echo [Flux E3 Portable] После старта браузер откроется автоматически. Для остановки закройте это окно.',
+    'echo [E3ProMax Portable] Логи лаунчера: %LAUNCHER_LOG%',
+    'echo [E3ProMax Portable] Логи сервера:  %SERVER_LOG%',
+    'echo [E3ProMax Portable] Запуск сервера из %APP_DIR% ...',
+    'echo [E3ProMax Portable] После старта браузер откроется автоматически. Для остановки закройте это окно.',
     'set "NODE_ENV=production"',
     'set "FLUX_PORTABLE=1"',
     'set "FLUX_OPEN_BROWSER=1"',
@@ -110,7 +110,7 @@ export function generatePortableLauncherCmd(): string {
     'call :log "[EXIT] server.cjs завершился с кодом %EXIT_CODE%"',
     'if not "%EXIT_CODE%"=="0" (',
     '  echo.',
-    '  echo [Flux E3 Portable] ОШИБКА: сервер завершился с кодом %EXIT_CODE%.',
+    '  echo [E3ProMax Portable] ОШИБКА: сервер завершился с кодом %EXIT_CODE%.',
     '  if exist "%SERVER_LOG%" (',
     '    echo --- Последние строки %SERVER_LOG% ---',
     '    powershell -NoProfile -Command "Get-Content -Path \'%SERVER_LOG%\' -Tail 20 -Encoding UTF8"',
@@ -134,23 +134,23 @@ export function generatePortableLauncherCmd(): string {
   return lines.join('\r\n') + '\r\n';
 }
 
-/** Generates a silent VBS wrapper to launch FluxE3_Portable.cmd cleanly. */
+/** Generates a silent VBS wrapper to launch E3ProMax_Portable.cmd cleanly. */
 export function generatePortableSilentVbs(): string {
   const lines = [
     'Set fso = CreateObject("Scripting.FileSystemObject")',
     'Set sh = CreateObject("WScript.Shell")',
     'here = fso.GetParentFolderName(WScript.ScriptFullName)',
-    'cmdPath = fso.BuildPath(here, "FluxE3_Portable.cmd")',
+    'cmdPath = fso.BuildPath(here, "E3ProMax_Portable.cmd")',
     'sh.Run Chr(34) & cmdPath & Chr(34), 1, False',
   ];
   return lines.join('\r\n') + '\r\n';
 }
 
-/** Generates Russian portable documentation bundled inside FluxE3-Portable.zip. */
+/** Generates Russian portable documentation bundled inside E3ProMax-Portable.zip. */
 export function generatePortableReadme(meta: PortableBuildMeta): string {
   const lines = [
     '====================================================================',
-    '  Flux E3 Portable — Автономная сборка САПР электросхем (Win64)',
+    '  E3ProMax Portable — Автономная сборка САПР электросхем (Win64)',
     '====================================================================',
     '',
     `Проект в сборке: ${meta.projectName} (${meta.projectCode}, рев. ${meta.revision})`,
@@ -158,8 +158,8 @@ export function generatePortableReadme(meta: PortableBuildMeta): string {
     `Версия пакета:   ${meta.version}`,
     '',
     'КАК ЗАПУСТИТЬ:',
-    '  1. Распакуйте весь архив в любую папку (например, D:\\FluxE3_Portable).',
-    '  2. Запустите файл FluxE3_Portable.cmd.',
+    '  1. Распакуйте весь архив в любую папку (например, D:\\E3ProMax_Portable).',
+    '  2. Запустите файл E3ProMax_Portable.cmd.',
     '     (Если на ПК нет Node.js >= 18, лаунчер один раз автоматически',
     '      скачает официальный портативный node.exe в папку runtime\\).',
     '  3. Программа сама откроется в браузере по адресу http://127.0.0.1:3000',
@@ -168,11 +168,11 @@ export function generatePortableReadme(meta: PortableBuildMeta): string {
     'ПРЯМАЯ РАБОТА С ZUKEN E3.SERIES 2022 SP2:',
     '  В портативной версии сервер работает локально на вашем Windows-ПК,',
     '  поэтому кнопка «В E³.series» в шапке вызывает COM-мост напрямую',
-    '  (без необходимости запускать отдельный FluxE3_Connector.cmd).',
+    '  (без необходимости запускать отдельный E3ProMax_Connector.cmd).',
     '',
     'ДИАГНОСТИКА И ПОДРОБНЫЕ ЛОГИ:',
     '  logs\\portable-launcher.log — подробный журнал запуска .cmd, проверок ОС/Node и загрузки runtime',
-    '  logs\\flux-e3-server.log    — подробный журнал сервера, API, стек-трейсов и вывода cscript.exe',
+    '  logs\\e3promax-server.log   — подробный журнал сервера, API, стек-трейсов и вывода cscript.exe',
     '  flux_e3_com_debug.log      — пошаговый COM-лог VBScript при работе с E3.series 2022',
     '  В интерфейсе: вкладка «Логи процессов» внизу окна -> кнопки «Копировать» и «Скачать diag.log».',
     '',
@@ -180,7 +180,7 @@ export function generatePortableReadme(meta: PortableBuildMeta): string {
     '  Все ваши изменения схемы сохраняются локально в папку data\\project.json.',
     '',
     'СТРУКТУРА ПАПКИ:',
-    '  FluxE3_Portable.cmd       — главный запуск портативной версии',
+    '  E3ProMax_Portable.cmd     — главный запуск портативной версии',
     '  app\\server.cjs            — собранный сервер и API (без node_modules)',
     '  app\\dist\\                 — собранный интерфейс React + Tailwind',
     '  app\\seed-project.json     — снимок проекта на момент сборки',

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BottomConsole, type ConsoleTab } from './components/BottomConsole';
+import { CatalogItemModal } from './components/CatalogItemModal';
+import { HvacWizardModal } from './components/HvacWizardModal';
 import { LeftExplorer } from './components/LeftExplorer';
 import {
   type E3BridgeStatusInfo,
@@ -12,6 +14,13 @@ import { RightInspector } from './components/RightInspector';
 import { SchematicCanvas } from './components/SchematicCanvas';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
 import {
+  deviceToCatalogItem,
+  loadCustomCatalog,
+  mergeCatalogItems,
+  saveCustomCatalog,
+  SHEET_DIMENSIONS,
+} from './core/e3Catalog';
+import {
   autoRouteOrthogonal,
   buildBom,
   buildCableJournal,
@@ -21,6 +30,7 @@ import {
   generateStressBatch,
   getAbsolutePinPos,
   importFromFluxBridge,
+  routeSheetWiresCleanly,
   runErc,
 } from './core/e3Engine';
 import { createSeedProject } from './core/e3Seed';
@@ -36,9 +46,12 @@ import type {
   ErcIssue,
   FluxBridgeBundle,
   ProcessLogEntry,
+  SchematicFontFamily,
+  SheetFormat,
   TerminalPlanRow,
 } from './core/e3Types';
 import { detectFluxHost, pushProjectToFluxHost } from './core/fluxHostBridge';
+import { generateHvacDiagram, type HvacBuildOptions } from './core/hvacBuilder';
 import { ecadAsync } from './workers/ecadAsync';
 
 function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
@@ -86,10 +99,16 @@ export default function App() {
   const [isBusy, setIsBusy] = useState<boolean>(false);
   const [isSyncConnected, setIsSyncConnected] = useState<boolean>(false);
 
+  const [leftTab, setLeftTab] = useState<'project' | 'library'>('project');
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [visualOpen, setVisualOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [portableOpen, setPortableOpen] = useState(false);
+  const [hvacWizardOpen, setHvacWizardOpen] = useState(false);
+  const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [editingCatalogItem, setEditingCatalogItem] = useState<CatalogItem | null>(null);
+  const [customCatalog, setCustomCatalog] = useState<CatalogItem[]>(() => loadCustomCatalog());
+  const mergedCatalog = useMemo(() => mergeCatalogItems(customCatalog), [customCatalog]);
 
   const [logs, setLogs] = useState<ProcessLogEntry[]>(() => [
     {
@@ -323,7 +342,7 @@ export default function App() {
     [project.wires, selectedWireId]
   );
 
-  // Reroute attached wires whenever a device moves or rotates
+  // Reroute attached wires whenever a device moves or rotates (with obstacle avoidance)
   const rerouteDeviceWires = (dev: E3Device, allDevices: E3Device[], wires: E3Wire[]): E3Wire[] => {
     const devMap = new Map(allDevices.map((d) => [d.id, d]));
     return wires.map((w) => {
@@ -333,9 +352,12 @@ export default function App() {
       const p1 = d1?.pins.find((p) => p.id === w.fromPinId);
       const p2 = d2?.pins.find((p) => p.id === w.toPinId);
       if (!d1 || !d2 || !p1 || !p2) return w;
+      const obstacles = allDevices
+        .filter((d) => d.sheetId === w.sheetId && d.id !== d1.id && d.id !== d2.id && d.category !== 'io_matrix')
+        .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
       return {
         ...w,
-        waypoints: autoRouteOrthogonal(getAbsolutePinPos(d1, p1), getAbsolutePinPos(d2, p2)),
+        waypoints: autoRouteOrthogonal(getAbsolutePinPos(d1, p1), getAbsolutePinPos(d2, p2), 20, obstacles),
       };
     });
   };
@@ -456,6 +478,9 @@ export default function App() {
 
       const abs1 = getAbsolutePinPos(d1, p1);
       const abs2 = getAbsolutePinPos(d2, p2);
+      const obstacles = project.devices
+        .filter((d) => d.sheetId === d1.sheetId && d.id !== d1.id && d.id !== d2.id && d.category !== 'io_matrix')
+        .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
       const wireIdx = project.wires.length + 1;
       const newWire: E3Wire = {
         id: `w-${Date.now()}`,
@@ -466,7 +491,7 @@ export default function App() {
         fromPinId,
         toDeviceId,
         toPinId,
-        waypoints: autoRouteOrthogonal(abs1, abs2),
+        waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles),
         crossSection: p1.signalType === 'power' ? '2.5 мм²' : '0.75 мм²',
         wireNumber: String(100 + wireIdx),
       };
@@ -513,6 +538,128 @@ export default function App() {
     setActiveSheetId(newSheet.id);
     appendLog('INFO', 'E3-CORE', `Добавлен новый лист: ${newSheet.name}.`);
   }, [project.sheets, project.projectCode, project.author, commitProject, appendLog]);
+
+  const handleSaveCustomCatalogItem = useCallback(
+    (item: CatalogItem) => {
+      setCustomCatalog((prev) => {
+        const idx = prev.findIndex((c) => c.id === item.id);
+        const next = idx >= 0 ? prev.map((c) => (c.id === item.id ? item : c)) : [...prev, item];
+        saveCustomCatalog(next);
+        return next;
+      });
+      appendLog('INFO', 'E3-CORE', `Сохранено изделие в базу: ${item.componentName} (${item.article}).`);
+    },
+    [appendLog]
+  );
+
+  const handleDeleteCustomCatalogItem = useCallback(
+    (itemId: string) => {
+      setCustomCatalog((prev) => {
+        const next = prev.filter((c) => c.id !== itemId);
+        saveCustomCatalog(next);
+        return next;
+      });
+      appendLog('WARN', 'E3-CORE', 'Пользовательское изделие удалено из базы.');
+    },
+    [appendLog]
+  );
+
+  const handleSaveDeviceToCatalog = useCallback(
+    (dev: E3Device) => {
+      const existing = customCatalog.find(
+        (c) => c.e3BlockName === dev.e3BlockName && c.article === dev.article
+      );
+      const item = deviceToCatalogItem(dev, existing?.id);
+      handleSaveCustomCatalogItem(item);
+      setLeftTab('library');
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Изделие ${dev.designation} (${item.defaultAttributes.length} атр., ${item.pins.length} выв.) сохранено в базу.`
+      );
+    },
+    [customCatalog, handleSaveCustomCatalogItem, appendLog]
+  );
+
+  const fitSheetToViewport = useCallback(
+    (sheetObj?: E3Sheet) => {
+      const target =
+        sheetObj || project.sheets.find((s) => s.id === activeSheetId) || project.sheets[0];
+      if (!target) return;
+      const el = document.querySelector('[data-testid="schematic-canvas"]');
+      const rect = el?.getBoundingClientRect();
+      const vw = rect?.width && rect.width > 120 ? rect.width : 820;
+      const vh = rect?.height && rect.height > 120 ? rect.height : 500;
+      const fitZ = Math.min((vw - 36) / target.width, (vh - 24) / target.height);
+      const clampedZ = Math.min(1.2, Math.max(0.18, Math.floor(fitZ * 100) / 100));
+      const panX = Math.max(12, Math.round((vw - target.width * clampedZ) / 2));
+      const panY = Math.max(8, Math.round((vh - target.height * clampedZ) / 2));
+      setZoom(clampedZ);
+      setPan({ x: panX, y: panY });
+    },
+    [project.sheets, activeSheetId]
+  );
+
+  const handleBuildHvacDiagram = useCallback(
+    (options: HvacBuildOptions) => {
+      const res = generateHvacDiagram(options, mergedCatalog, project);
+      commitProject(() => res.nextProject);
+      setActiveSheetId(res.fsaSheetId);
+      setSelectedDeviceId(null);
+      setSelectedWireId(null);
+      const fsaSheet = res.nextProject.sheets.find((s) => s.id === res.fsaSheetId);
+      if (fsaSheet) {
+        fitSheetToViewport(fsaSheet);
+      }
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Сгенерирована ФСА ${options.systemTag} (${options.sheetFormat}, шрифт ${options.fontFamily}): ${res.createdDevicesCount} узлов, ${res.createdWiresCount} связей${res.wiringSheetId ? ' + лист внешних соединений' : ''}.`
+      );
+    },
+    [mergedCatalog, project, commitProject, fitSheetToViewport, appendLog]
+  );
+
+  const handleAutoRouteActiveSheetWires = useCallback(() => {
+    commitProject((prev) => ({
+      ...prev,
+      revision: prev.revision + 1,
+      updatedAt: new Date().toISOString(),
+      wires: routeSheetWiresCleanly(prev.devices, prev.wires, activeSheetId, prev.visualSettings.gridSize),
+    }));
+    appendLog('INFO', 'E3-CORE', 'Выполнена автотрассировка линий без наложений и пересечения блоков.');
+  }, [activeSheetId, commitProject, appendLog]);
+
+  const handleUpdateSheetFormat = useCallback(
+    (sheetId: string, format: SheetFormat) => {
+      const dims = SHEET_DIMENSIONS[format];
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        sheets: prev.sheets.map((s) =>
+          s.id === sheetId ? { ...s, format, width: dims.width, height: dims.height } : s
+        ),
+      }));
+      const currSheet = project.sheets.find((s) => s.id === sheetId);
+      if (currSheet) {
+        fitSheetToViewport({ ...currSheet, format, width: dims.width, height: dims.height });
+      }
+      appendLog('INFO', 'E3-CORE', `Изменён формат листа на ${format} (${dims.width}×${dims.height}).`);
+    },
+    [commitProject, project.sheets, fitSheetToViewport, appendLog]
+  );
+
+  const handleUpdateFontFamily = useCallback(
+    (fontFamily: SchematicFontFamily) => {
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        visualSettings: { ...prev.visualSettings, fontFamily },
+      }));
+      appendLog('INFO', 'E3-CORE', `Шрифт схемы переключён на «${fontFamily}».`);
+    },
+    [commitProject, appendLog]
+  );
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -635,7 +782,7 @@ export default function App() {
       JSON.stringify(res.bundle, null, 2),
       'application/json;charset=utf-8'
     );
-    appendLog('INFO', 'FLUX-BRIDGE', 'Экспортирован пакет обмена Flux E3 Bridge JSON.', res.durationMs);
+    appendLog('INFO', 'FLUX-BRIDGE', 'Экспортирован пакет обмена E3ProMax Bridge JSON.', res.durationMs);
   };
 
   const handleExportDxf = async () => {
@@ -837,10 +984,7 @@ export default function App() {
         onRotateSelected={handleRotateSelected}
         onDeleteSelected={handleDeleteSelected}
         onZoomChange={setZoom}
-        onFitView={() => {
-          setZoom(0.56);
-          setPan({ x: 46, y: 12 });
-        }}
+        onFitView={() => fitSheetToViewport()}
         onToggleGrid={() =>
           handleApplyVisualSettings({
             ...project.visualSettings,
@@ -884,6 +1028,8 @@ export default function App() {
         onOpenVisualModal={() => setVisualOpen(true)}
         onOpenReportModal={() => setReportOpen(true)}
         onOpenPortableBuild={() => setPortableOpen(true)}
+        onOpenHvacWizard={() => setHvacWizardOpen(true)}
+        onAutoRouteWires={handleAutoRouteActiveSheetWires}
         onToggleTheme={() =>
           handleApplyVisualSettings({
             ...project.visualSettings,
@@ -893,14 +1039,24 @@ export default function App() {
         onDownloadCodebase={() => {
           window.location.assign('/api/export/codebase');
         }}
+        onOpenAddCatalogItem={() => {
+          setEditingCatalogItem(null);
+          setCatalogModalOpen(true);
+        }}
+        onOpenCatalogTab={() => setLeftTab('library')}
+        onAddSheet={handleAddSheet}
+        onExportDxf={handleExportDxf}
       />
 
       {/* Main 3-Pane E3.series Engineering Area */}
       <main className="flex-1 min-h-0 flex overflow-hidden">
         <LeftExplorer
           project={project}
+          catalog={mergedCatalog}
           activeSheetId={activeSheetId}
           selectedDeviceId={selectedDeviceId}
+          activeTab={leftTab}
+          onTabChange={setLeftTab}
           onSelectSheet={(id) => {
             setActiveSheetId(id);
             setSelectedDeviceId(null);
@@ -912,18 +1068,33 @@ export default function App() {
             setSelectedWireId(null);
           }}
           onPlaceCatalogItem={(item) => handlePlaceCatalogItem(item)}
+          onOpenAddCatalogItem={() => {
+            setEditingCatalogItem(null);
+            setCatalogModalOpen(true);
+          }}
+          onEditCatalogItem={(item) => {
+            setEditingCatalogItem(item);
+            setCatalogModalOpen(true);
+          }}
+          onDeleteCustomCatalogItem={handleDeleteCustomCatalogItem}
+          onOpenHvacWizard={() => setHvacWizardOpen(true)}
           onRunStressBatch={handleRunStressBatch}
         />
 
         <SchematicCanvas
           project={project}
+          catalog={mergedCatalog}
           activeSheetId={activeSheetId}
           tool={tool}
           zoom={zoom}
           pan={pan}
           selectedDeviceId={selectedDeviceId}
           selectedWireId={selectedWireId}
-          onSelectSheet={setActiveSheetId}
+          onSelectSheet={(id) => {
+            setActiveSheetId(id);
+            const target = project.sheets.find((s) => s.id === id);
+            if (target) fitSheetToViewport(target);
+          }}
           onAddSheet={handleAddSheet}
           onSetZoom={setZoom}
           onSetPan={setPan}
@@ -946,6 +1117,7 @@ export default function App() {
           selectedDevice={selectedDevice}
           selectedWire={selectedWire}
           onUpdateDevice={handleUpdateDevice}
+          onSaveDeviceToCatalog={handleSaveDeviceToCatalog}
           onUpdateWire={(wireId, patch) => {
             commitProject((prev) => ({
               ...prev,
@@ -970,6 +1142,8 @@ export default function App() {
               ),
             }));
           }}
+          onUpdateSheetFormat={handleUpdateSheetFormat}
+          onUpdateFontFamily={handleUpdateFontFamily}
         />
       </main>
 
@@ -1011,7 +1185,7 @@ export default function App() {
         onDownloadE3Xml={handleExportE3sOle2}
         onDownloadLogs={() => {
           downloadText(
-            `flux-e3-logs-${Date.now()}.json`,
+            `e3promax-logs-${Date.now()}.json`,
             JSON.stringify(logs, null, 2),
             'application/json;charset=utf-8'
           );
@@ -1027,7 +1201,7 @@ export default function App() {
         onDirectOpenE3={handleDirectOpenE3}
         onDownloadConnector={() => {
           window.location.assign('/api/v1/e3-bridge/connector.cmd');
-          appendLog('INFO', 'E3-XML', 'Скачан фоновый коннектор FluxE3_Connector.cmd для Windows.');
+          appendLog('INFO', 'E3-XML', 'Скачан фоновый коннектор E3ProMax_Connector.cmd для Windows.');
         }}
         onExportE3sOle2={handleExportE3sOle2}
         onExportE3sXml={handleExportE3sXml}
@@ -1075,6 +1249,21 @@ export default function App() {
             summary.buildLogs?.join('\n')
           );
         }}
+      />
+
+      <CatalogItemModal
+        open={catalogModalOpen}
+        editingItem={editingCatalogItem}
+        onClose={() => setCatalogModalOpen(false)}
+        onSave={handleSaveCustomCatalogItem}
+      />
+
+      <HvacWizardModal
+        open={hvacWizardOpen}
+        project={project}
+        catalog={mergedCatalog}
+        onClose={() => setHvacWizardOpen(false)}
+        onBuild={handleBuildHvacDiagram}
       />
     </div>
   );

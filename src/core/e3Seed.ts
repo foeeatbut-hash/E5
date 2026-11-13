@@ -14,6 +14,7 @@ export const DEFAULT_VISUAL_SETTINGS: E3VisualSettings = {
   wireWidth: 2,
   symbolStrokeWidth: 1.75,
   fontScale: 1,
+  fontFamily: 'GOST',
   netColors: {
     power: '#ef4444',
     neutral: '#3b82f6',

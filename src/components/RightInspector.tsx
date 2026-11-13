@@ -1,6 +1,16 @@
 import React, { useState } from 'react';
-import { Plus, RotateCw, Trash2, Unlink } from 'lucide-react';
-import type { E3Attribute, E3Device, E3Project, E3Sheet, E3Wire, SignalType } from '../core/e3Types';
+import { BookmarkPlus, Plus, RotateCw, Trash2, Unlink } from 'lucide-react';
+import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
+import type {
+  E3Attribute,
+  E3Device,
+  E3Project,
+  E3Sheet,
+  E3Wire,
+  SchematicFontFamily,
+  SheetFormat,
+  SignalType,
+} from '../core/e3Types';
 
 interface RightInspectorProps {
   project: E3Project;
@@ -8,9 +18,12 @@ interface RightInspectorProps {
   selectedDevice: E3Device | null;
   selectedWire: E3Wire | null;
   onUpdateDevice: (deviceId: string, patch: Partial<E3Device>) => void;
+  onSaveDeviceToCatalog?: (device: E3Device) => void;
   onUpdateWire: (wireId: string, patch: Partial<E3Wire>) => void;
   onDeleteWire: (wireId: string) => void;
   onUpdateSheetTitle: (sheetId: string, patch: Partial<E3Sheet['titleBlock']>) => void;
+  onUpdateSheetFormat: (sheetId: string, format: SheetFormat) => void;
+  onUpdateFontFamily: (font: SchematicFontFamily) => void;
 }
 
 export const RightInspector: React.FC<RightInspectorProps> = ({
@@ -19,9 +32,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   selectedDevice,
   selectedWire,
   onUpdateDevice,
+  onSaveDeviceToCatalog,
   onUpdateWire,
   onDeleteWire,
   onUpdateSheetTitle,
+  onUpdateSheetFormat,
+  onUpdateFontFamily,
 }) => {
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
@@ -79,6 +95,29 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
         {selectedDevice ? (
           <>
+            {/* Integral E3 / Flux Component Summary & Save to Base */}
+            <div className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold text-[var(--flux-text)] truncate">
+                  Цельное изделие E3 · {selectedDevice.attributes.length} атр. · {selectedDevice.pins.length} выв.
+                </div>
+                <div className="text-[10px] font-mono text-[var(--flux-text-muted)] truncate">
+                  {selectedDevice.e3BlockName || selectedDevice.article}
+                </div>
+              </div>
+              {onSaveDeviceToCatalog && (
+                <button
+                  type="button"
+                  onClick={() => onSaveDeviceToCatalog(selectedDevice)}
+                  title="Сохранить изделие со всеми атрибутами и выводами в базу компонентов"
+                  className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0"
+                >
+                  <BookmarkPlus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                  <span>В базу</span>
+                </button>
+              )}
+            </div>
+
             {/* Device Core Identity */}
             <div className="space-y-2.5">
               <div>
@@ -221,7 +260,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                     htmlFor="insp-state"
                     className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
                   >
-                    Статус Flux E3
+                    Статус E3ProMax
                   </label>
                   <select
                     id="insp-state"
@@ -546,6 +585,48 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   }
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
                 />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 pt-1">
+              <div>
+                <label
+                  htmlFor="sheet-format-sel"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Формат листа (ГОСТ)
+                </label>
+                <select
+                  id="sheet-format-sel"
+                  value={activeSheet.format}
+                  onChange={(e) => onUpdateSheetFormat(activeSheet.id, e.target.value as SheetFormat)}
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                >
+                  {(Object.keys(SHEET_DIMENSIONS) as SheetFormat[]).map((fmt) => (
+                    <option key={fmt} value={fmt}>
+                      {SHEET_DIMENSIONS[fmt].label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label
+                  htmlFor="sheet-font-sel"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Шрифт схемы и таблиц
+                </label>
+                <select
+                  id="sheet-font-sel"
+                  value={project.visualSettings.fontFamily || 'GOST'}
+                  onChange={(e) => onUpdateFontFamily(e.target.value as SchematicFontFamily)}
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                >
+                  {SCHEMATIC_FONT_OPTIONS.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="pt-2 border-t border-[var(--flux-line)] text-[12px] space-y-1 text-[var(--flux-text-muted)]">
