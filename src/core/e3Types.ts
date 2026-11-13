@@ -134,6 +134,23 @@ export interface E3VisualSettings {
   netColors: Record<SignalType, string>;
 }
 
+export type CadTool = 'select' | 'wire' | 'pan' | 'text' | 'rect' | 'callout';
+
+export type AnnotationKind = 'text' | 'rect' | 'callout';
+
+export interface E3Annotation {
+  id: string;
+  sheetId: string;
+  kind: AnnotationKind;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  color?: string;
+  fontSize?: number;
+}
+
 export interface E3Project {
   schemaVersion: string;
   id: string;
@@ -148,6 +165,7 @@ export interface E3Project {
   devices: E3Device[];
   wires: E3Wire[];
   cables: E3Cable[];
+  annotations?: E3Annotation[];
   visualSettings: E3VisualSettings;
 }
 

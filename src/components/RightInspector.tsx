@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { BookmarkPlus, Plus, RotateCw, Trash2, Unlink } from 'lucide-react';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type {
+  AnnotationKind,
+  E3Annotation,
   E3Attribute,
   E3Device,
   E3Project,
@@ -17,10 +19,13 @@ interface RightInspectorProps {
   activeSheet: E3Sheet | undefined;
   selectedDevice: E3Device | null;
   selectedWire: E3Wire | null;
+  selectedAnnotation: E3Annotation | null;
   onUpdateDevice: (deviceId: string, patch: Partial<E3Device>) => void;
   onSaveDeviceToCatalog?: (device: E3Device) => void;
   onUpdateWire: (wireId: string, patch: Partial<E3Wire>) => void;
   onDeleteWire: (wireId: string) => void;
+  onUpdateAnnotation: (annId: string, patch: Partial<E3Annotation>) => void;
+  onDeleteAnnotation: (annId: string) => void;
   onUpdateSheetTitle: (sheetId: string, patch: Partial<E3Sheet['titleBlock']>) => void;
   onUpdateSheetFormat: (sheetId: string, format: SheetFormat) => void;
   onUpdateFontFamily: (font: SchematicFontFamily) => void;
@@ -31,10 +36,13 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   activeSheet,
   selectedDevice,
   selectedWire,
+  selectedAnnotation,
   onUpdateDevice,
   onSaveDeviceToCatalog,
   onUpdateWire,
   onDeleteWire,
+  onUpdateAnnotation,
+  onDeleteAnnotation,
   onUpdateSheetTitle,
   onUpdateSheetFormat,
   onUpdateFontFamily,
@@ -75,15 +83,17 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   return (
     <aside
       aria-label="Свойства и атрибуты E3 / Flux"
-      className="no-print w-80 shrink-0 border-l border-[var(--flux-line)] bg-[var(--flux-bg)] flex flex-col min-h-0 select-none"
+      className="no-print w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0 select-none"
     >
-      <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between">
-        <span className="text-[13px] font-semibold text-[var(--flux-text)]">
+      <div className="px-3 h-8 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between shrink-0">
+        <span className="text-[12px] font-semibold text-[var(--flux-text)] truncate">
           {selectedDevice
             ? `Элемент ${selectedDevice.designation}`
             : selectedWire
               ? `Цепь ${selectedWire.netName}`
-              : 'Параметры листа'}
+              : selectedAnnotation
+                ? `Аннотация (${selectedAnnotation.kind === 'rect' ? 'Зона' : selectedAnnotation.kind === 'callout' ? 'Выноска' : 'Текст'})`
+                : 'Параметры листа'}
         </span>
         {selectedDevice && (
           <span className="font-mono text-[11px] text-[var(--flux-text-muted)]">
@@ -510,6 +520,148 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               className="w-full h-8 rounded border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-[12px] font-medium"
             >
               Удалить соединение
+            </button>
+          </div>
+        ) : selectedAnnotation ? (
+          <div className="space-y-3">
+            <div>
+              <label
+                htmlFor="ann-kind"
+                className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+              >
+                Тип черчения / аннотации
+              </label>
+              <select
+                id="ann-kind"
+                value={selectedAnnotation.kind}
+                onChange={(e) =>
+                  onUpdateAnnotation(selectedAnnotation.id, { kind: e.target.value as AnnotationKind })
+                }
+                className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+              >
+                <option value="text">Текстовая надпись</option>
+                <option value="callout">Выноска со стрелкой</option>
+                <option value="rect">Рамка / Зона шкафа</option>
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="ann-text"
+                className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+              >
+                Текст аннотации
+              </label>
+              <textarea
+                id="ann-text"
+                rows={3}
+                value={selectedAnnotation.text}
+                onChange={(e) =>
+                  onUpdateAnnotation(selectedAnnotation.id, { text: e.target.value })
+                }
+                className="w-full p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label
+                  htmlFor="ann-x"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  X (мм)
+                </label>
+                <input
+                  id="ann-x"
+                  type="number"
+                  value={selectedAnnotation.x}
+                  onChange={(e) =>
+                    onUpdateAnnotation(selectedAnnotation.id, { x: Number(e.target.value) || 0 })
+                  }
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="ann-y"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Y (мм)
+                </label>
+                <input
+                  id="ann-y"
+                  type="number"
+                  value={selectedAnnotation.y}
+                  onChange={(e) =>
+                    onUpdateAnnotation(selectedAnnotation.id, { y: Number(e.target.value) || 0 })
+                  }
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label
+                  htmlFor="ann-w"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Ширина
+                </label>
+                <input
+                  id="ann-w"
+                  type="number"
+                  value={selectedAnnotation.width}
+                  onChange={(e) =>
+                    onUpdateAnnotation(selectedAnnotation.id, {
+                      width: Math.max(40, Number(e.target.value) || 120),
+                    })
+                  }
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="ann-h"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Высота
+                </label>
+                <input
+                  id="ann-h"
+                  type="number"
+                  value={selectedAnnotation.height}
+                  onChange={(e) =>
+                    onUpdateAnnotation(selectedAnnotation.id, {
+                      height: Math.max(24, Number(e.target.value) || 60),
+                    })
+                  }
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="ann-fs"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Шрифт
+                </label>
+                <input
+                  id="ann-fs"
+                  type="number"
+                  value={selectedAnnotation.fontSize || 12}
+                  onChange={(e) =>
+                    onUpdateAnnotation(selectedAnnotation.id, {
+                      fontSize: Math.max(8, Math.min(36, Number(e.target.value) || 12)),
+                    })
+                  }
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onDeleteAnnotation(selectedAnnotation.id)}
+              className="w-full h-8 rounded border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-[12px] font-medium"
+            >
+              Удалить аннотацию
             </button>
           </div>
         ) : activeSheet ? (

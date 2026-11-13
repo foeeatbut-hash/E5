@@ -1,46 +1,71 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Maximize2, Plus } from 'lucide-react';
 import { resolveSchematicCssFont } from '../core/e3Catalog';
 import { autoRouteOrthogonal, getAbsolutePinPos } from '../core/e3Engine';
-import type { CatalogItem, E3Device, E3Project, E3Wire } from '../core/e3Types';
-import type { CadTool } from './TopToolbar';
+import type {
+  AnnotationKind,
+  CadTool,
+  CatalogItem,
+  E3Annotation,
+  E3Device,
+  E3Project,
+  E3Wire,
+} from '../core/e3Types';
 import { SchematicSymbol } from './SchematicSymbol';
 
 interface SchematicCanvasProps {
   project: E3Project;
   catalog: CatalogItem[];
   activeSheetId: string;
+  viewportIndex?: number;
+  isMultiViewport?: boolean;
+  isFocused?: boolean;
   tool: CadTool;
   zoom: number;
   pan: { x: number; y: number };
   selectedDeviceId: string | null;
   selectedWireId: string | null;
+  selectedAnnotationId: string | null;
+  onFocusViewport?: () => void;
+  onFitViewport?: () => void;
   onSelectSheet: (sheetId: string) => void;
   onAddSheet: () => void;
   onSetZoom: (zoom: number) => void;
   onSetPan: (pan: { x: number; y: number }) => void;
   onSelectDevice: (deviceId: string | null) => void;
   onSelectWire: (wireId: string | null) => void;
+  onSelectAnnotation: (annId: string | null) => void;
+  onCreateAnnotation: (sheetId: string, kind: AnnotationKind, x: number, y: number) => void;
+  onMoveAnnotation: (annId: string, x: number, y: number) => void;
   onMoveDevice: (deviceId: string, x: number, y: number) => void;
   onCreateWire: (fromDeviceId: string, fromPinId: string, toDeviceId: string, toPinId: string) => void;
-  onDropCatalogItem: (item: CatalogItem, x: number, y: number) => void;
+  onDropCatalogItem: (item: CatalogItem, x: number, y: number, sheetId: string) => void;
 }
 
 export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   project,
   catalog,
   activeSheetId,
+  viewportIndex = 0,
+  isMultiViewport = false,
+  isFocused = true,
   tool,
   zoom,
   pan,
   selectedDeviceId,
   selectedWireId,
+  selectedAnnotationId,
+  onFocusViewport,
+  onFitViewport,
   onSelectSheet,
   onAddSheet,
   onSetZoom,
   onSetPan,
   onSelectDevice,
   onSelectWire,
+  onSelectAnnotation,
+  onCreateAnnotation,
+  onMoveAnnotation,
   onMoveDevice,
   onCreateWire,
   onDropCatalogItem,
@@ -58,6 +83,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   const dragRef = useRef<
     | { kind: 'pan'; startX: number; startY: number; origPanX: number; origPanY: number }
     | { kind: 'device'; deviceId: string; startWorldX: number; startWorldY: number; origX: number; origY: number }
+    | { kind: 'annotation'; annId: string; startWorldX: number; startWorldY: number; origX: number; origY: number }
     | null
   >(null);
 
@@ -74,6 +100,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   const sheetWires = useMemo(
     () => project.wires.filter((w) => w.sheetId === sheet?.id),
     [project.wires, sheet?.id]
+  );
+
+  const sheetAnnotations = useMemo(
+    () => (project.annotations || []).filter((a) => a.sheetId === sheet?.id),
+    [project.annotations, sheet?.id]
   );
 
   const connectedPinKeys = useMemo(() => {
@@ -101,6 +132,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   };
 
   const handleMouseDownBg = (e: React.MouseEvent<SVGSVGElement>) => {
+    onFocusViewport?.();
     if (e.button === 1 || tool === 'pan' || e.shiftKey) {
       dragRef.current = {
         kind: 'pan',
@@ -115,12 +147,19 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       setWireStart(null);
       return;
     }
+    if ((tool === 'text' || tool === 'rect' || tool === 'callout') && sheet) {
+      const world = toWorld(e.clientX, e.clientY);
+      onCreateAnnotation(sheet.id, tool, snap(world.x), snap(world.y));
+      return;
+    }
     onSelectDevice(null);
     onSelectWire(null);
+    onSelectAnnotation(null);
   };
 
   const handleSelectDeviceDown = (e: React.MouseEvent, device: E3Device) => {
     e.stopPropagation();
+    onFocusViewport?.();
     if (tool === 'pan' || e.button === 1) {
       dragRef.current = {
         kind: 'pan',
@@ -132,6 +171,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       return;
     }
     onSelectWire(null);
+    onSelectAnnotation(null);
     onSelectDevice(device.id);
     if (tool === 'select') {
       const world = toWorld(e.clientX, e.clientY);
@@ -144,6 +184,33 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         origY: device.y,
       };
     }
+  };
+
+  const handleAnnotationDown = (e: React.MouseEvent, ann: E3Annotation) => {
+    e.stopPropagation();
+    onFocusViewport?.();
+    if (tool === 'pan' || e.button === 1) {
+      dragRef.current = {
+        kind: 'pan',
+        startX: e.clientX,
+        startY: e.clientY,
+        origPanX: pan.x,
+        origPanY: pan.y,
+      };
+      return;
+    }
+    onSelectDevice(null);
+    onSelectWire(null);
+    onSelectAnnotation(ann.id);
+    const world = toWorld(e.clientX, e.clientY);
+    dragRef.current = {
+      kind: 'annotation',
+      annId: ann.id,
+      startWorldX: world.x,
+      startWorldY: world.y,
+      origX: ann.x,
+      origY: ann.y,
+    };
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -161,6 +228,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       const nx = snap(drag.origX + (world.x - drag.startWorldX));
       const ny = snap(drag.origY + (world.y - drag.startWorldY));
       onMoveDevice(drag.deviceId, Math.max(30, nx), Math.max(30, ny));
+    } else if (drag.kind === 'annotation') {
+      const nx = snap(drag.origX + (world.x - drag.startWorldX));
+      const ny = snap(drag.origY + (world.y - drag.startWorldY));
+      onMoveAnnotation(drag.annId, Math.max(20, nx), Math.max(20, ny));
     }
   };
 
@@ -178,6 +249,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
 
   const handlePinClick = (e: React.MouseEvent, device: E3Device, pinId: string) => {
     e.stopPropagation();
+    onFocusViewport?.();
     const pin = device.pins.find((p) => p.id === pinId);
     if (!pin) return;
     const abs = getAbsolutePinPos(device, pin);
@@ -202,12 +274,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
+    onFocusViewport?.();
     const catId = e.dataTransfer.getData('application/x-flux-catalog-id');
-    if (!catId) return;
+    if (!catId || !sheet) return;
     const item = catalog.find((c) => c.id === catId);
     if (!item) return;
     const world = toWorld(e.clientX, e.clientY);
-    onDropCatalogItem(item, snap(world.x - item.width / 2), snap(world.y - item.height / 2));
+    onDropCatalogItem(item, snap(world.x - item.width / 2), snap(world.y - item.height / 2), sheet.id);
   };
 
   const previewWirePoints = useMemo(() => {
@@ -226,72 +299,133 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
 
   const vs = project.visualSettings;
   const fontCss = resolveSchematicCssFont(vs.fontFamily);
+  const gridPatternId = `flux-cad-grid-vp-${viewportIndex}`;
+
+  const isDrawingTool = tool === 'wire' || tool === 'text' || tool === 'rect' || tool === 'callout';
 
   return (
     <section
-      aria-label="Рабочий холст электросхемы"
-      className="flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--flux-canvas-bg)] relative"
+      aria-label={`Рабочий холст электросхемы ${viewportIndex + 1}`}
+      data-testid={`viewport-pane-${viewportIndex}`}
+      onMouseDown={() => onFocusViewport?.()}
+      className={`flex-1 min-w-0 min-h-0 flex flex-col bg-[var(--flux-canvas-bg)] relative ${
+        isMultiViewport
+          ? `border rounded-sm overflow-hidden ${
+              isFocused ? 'border-[var(--flux-accent)] ring-1 ring-[var(--flux-accent)]/40' : 'border-[var(--flux-line)]'
+            }`
+          : ''
+      }`}
     >
-      {/* Sheet Tabs Bar */}
-      <div className="no-print h-8 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] px-2 flex items-center justify-between gap-2 overflow-hidden">
-        <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto no-scrollbar">
-          {project.sheets.map((s) => {
-            const active = s.id === sheet?.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => onSelectSheet(s.id)}
-                className={`relative h-8 px-3 text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                  active
-                    ? 'text-[var(--flux-text)]'
-                    : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
-                }`}
-              >
-                <span>
-                  Лист {s.number}: {s.name}
-                </span>
-                {active && (
-                  <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)]" />
-                )}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={onAddSheet}
-            aria-label="Добавить новый лист схемы"
-            className="inline-flex items-center gap-1 h-6 px-2 ml-1 rounded text-[11px] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Лист</span>
-          </button>
-        </div>
-
-        <div className="hidden md:flex items-center gap-3 text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)] shrink-0">
-          {wireStart && (
-            <span className="text-[var(--flux-accent)] font-medium">
-              Выберите целевой вывод (Esc — отмена)
+      {/* Sheet Tabs Bar (single) OR Compact Viewport Header (multi-viewport) */}
+      {isMultiViewport ? (
+        <div className="no-print h-7 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] px-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={`font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
+                isFocused
+                  ? 'bg-[var(--flux-accent)] text-white font-semibold'
+                  : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] border border-[var(--flux-line)]'
+              }`}
+            >
+              В{viewportIndex + 1}
             </span>
-          )}
-          <span>
-            X:{cursorWorld.x} Y:{cursorWorld.y} мм
-          </span>
-          <span>Эл.: {sheetDevices.length}</span>
-          <span>Связи: {sheetWires.length}</span>
+            <select
+              aria-label={`Лист для окна ${viewportIndex + 1}`}
+              value={sheet?.id || ''}
+              onChange={(e) => {
+                onFocusViewport?.();
+                onSelectSheet(e.target.value);
+              }}
+              className="h-5 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] font-medium text-[var(--flux-text)] max-w-[230px] truncate"
+            >
+              {project.sheets.map((s) => (
+                <option key={s.id} value={s.id}>
+                  Лист {s.number}: {s.name} ({s.format})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 text-[10px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+            <span>{Math.round(zoom * 100)}%</span>
+            <span>Эл:{sheetDevices.length}</span>
+            {onFitViewport && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFocusViewport?.();
+                  onFitViewport();
+                }}
+                title="Вписать лист в это окно"
+                aria-label="По размеру окна"
+                className="inline-flex items-center justify-center w-5 h-5 rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+              >
+                <Maximize2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="no-print h-8 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] px-2 flex items-center justify-between gap-2 overflow-hidden">
+          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto no-scrollbar">
+            {project.sheets.map((s) => {
+              const active = s.id === sheet?.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onSelectSheet(s.id)}
+                  className={`relative h-8 px-3 text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                    active
+                      ? 'text-[var(--flux-text)]'
+                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                  }`}
+                >
+                  <span>
+                    Лист {s.number}: {s.name}
+                  </span>
+                  {active && (
+                    <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)]" />
+                  )}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={onAddSheet}
+              aria-label="Добавить новый лист схемы"
+              className="inline-flex items-center gap-1 h-6 px-2 ml-1 rounded text-[11px] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Лист</span>
+            </button>
+          </div>
+
+          <div className="hidden md:flex items-center gap-3 text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)] shrink-0">
+            {wireStart && (
+              <span className="text-[var(--flux-accent)] font-medium">
+                Выберите целевой вывод (Esc — отмена)
+              </span>
+            )}
+            <span>
+              X:{cursorWorld.x} Y:{cursorWorld.y} мм
+            </span>
+            <span>Эл.: {sheetDevices.length}</span>
+            <span>Связи: {sheetWires.length}</span>
+          </div>
+        </div>
+      )}
 
       {/* Interactive SVG Viewport */}
       <div
         ref={containerRef}
-        data-testid="schematic-canvas"
+        data-testid={viewportIndex === 0 ? 'schematic-canvas' : `schematic-canvas-${viewportIndex}`}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
         onWheel={handleWheel}
         className="flex-1 min-h-0 overflow-hidden relative"
         style={{
-          cursor: tool === 'pan' ? 'grab' : wireStart || tool === 'wire' ? 'crosshair' : 'default',
+          cursor: tool === 'pan' ? 'grab' : wireStart || isDrawingTool ? 'crosshair' : 'default',
         }}
       >
         <svg
@@ -305,7 +439,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         >
           <defs>
             <pattern
-              id="flux-cad-grid"
+              id={gridPatternId}
               width={vs.gridSize}
               height={vs.gridSize}
               patternUnits="userSpaceOnUse"
@@ -333,7 +467,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                     y={0}
                     width={sheet.width}
                     height={sheet.height}
-                    fill="url(#flux-cad-grid)"
+                    fill={`url(#${gridPatternId})`}
                   />
                 )}
 
@@ -349,7 +483,6 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       stroke="var(--flux-text)"
                       strokeWidth={1.4}
                     />
-                    {/* Title block bottom-right */}
                     <g transform={`translate(${sheet.width - 540}, ${sheet.height - 105})`}>
                       <rect
                         x={0}
@@ -394,6 +527,127 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               </g>
             )}
 
+            {/* Drafting Zones / Annotations (under wires/devices for rect zones) */}
+            {sheetAnnotations.map((ann) => {
+              const selected = ann.id === selectedAnnotationId;
+              const strokeColor = selected ? 'var(--flux-accent)' : ann.color || 'var(--flux-text)';
+              const fs = (ann.fontSize || 12) * vs.fontScale;
+
+              if (ann.kind === 'rect') {
+                return (
+                  <g
+                    key={ann.id}
+                    data-testid={`annotation-${ann.id}`}
+                    onMouseDown={(e) => handleAnnotationDown(e, ann)}
+                    className="cursor-move"
+                  >
+                    <rect
+                      x={ann.x}
+                      y={ann.y}
+                      width={ann.width}
+                      height={ann.height}
+                      fill={selected ? 'var(--flux-accent)' : 'transparent'}
+                      fillOpacity={selected ? 0.06 : 0}
+                      stroke={strokeColor}
+                      strokeWidth={selected ? 2 : 1.3}
+                      strokeDasharray="8 4"
+                      rx={2}
+                    />
+                    <rect
+                      x={ann.x + 8}
+                      y={ann.y - 11}
+                      width={Math.max(88, Math.round(ann.text.length * (fs * 0.72) + 22))}
+                      height={19}
+                      fill="var(--flux-surface)"
+                      stroke={strokeColor}
+                      strokeWidth={0.8}
+                      rx={2}
+                    />
+                    <text
+                      x={ann.x + 16}
+                      y={ann.y + 3}
+                      fill={strokeColor}
+                      fontSize={fs}
+                      fontFamily={fontCss}
+                      fontWeight={600}
+                    >
+                      {ann.text}
+                    </text>
+                  </g>
+                );
+              }
+
+              if (ann.kind === 'callout') {
+                return (
+                  <g
+                    key={ann.id}
+                    data-testid={`annotation-${ann.id}`}
+                    onMouseDown={(e) => handleAnnotationDown(e, ann)}
+                    className="cursor-move"
+                  >
+                    <circle cx={ann.x} cy={ann.y + ann.height} r={3.5} fill={strokeColor} />
+                    <polyline
+                      points={`${ann.x},${ann.y + ann.height} ${ann.x + 26},${ann.y + 18} ${ann.x + 26 + ann.width},${ann.y + 18}`}
+                      fill="none"
+                      stroke={strokeColor}
+                      strokeWidth={selected ? 2 : 1.3}
+                    />
+                    <rect
+                      x={ann.x + 28}
+                      y={ann.y}
+                      width={Math.max(90, ann.width - 6)}
+                      height={17}
+                      fill="var(--flux-surface)"
+                      fillOpacity={0.92}
+                      stroke={selected ? 'var(--flux-accent)' : 'none'}
+                      strokeDasharray="3 2"
+                    />
+                    <text
+                      x={ann.x + 32}
+                      y={ann.y + 13}
+                      fill={strokeColor}
+                      fontSize={fs}
+                      fontFamily={fontCss}
+                      fontWeight={500}
+                    >
+                      {ann.text}
+                    </text>
+                  </g>
+                );
+              }
+
+              return (
+                <g
+                  key={ann.id}
+                  data-testid={`annotation-${ann.id}`}
+                  onMouseDown={(e) => handleAnnotationDown(e, ann)}
+                  className="cursor-move"
+                >
+                  <rect
+                    x={ann.x - 4}
+                    y={ann.y - fs - 2}
+                    width={Math.max(80, ann.text.length * (fs * 0.58) + 12)}
+                    height={fs + 10}
+                    fill="var(--flux-surface)"
+                    fillOpacity={0.85}
+                    stroke={selected ? 'var(--flux-accent)' : 'transparent'}
+                    strokeDasharray="4 2"
+                    rx={2}
+                  />
+                  <text
+                    x={ann.x}
+                    y={ann.y}
+                    fill={strokeColor}
+                    fontSize={fs}
+                    fontFamily={fontCss}
+                    fontWeight={500}
+                  >
+                    {ann.text}
+                  </text>
+                </g>
+              );
+            })}
+
             {/* Wires */}
             {sheetWires.map((wire: E3Wire) => {
               const selected = wire.id === selectedWireId;
@@ -420,17 +674,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   onClick={(e) => {
                     e.stopPropagation();
                     onSelectDevice(null);
+                    onSelectAnnotation(null);
                     onSelectWire(wire.id);
                   }}
                   className="cursor-pointer"
                 >
-                  {/* Hit area */}
-                  <polyline
-                    points={pts}
-                    fill="none"
-                    stroke="transparent"
-                    strokeWidth={10}
-                  />
+                  <polyline points={pts} fill="none" stroke="transparent" strokeWidth={10} />
                   <polyline
                     points={pts}
                     fill="none"
@@ -481,7 +730,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               />
             )}
 
-            {/* Devices (render first 400 smoothly on active sheet) */}
+            {/* Devices */}
             {sheetDevices.slice(0, 400).map((device) => (
               <SchematicSymbol
                 key={device.id}

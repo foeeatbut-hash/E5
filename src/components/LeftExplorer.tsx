@@ -94,7 +94,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
   return (
     <aside
       aria-label="Дерево проекта и библиотека компонентов"
-      className="no-print w-72 shrink-0 border-r border-[var(--flux-line)] bg-[var(--flux-bg)] flex flex-col min-h-0 select-none"
+      className="no-print w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0 select-none"
     >
       {/* Segmented Tabs */}
       <div className="p-2 border-b border-[var(--flux-line)] flex items-center gap-1 bg-[var(--flux-surface)]">

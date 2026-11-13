@@ -120,13 +120,11 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   return (
     <section
       aria-label="Спецификации, отчёты, диагностика и API"
-      className={`no-print shrink-0 border-t border-[var(--flux-line)] bg-[var(--flux-surface)] flex flex-col transition-all ${
-        collapsed ? 'h-9' : 'h-64'
-      }`}
+      className="no-print w-full h-full flex-1 min-w-0 min-h-0 bg-[var(--flux-surface)] flex flex-col"
     >
       {/* Console Header Tabs */}
-      <div className="h-9 px-3 border-b border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-1 overflow-x-auto">
+      <div className="h-8 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
           {(
             [
               ['bom', `Спецификация ПЭ3 (${bom.length})`],
@@ -180,14 +178,14 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           {activeTab === 'bom' && (
             <>
-              <div className="px-3 py-1.5 border-b border-[var(--flux-line)] flex items-center justify-between gap-3 bg-[var(--flux-surface)]">
+              <div className="px-3 py-1.5 border-b border-[var(--flux-line)] flex flex-wrap items-center justify-between gap-2 bg-[var(--flux-surface)]">
                 <input
                   type="search"
                   value={bomQuery}
                   onChange={(e) => setBomQuery(e.target.value)}
                   placeholder="Фильтр спецификации (обозначение, артикул, завод)…"
                   aria-label="Фильтр спецификации ПЭ3"
-                  className="w-80 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[12px] text-[var(--flux-text)]"
+                  className="w-64 max-w-full flex-1 min-w-[160px] h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[12px] text-[var(--flux-text)]"
                 />
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button

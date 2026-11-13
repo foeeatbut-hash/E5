@@ -1,8 +1,10 @@
 import { E3_CATALOG } from './e3Catalog.ts';
 import { DEFAULT_VISUAL_SETTINGS } from './e3Seed.ts';
 import type {
+  AnnotationKind,
   BomRow,
   CableJournalRow,
+  E3Annotation,
   E3Attribute,
   E3Cable,
   E3Device,
@@ -622,6 +624,16 @@ export function serializeE3Xml(project: E3Project): string {
   }
   lines.push('  </Wires>');
 
+  if (project.annotations?.length) {
+    lines.push('  <Annotations>');
+    for (const ann of project.annotations) {
+      lines.push(
+        `    <Annotation id="${xmlEscape(ann.id)}" sheetId="${xmlEscape(ann.sheetId)}" kind="${xmlEscape(ann.kind)}" x="${ann.x}" y="${ann.y}" width="${ann.width}" height="${ann.height}" text="${xmlEscape(ann.text)}" color="${xmlEscape(ann.color || '')}" fontSize="${ann.fontSize || 12}" />`
+      );
+    }
+    lines.push('  </Annotations>');
+  }
+
   lines.push('</E3Project>');
   return lines.join('\n');
 }
@@ -809,6 +821,28 @@ export function parseE3Xml(xml: string): E3Project {
     });
   }
 
+  // Annotations
+  const annotations: E3Annotation[] = [];
+  const annRe = /<Annotation\s+([^>]+?)\s*\/?>/g;
+  let anm: RegExpExecArray | null;
+  while ((anm = annRe.exec(xml)) !== null) {
+    const aa = parseXmlAttrs(anm[1]);
+    const kind: AnnotationKind =
+      aa.kind === 'rect' || aa.kind === 'callout' ? aa.kind : 'text';
+    annotations.push({
+      id: aa.id,
+      sheetId: aa.sheetId || sheets[0]?.id || 'sheet-1',
+      kind,
+      x: Number(aa.x || 0),
+      y: Number(aa.y || 0),
+      width: Number(aa.width || 160),
+      height: Number(aa.height || 40),
+      text: aa.text || '',
+      color: aa.color || undefined,
+      fontSize: aa.fontSize ? Number(aa.fontSize) : undefined,
+    });
+  }
+
   return {
     schemaVersion: rootAttrs.schemaVersion || '1.0',
     id: rootAttrs.id || `proj-${Date.now()}`,
@@ -823,6 +857,7 @@ export function parseE3Xml(xml: string): E3Project {
     devices,
     wires,
     cables,
+    annotations,
     visualSettings,
   };
 }
@@ -1108,6 +1143,24 @@ export function exportToDxf(project: E3Project, sheetId?: string): string {
     if (wire.waypoints.length >= 2) {
       const mid = wire.waypoints[Math.floor(wire.waypoints.length / 2)];
       addText(mid.x + 4, mid.y - 4, wire.wireNumber, 8, 'E3_NETS', 5);
+    }
+  }
+
+  // Drafting Annotations
+  const sheetAnnotations = (project.annotations || []).filter((a) => a.sheetId === targetSheet.id);
+  for (const ann of sheetAnnotations) {
+    if (ann.kind === 'rect') {
+      addLine(ann.x, ann.y, ann.x + ann.width, ann.y, 'E3_ANNOTATIONS', 4);
+      addLine(ann.x + ann.width, ann.y, ann.x + ann.width, ann.y + ann.height, 'E3_ANNOTATIONS', 4);
+      addLine(ann.x + ann.width, ann.y + ann.height, ann.x, ann.y + ann.height, 'E3_ANNOTATIONS', 4);
+      addLine(ann.x, ann.y + ann.height, ann.x, ann.y, 'E3_ANNOTATIONS', 4);
+      addText(ann.x + 8, ann.y + 16, ann.text, ann.fontSize || 11, 'E3_ANNOTATIONS', 4);
+    } else if (ann.kind === 'callout') {
+      addLine(ann.x, ann.y + ann.height, ann.x + 24, ann.y + 18, 'E3_ANNOTATIONS', 2);
+      addLine(ann.x + 24, ann.y + 18, ann.x + 24 + ann.width, ann.y + 18, 'E3_ANNOTATIONS', 2);
+      addText(ann.x + 28, ann.y + 12, ann.text, ann.fontSize || 11, 'E3_ANNOTATIONS', 7);
+    } else {
+      addText(ann.x, ann.y, ann.text, ann.fontSize || 12, 'E3_ANNOTATIONS', 7);
     }
   }
 
