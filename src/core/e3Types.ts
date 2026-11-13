@@ -1,0 +1,235 @@
+export type StandardType = 'GOST' | 'IEC';
+
+export type SignalType = 'power' | 'neutral' | 'pe' | 'dc24' | 'dc0' | 'signal' | 'bus';
+
+export type DeviceCategory =
+  | 'breaker'
+  | 'contactor'
+  | 'plc'
+  | 'sensor'
+  | 'motor'
+  | 'psu'
+  | 'terminal'
+  | 'relay'
+  | 'drive'
+  | 'lamp';
+
+export type PinDirection = 'left' | 'right' | 'top' | 'bottom';
+
+export type BindingState = 'PLACED' | 'MODIFIED' | 'DETACHED' | 'REMOVED_IN_FLUX';
+
+export interface E3Pin {
+  id: string;
+  name: string;
+  dx: number;
+  dy: number;
+  direction: PinDirection;
+  signalType: SignalType;
+}
+
+export interface E3Attribute {
+  name: string;
+  value: string;
+  owner: string; // '' for block, '#1' or sub-item name for internal part
+  conflict: 'flux' | 'script' | 'ask';
+  service?: boolean;
+}
+
+export interface E3Device {
+  id: string;
+  elementId: string; // Persistent Flux ID (never recycled)
+  designation: string; // e.g., -QF1, -KM1, -A1
+  componentName: string;
+  article: string;
+  manufacturer: string;
+  category: DeviceCategory;
+  sheetId: string;
+  x: number;
+  y: number;
+  rotation: 0 | 90 | 180 | 270;
+  width: number;
+  height: number;
+  e3BlockName: string;
+  bindingState: BindingState;
+  pins: E3Pin[];
+  attributes: E3Attribute[];
+}
+
+export interface E3Wire {
+  id: string;
+  sheetId: string;
+  netName: string;
+  signalType: SignalType;
+  fromDeviceId: string;
+  fromPinId: string;
+  toDeviceId: string;
+  toPinId: string;
+  waypoints: Array<{ x: number; y: number }>;
+  crossSection: string;
+  wireNumber: string;
+  cableId?: string;
+  coreNumber?: string;
+}
+
+export interface E3Cable {
+  id: string;
+  designation: string;
+  cableType: string;
+  coresCount: number;
+  crossSection: string;
+  lengthMeters: number;
+  fromDevice: string;
+  toDevice: string;
+  shielded: boolean;
+}
+
+export interface E3TitleBlock {
+  documentCode: string;
+  organization: string;
+  designer: string;
+  checker: string;
+  sheetTitle: string;
+}
+
+export interface E3Sheet {
+  id: string;
+  number: number;
+  name: string;
+  format: 'A3' | 'A4';
+  width: number;
+  height: number;
+  titleBlock: E3TitleBlock;
+}
+
+export interface E3VisualSettings {
+  schemaVersion: number;
+  presetName: string;
+  theme: 'light' | 'dark';
+  gridSize: number;
+  snapToGrid: boolean;
+  showGrid: boolean;
+  showGostFrame: boolean;
+  showPinNumbers: boolean;
+  showWireNumbers: boolean;
+  showCrossRefs: boolean;
+  wireWidth: number;
+  symbolStrokeWidth: number;
+  fontScale: number;
+  netColors: Record<SignalType, string>;
+}
+
+export interface E3Project {
+  schemaVersion: string;
+  id: string;
+  name: string;
+  projectCode: string;
+  fluxProjectKey: string;
+  author: string;
+  revision: number;
+  standard: StandardType;
+  updatedAt: string;
+  sheets: E3Sheet[];
+  devices: E3Device[];
+  wires: E3Wire[];
+  cables: E3Cable[];
+  visualSettings: E3VisualSettings;
+}
+
+export interface CatalogItem {
+  id: string;
+  category: DeviceCategory;
+  defaultPrefix: string;
+  componentName: string;
+  article: string;
+  manufacturer: string;
+  e3BlockName: string;
+  width: number;
+  height: number;
+  pins: Omit<E3Pin, 'id'>[];
+  defaultAttributes: E3Attribute[];
+}
+
+export interface BomRow {
+  pos: number;
+  designations: string[];
+  designationText: string;
+  componentName: string;
+  article: string;
+  manufacturer: string;
+  category: DeviceCategory;
+  quantity: number;
+  unit: string;
+  note: string;
+}
+
+export interface CableJournalRow {
+  designation: string;
+  cableType: string;
+  coresCount: number;
+  usedCores: number;
+  crossSection: string;
+  lengthMeters: number;
+  fromDevice: string;
+  toDevice: string;
+  shielded: boolean;
+}
+
+export interface TerminalPlanRow {
+  terminalDesignation: string;
+  pinName: string;
+  netName: string;
+  wireNumber: string;
+  crossSection: string;
+  connectedTo: string;
+  cableInfo: string;
+}
+
+export type ErcSeverity = 'error' | 'warning' | 'info';
+
+export interface ErcIssue {
+  id: string;
+  severity: ErcSeverity;
+  code: string;
+  message: string;
+  sheetId?: string;
+  deviceId?: string;
+  wireId?: string;
+}
+
+export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'SYNC';
+
+export interface ProcessLogEntry {
+  id: string;
+  timestamp: string;
+  level: LogLevel;
+  subsystem: 'E3-CORE' | 'WORKER' | 'SYNC-API' | 'E3-XML' | 'FLUX-BRIDGE' | 'CAD-DXF';
+  message: string;
+  durationMs?: number;
+  details?: string;
+}
+
+export interface FluxExportNode {
+  elementId: string;
+  version: string;
+  tag: string;
+  designation: string;
+  status: 'one' | 'many' | 'none';
+  solutionId: string;
+  solutionName: string;
+  rect: { sheet: string; x: number; y: number; rotation: number; width: number; height: number };
+  attrs: Array<{ name: string; value: string; owner: string; conflict?: 'flux' | 'script' | 'ask'; service?: boolean }>;
+  checked: boolean;
+}
+
+export interface FluxBridgeBundle {
+  format: 'flux-e3-bridge/v1';
+  fluxProjectKey: string;
+  projectName: string;
+  exportedAt: string;
+  revision: number;
+  visualSettings: E3VisualSettings;
+  nodes: FluxExportNode[];
+  wires: E3Wire[];
+  cables: E3Cable[];
+  sheets: E3Sheet[];
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Flux E3 — САПР электросхем и автоматизация КИП",
+  "description": "Инженерная ECAD-среда с двусторонней совместимостью E3.series и Flux Studio: проектирование электросхем, авто-спецификации ПЭ3, кабельные журналы, API и синхронизация в реальном времени.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
