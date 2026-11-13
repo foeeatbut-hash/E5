@@ -173,7 +173,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                     className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] font-medium text-[var(--flux-text)] whitespace-nowrap"
                   >
                     <FileCode2 className="w-3.5 h-3.5" />
-                    <span>E3 XML (.e3x)</span>
+                    <span>Проект E3 (.e3s)</span>
                   </button>
                   <button
                     type="button"
@@ -470,8 +470,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                     <span className="text-[var(--flux-text-muted)]">Добавление/обновление компонента</span>
                   </div>
                   <div className="px-2.5 py-1.5 flex justify-between gap-2">
-                    <span className="text-[var(--flux-accent)]">GET /api/v1/projects/{project.id}/export/e3xml</span>
-                    <span className="text-[var(--flux-text-muted)]">Экспорт E3.series .e3x XML</span>
+                    <span className="text-[var(--flux-accent)]">GET /api/v1/projects/{project.id}/export/e3s</span>
+                    <span className="text-[var(--flux-text-muted)]">Контейнер Flux E3 .e3s (OLE2 / XML)</span>
+                  </div>
+                  <div className="px-2.5 py-1.5 flex justify-between gap-2">
+                    <span className="text-[var(--flux-accent)]">GET /api/v1/projects/{project.id}/export/e3vbs</span>
+                    <span className="text-[var(--flux-text-muted)]">COM-скрипт генерации нативного .e3s (E³ 2022)</span>
                   </div>
                   <div className="px-2.5 py-1.5 flex justify-between gap-2">
                     <span className="text-[var(--flux-accent)]">GET /api/export/flux-studio</span>

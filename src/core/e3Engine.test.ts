@@ -1,20 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import JSZip from 'jszip';
 import {
   buildBom,
   buildCableJournal,
   buildTerminalPlan,
+  encodeUtf16LeWithBom,
   exportBomCsv,
   exportToDxf,
   exportToFluxBridge,
   exportVisualSettings,
+  generateE3ComScript,
   generateStressBatch,
+  generateWindowsBridgeCmd,
   importFromFluxBridge,
   parseE3Xml,
   parseVisualSettings,
   runErc,
   serializeE3Xml,
 } from './e3Engine';
+import {
+  buildOle2E3sContainer,
+  isOle2Buffer,
+  parseE3sInput,
+  parseOle2Streams,
+} from './e3SFormat';
 import { createSeedProject } from './e3Seed';
 
 test('bidirectional E3 XML round-trip preserves full model and visual settings', () => {
@@ -159,4 +169,124 @@ test('Large dataset (1000 devices) builds BOM, ERC, and XML quickly', () => {
   assert.ok(Array.isArray(erc));
   assert.ok(xml.length > 100_000);
   assert.ok(elapsed < 2000, `Expected < 2000ms, got ${elapsed}ms`);
+});
+
+test('OLE2 .e3s container writes valid CFB magic header and lossless round-trip restores full model', async () => {
+  const seed = createSeedProject();
+  seed.visualSettings.wireWidth = 3.5;
+  seed.visualSettings.presetName = 'ГОСТ Цех №2';
+
+  const container = buildOle2E3sContainer(seed);
+  assert.equal(isOle2Buffer(container), true);
+  assert.deepEqual(Array.from(container.subarray(0, 8)), [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+
+  const streams = parseOle2Streams(container);
+  assert.deepEqual(
+    streams.map((s) => s.name),
+    ['E3Project', 'VisualSettings', 'FluxBridge']
+  );
+
+  const parsed = await parseE3sInput(container, 'ЩУ-ПВ1.e3s');
+  assert.equal(parsed.sourceKind, 'e3s-ole2-lossless');
+  assert.equal(parsed.project.id, seed.id);
+  assert.equal(parsed.project.fluxProjectKey, seed.fluxProjectKey);
+  assert.equal(parsed.project.sheets.length, seed.sheets.length);
+  assert.equal(parsed.project.devices.length, seed.devices.length);
+  assert.equal(parsed.project.wires.length, seed.wires.length);
+  assert.equal(parsed.project.cables.length, seed.cables.length);
+  assert.equal(parsed.project.visualSettings.wireWidth, 3.5);
+  assert.equal(parsed.project.visualSettings.presetName, 'ГОСТ Цех №2');
+});
+
+test('Native binary OLE2 .e3s fallback extracts UTF-16LE device designations and Flux key', async () => {
+  const seed = createSeedProject();
+  const baseOle2 = new Uint8Array(buildOle2E3sContainer(seed));
+
+  // Clear data sectors (starting at 512) and inject native UTF-16LE MFC stream strings
+  baseOle2.fill(0, 512, 4608);
+  const writeUtf16 = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      baseOle2[offset + i * 2] = code & 0xff;
+      baseOle2[offset + i * 2 + 1] = (code >> 8) & 0xff;
+    }
+  };
+  writeUtf16(512, '-QF99');
+  writeUtf16(540, '-KM42');
+  writeUtf16(570, 'FLUX_NATIVE_2026');
+
+  // Rename 'E3Project' (9 UTF-16LE chars) to 'NativeE3S' in the OLE2 directory so it triggers native extraction
+  const oldName = 'E3Project';
+  const newName = 'NativeE3S';
+  for (let i = 512; i < baseOle2.length - oldName.length * 2; i += 2) {
+    let match = true;
+    for (let j = 0; j < oldName.length; j++) {
+      if (baseOle2[i + j * 2] !== oldName.charCodeAt(j) || baseOle2[i + j * 2 + 1] !== 0) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      writeUtf16(i, newName);
+      break;
+    }
+  }
+
+  const parsed = await parseE3sInput(baseOle2, 'native_zuken.e3s');
+  assert.equal(parsed.sourceKind, 'e3s-ole2-native');
+  assert.ok(parsed.discoveredStreams.includes('NativeE3S'));
+  assert.equal(parsed.project.fluxProjectKey, 'FLUX_NATIVE_2026');
+  assert.ok(parsed.project.devices.some((d) => d.designation === '-QF99'));
+  assert.ok(parsed.project.devices.some((d) => d.designation === '-KM42'));
+});
+
+test('ZIP-packaged .e3s archive imports embedded E3 XML cleanly', async () => {
+  const seed = createSeedProject();
+  const zip = new JSZip();
+  zip.file('model/E3Project.xml', serializeE3Xml(seed));
+  const zipBytes = await zip.generateAsync({ type: 'uint8array' });
+
+  const parsed = await parseE3sInput(zipBytes, 'packaged.e3s');
+  assert.equal(parsed.sourceKind, 'e3s-zip');
+  assert.equal(parsed.project.devices.length, seed.devices.length);
+  assert.equal(parsed.project.wires.length, seed.wires.length);
+});
+
+test('E3.series 2022 COM VBScript embeds project sheets, graphics, wires, cables, Sheet.Display, silent flag, and SaveAs .e3s', () => {
+  const seed = createSeedProject();
+  const buildVbs = generateE3ComScript(seed, 'build');
+  assert.ok(buildVbs.includes('CreateObject("CT.Application")'));
+  assert.ok(buildVbs.includes(seed.fluxProjectKey));
+  assert.ok(buildVbs.includes('"-QF1"'));
+  assert.ok(buildVbs.includes('"A9F74325"'));
+  assert.ok(buildVbs.includes('"-W2"'));
+  assert.ok(buildVbs.includes('DrawDeviceBox'));
+  assert.ok(buildVbs.includes('DrawWireSeg'));
+  assert.ok(buildVbs.includes('Sheet.Display'));
+  assert.ok(buildVbs.includes('WScript.Arguments.Named.Exists("silent")'));
+  assert.ok(buildVbs.includes('Prj.SaveAs(targetE3s)'));
+  assert.ok(buildVbs.includes('Call BuildNativeE3sProject()'));
+
+  const exportVbs = generateE3ComScript(seed, 'export');
+  assert.ok(exportVbs.includes('Call ExportActiveE3sToFluxJson()'));
+  assert.ok(exportVbs.includes('ADODB.Stream'));
+});
+
+test('encodeUtf16LeWithBom writes BOM (FF FE), CRLF line endings, and clean Cyrillic UTF-16LE bytes', () => {
+  const bytes = encodeUtf16LeWithBom("Привет\nE3");
+  assert.equal(bytes[0], 0xff);
+  assert.equal(bytes[1], 0xfe);
+  // Decode UTF-16LE payload after 2-byte BOM
+  const decoded = new TextDecoder('utf-16le').decode(bytes.subarray(2));
+  assert.equal(decoded, 'Привет\r\nE3');
+});
+
+test('generateWindowsBridgeCmd embeds server origin, polling/ack routes, Unicode VBScript write, and /silent execution', () => {
+  const cmd = generateWindowsBridgeCmd('https://flux-e3.example.com/');
+  assert.ok(cmd.includes("https://flux-e3.example.com"));
+  assert.ok(!cmd.includes("https://flux-e3.example.com/"));
+  assert.ok(cmd.includes('/api/v1/e3-bridge/poll?host='));
+  assert.ok(cmd.includes('/api/v1/e3-bridge/ack'));
+  assert.ok(cmd.includes('[Text.Encoding]::Unicode'));
+  assert.ok(cmd.includes('cscript.exe //Nologo $vbs /silent'));
 });

@@ -4,12 +4,14 @@ import {
   Archive,
   CheckCircle2,
   Download,
+  ExternalLink,
   FileSpreadsheet,
   FolderOpen,
   Grid3X3,
   Hand,
   Moon,
   MousePointer2,
+  Package,
   Palette,
   Printer,
   Redo2,
@@ -35,6 +37,7 @@ interface TopToolbarProps {
   ercErrorCount: number;
   isSyncConnected: boolean;
   isBusy: boolean;
+  e3BridgeHost: string | null;
   onSetTool: (tool: CadTool) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -46,9 +49,11 @@ interface TopToolbarProps {
   onToggleFrame: () => void;
   onRunErc: () => void;
   onGenerateBom: () => void;
+  onDirectOpenE3: () => void;
   onOpenExchangeModal: () => void;
   onOpenVisualModal: () => void;
   onOpenReportModal: () => void;
+  onOpenPortableBuild: () => void;
   onToggleTheme: () => void;
   onDownloadCodebase: () => void;
 }
@@ -63,6 +68,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   ercErrorCount,
   isSyncConnected,
   isBusy,
+  e3BridgeHost,
   onSetTool,
   onUndo,
   onRedo,
@@ -74,9 +80,11 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onToggleFrame,
   onRunErc,
   onGenerateBom,
+  onDirectOpenE3,
   onOpenExchangeModal,
   onOpenVisualModal,
   onOpenReportModal,
+  onOpenPortableBuild,
   onToggleTheme,
   onDownloadCodebase,
 }) => {
@@ -104,29 +112,44 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           </span>
         </div>
 
-        <nav className="flex items-center gap-2 shrink-0" aria-label="Основные действия">
+        <nav className="flex items-center gap-1.5 shrink-0" aria-label="Основные действия">
+          <button
+            type="button"
+            onClick={onDirectOpenE3}
+            title={
+              e3BridgeHost
+                ? `Отправить схему напрямую в E³.series (${e3BridgeHost})`
+                : 'Перенести проект напрямую в E³.series 2022'
+            }
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <span>В E³.series</span>
+            {e3BridgeHost && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+          </button>
+
           <button
             type="button"
             onClick={onOpenExchangeModal}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 h-7 px-2 rounded text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
           >
             <FolderOpen className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
-            <span>Импорт / Экспорт E3</span>
+            <span>Обмен E3</span>
           </button>
 
           <button
             type="button"
             onClick={onOpenVisualModal}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 h-7 px-2 rounded text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
           >
             <Palette className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
-            <span>Синхр. графики</span>
+            <span>Графика</span>
           </button>
 
           <button
             type="button"
             onClick={onOpenReportModal}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 h-7 px-2 rounded text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
           >
             <Printer className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
             <span>Отчёт ПЭ3</span>
@@ -134,11 +157,21 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 
           <button
             type="button"
+            onClick={onOpenPortableBuild}
+            title="Собрать из текущего кода и скачать готовую Portable-версию для Windows"
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
+          >
+            <Package className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <span>Скачать Portable</span>
+          </button>
+
+          <button
+            type="button"
             onClick={onDownloadCodebase}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 h-7 px-2 rounded text-[12px] font-medium text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors whitespace-nowrap shrink-0"
           >
             <Archive className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
-            <span>Скачать код (.zip)</span>
+            <span>Код (.zip)</span>
           </button>
         </nav>
 

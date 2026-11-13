@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Archive, Download, FileCode2, Printer, Upload, X } from 'lucide-react';
+import { Archive, Check, Copy, Download, ExternalLink, FileCode2, Package, Printer, Terminal, Upload, X } from 'lucide-react';
 import {
+  encodeUtf16LeWithBom,
   exportVisualSettings,
   generateE3ComScript,
   parseVisualSettings,
@@ -14,31 +15,52 @@ import type {
   SignalType,
 } from '../core/e3Types';
 
+export interface E3BridgeStatusInfo {
+  isWin32: boolean;
+  bridgeConnected: boolean;
+  bridgeHost: string | null;
+}
+
 interface ExchangeModalProps {
   open: boolean;
   project: E3Project;
+  bridgeStatus: E3BridgeStatusInfo;
   onClose: () => void;
-  onExportE3Xml: () => void;
+  onDirectOpenE3: (mode: 'build' | 'export') => Promise<{ ok: boolean; execution: string; host?: string; error?: string }>;
+  onDownloadConnector: () => void;
+  onExportE3sOle2: () => void;
+  onExportE3sXml: () => void;
   onExportFluxBridge: () => void;
   onExportDxf: () => void;
   onDownloadFluxStudioZip: () => void;
   onDownloadCodebaseZip: () => void;
+  onOpenPortableBuild: () => void;
+  onImportBytes: (bytes: ArrayBuffer, filename: string) => Promise<void>;
   onImportPayload: (rawText: string) => Promise<void>;
 }
 
 export const ExchangeModal: React.FC<ExchangeModalProps> = ({
   open,
   project,
+  bridgeStatus,
   onClose,
-  onExportE3Xml,
+  onDirectOpenE3,
+  onDownloadConnector,
+  onExportE3sOle2,
+  onExportE3sXml,
   onExportFluxBridge,
   onExportDxf,
   onDownloadFluxStudioZip,
   onDownloadCodebaseZip,
+  onOpenPortableBuild,
+  onImportBytes,
   onImportPayload,
 }) => {
   const [pasteText, setPasteText] = useState('');
   const [error, setError] = useState('');
+  const [bridgeMsg, setBridgeMsg] = useState('');
+  const [showScript, setShowScript] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
 
   if (!open) return null;
@@ -49,8 +71,8 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
     setError('');
     setBusy(true);
     try {
-      const text = await file.text();
-      await onImportPayload(text);
+      const buf = await file.arrayBuffer();
+      await onImportBytes(buf, file.name);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка импорта файла.');
@@ -74,14 +96,52 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
     }
   };
 
-  const handleDownloadVbs = () => {
-    const blob = new Blob([generateE3ComScript()], { type: 'text/plain;charset=utf-8' });
+  const handleDownloadVbs = (mode: 'build' | 'export') => {
+    // Encode with UTF-16LE BOM so Russian Windows wscript.exe/cscript.exe reads Cyrillic natively
+    const bytes = encodeUtf16LeWithBom(generateE3ComScript(project, mode));
+    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'text/plain;charset=utf-16le' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'e3_flux_bridge.vbs';
+    a.download =
+      mode === 'export'
+        ? `${project.projectCode}_e3_to_flux.vbs`
+        : `${project.projectCode}_open_in_e3.vbs`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleRunEmbeddedBridge = async (mode: 'build' | 'export') => {
+    setBusy(true);
+    setBridgeMsg('');
+    try {
+      const res = await onDirectOpenE3(mode);
+      if (res.ok) {
+        setBridgeMsg(
+          res.execution === 'local-win32'
+            ? `Выполнено локальным сервером Windows (${res.host || 'ПК'}). Проверьте окно E³.series!`
+            : `Команда отправлена на ваш ПК (${res.host || 'Windows'}) и запустится в E³.series через 1–2 сек.`
+        );
+      } else {
+        setBridgeMsg(
+          'Сервер сейчас в облаке (Linux). Запустите 1 раз локальный коннектор FluxE3_Connector.cmd на вашем Windows-ПК (или скачайте разовый .vbs), чтобы кнопка открывала E³.series напрямую.'
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const embeddedScript = generateE3ComScript(project, 'build');
+
+  const handleCopyScript = async () => {
+    try {
+      await navigator.clipboard.writeText(embeddedScript);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard fallback ignored
+    }
   };
 
   return (
@@ -106,24 +166,114 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
           </button>
         </div>
 
-        <div className="p-4 space-y-5 max-h-[80vh] overflow-y-auto text-[12px]">
-          {/* Export section */}
-          <div className="space-y-2">
-            <h3 className="text-[13px] font-semibold text-[var(--flux-text)]">
-              Экспорт модели и пакетов совместимости
-            </h3>
-            <p className="text-[var(--flux-text-muted)]">
-              Сохранённый файл полностью сохраняет узлы, выводы, цепи, атрибуты, настройки визуализации и ключ{' '}
-              <span className="font-mono text-[var(--flux-text)]">{project.fluxProjectKey}</span> для обратного открытия в E3.series и Flux.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+        <div className="p-4 space-y-5 max-h-[82vh] overflow-y-auto text-[12px]">
+          {/* Embedded Bridge section */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-[13px] font-semibold text-[var(--flux-text)]">
+                Встроенный COM-мост с E³.series 2022 SP2
+              </h3>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[var(--flux-text-muted)]">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    bridgeStatus.isWin32 || bridgeStatus.bridgeConnected ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                />
+                {bridgeStatus.isWin32
+                  ? 'Локальный Windows COM'
+                  : bridgeStatus.bridgeConnected
+                  ? `ПК подключён: ${bridgeStatus.bridgeHost}`
+                  : 'Ожидает коннектор на ПК'}
+              </span>
+            </div>
+
+            <div className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] leading-relaxed text-[var(--flux-text-muted)]">
+              Скрипт уже встроен в программу. При локальном запуске на Windows (или при запущенном{' '}
+              <span className="font-mono text-[var(--flux-text)]">FluxE3_Connector.cmd</span> в облачном режиме) нажатие кнопки ниже автоматически создаёт листы, изделия, кабели и открывает проект в <span className="font-medium text-[var(--flux-text)]">E³.series</span>.
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={onExportE3Xml}
+                disabled={busy}
+                onClick={() => handleRunEmbeddedBridge('build')}
+                className="inline-flex items-center justify-between px-3 h-9 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white font-medium text-left disabled:opacity-50"
+              >
+                <span>Открыть прямо в E³.series</span>
+                <ExternalLink className="w-4 h-4 shrink-0" />
+              </button>
+              <button
+                type="button"
+                onClick={onDownloadConnector}
+                className="inline-flex items-center justify-between px-3 h-9 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium text-left"
+              >
+                <span>Коннектор для ПК (.cmd, 1 раз)</span>
+                <Terminal className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadVbs('build')}
+                className="inline-flex items-center justify-between px-3 h-9 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium text-left"
+              >
+                <span>Разовый COM-скрипт (.vbs)</span>
+                <FileCode2 className="w-4 h-4 text-[var(--flux-text-muted)] shrink-0" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadVbs('export')}
+                className="inline-flex items-center justify-between px-3 h-9 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium text-left"
+              >
+                <span>Из открытого .e3s → Flux (.vbs)</span>
+                <Download className="w-4 h-4 text-[var(--flux-text-muted)] shrink-0" />
+              </button>
+            </div>
+
+            {bridgeMsg && (
+              <div className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-accent-soft)] text-[11px] text-[var(--flux-text)]">
+                {bridgeMsg}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-0.5">
+              <button
+                type="button"
+                onClick={() => setShowScript((s) => !s)}
+                className="text-[11px] font-medium text-[var(--flux-accent)] hover:underline"
+              >
+                {showScript ? 'Скрыть код встроенного COM-скрипта' : 'Показать код встроенного COM-скрипта (.vbs)'}
+              </button>
+              {showScript && (
+                <button
+                  type="button"
+                  onClick={handleCopyScript}
+                  className="inline-flex items-center gap-1 text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+                >
+                  {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  <span>{copied ? 'Скопировано' : 'Копировать VBScript'}</span>
+                </button>
+              )}
+            </div>
+
+            {showScript && (
+              <pre className="p-2.5 max-h-44 overflow-auto rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-text)] leading-relaxed">
+                {embeddedScript}
+              </pre>
+            )}
+          </div>
+
+          {/* File formats */}
+          <div className="pt-4 border-t border-[var(--flux-line)] space-y-2">
+            <h3 className="text-[13px] font-semibold text-[var(--flux-text)]">
+              Файловый обмен (.e3s / .json / .dxf)
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onExportE3sOle2}
                 className="flex items-center justify-between px-3 h-9 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-left"
               >
-                <span className="font-medium text-[var(--flux-text)]">Модель E3.series XML (.e3x)</span>
-                <FileCode2 className="w-4 h-4 text-[var(--flux-accent)]" />
+                <span className="font-medium text-[var(--flux-text)]">Контейнер Flux E3 (.e3s OLE2)</span>
+                <Download className="w-4 h-4 text-[var(--flux-text-muted)]" />
               </button>
               <button
                 type="button"
@@ -135,18 +285,18 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={onExportDxf}
+                onClick={onExportE3sXml}
                 className="flex items-center justify-between px-3 h-9 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-left"
               >
-                <span className="font-medium text-[var(--flux-text)]">Чертёж AutoCAD / CAD (.dxf)</span>
-                <Download className="w-4 h-4 text-[var(--flux-text-muted)]" />
+                <span className="font-medium text-[var(--flux-text)]">Схема E3 XML (.e3s)</span>
+                <FileCode2 className="w-4 h-4 text-[var(--flux-text-muted)]" />
               </button>
               <button
                 type="button"
-                onClick={handleDownloadVbs}
+                onClick={onExportDxf}
                 className="flex items-center justify-between px-3 h-9 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-left"
               >
-                <span className="font-medium text-[var(--flux-text)]">COM-скрипт для E3.series (.vbs)</span>
+                <span className="font-medium text-[var(--flux-text)]">Чертёж AutoCAD / E3 Импорт (.dxf)</span>
                 <Download className="w-4 h-4 text-[var(--flux-text-muted)]" />
               </button>
             </div>
@@ -171,6 +321,17 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenPortableBuild();
+                }}
+                className="inline-flex items-center gap-2 h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium"
+              >
+                <Package className="w-4 h-4 text-[var(--flux-accent)]" />
+                <span>Собрать Portable (.zip)</span>
+              </button>
+              <button
+                type="button"
                 onClick={onDownloadCodebaseZip}
                 className="inline-flex items-center gap-2 h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium"
               >
@@ -183,14 +344,14 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
           {/* Import section */}
           <div className="pt-4 border-t border-[var(--flux-line)] space-y-2.5">
             <h3 className="text-[13px] font-semibold text-[var(--flux-text)]">
-              Импорт из E3.series (.e3x / .xml) или Flux Bridge (.json)
+              Импорт из E3.series (.e3s OLE2 / ZIP / XML) или Flux Bridge (.json)
             </h3>
             <label className="inline-flex items-center gap-2 h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium cursor-pointer">
               <Upload className="w-3.5 h-3.5" />
-              <span>Выбрать файл с диска</span>
+              <span>Выбрать файл .e3s / .json с диска</span>
               <input
                 type="file"
-                accept=".e3x,.xml,.json"
+                accept=".e3s,.e3d,.xml,.json"
                 onChange={handleFileChange}
                 className="sr-only"
               />

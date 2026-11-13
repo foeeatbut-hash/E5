@@ -359,7 +359,7 @@ export function serializeE3Xml(project: E3Project): string {
   const lines: string[] = [];
   lines.push('<?xml version="1.0" encoding="UTF-8"?>');
   lines.push(
-    `<E3Project schemaVersion="${xmlEscape(project.schemaVersion)}" id="${xmlEscape(project.id)}" name="${xmlEscape(project.name)}" projectCode="${xmlEscape(project.projectCode)}" fluxProjectKey="${xmlEscape(project.fluxProjectKey)}" author="${xmlEscape(project.author)}" revision="${project.revision}" standard="${xmlEscape(project.standard)}" updatedAt="${xmlEscape(project.updatedAt)}">`
+    `<E3Project format="e3s" schemaVersion="${xmlEscape(project.schemaVersion)}" id="${xmlEscape(project.id)}" name="${xmlEscape(project.name)}" projectCode="${xmlEscape(project.projectCode)}" fluxProjectKey="${xmlEscape(project.fluxProjectKey)}" author="${xmlEscape(project.author)}" revision="${project.revision}" standard="${xmlEscape(project.standard)}" updatedAt="${xmlEscape(project.updatedAt)}">`
   );
 
   // Visual Settings synchronization block
@@ -929,35 +929,424 @@ export function exportCableJournalCsv(rows: CableJournalRow[]): string {
   return '\uFEFF' + lines.join('\r\n');
 }
 
-export function generateE3ComScript(): string {
+function vbsEsc(str: string): string {
+  return String(str ?? '')
+    .replace(/\r?\n/g, ' ')
+    .replace(/"/g, '""');
+}
+
+export function generateE3ComScript(project?: E3Project, scriptMode: 'build' | 'export' = 'build'): string {
+  const code = project?.projectCode || 'FLUX-E3-PRJ';
+  const name = project?.name || 'Проект Flux E3';
+  const fluxKey = project?.fluxProjectKey || 'FLUX_KEY';
+  const author = project?.author || 'Инженер';
+  const sheets = project?.sheets || [];
+  const devices = project?.devices || [];
+  const cables = project?.cables || [];
+  const wires = project?.wires || [];
+
+  const sheetMap = new Map(sheets.map((s, idx) => [s.id, { sheet: s, varName: `shId_${idx + 1}` }]));
+
+  const sheetDecl = sheets.map((_, idx) => `shId_${idx + 1}`).join(', ');
+  const sheetLines = sheets
+    .map((s, i) => {
+      const varName = `shId_${i + 1}`;
+      return `  ${varName} = CreateOrGetSheet(Prj, Sheet, "${vbsEsc(s.number + '. ' + s.name)}", "${vbsEsc(s.format)}")
+  If ${varName} > 0 Then
+    Call DrawGostFrame(Graph, ${varName}, "${vbsEsc(s.titleBlock.documentCode)}", "${vbsEsc(s.name)}", "${vbsEsc(s.titleBlock.designer)}")
+  End If`;
+    })
+    .join('\n');
+
+  const devLines = devices
+    .filter((d) => d.bindingState !== 'REMOVED_IN_FLUX')
+    .map((d) => {
+      const shEntry = sheetMap.get(d.sheetId);
+      const sw = shEntry?.sheet.width || 1400;
+      const sh = shEntry?.sheet.height || 920;
+      const shVar = shEntry?.varName || (sheets.length > 0 ? 'shId_1' : '0');
+      const mmX1 = Math.round(15 + (d.x / sw) * 390);
+      const mmX2 = Math.round(15 + ((d.x + d.width) / sw) * 390);
+      const mmY1 = Math.round(282 - ((d.y + d.height) / sh) * 255);
+      const mmY2 = Math.round(282 - (d.y / sh) * 255);
+
+      const attrsPairs = [
+        ['Артикул', d.article],
+        ['Производитель', d.manufacturer],
+        ['Наименование', d.componentName],
+        ['FLUX_ELEMENT_ID', d.elementId],
+        ['FLUX_BLOCK', d.e3BlockName],
+        ...d.attributes.map((a) => [a.name, a.value]),
+      ]
+        .filter(([, v]) => String(v || '').trim() !== '')
+        .map(([k, v]) => `    Call SafeSetDevAttr(Dev, "${vbsEsc(k)}", "${vbsEsc(v)}")`)
+        .join('\n');
+
+      return `  ' --- Элемент ${vbsEsc(d.designation)} (${vbsEsc(d.componentName)}) ---
+  If CreateFluxDevice(Prj, Dev, "${vbsEsc(d.designation)}", "${vbsEsc(d.componentName)}", "${vbsEsc(d.article)}") Then
+${attrsPairs}
+  End If
+  If ${shVar} > 0 Then
+    Call DrawDeviceBox(Graph, ${shVar}, ${mmX1}, ${mmY1}, ${mmX2}, ${mmY2}, "${vbsEsc(d.designation)}", "${vbsEsc(d.article)}")
+  End If`;
+    })
+    .join('\n');
+
+  const wireLines = wires
+    .filter((w) => w.waypoints.length >= 2)
+    .map((w) => {
+      const shEntry = sheetMap.get(w.sheetId);
+      const sw = shEntry?.sheet.width || 1400;
+      const sh = shEntry?.sheet.height || 920;
+      const shVar = shEntry?.varName || (sheets.length > 0 ? 'shId_1' : '0');
+      const colCode =
+        w.signalType === 'power' ? 1 : w.signalType === 'neutral' ? 4 : w.signalType === 'pe' ? 3 : 6;
+      const segs: string[] = [];
+      for (let i = 0; i < w.waypoints.length - 1; i++) {
+        const p1 = w.waypoints[i];
+        const p2 = w.waypoints[i + 1];
+        const x1 = Math.round(15 + (p1.x / sw) * 390);
+        const y1 = Math.round(282 - (p1.y / sh) * 255);
+        const x2 = Math.round(15 + (p2.x / sw) * 390);
+        const y2 = Math.round(282 - (p2.y / sh) * 255);
+        segs.push(`    Call DrawWireSeg(Prj, Con, Graph, ${shVar}, ${x1}, ${y1}, ${x2}, ${y2}, ${colCode})`);
+      }
+      const mid = w.waypoints[Math.floor(w.waypoints.length / 2)];
+      const mx = Math.round(15 + (mid.x / sw) * 390);
+      const my = Math.round(282 - (mid.y / sh) * 255);
+      segs.push(
+        `    Call DrawWireLabel(Graph, ${shVar}, ${mx}, ${my}, "${vbsEsc(w.wireNumber || w.netName)}", ${colCode})`
+      );
+      return `  If ${shVar} > 0 Then\n${segs.join('\n')}\n  End If`;
+    })
+    .join('\n');
+
+  const cableLines = cables
+    .map(
+      (c) =>
+        `  Call CreateFluxCable(Prj, Dev, "${vbsEsc(c.designation)}", "${vbsEsc(c.cableType)}", "${vbsEsc(c.fromDevice)}", "${vbsEsc(c.toDevice)}", ${c.lengthMeters})`
+    )
+    .join('\n');
+
+  const entryCall =
+    scriptMode === 'export' ? 'Call ExportActiveE3sToFluxJson()' : 'Call BuildNativeE3sProject()';
+
   return `' ============================================================================
-' Flux E3 <-> Zuken E3.series COM Bridge Script (VBScript)
-' Запускается внутри E3.series (Tools -> Scripts -> Run) или через cscript.exe
-' Импортирует/экспортирует .e3x XML с сохранением атрибутов, позиций и FLUX_PROJECT
+' Flux E3 <-> Zuken E3.series 2022 SP2 (Build 23.20+) COM Bridge Script
+' Проект: ${vbsEsc(name)} (${vbsEsc(code)})
+' Ключ синхронизации: ${vbsEsc(fluxKey)}
+' Режим скрипта: ${scriptMode === 'export' ? 'Выгрузка из E3.series в Flux (.json)' : 'Прямой перенос и открытие в E3.series (.e3s)'}
+'
+' КАК ЗАПУСТИТЬ:
+'   Двойной клик по файлу .vbs (при открытом E3.series / E3.cable)
+'   или внутри E3.series: Сервис -> Выполнить скрипт (Tools -> Execute Script).
 ' ============================================================================
 Option Explicit
 
-Dim App, Prj, Job, Dev, Sheet
-Set App = CreateObject("CT.Application")
-Set Prj = App.CreateJobObject()
+Dim App, Prj, Sheet, Dev, Graph, Con, outFolder, fso
+${sheetDecl ? `Dim ${sheetDecl}` : ''}
+Set fso = CreateObject("Scripting.FileSystemObject")
 
-Dim xmlDoc, fso, mode
-mode = InputBox("Режим обмена Flux E3 <-> E3.series:" & vbCrLf & "1 = Экспорт из E3 в .e3x" & vbCrLf & "2 = Импорт .e3x в E3", "Flux E3 COM Bridge", "2")
-
-If mode = "1" Then
-  App.PutInfo 0, "Flux E3 Bridge: запуск экспорта активного проекта E3.series..."
-  ' Чтение устройств, атрибутов FLUX_PROJECT и координат на листах
-  Dim devIds, cnt, i, outPath
-  outPath = Prj.GetPath() & "\\flux_export.e3x"
-  cnt = Prj.GetAllDeviceIds(devIds)
-  App.PutInfo 0, "Найдено устройств в модели E3: " & cnt & " -> " & outPath
-ElseIf mode = "2" Then
-  App.PutInfo 0, "Flux E3 Bridge: импорт XML-модели .e3x в текущий проект E3.series..."
-  Set Dev = Prj.CreateDeviceObject()
-  ' Синхронизация позиционных обозначений, артикулов и атрибутов FLUX_PROJECT
-  App.PutInfo 0, "Синхронизация завершена без конфликтов."
+On Error Resume Next
+Set App = GetObject(, "CT.Application")
+If App Is Nothing Then
+  Set App = CreateObject("CT.Application")
 End If
+On Error GoTo 0
+
+If App Is Nothing Then
+  MsgBox "Не удалось подключиться к Zuken E3.series (CT.Application). Запустите E3.series и повторите попытку.", vbCritical, "Flux E3 Bridge"
+  WScript.Quit 1
+End If
+
+Set Prj = App.CreateJobObject()
+Set Sheet = Prj.CreateSheetObject()
+Set Dev = Prj.CreateDeviceObject()
+Set Graph = Prj.CreateGraphObject()
+Set Con = Prj.CreateConnectionObject()
+
+outFolder = fso.GetParentFolderName(WScript.ScriptFullName)
+If outFolder = "" Then outFolder = "D:\\Downloads"
+
+${entryCall}
+
+Sub BuildNativeE3sProject()
+  Dim targetE3s, prjName, ans
+  prjName = "${vbsEsc(code)}"
+  targetE3s = outFolder & "\\" & prjName & "_native.e3s"
+
+  On Error Resume Next
+  If Prj.GetId() > 0 Then
+    If WScript.Arguments.Named.Exists("silent") Then
+      Prj.Close
+      Prj.Create prjName
+    Else
+      ans = MsgBox("В E3.series уже открыт проект '" & Prj.GetName() & "'." & vbCrLf & vbCrLf & "Да = закрыть его и создать новый '" & prjName & "'" & vbCrLf & "Нет = добавить элементы Flux в текущий проект", vbYesNoCancel + vbQuestion, "Flux E3 -> E3.series")
+      If ans = vbCancel Then Exit Sub
+      If ans = vbYes Then
+        Prj.Close
+        Prj.Create prjName
+      End If
+    End If
+  Else
+    Prj.Create prjName
+  End If
+  Call Prj.SetAttributeValue("FLUX_PROJECT", "${vbsEsc(fluxKey)}")
+  Call Prj.SetAttributeValue("Наименование", "${vbsEsc(name)}")
+  Call Prj.SetAttributeValue("Автор", "${vbsEsc(author)}")
+  On Error GoTo 0
+
+  App.PutInfo 0, "[Flux E3] Перенос листов (${sheets.length}), изделий (${devices.length}), цепей (${wires.length}) и кабелей (${cables.length})..."
+
+  ' 1. Листы и рамки ГОСТ (${sheets.length})
+${sheetLines || "  ' (нет листов)"}
+
+  ' 2. Изделия в дерево проекта + графика УГО на листах (${devices.length})
+${devLines || "  ' (нет устройств)"}
+
+  ' 3. Цепи и соединения (${wires.length})
+${wireLines || "  ' (нет цепей)"}
+
+  ' 4. Кабельные связи (${cables.length})
+${cableLines || "  ' (нет кабелей)"}
+
+  ' Показываем первый лист сразу на экране E3.series
+  ${sheets.length > 0 ? 'If shId_1 > 0 Then\n    On Error Resume Next\n    Sheet.SetId shId_1\n    Sheet.Display\n    On Error GoTo 0\n  End If' : ''}
+
+  On Error Resume Next
+  Call Prj.SaveAs(targetE3s)
+  If Err.Number <> 0 Then
+    App.PutInfo 1, "[Flux E3] Проект открыт в E3.series; при необходимости сохраните вручную (Файл -> Сохранить как): " & Err.Description
+    Err.Clear
+  Else
+    App.PutInfo 0, "[Flux E3] Проект открыт в E3.series и сохранён в: " & targetE3s
+  End If
+  On Error GoTo 0
+End Sub
+
+Function CreateOrGetSheet(ByRef p, ByRef sh, ByVal shName, ByVal fmt)
+  On Error Resume Next
+  Dim res
+  res = sh.Create(0, shName, fmt, 0, "")
+  If res <= 0 Then res = sh.Create(0, shName, "DINA3", 0, "")
+  If res <= 0 Then res = sh.Create(0, shName, "", 0, "")
+  Err.Clear
+  On Error GoTo 0
+  CreateOrGetSheet = res
+End Function
+
+Sub DrawGostFrame(ByRef g, ByVal shId, ByVal docCode, ByVal shName, ByVal designer)
+  On Error Resume Next
+  Dim gid
+  gid = g.CreateRectangle(shId, 10, 10, 410, 287)
+  If gid > 0 Then
+    g.SetId gid
+    g.SetColour 0
+    g.SetLineWidth 0.35
+  End If
+  gid = g.CreateRectangle(shId, 225, 10, 410, 45)
+  gid = g.CreateText(shId, docCode & " — " & shName & " (" & designer & ")", 229, 25)
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub DrawDeviceBox(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal des, ByVal art)
+  On Error Resume Next
+  Dim gid
+  gid = g.CreateRectangle(shId, x1, y1, x2, y2)
+  If gid > 0 Then
+    g.SetId gid
+    g.SetColour 0
+    g.SetLineWidth 0.35
+  End If
+  gid = g.CreateText(shId, des, x1, y2 + 3)
+  If art <> "" Then
+    gid = g.CreateText(shId, art, x1, y1 - 5)
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub DrawWireSeg(ByRef p, ByRef cn, ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal colIdx)
+  On Error Resume Next
+  Dim xs(1), ys(1), cid, gid
+  xs(0) = x1 : xs(1) = x2
+  ys(0) = y1 : ys(1) = y2
+  cid = cn.Create(shId, 2, xs, ys)
+  If cid <= 0 Then
+    gid = g.CreateLine(shId, 2, xs, ys)
+    If gid > 0 Then
+      g.SetId gid
+      g.SetColour colIdx
+      g.SetLineWidth 0.35
+    End If
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub DrawWireLabel(ByRef g, ByVal shId, ByVal x, ByVal y, ByVal lbl, ByVal colIdx)
+  On Error Resume Next
+  Dim gid
+  gid = g.CreateText(shId, lbl, x + 2, y + 2)
+  If gid > 0 Then
+    g.SetId gid
+    g.SetColour colIdx
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Function CreateFluxDevice(ByRef p, ByRef d, ByVal des, ByVal compName, ByVal article)
+  On Error Resume Next
+  Dim devId
+  devId = d.Create(des, "", "", compName, "", 0)
+  If devId <= 0 Then
+    devId = d.Create(des, "", "", "", "", 0)
+  End If
+  If devId > 0 Then
+    d.SetId devId
+    CreateFluxDevice = True
+  Else
+    App.PutInfo 1, "[Flux E3] Не удалось создать устройство " & des & " (" & article & ")"
+    CreateFluxDevice = False
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Function
+
+Sub SafeSetDevAttr(ByRef d, ByVal attrName, ByVal attrVal)
+  On Error Resume Next
+  Call d.SetAttributeValue(attrName, attrVal)
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub CreateFluxCable(ByRef p, ByRef d, ByVal des, ByVal cabType, ByVal fDev, ByVal tDev, ByVal lenM)
+  On Error Resume Next
+  Dim cid
+  cid = d.Create(des, "", "", cabType, "", 1)
+  If cid <= 0 Then
+    cid = d.Create(des, "", "", "", "", 1)
+  End If
+  If cid > 0 Then
+    d.SetId cid
+    Call d.SetAttributeValue("Наименование", cabType)
+    Call d.SetAttributeValue("Длина", CStr(lenM))
+    Call d.SetAttributeValue("Откуда", fDev)
+    Call d.SetAttributeValue("Куда", tDev)
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub ExportActiveE3sToFluxJson()
+  Dim devIds, cnt, i, jsonPath, sb, dName, comp, art, mfg, elId, fluxPrj
+  Dim strm
+  If Prj.GetId() = 0 Then
+    If Not WScript.Arguments.Named.Exists("silent") Then
+      MsgBox "Сначала откройте проект .e3s в E3.series!", vbExclamation, "Flux E3"
+    End If
+    Exit Sub
+  End If
+
+  fluxPrj = ""
+  On Error Resume Next
+  fluxPrj = Prj.GetAttributeValue("FLUX_PROJECT")
+  On Error GoTo 0
+  If fluxPrj = "" Then fluxPrj = "${vbsEsc(fluxKey)}"
+
+  cnt = Prj.GetAllDeviceIds(devIds)
+  sb = "{" & vbCrLf
+  sb = sb & "  ""format"": ""flux-e3-bridge/v1""," & vbCrLf
+  sb = sb & "  ""fluxProjectKey"": """ & JsonEsc(fluxPrj) & """," & vbCrLf
+  sb = sb & "  ""projectName"": """ & JsonEsc(Prj.GetName()) & """," & vbCrLf
+  sb = sb & "  ""exportedAt"": """ & Year(Now) & "-" & Right("0" & Month(Now), 2) & "-" & Right("0" & Day(Now), 2) & "T12:00:00.000Z""," & vbCrLf
+  sb = sb & "  ""revision"": 1," & vbCrLf
+  sb = sb & "  ""nodes"": [" & vbCrLf
+
+  Dim firstNode
+  firstNode = True
+  For i = 1 To cnt
+    Dev.SetId devIds(i)
+    dName = Dev.GetName()
+    If dName <> "" Then
+      comp = "" : art = "" : mfg = "" : elId = ""
+      On Error Resume Next
+      comp = Dev.GetComponentName()
+      art = Dev.GetAttributeValue("Артикул")
+      mfg = Dev.GetAttributeValue("Производитель")
+      elId = Dev.GetAttributeValue("FLUX_ELEMENT_ID")
+      On Error GoTo 0
+      If elId = "" Then elId = "e3-" & CStr(devIds(i))
+      If Not firstNode Then sb = sb & "," & vbCrLf
+      firstNode = False
+      sb = sb & "    {" & vbCrLf
+      sb = sb & "      ""elementId"": """ & JsonEsc(elId) & """," & vbCrLf
+      sb = sb & "      ""version"": ""e3-" & CStr(devIds(i)) & """," & vbCrLf
+      sb = sb & "      ""tag"": """ & JsonEsc(dName) & """," & vbCrLf
+      sb = sb & "      ""designation"": """ & JsonEsc(dName) & """," & vbCrLf
+      sb = sb & "      ""status"": ""one""," & vbCrLf
+      sb = sb & "      ""solutionId"": ""e3-native""," & vbCrLf
+      sb = sb & "      ""solutionName"": """ & JsonEsc(comp) & """," & vbCrLf
+      sb = sb & "      ""rect"": { ""sheet"": ""sheet-1"", ""x"": " & (120 + ((i - 1) Mod 5) * 220) & ", ""y"": " & (120 + Int((i - 1) / 5) * 180) & ", ""rotation"": 0, ""width"": 100, ""height"": 100 }," & vbCrLf
+      sb = sb & "      ""attrs"": [" & vbCrLf
+      sb = sb & "        { ""name"": ""Артикул"", ""value"": """ & JsonEsc(art) & """, ""owner"": """", ""conflict"": ""flux"" }," & vbCrLf
+      sb = sb & "        { ""name"": ""Производитель"", ""value"": """ & JsonEsc(mfg) & """, ""owner"": """", ""conflict"": ""flux"" }," & vbCrLf
+      sb = sb & "        { ""name"": ""Наименование"", ""value"": """ & JsonEsc(comp) & """, ""owner"": """", ""conflict"": ""flux"" }" & vbCrLf
+      sb = sb & "      ]," & vbCrLf
+      sb = sb & "      ""checked"": true" & vbCrLf
+      sb = sb & "    }"
+    End If
+  Next
+
+  sb = sb & vbCrLf & "  ]" & vbCrLf & "}" & vbCrLf
+
+  jsonPath = outFolder & "\\flux_e3_export.json"
+  Set strm = CreateObject("ADODB.Stream")
+  strm.Type = 2
+  strm.Charset = "utf-8"
+  strm.Open
+  strm.WriteText sb
+  strm.SaveToFile jsonPath, 2
+  strm.Close
+
+  App.PutInfo 0, "[Flux E3] Экспортировано устройств: " & cnt & " -> " & jsonPath
+  If Not WScript.Arguments.Named.Exists("silent") Then
+    MsgBox "Проект E3.series выгружен для Flux E3:" & vbCrLf & jsonPath & vbCrLf & vbCrLf & "Откройте этот .json файл в окне 'Импорт / Экспорт E3'.", vbInformation, "Flux E3"
+  End If
+End Sub
+
+Function JsonEsc(ByVal s)
+  s = CStr(s)
+  s = Replace(s, "\\", "\\\\")
+  s = Replace(s, """", "\\""")
+  s = Replace(s, vbCrLf, " ")
+  s = Replace(s, vbCr, " ")
+  s = Replace(s, vbLf, " ")
+  JsonEsc = s
+End Function
 `;
+}
+
+/** Encodes VBScript source as UTF-16LE with BOM (0xFF 0xFE) so Russian Windows WSH executes Cyrillic cleanly. */
+export function encodeUtf16LeWithBom(text: string): Uint8Array {
+  const normalized = text.replace(/\r?\n/g, '\r\n');
+  const out = new Uint8Array(2 + normalized.length * 2);
+  out[0] = 0xff;
+  out[1] = 0xfe;
+  for (let i = 0; i < normalized.length; i++) {
+    const code = normalized.charCodeAt(i);
+    out[2 + i * 2] = code & 0xff;
+    out[2 + i * 2 + 1] = (code >> 8) & 0xff;
+  }
+  return out;
+}
+
+/** Generates a 1-file Windows background bridge (.cmd + PowerShell) connecting local E3.series to Flux E3. */
+export function generateWindowsBridgeCmd(serverOrigin: string): string {
+  const cleanOrigin = serverOrigin.replace(/\/+$/, '');
+  return `@echo off\r\nchcp 65001 >nul\r\ntitle Flux E3 <-> E3.series 2022 Bridge Agent\r\necho [Flux E3] Connecting to ${cleanOrigin} ...\r\npowershell -NoProfile -ExecutionPolicy Bypass -Command ^"\r\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^\r\n$base = '${cleanOrigin}'; $pc = $env:COMPUTERNAME; ^\r\n$work = Join-Path $env:TEMP 'flux_e3_bridge'; New-Item -ItemType Directory -Force -Path $work | Out-Null; ^\r\nWrite-Host ('[Flux E3] Bridge active on ' + $pc + '. Click Open in E3 inside the app!'); ^\r\nwhile ($true) { ^\r\n  try { ^\r\n    $resp = Invoke-RestMethod -Uri ($base + '/api/v1/e3-bridge/poll?host=' + [uri]::EscapeDataString($pc)) -TimeoutSec 10; ^\r\n    if ($resp.job) { ^\r\n      Write-Host ('[Flux E3] Executing job ' + $resp.job.jobId + ' (' + $resp.job.mode + ')...'); ^\r\n      $vbs = Join-Path $work 'flux_job.vbs'; ^\r\n      [IO.File]::WriteAllText($vbs, $resp.job.script, [Text.Encoding]::Unicode); ^\r\n      $out = & cscript.exe //Nologo $vbs /silent 2>&1 | Out-String; ^\r\n      $expFile = Join-Path $work 'flux_e3_export.json'; ^\r\n      $expJson = $null; if (($resp.job.mode -eq 'export') -and (Test-Path $expFile)) { $expJson = Get-Content $expFile -Raw -Encoding UTF8; Remove-Item $expFile -Force; } ^\r\n      $ack = @{ jobId = $resp.job.jobId; host = $pc; ok = ($LASTEXITCODE -eq 0); message = $out; exportedJson = $expJson } | ConvertTo-Json -Depth 4; ^\r\n      $bytes = [Text.Encoding]::UTF8.GetBytes($ack); ^\r\n      Invoke-RestMethod -Method Post -Uri ($base + '/api/v1/e3-bridge/ack') -ContentType 'application/json; charset=utf-8' -Body $bytes | Out-Null; ^\r\n      Write-Host ('[Flux E3] Job done: ' + $resp.job.jobId); ^\r\n    } ^\r\n  } catch { Start-Sleep -Seconds 2; } ^\r\n  Start-Sleep -Milliseconds 1500; ^\r\n}\r\n"\r\n`;
 }
 
 // ============================================================================

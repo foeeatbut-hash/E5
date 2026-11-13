@@ -8,6 +8,7 @@ import {
   runErc,
   serializeE3Xml,
 } from '../core/e3Engine';
+import { buildOle2E3sContainer, parseE3sInput } from '../core/e3SFormat';
 import type {
   BomRow,
   CableJournalRow,
@@ -45,7 +46,6 @@ class EcadAsyncRunner {
           else entry.reject(new Error(msg.error));
         };
         this.worker.onerror = () => {
-          // Gracefully degrade to async microtask execution if worker fails to load
           this.worker = null;
         };
       } catch {
@@ -107,6 +107,21 @@ class EcadAsyncRunner {
     return { xml, durationMs: Math.round((performance.now() - t0) * 100) / 100, viaWorker: false };
   }
 
+  async exportE3sOle2(project: E3Project): Promise<{ bytes: Uint8Array; durationMs: number; viaWorker: boolean }> {
+    const id = `e3s-${Date.now()}`;
+    const res = await this.callWorker<Extract<WorkerResponse, { type: 'EXPORT_E3S_OLE2' }>>({
+      id,
+      type: 'EXPORT_E3S_OLE2',
+      project,
+    });
+    if (res) {
+      return { bytes: new Uint8Array(res.bytes), durationMs: res.durationMs, viaWorker: true };
+    }
+    const t0 = performance.now();
+    const bytes = buildOle2E3sContainer(project);
+    return { bytes, durationMs: Math.round((performance.now() - t0) * 100) / 100, viaWorker: false };
+  }
+
   async importXml(xml: string): Promise<{ project: E3Project; durationMs: number; viaWorker: boolean }> {
     const id = `ixml-${Date.now()}`;
     const res = await this.callWorker<Extract<WorkerResponse, { type: 'IMPORT_XML' }>>({
@@ -118,6 +133,41 @@ class EcadAsyncRunner {
     const t0 = performance.now();
     const project = parseE3Xml(xml);
     return { project, durationMs: Math.round((performance.now() - t0) * 100) / 100, viaWorker: false };
+  }
+
+  async importE3sBytes(
+    bytes: ArrayBuffer,
+    filename?: string
+  ): Promise<{
+    project: E3Project;
+    sourceKind: string;
+    discoveredStreams: string[];
+    durationMs: number;
+    viaWorker: boolean;
+  }> {
+    const id = `ie3s-${Date.now()}`;
+    const res = await this.callWorker<Extract<WorkerResponse, { type: 'IMPORT_E3S_BYTES' }>>({
+      id,
+      type: 'IMPORT_E3S_BYTES',
+      bytes,
+      filename,
+    });
+    if (res) {
+      return {
+        project: res.project,
+        sourceKind: res.sourceKind,
+        discoveredStreams: res.discoveredStreams,
+        durationMs: res.durationMs,
+        viaWorker: true,
+      };
+    }
+    const t0 = performance.now();
+    const parsed = await parseE3sInput(bytes, filename);
+    return {
+      ...parsed,
+      durationMs: Math.round((performance.now() - t0) * 100) / 100,
+      viaWorker: false,
+    };
   }
 
   async exportDxf(project: E3Project, sheetId?: string): Promise<{ dxf: string; durationMs: number }> {

@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BottomConsole, type ConsoleTab } from './components/BottomConsole';
 import { LeftExplorer } from './components/LeftExplorer';
-import { ExchangeModal, ReportModal, VisualSettingsModal } from './components/Modals';
+import {
+  type E3BridgeStatusInfo,
+  ExchangeModal,
+  ReportModal,
+  VisualSettingsModal,
+} from './components/Modals';
+import { PortableBuildModal } from './components/PortableBuildModal';
 import { RightInspector } from './components/RightInspector';
 import { SchematicCanvas } from './components/SchematicCanvas';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
@@ -45,6 +51,18 @@ function downloadText(filename: string, content: string, mime = 'text/plain;char
   URL.revokeObjectURL(url);
 }
 
+function downloadBytes(filename: string, bytes: Uint8Array, mime = 'application/octet-stream') {
+  const copy = new Uint8Array(bytes.length);
+  copy.set(bytes);
+  const blob = new Blob([copy.buffer], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function App() {
   const [project, setProject] = useState<E3Project>(() => createSeedProject());
   const [history, setHistory] = useState<E3Project[]>([]);
@@ -71,6 +89,7 @@ export default function App() {
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [visualOpen, setVisualOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [portableOpen, setPortableOpen] = useState(false);
 
   const [logs, setLogs] = useState<ProcessLogEntry[]>(() => [
     {
@@ -193,6 +212,19 @@ export default function App() {
               'SYNC',
               'SYNC-API',
               `Синхронизация от сервера (${payload.source || 'API'}): ревизия ${payload.project.revision}.`
+            );
+          } else if (payload.type === 'e3-bridge-status') {
+            setBridgeStatus((prev) => ({
+              ...prev,
+              bridgeConnected: Boolean(payload.bridgeConnected),
+              bridgeHost: payload.bridgeHost || prev.bridgeHost,
+            }));
+            appendLog('SYNC', 'E3-XML', `Подключён локальный ПК-мост E³.series (${payload.bridgeHost}).`);
+          } else if (payload.type === 'e3-bridge-log') {
+            appendLog(
+              payload.ok ? 'INFO' : 'WARN',
+              'E3-XML',
+              `[Мост ${payload.host || 'E3'}] ${payload.message}`
             );
           }
         } catch {
@@ -503,11 +535,34 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleUndo, handleRedo, handleDeleteSelected, handleRotateSelected]);
 
-  // Export & Import handlers
-  const handleExportE3Xml = async () => {
+  // Export & Import handlers (.e3s OLE2 + XML + Flux Bridge)
+  const handleExportE3sOle2 = async () => {
+    const res = await ecadAsync.exportE3sOle2(project);
+    downloadBytes(`${project.projectCode}.e3s`, res.bytes, 'application/x-e3s');
+    appendLog(
+      'INFO',
+      'E3-XML',
+      `Экспортирован контейнер E3.series ${project.projectCode}.e3s (OLE2 CFB, ${res.bytes.length} байт).`,
+      res.durationMs
+    );
+  };
+
+  const handleExportE3sXml = async () => {
     const res = await ecadAsync.exportXml(project);
-    downloadText(`${project.projectCode}.e3x`, res.xml, 'application/xml;charset=utf-8');
-    appendLog('INFO', 'E3-XML', `Экспортирован файл совместимости ${project.projectCode}.e3x.`, res.durationMs);
+    downloadText(`${project.projectCode}-xml.e3s`, res.xml, 'application/xml;charset=utf-8');
+    appendLog('INFO', 'E3-XML', `Экспортирован файл E3 XML ${project.projectCode}-xml.e3s.`, res.durationMs);
+  };
+
+  const handleImportE3sBytes = async (bytes: ArrayBuffer, filename: string) => {
+    const res = await ecadAsync.importE3sBytes(bytes, filename);
+    commitProject(() => res.project);
+    if (res.project.sheets[0]) setActiveSheetId(res.project.sheets[0].id);
+    appendLog(
+      'SYNC',
+      'E3-XML',
+      `Импортирован файл ${filename} (${res.sourceKind}): ${res.project.devices.length} изд., потоки [${res.discoveredStreams.join(', ')}].`,
+      res.durationMs
+    );
   };
 
   const handleExportFluxBridge = async () => {
@@ -600,6 +655,78 @@ export default function App() {
     }
   };
 
+  const [bridgeStatus, setBridgeStatus] = useState<E3BridgeStatusInfo>({
+    isWin32: false,
+    bridgeConnected: false,
+    bridgeHost: null,
+  });
+
+  useEffect(() => {
+    fetch('/api/v1/e3-bridge/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) {
+          setBridgeStatus({
+            isWin32: Boolean(data.isWin32),
+            bridgeConnected: Boolean(data.bridgeConnected),
+            bridgeHost: data.bridgeHost || null,
+          });
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/v1/projects/current')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((srvProj: E3Project | null) => {
+        if (srvProj && srvProj.id && Array.isArray(srvProj.devices)) {
+          setProject((curr) => {
+            if (srvProj.revision > curr.revision || srvProj.id !== curr.id) {
+              suppressSyncPushRef.current = true;
+              if (srvProj.sheets[0]) setActiveSheetId(srvProj.sheets[0].id);
+              return srvProj;
+            }
+            return curr;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleDirectOpenE3 = async (mode: 'build' | 'export' = 'build') => {
+    // Sync latest client edits to server before triggering COM execution
+    await fetch(`/api/v1/projects/${encodeURIComponent(project.id)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Flux-Client': clientIdRef.current,
+      },
+      body: JSON.stringify(project),
+    }).catch(() => {});
+
+    const res = await fetch(`/api/v1/projects/${encodeURIComponent(project.id)}/e3-direct-open`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const data = await res.json();
+    if (data?.ok) {
+      appendLog(
+        'SYNC',
+        'E3-XML',
+        data.execution === 'local-win32'
+          ? `Встроенный COM-мост запустил E³.series на ${data.host}.`
+          : `Задание ${data.jobId} отправлено на коннектор ПК (${data.host}) для открытия в E³.series.`
+      );
+    } else {
+      appendLog(
+        'INFO',
+        'E3-XML',
+        'Встроенный COM-мост ожидает локального Windows-коннектора или запуска на Windows.'
+      );
+    }
+    return data;
+  };
+
   const ercErrorCount = erc.filter((i) => i.severity === 'error').length;
 
   return (
@@ -614,6 +741,7 @@ export default function App() {
         ercErrorCount={ercErrorCount}
         isSyncConnected={isSyncConnected}
         isBusy={isBusy}
+        e3BridgeHost={bridgeStatus.isWin32 ? 'Windows' : bridgeStatus.bridgeConnected ? bridgeStatus.bridgeHost : null}
         onSetTool={setTool}
         onUndo={handleUndo}
         onRedo={handleRedo}
@@ -645,9 +773,14 @@ export default function App() {
           setConsoleCollapsed(false);
           appendLog('INFO', 'E3-CORE', `Сформирована спецификация ПЭ3 (${bom.length} позиций).`);
         }}
+        onDirectOpenE3={async () => {
+          const res = await handleDirectOpenE3('build');
+          if (!res?.ok) setExchangeOpen(true);
+        }}
         onOpenExchangeModal={() => setExchangeOpen(true)}
         onOpenVisualModal={() => setVisualOpen(true)}
         onOpenReportModal={() => setReportOpen(true)}
+        onOpenPortableBuild={() => setPortableOpen(true)}
         onToggleTheme={() =>
           handleApplyVisualSettings({
             ...project.visualSettings,
@@ -772,7 +905,7 @@ export default function App() {
           appendLog('INFO', 'E3-CORE', `Выгружен кабельный журнал ${project.projectCode}-cables.csv.`);
         }}
         onDownloadDxf={handleExportDxf}
-        onDownloadE3Xml={handleExportE3Xml}
+        onDownloadE3Xml={handleExportE3sOle2}
         onDownloadLogs={() => {
           downloadText(
             `flux-e3-logs-${Date.now()}.json`,
@@ -786,8 +919,15 @@ export default function App() {
       <ExchangeModal
         open={exchangeOpen}
         project={project}
+        bridgeStatus={bridgeStatus}
         onClose={() => setExchangeOpen(false)}
-        onExportE3Xml={handleExportE3Xml}
+        onDirectOpenE3={handleDirectOpenE3}
+        onDownloadConnector={() => {
+          window.location.assign('/api/v1/e3-bridge/connector.cmd');
+          appendLog('INFO', 'E3-XML', 'Скачан фоновый коннектор FluxE3_Connector.cmd для Windows.');
+        }}
+        onExportE3sOle2={handleExportE3sOle2}
+        onExportE3sXml={handleExportE3sXml}
         onExportFluxBridge={handleExportFluxBridge}
         onExportDxf={handleExportDxf}
         onDownloadFluxStudioZip={() => {
@@ -798,6 +938,8 @@ export default function App() {
           window.location.assign('/api/export/codebase');
           appendLog('INFO', 'E3-CORE', 'Запущена загрузка полного архива исходного кода (.zip).');
         }}
+        onOpenPortableBuild={() => setPortableOpen(true)}
+        onImportBytes={handleImportE3sBytes}
         onImportPayload={handleImportPayload}
       />
 
@@ -815,6 +957,20 @@ export default function App() {
         cables={cables}
         erc={erc}
         onClose={() => setReportOpen(false)}
+      />
+
+      <PortableBuildModal
+        open={portableOpen}
+        project={project}
+        onClose={() => setPortableOpen(false)}
+        onBuildFinished={(summary) => {
+          appendLog(
+            'INFO',
+            'E3-CORE',
+            `Собрана Portable-версия ${summary.filename} (${Math.round(summary.zipBytes / 1024)} КБ).`,
+            summary.durationMs
+          );
+        }}
       />
     </div>
   );
