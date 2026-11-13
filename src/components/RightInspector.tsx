@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookmarkPlus, Plus, RotateCw, Trash2, Unlink } from 'lucide-react';
+import { BookmarkPlus, Check, Copy, Plus, RotateCw, Trash2, Unlink } from 'lucide-react';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type {
   AnnotationKind,
@@ -49,6 +49,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 }) => {
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
+  const [copiedElId, setCopiedElId] = useState(false);
 
   const handleAttrChange = (idx: number, patch: Partial<E3Attribute>) => {
     if (!selectedDevice) return;
@@ -96,9 +97,27 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 : 'Параметры листа'}
         </span>
         {selectedDevice && (
-          <span className="font-mono text-[11px] text-[var(--flux-text-muted)]">
-            {selectedDevice.elementId}
-          </span>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(selectedDevice.elementId);
+                setCopiedElId(true);
+                window.setTimeout(() => setCopiedElId(false), 1400);
+              } catch {
+                // ignore
+              }
+            }}
+            title="Копировать elementId"
+            className="inline-flex items-center gap-1 px-1.5 h-6 rounded hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+          >
+            <span className="max-w-[96px] truncate">{selectedDevice.elementId}</span>
+            {copiedElId ? (
+              <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+            ) : (
+              <Copy className="w-3 h-3 shrink-0" />
+            )}
+          </button>
         )}
       </div>
 

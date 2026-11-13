@@ -168,9 +168,9 @@ const LargeRibbonBtn: React.FC<LargeRibbonBtnProps> = ({
     title={title || label}
     className={`flex flex-col items-center justify-center gap-1 min-w-[56px] h-[54px] px-2 rounded border transition-colors whitespace-nowrap shrink-0 disabled:opacity-35 ${
       active
-        ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)]/60 text-[var(--flux-text)]'
+        ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)] text-[var(--flux-text)] shadow-xs'
         : accent
-          ? 'bg-[var(--flux-accent-soft)] border-[var(--flux-accent)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+          ? 'bg-[var(--flux-accent-soft)] border-[var(--flux-accent)]/70 text-[var(--flux-text)] hover:border-[var(--flux-accent)] hover:bg-[var(--flux-hover)]'
           : danger
             ? 'border-transparent text-rose-600 dark:text-rose-400 hover:bg-[var(--flux-hover)] hover:border-[var(--flux-line)]'
             : 'border-transparent text-[var(--flux-text)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-line)]'
@@ -258,12 +258,41 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
       {/* Row 1: Quick Access Toolbar + Project Title + Primary CTA */}
       <div className="flex items-center justify-between gap-4 px-3 h-8 border-b border-[var(--flux-line)]">
         <div className="flex items-center gap-1 shrink-0">
-          <span
-            className="font-semibold text-[13px] tracking-tight text-[var(--flux-text)] whitespace-nowrap shrink-0 pr-2 border-r border-[var(--flux-line)]"
-            style={{ fontFamily: 'var(--font-display)' }}
-          >
-            E3ProMax
-          </span>
+          <div className="flex items-center gap-1.5 pr-2.5 mr-0.5 border-r border-[var(--flux-line)] whitespace-nowrap shrink-0">
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 18 18"
+              fill="none"
+              aria-hidden="true"
+              className="shrink-0"
+            >
+              <rect
+                x="1.5"
+                y="1.5"
+                width="15"
+                height="15"
+                rx="2.5"
+                stroke="var(--flux-accent)"
+                strokeWidth="1.5"
+              />
+              <path
+                d="M4.5 9h3.5l2-3.5 2 7 1.5-3.5H13.5"
+                stroke="var(--flux-accent)"
+                strokeWidth="1.5"
+                strokeLinecap="square"
+                strokeLinejoin="miter"
+              />
+              <circle cx="4.5" cy="9" r="1.1" fill="var(--flux-text)" />
+              <circle cx="13.5" cy="9" r="1.1" fill="var(--flux-text)" />
+            </svg>
+            <span
+              className="font-semibold text-[13px] tracking-tight text-[var(--flux-text)] whitespace-nowrap"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              E3ProMax
+            </span>
+          </div>
 
           <button
             type="button"
@@ -385,12 +414,18 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                   setActiveTab(tab.id);
                   if (ribbonCollapsed) setRibbonCollapsed(false);
                 }}
-                className={`h-full px-3 text-[12px] rounded-t border-x border-t transition-colors whitespace-nowrap shrink-0 ${
+                className={`relative h-full px-3 text-[12px] rounded-t border-x border-t transition-colors whitespace-nowrap shrink-0 ${
                   isActive
                     ? 'bg-[var(--flux-bg)] border-[var(--flux-line)] text-[var(--flux-text)] border-b-transparent -mb-px pb-px font-semibold'
                     : 'bg-transparent border-transparent text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                 }`}
               >
+                {isActive && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)] rounded-t"
+                  />
+                )}
                 {tab.label}
               </button>
             );

@@ -2404,3 +2404,27 @@ export function generateStressBatch(project: E3Project, count: number): E3Projec
   next.updatedAt = new Date().toISOString();
   return next;
 }
+
+/** Computes the lowest unused designation `-PREFIX<N>` without colliding with existing devices. */
+export function nextUniqueDesignation(
+  devices: ReadonlyArray<Pick<E3Device, 'designation'>>,
+  prefix: string
+): string {
+  const cleanPrefix = (prefix || 'K').replace(/^-+/, '').trim() || 'K';
+  const escaped = cleanPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rx = new RegExp(`^-?${escaped}(\\d+)$`, 'i');
+  const used = new Set<number>();
+  for (const d of devices) {
+    const m = rx.exec(d.designation.trim());
+    if (m) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n > 0) used.add(n);
+    }
+  }
+  let candidate = 1;
+  while (used.has(candidate)) {
+    candidate += 1;
+  }
+  return `-${cleanPrefix}${candidate}`;
+}
+

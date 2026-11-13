@@ -265,7 +265,10 @@ function getIoProfile(item: CatalogItem): { di: number; do: number; ai: number; 
 }
 
 function getPinAbs(dev: E3Device, pinName: string): { x: number; y: number; pinId: string; dir: PinDirection } {
-  const pin = dev.pins.find((p) => p.name === pinName) || dev.pins[0];
+  const pin =
+    dev.pins.find((p) => p.name === pinName) ||
+    dev.pins.find((p) => p.direction === 'bottom') ||
+    dev.pins[0];
   return {
     x: dev.x + (pin?.dx ?? 0),
     y: dev.y + (pin?.dy ?? 0),
@@ -332,7 +335,6 @@ export function generateHvacDiagram(
   // Layout math: center airflow axis vertically in upper half, reserve bottom for I/O matrix
   const leftMargin = 80;
   const rightMargin = 80;
-  const usableW = Math.max(700, dims.width - leftMargin - rightMargin);
   const ductAxisY = Math.round(dims.height * 0.28);
 
   const arrowInDev: E3Device = {
@@ -416,7 +418,9 @@ export function generateHvacDiagram(
     cursorX += item.width + gap;
   }
 
-  const arrowOutX = Math.min(dims.width - rightMargin - 40, Math.max(cursorX, endX));
+  const arrowOutX = Math.max(cursorX + 10, endX);
+  let requiredFsaWidth = Math.max(dims.width, arrowOutX + 40 + rightMargin);
+  fsaSheet.width = requiredFsaWidth;
   const arrowOutDev: E3Device = {
     id: `dev-fsa-arr-out-${stamp}`,
     elementId: `el-fsa-arr-out-${stamp}`,
@@ -478,7 +482,9 @@ export function generateHvacDiagram(
     const item = catalog.find((c) => c.id === stg.catalogItemId) || catalog[0];
     if (!item) return;
     const anchorX = fanEntry ? fanEntry.dev.x + fanEntry.dev.width + 20 : startX + 120;
-    const postX = Math.min(dims.width - rightMargin - item.width, anchorX + idx * (item.width + 30));
+    const postX = anchorX + idx * (item.width + 30);
+    requiredFsaWidth = Math.max(requiredFsaWidth, postX + item.width + rightMargin);
+    fsaSheet.width = requiredFsaWidth;
     const postY = ductAxisY + 130;
     const devId = `dev-fsa-post-${stamp}-${idx + 1}`;
     const des = stg.tagOverride?.trim() || `${sysPrefix}-HHS-038${idx > 0 ? String.fromCharCode(65 + idx) : ''}`;
@@ -580,7 +586,9 @@ export function generateHvacDiagram(
     columns: matrixColumns,
   };
 
-  const matrixW = Math.min(usableW - 40, Math.max(540, 260 + matrixColumns.length * 64));
+  const matrixW = Math.max(540, 260 + matrixColumns.length * 64);
+  requiredFsaWidth = Math.max(requiredFsaWidth, leftMargin + matrixW + rightMargin);
+  fsaSheet.width = requiredFsaWidth;
   const matrixH = 310;
   const matrixY = Math.max(ductAxisY + 260, dims.height - matrixH - 130);
 
@@ -633,17 +641,32 @@ export function generateHvacDiagram(
     };
     next.sheets.push(extSheet);
 
-    const fieldCols = allPlacedForMatrix.slice(0, 8);
-    const colSpan = Math.max(170, Math.floor((dims.width - 180) / Math.max(1, fieldCols.length)));
+    const fieldCols = allPlacedForMatrix;
+    const colSpan = Math.max(176, Math.floor((dims.width - 180) / Math.max(1, fieldCols.length)));
     const topFieldY = 120;
-    const botTermY = dims.height - 230;
+    const maxLaneY = topFieldY + 140 + Math.max(0, fieldCols.length - 1) * 28 + 24;
+    const extSheetWidth = Math.max(dims.width, 180 + fieldCols.length * colSpan);
+    const extSheetHeight = Math.max(dims.height, maxLaneY + 230);
+    extSheet.width = extSheetWidth;
+    extSheet.height = extSheetHeight;
+    const botTermY = extSheetHeight - 190;
+
+    const usedCableNums = new Set<number>();
+    for (const c of next.cables) {
+      const m = /^-?W(\d+)$/i.exec(c.designation.trim());
+      if (m) usedCableNums.add(Number(m[1]));
+    }
+    let nextCableNum = 1;
 
     fieldCols.forEach(({ dev, item }, idx) => {
+      while (usedCableNums.has(nextCableNum)) nextCableNum += 1;
+      usedCableNums.add(nextCableNum);
+
       const colX = 90 + idx * colSpan;
       const jbId = `dev-ext-jb-${stamp}-${idx + 1}`;
       const xtId = `dev-ext-xt-${stamp}-${idx + 1}`;
       const cableId = `cab-ext-${stamp}-${idx + 1}`;
-      const cableDes = `-W${next.cables.length + 1}`;
+      const cableDes = `-W${nextCableNum}`;
       const cableMark = item.defaultCable || 'МКЭШ 2х2х0,75';
 
       const jbDev: E3Device = {

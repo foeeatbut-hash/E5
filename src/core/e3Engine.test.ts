@@ -16,6 +16,7 @@ import {
   generateStressBatch,
   generateWindowsBridgeCmd,
   importFromFluxBridge,
+  nextUniqueDesignation,
   parseE3Xml,
   parseVisualSettings,
   routeSheetWiresCleanly,
@@ -450,5 +451,18 @@ test('routeSheetWiresCleanly separates parallel trunks and XML round-trip keeps 
   assert.equal(parsed.sheets[0].format, 'A2');
   assert.equal(parsed.visualSettings.fontFamily, 'JetBrains Mono');
 });
+
+test('nextUniqueDesignation skips deleted gaps and avoids collisions', () => {
+  const devices = [
+    { designation: '-KM1' },
+    { designation: '-KM3' },
+    { designation: '-qf1' },
+    { designation: '-QF2' },
+  ];
+  assert.equal(nextUniqueDesignation(devices, 'KM'), '-KM2');
+  assert.equal(nextUniqueDesignation(devices, 'QF'), '-QF3');
+  assert.equal(nextUniqueDesignation(devices, '-K'), '-K1');
+});
+
 
 

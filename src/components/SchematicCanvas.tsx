@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { Maximize2, Plus } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Grid3X3, Magnet, Maximize2, Minus, Plus, X } from 'lucide-react';
 import { resolveSchematicCssFont } from '../core/e3Catalog';
 import { autoRouteOrthogonal, getAbsolutePinPos } from '../core/e3Engine';
 import type {
@@ -30,8 +30,14 @@ interface SchematicCanvasProps {
   onFitViewport?: () => void;
   onSelectSheet: (sheetId: string) => void;
   onAddSheet: () => void;
+  onSetTool?: (tool: CadTool) => void;
   onSetZoom: (zoom: number) => void;
   onSetPan: (pan: { x: number; y: number }) => void;
+  onSetTransform?: (zoom: number, pan: { x: number; y: number }) => void;
+  onToggleGrid?: () => void;
+  onToggleSnapToGrid?: () => void;
+  onBeginDrag?: () => void;
+  onCommitDrag?: (moved: boolean) => void;
   onSelectDevice: (deviceId: string | null) => void;
   onSelectWire: (wireId: string | null) => void;
   onSelectAnnotation: (annId: string | null) => void;
@@ -59,8 +65,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   onFitViewport,
   onSelectSheet,
   onAddSheet,
+  onSetTool,
   onSetZoom,
   onSetPan,
+  onSetTransform,
+  onToggleGrid,
+  onToggleSnapToGrid,
+  onBeginDrag,
+  onCommitDrag,
   onSelectDevice,
   onSelectWire,
   onSelectAnnotation,
@@ -80,10 +92,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     direction: 'top' | 'right' | 'bottom' | 'left';
   } | null>(null);
 
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const panRef = useRef(pan);
+  panRef.current = pan;
+  const onSetTransformRef = useRef(onSetTransform);
+  onSetTransformRef.current = onSetTransform;
+  const onSetZoomRef = useRef(onSetZoom);
+  onSetZoomRef.current = onSetZoom;
+  const onSetPanRef = useRef(onSetPan);
+  onSetPanRef.current = onSetPan;
+
   const dragRef = useRef<
-    | { kind: 'pan'; startX: number; startY: number; origPanX: number; origPanY: number }
-    | { kind: 'device'; deviceId: string; startWorldX: number; startWorldY: number; origX: number; origY: number }
-    | { kind: 'annotation'; annId: string; startWorldX: number; startWorldY: number; origX: number; origY: number }
+    | { kind: 'pan'; startX: number; startY: number; origPanX: number; origPanY: number; moved: boolean }
+    | { kind: 'device'; deviceId: string; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean }
+    | { kind: 'annotation'; annId: string; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean }
     | null
   >(null);
 
@@ -131,6 +154,72 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     return Math.round(val / g) * g;
   };
 
+  const finishDrag = useCallback(() => {
+    const d = dragRef.current;
+    if (!d) return;
+    dragRef.current = null;
+    if (d.kind === 'device' || d.kind === 'annotation') {
+      onCommitDrag?.(d.moved);
+    }
+  }, [onCommitDrag]);
+
+  useEffect(() => {
+    window.addEventListener('mouseup', finishDrag);
+    return () => window.removeEventListener('mouseup', finishDrag);
+  }, [finishDrag]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"]')) return;
+      if (wireStart) {
+        e.preventDefault();
+        setWireStart(null);
+      } else if (isFocused && tool !== 'select') {
+        e.preventDefault();
+        onSetTool?.('select');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [wireStart, tool, isFocused, onSetTool]);
+
+  // Cursor-centered non-passive wheel zoom
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheelNative = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) === 0 && Math.abs(e.deltaX) === 0) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const curZoom = zoomRef.current;
+      const curPan = panRef.current;
+      const step = e.deltaY < 0 ? 0.1 : -0.1;
+      const nextZoom = Math.min(2.5, Math.max(0.16, Math.round((curZoom + step) * 100) / 100));
+      if (nextZoom === curZoom) return;
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const worldX = (sx - curPan.x) / curZoom;
+      const worldY = (sy - curPan.y) / curZoom;
+      const nextPan = {
+        x: Math.round(sx - worldX * nextZoom),
+        y: Math.round(sy - worldY * nextZoom),
+      };
+      if (onSetTransformRef.current) {
+        onSetTransformRef.current(nextZoom, nextPan);
+      } else {
+        onSetZoomRef.current(nextZoom);
+        onSetPanRef.current(nextPan);
+      }
+    };
+    el.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => el.removeEventListener('wheel', onWheelNative);
+  }, []);
+
   const handleMouseDownBg = (e: React.MouseEvent<SVGSVGElement>) => {
     onFocusViewport?.();
     if (e.button === 1 || tool === 'pan' || e.shiftKey) {
@@ -140,6 +229,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         startY: e.clientY,
         origPanX: pan.x,
         origPanY: pan.y,
+        moved: false,
       };
       return;
     }
@@ -167,6 +257,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         startY: e.clientY,
         origPanX: pan.x,
         origPanY: pan.y,
+        moved: false,
       };
       return;
     }
@@ -175,6 +266,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     onSelectDevice(device.id);
     if (tool === 'select') {
       const world = toWorld(e.clientX, e.clientY);
+      onBeginDrag?.();
       dragRef.current = {
         kind: 'device',
         deviceId: device.id,
@@ -182,6 +274,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         startWorldY: world.y,
         origX: device.x,
         origY: device.y,
+        moved: false,
       };
     }
   };
@@ -196,6 +289,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         startY: e.clientY,
         origPanX: pan.x,
         origPanY: pan.y,
+        moved: false,
       };
       return;
     }
@@ -203,6 +297,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     onSelectWire(null);
     onSelectAnnotation(ann.id);
     const world = toWorld(e.clientX, e.clientY);
+    onBeginDrag?.();
     dragRef.current = {
       kind: 'annotation',
       annId: ann.id,
@@ -210,6 +305,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       startWorldY: world.y,
       origX: ann.x,
       origY: ann.y,
+      moved: false,
     };
   };
 
@@ -220,30 +316,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     const drag = dragRef.current;
     if (!drag) return;
     if (drag.kind === 'pan') {
+      drag.moved = true;
       onSetPan({
         x: drag.origPanX + (e.clientX - drag.startX),
         y: drag.origPanY + (e.clientY - drag.startY),
       });
     } else if (drag.kind === 'device') {
-      const nx = snap(drag.origX + (world.x - drag.startWorldX));
-      const ny = snap(drag.origY + (world.y - drag.startWorldY));
-      onMoveDevice(drag.deviceId, Math.max(30, nx), Math.max(30, ny));
+      const nx = Math.max(30, snap(drag.origX + (world.x - drag.startWorldX)));
+      const ny = Math.max(30, snap(drag.origY + (world.y - drag.startWorldY)));
+      if (nx !== drag.origX || ny !== drag.origY) drag.moved = true;
+      onMoveDevice(drag.deviceId, nx, ny);
     } else if (drag.kind === 'annotation') {
-      const nx = snap(drag.origX + (world.x - drag.startWorldX));
-      const ny = snap(drag.origY + (world.y - drag.startWorldY));
-      onMoveAnnotation(drag.annId, Math.max(20, nx), Math.max(20, ny));
-    }
-  };
-
-  const handleMouseUp = () => {
-    dragRef.current = null;
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey || Math.abs(e.deltaY) > 0) {
-      const delta = e.deltaY < 0 ? 0.1 : -0.1;
-      const nextZoom = Math.min(2.5, Math.max(0.18, Math.round((zoom + delta) * 100) / 100));
-      onSetZoom(nextZoom);
+      const nx = Math.max(20, snap(drag.origX + (world.x - drag.startWorldX)));
+      const ny = Math.max(20, snap(drag.origY + (world.y - drag.startWorldY)));
+      if (nx !== drag.origX || ny !== drag.origY) drag.moved = true;
+      onMoveAnnotation(drag.annId, nx, ny);
     }
   };
 
@@ -367,34 +454,37 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         </div>
       ) : (
         <div className="no-print h-8 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] px-2 flex items-center justify-between gap-2 overflow-hidden">
-          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto no-scrollbar">
-            {project.sheets.map((s) => {
-              const active = s.id === sheet?.id;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => onSelectSheet(s.id)}
-                  className={`relative h-8 px-3 text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                    active
-                      ? 'text-[var(--flux-text)]'
-                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
-                  }`}
-                >
-                  <span>
-                    Лист {s.number}: {s.name}
-                  </span>
-                  {active && (
-                    <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)]" />
-                  )}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-1 min-w-0 flex-1">
+            <div className="flex items-center gap-1 min-w-0 overflow-x-auto no-scrollbar">
+              {project.sheets.map((s) => {
+                const active = s.id === sheet?.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onSelectSheet(s.id)}
+                    title={`Лист ${s.number}: ${s.name} (${s.format})`}
+                    className={`relative h-8 px-2.5 max-w-[200px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                      active
+                        ? 'text-[var(--flux-text)]'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                    }`}
+                  >
+                    <span className="truncate">
+                      Лист {s.number}: {s.name}
+                    </span>
+                    {active && (
+                      <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)]" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
             <button
               type="button"
               onClick={onAddSheet}
               aria-label="Добавить новый лист схемы"
-              className="inline-flex items-center gap-1 h-6 px-2 ml-1 rounded text-[11px] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap shrink-0 border border-transparent hover:border-[var(--flux-line)]"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Лист</span>
@@ -407,9 +497,6 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                 Выберите целевой вывод (Esc — отмена)
               </span>
             )}
-            <span>
-              X:{cursorWorld.x} Y:{cursorWorld.y} мм
-            </span>
             <span>Эл.: {sheetDevices.length}</span>
             <span>Связи: {sheetWires.length}</span>
           </div>
@@ -422,7 +509,6 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         data-testid={viewportIndex === 0 ? 'schematic-canvas' : `schematic-canvas-${viewportIndex}`}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
-        onWheel={handleWheel}
         className="flex-1 min-h-0 overflow-hidden relative"
         style={{
           cursor: tool === 'pan' ? 'grab' : wireStart || isDrawingTool ? 'crosshair' : 'default',
@@ -433,8 +519,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
           height="100%"
           onMouseDown={handleMouseDownBg}
           onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
+          onMouseUp={finishDrag}
           className="block w-full h-full"
         >
           <defs>
@@ -460,6 +545,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   fill="var(--flux-surface)"
                   stroke="var(--flux-line-strong)"
                   strokeWidth={1.5}
+                  style={{ filter: 'drop-shadow(0 6px 18px rgba(15, 23, 42, 0.09))' }}
                 />
                 {vs.showGrid && (
                   <rect
@@ -471,7 +557,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   />
                 )}
 
-                {/* GOST 2.104 Frame & Title Block */}
+                {/* GOST 2.104 Frame, Coordinate Zones & Title Block */}
                 {vs.showGostFrame && (
                   <g pointerEvents="none">
                     <rect
@@ -483,6 +569,71 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       stroke="var(--flux-text)"
                       strokeWidth={1.4}
                     />
+                    <rect
+                      x={4}
+                      y={4}
+                      width={sheet.width - 24}
+                      height={sheet.height - 24}
+                      fill="none"
+                      stroke="var(--flux-line-strong)"
+                      strokeWidth={0.7}
+                    />
+                    {['1', '2', '3', '4', '5', '6'].map((zoneNum, zi, arr) => {
+                      const spanW = (sheet.width - 40) / arr.length;
+                      const zx = 20 + zi * spanW;
+                      return (
+                        <g key={`z-top-${zoneNum}`}>
+                          {zi > 0 && (
+                            <line
+                              x1={zx}
+                              y1={4}
+                              x2={zx}
+                              y2={20}
+                              stroke="var(--flux-line-strong)"
+                              strokeWidth={0.7}
+                            />
+                          )}
+                          <text
+                            x={zx + spanW / 2}
+                            y={15}
+                            textAnchor="middle"
+                            fill="var(--flux-text-muted)"
+                            fontSize={9.5}
+                            fontFamily={fontCss}
+                          >
+                            {zoneNum}
+                          </text>
+                        </g>
+                      );
+                    })}
+                    {['А', 'Б', 'В', 'Г', 'Д'].map((zoneLet, zi, arr) => {
+                      const spanH = (sheet.height - 40) / arr.length;
+                      const zy = 20 + zi * spanH;
+                      return (
+                        <g key={`z-left-${zoneLet}`}>
+                          {zi > 0 && (
+                            <line
+                              x1={4}
+                              y1={zy}
+                              x2={20}
+                              y2={zy}
+                              stroke="var(--flux-line-strong)"
+                              strokeWidth={0.7}
+                            />
+                          )}
+                          <text
+                            x={12}
+                            y={zy + spanH / 2 + 3}
+                            textAnchor="middle"
+                            fill="var(--flux-text-muted)"
+                            fontSize={9.5}
+                            fontFamily={fontCss}
+                          >
+                            {zoneLet}
+                          </text>
+                        </g>
+                      );
+                    })}
                     <g transform={`translate(${sheet.width - 540}, ${sheet.height - 105})`}>
                       <rect
                         x={0}
@@ -532,6 +683,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               const selected = ann.id === selectedAnnotationId;
               const strokeColor = selected ? 'var(--flux-accent)' : ann.color || 'var(--flux-text)';
               const fs = (ann.fontSize || 12) * vs.fontScale;
+              const lines = (ann.text || '').split(/\r?\n/);
+              const lineH = Math.round(fs * 1.3);
+              const maxLineLen = Math.max(4, ...lines.map((l) => l.length));
 
               if (ann.kind === 'rect') {
                 return (
@@ -556,8 +710,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                     <rect
                       x={ann.x + 8}
                       y={ann.y - 11}
-                      width={Math.max(88, Math.round(ann.text.length * (fs * 0.72) + 22))}
-                      height={19}
+                      width={Math.max(88, Math.round(maxLineLen * (fs * 0.7) + 22))}
+                      height={Math.max(19, lines.length * lineH + 4)}
                       fill="var(--flux-surface)"
                       stroke={strokeColor}
                       strokeWidth={0.8}
@@ -571,13 +725,19 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       fontFamily={fontCss}
                       fontWeight={600}
                     >
-                      {ann.text}
+                      {lines.map((line, li) => (
+                        <tspan key={li} x={ann.x + 16} dy={li === 0 ? 0 : lineH}>
+                          {line}
+                        </tspan>
+                      ))}
                     </text>
                   </g>
                 );
               }
 
               if (ann.kind === 'callout') {
+                const boxW = Math.max(90, ann.width - 6, Math.round(maxLineLen * (fs * 0.6) + 14));
+                const boxH = Math.max(17, lines.length * lineH + 4);
                 return (
                   <g
                     key={ann.id}
@@ -587,7 +747,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   >
                     <circle cx={ann.x} cy={ann.y + ann.height} r={3.5} fill={strokeColor} />
                     <polyline
-                      points={`${ann.x},${ann.y + ann.height} ${ann.x + 26},${ann.y + 18} ${ann.x + 26 + ann.width},${ann.y + 18}`}
+                      points={`${ann.x},${ann.y + ann.height} ${ann.x + 26},${ann.y + 18} ${ann.x + 26 + boxW + 6},${ann.y + 18}`}
                       fill="none"
                       stroke={strokeColor}
                       strokeWidth={selected ? 2 : 1.3}
@@ -595,8 +755,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                     <rect
                       x={ann.x + 28}
                       y={ann.y}
-                      width={Math.max(90, ann.width - 6)}
-                      height={17}
+                      width={boxW}
+                      height={boxH}
                       fill="var(--flux-surface)"
                       fillOpacity={0.92}
                       stroke={selected ? 'var(--flux-accent)' : 'none'}
@@ -610,7 +770,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       fontFamily={fontCss}
                       fontWeight={500}
                     >
-                      {ann.text}
+                      {lines.map((line, li) => (
+                        <tspan key={li} x={ann.x + 32} dy={li === 0 ? 0 : lineH}>
+                          {line}
+                        </tspan>
+                      ))}
                     </text>
                   </g>
                 );
@@ -626,8 +790,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   <rect
                     x={ann.x - 4}
                     y={ann.y - fs - 2}
-                    width={Math.max(80, ann.text.length * (fs * 0.58) + 12)}
-                    height={fs + 10}
+                    width={Math.max(80, Math.round(maxLineLen * (fs * 0.6) + 14))}
+                    height={Math.max(fs + 10, lines.length * lineH + 6)}
                     fill="var(--flux-surface)"
                     fillOpacity={0.85}
                     stroke={selected ? 'var(--flux-accent)' : 'transparent'}
@@ -642,7 +806,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                     fontFamily={fontCss}
                     fontWeight={500}
                   >
-                    {ann.text}
+                    {lines.map((line, li) => (
+                      <tspan key={li} x={ann.x} dy={li === 0 ? 0 : lineH}>
+                        {line}
+                      </tspan>
+                    ))}
                   </text>
                 </g>
               );
@@ -731,7 +899,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
             )}
 
             {/* Devices */}
-            {sheetDevices.slice(0, 400).map((device) => (
+            {sheetDevices.slice(0, 1200).map((device) => (
               <SchematicSymbol
                 key={device.id}
                 device={device}
@@ -745,6 +913,102 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
             ))}
           </g>
         </svg>
+      </div>
+
+      {/* Compact CAD Canvas Footer Strip */}
+      <div className="no-print h-7 px-2 border-t border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-hidden select-none text-[11px]">
+        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden whitespace-nowrap font-mono tabular-nums text-[var(--flux-text-muted)]">
+          <span data-testid="canvas-coords" className="shrink-0">
+            X:{cursorWorld.x} Y:{cursorWorld.y}{isMultiViewport ? '' : ' мм'}
+          </span>
+          {sheet && !isMultiViewport && (
+            <span className="hidden lg:inline truncate">
+              · {sheet.format} ({sheet.width}×{sheet.height})
+            </span>
+          )}
+          {(wireStart || tool !== 'select') && (
+            <button
+              type="button"
+              data-testid="cancel-tool-btn"
+              onClick={() => {
+                if (wireStart) setWireStart(null);
+                else onSetTool?.('select');
+              }}
+              className="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] font-sans font-medium whitespace-nowrap shrink-0"
+            >
+              <span>{wireStart ? 'Укажите вывод' : `Режим: ${tool}`}</span>
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          {onToggleGrid && (
+            <button
+              type="button"
+              onClick={onToggleGrid}
+              title="Показать/скрыть чертёжную сетку"
+              aria-label="Переключить сетку"
+              className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
+                vs.showGrid
+                  ? 'bg-[var(--flux-sel)] text-[var(--flux-text)]'
+                  : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
+              }`}
+            >
+              <Grid3X3 className="w-3 h-3" />
+              <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Сетка</span>
+            </button>
+          )}
+          {onToggleSnapToGrid && (
+            <button
+              type="button"
+              onClick={onToggleSnapToGrid}
+              title="Привязка к сетке"
+              aria-label="Переключить привязку"
+              className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
+                vs.snapToGrid
+                  ? 'bg-[var(--flux-sel)] text-[var(--flux-text)]'
+                  : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
+              }`}
+            >
+              <Magnet className="w-3 h-3" />
+              <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Привязка</span>
+            </button>
+          )}
+
+          <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
+
+          <button
+            type="button"
+            onClick={() => onSetZoom(Math.max(0.16, Math.round((zoom - 0.1) * 100) / 100))}
+            aria-label="Уменьшить масштаб холста"
+            className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <span className="w-10 text-center font-mono tabular-nums text-[var(--flux-text)]">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={() => onSetZoom(Math.min(2.5, Math.round((zoom + 0.1) * 100) / 100))}
+            aria-label="Увеличить масштаб холста"
+            className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+          {onFitViewport && (
+            <button
+              type="button"
+              onClick={onFitViewport}
+              title="Вписать лист в окно"
+              aria-label="Вписать лист в окно"
+              className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+            >
+              <Maximize2 className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );

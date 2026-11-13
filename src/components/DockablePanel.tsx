@@ -69,7 +69,11 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
         if ((e.target as HTMLElement).closest('button')) return;
         onStartDrag(panel.id, e);
       }}
-      title="Перетащите заголовок, чтобы переместить или закрепить панель на любой границе окна"
+      onDoubleClick={(e) => {
+        if ((e.target as HTMLElement).closest('button')) return;
+        onToggleCollapse(panel.id);
+      }}
+      title="Перетащите заголовок для закрепления или дважды кликните для сворачивания"
       className="h-7 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 cursor-grab active:cursor-grabbing select-none"
     >
       <div className="flex items-center gap-1.5 min-w-0">
@@ -215,8 +219,9 @@ export const FloatingPanelWindow: React.FC<FloatingPanelWindowProps> = ({
         top: panel.floating.y,
         width: panel.floating.width,
         height,
+        boxShadow: 'var(--flux-paper-shadow)',
       }}
-      className="no-print fixed z-40 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col overflow-hidden"
+      className="no-print fixed z-40 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] flex flex-col overflow-hidden"
     >
       <PanelHeaderBar
         panel={panel}

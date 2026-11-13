@@ -610,6 +610,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
 
   return (
     <g
+      data-testid={`symbol-${device.id}`}
       transform={`translate(${device.x}, ${device.y})`}
       className="cursor-pointer select-none"
       onMouseDown={(e) => onSelectDevice(e, device)}
@@ -669,9 +670,16 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                 e.stopPropagation();
                 onPinClick(e, device, pin.id);
               }}
-              className="cursor-crosshair"
+              className="group/pin cursor-crosshair"
             >
               <circle cx={pin.dx} cy={pin.dy} r={9} fill="transparent" />
+              <circle
+                cx={pin.dx}
+                cy={pin.dy}
+                r={7}
+                fill="var(--flux-accent)"
+                className="opacity-0 group-hover/pin:opacity-25 transition-opacity pointer-events-none"
+              />
               <circle
                 cx={pin.dx}
                 cy={pin.dy}

@@ -143,7 +143,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                   onSetTab(id);
                   if (collapsed) onToggleCollapse();
                 }}
-                className={`relative h-9 px-2.5 text-[12px] font-medium whitespace-nowrap shrink-0 transition-colors ${
+                className={`relative h-8 px-2.5 text-[12px] font-medium whitespace-nowrap shrink-0 transition-colors ${
                   active
                     ? 'text-[var(--flux-text)]'
                     : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
@@ -228,23 +228,40 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--flux-line)]">
-                    {filteredBom.map((row) => (
-                      <tr key={`${row.pos}-${row.article}`} className="hover:bg-[var(--flux-hover)]">
-                        <td className="px-3 py-1.5 font-mono tabular-nums text-[var(--flux-text-muted)]">
-                          {row.pos}
+                    {filteredBom.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-3 py-6 text-center text-[12px] text-[var(--flux-text-muted)]">
+                          <span>Позиции по фильтру не найдены. </span>
+                          {bomQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setBomQuery('')}
+                              className="text-[var(--flux-accent)] hover:underline ml-1"
+                            >
+                              Сбросить фильтр
+                            </button>
+                          )}
                         </td>
-                        <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">
-                          {row.designationText}
-                        </td>
-                        <td className="px-3 py-1.5 text-[var(--flux-text)]">{row.componentName}</td>
-                        <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{row.article}</td>
-                        <td className="px-3 py-1.5 text-[var(--flux-text-muted)]">{row.manufacturer}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-[var(--flux-text)]">
-                          {row.quantity}
-                        </td>
-                        <td className="px-3 py-1.5 text-[var(--flux-text-muted)]">{row.unit}</td>
                       </tr>
-                    ))}
+                    ) : (
+                      filteredBom.map((row) => (
+                        <tr key={`${row.pos}-${row.article}`} className="hover:bg-[var(--flux-hover)]">
+                          <td className="px-3 py-1.5 font-mono tabular-nums text-[var(--flux-text-muted)]">
+                            {row.pos}
+                          </td>
+                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">
+                            {row.designationText}
+                          </td>
+                          <td className="px-3 py-1.5 text-[var(--flux-text)]">{row.componentName}</td>
+                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{row.article}</td>
+                          <td className="px-3 py-1.5 text-[var(--flux-text-muted)]">{row.manufacturer}</td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-[var(--flux-text)]">
+                            {row.quantity}
+                          </td>
+                          <td className="px-3 py-1.5 text-[var(--flux-text-muted)]">{row.unit}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -302,25 +319,33 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--flux-line)]">
-                      {cables.map((c) => (
-                        <tr key={c.designation} className="hover:bg-[var(--flux-hover)]">
-                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{c.designation}</td>
-                          <td className="px-3 py-1.5 text-[var(--flux-text)]">
-                            {c.cableType} {c.shielded ? '(экран)' : ''}
-                          </td>
-                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{c.fromDevice}</td>
-                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{c.toDevice}</td>
-                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-[var(--flux-text)]">
-                            {c.usedCores}/{c.coresCount}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-[var(--flux-text)]">
-                            {c.crossSection}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-[var(--flux-text)]">
-                            {c.lengthMeters}
+                      {cables.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-3 py-6 text-center text-[12px] text-[var(--flux-text-muted)]">
+                            Кабельные линии ещё не назначены в проекте.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        cables.map((c) => (
+                          <tr key={c.designation} className="hover:bg-[var(--flux-hover)]">
+                            <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{c.designation}</td>
+                            <td className="px-3 py-1.5 text-[var(--flux-text)]">
+                              {c.cableType} {c.shielded ? '(экран)' : ''}
+                            </td>
+                            <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{c.fromDevice}</td>
+                            <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{c.toDevice}</td>
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-[var(--flux-text)]">
+                              {c.usedCores}/{c.coresCount}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-[var(--flux-text)]">
+                              {c.crossSection}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-[var(--flux-text)]">
+                              {c.lengthMeters}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 ) : (
@@ -336,16 +361,24 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--flux-line)]">
-                      {terminals.map((t, idx) => (
-                        <tr key={`${t.terminalDesignation}-${t.pinName}-${idx}`} className="hover:bg-[var(--flux-hover)]">
-                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{t.terminalDesignation}</td>
-                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{t.pinName}</td>
-                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{t.netName}</td>
-                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text-muted)]">{t.wireNumber}</td>
-                          <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{t.connectedTo}</td>
-                          <td className="px-3 py-1.5 text-[var(--flux-text-muted)]">{t.cableInfo}</td>
+                      {terminals.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-6 text-center text-[12px] text-[var(--flux-text-muted)]">
+                            Клеммные ряды (XT) отсутствуют на активных листах.
+                          </td>
                         </tr>
-                      ))}
+                      ) : (
+                        terminals.map((t, idx) => (
+                          <tr key={`${t.terminalDesignation}-${t.pinName}-${idx}`} className="hover:bg-[var(--flux-hover)]">
+                            <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{t.terminalDesignation}</td>
+                            <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{t.pinName}</td>
+                            <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{t.netName}</td>
+                            <td className="px-3 py-1.5 font-mono text-[var(--flux-text-muted)]">{t.wireNumber}</td>
+                            <td className="px-3 py-1.5 font-mono text-[var(--flux-text)]">{t.connectedTo}</td>
+                            <td className="px-3 py-1.5 text-[var(--flux-text-muted)]">{t.cableInfo}</td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 )}
@@ -436,6 +469,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                   </button>
                   <a
                     href="/api/v1/diagnostics/logs/download"
+                    download="e3promax-diag.log"
                     className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)]"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -452,7 +486,24 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                 </div>
               </div>
               <div className="flex-1 overflow-auto font-mono text-[11px] divide-y divide-[var(--flux-line)]">
-                {filteredLogs.map((entry) => {
+                {filteredLogs.length === 0 ? (
+                  <div className="px-3 py-6 text-center font-sans text-[12px] text-[var(--flux-text-muted)]">
+                    <span>Записей по выбранным фильтрам нет. </span>
+                    {(logLevelFilter !== 'ALL' || logQuery) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLogLevelFilter('ALL');
+                          setLogQuery('');
+                        }}
+                        className="text-[var(--flux-accent)] hover:underline ml-1"
+                      >
+                        Сбросить фильтры
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  filteredLogs.map((entry) => {
                   const hasDetails = Boolean(entry.details && entry.details.trim().length > 0);
                   const isExpanded = Boolean(expandedLogIds[entry.id] || (hasDetails && entry.level === 'ERROR'));
                   return (
@@ -502,7 +553,8 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                       )}
                     </div>
                   );
-                })}
+                })
+                )}
               </div>
             </>
           )}

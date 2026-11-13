@@ -123,6 +123,15 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
     setNewAttrValue('');
   }, [open, editingItem]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -133,12 +142,23 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
     const height = editingItem?.height || (category === 'kip_circle' ? 110 : isHvac ? 160 : 100);
     const pKw = Number(powerKw.replace(',', '.'));
     const nextAttrs = [...attributes];
-    if (powerKw.trim() && !nextAttrs.some((a) => /мощность/i.test(a.name))) {
-      nextAttrs.unshift({ name: 'Мощность', value: `${powerKw.trim()} кВт`, owner: '', conflict: 'flux' });
+    if (powerKw.trim()) {
+      const idxP = nextAttrs.findIndex((a) => /^мощность$/i.test(a.name.trim()));
+      if (idxP >= 0) {
+        nextAttrs[idxP] = { ...nextAttrs[idxP], value: `${powerKw.trim()} кВт` };
+      } else {
+        nextAttrs.unshift({ name: 'Мощность', value: `${powerKw.trim()} кВт`, owner: '', conflict: 'flux' });
+      }
     }
-    if (!nextAttrs.some((a) => /исполнение/i.test(a.name))) {
+    const idxEx = nextAttrs.findIndex((a) => /^исполнение$/i.test(a.name.trim()));
+    if (idxEx >= 0) {
+      nextAttrs[idxEx] = { ...nextAttrs[idxEx], value: exZone };
+    } else {
       nextAttrs.push({ name: 'Исполнение', value: exZone, owner: '', conflict: 'flux' });
     }
+
+    const pins =
+      editingItem && editingItem.category === category ? editingItem.pins : buildDefaultPins(category);
 
     const item: CatalogItem = {
       id: editingItem?.id || `custom-${Date.now().toString(36)}`,
@@ -151,7 +171,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
       e3BlockName: e3BlockName.trim() || `FSA_${(defaultPrefix || 'DEV').toUpperCase()}`,
       width,
       height,
-      pins: editingItem?.pins || buildDefaultPins(category),
+      pins,
       defaultAttributes: nextAttrs,
       isCustom: true,
       ioProfile: { di, do: doCnt, ai, ao },
@@ -172,6 +192,9 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="catalog-item-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
     >
       <div className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[88vh]">

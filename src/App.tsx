@@ -58,6 +58,7 @@ import {
   generateStressBatch,
   getAbsolutePinPos,
   importFromFluxBridge,
+  nextUniqueDesignation,
   routeSheetWiresCleanly,
   runErc,
 } from './core/e3Engine';
@@ -107,9 +108,16 @@ function downloadBytes(filename: string, bytes: Uint8Array, mime = 'application/
 }
 
 export default function App() {
-  const [project, setProject] = useState<E3Project>(() => createSeedProject());
-  const [history, setHistory] = useState<E3Project[]>([]);
-  const [future, setFuture] = useState<E3Project[]>([]);
+  const [docState, setDocState] = useState<{
+    past: E3Project[];
+    present: E3Project;
+    future: E3Project[];
+  }>(() => ({ past: [], present: createSeedProject(), future: [] }));
+  const docStateRef = useRef(docState);
+  docStateRef.current = docState;
+  const project = docState.present;
+  const history = docState.past;
+  const future = docState.future;
 
   const [activeSheetId, setActiveSheetId] = useState<string>('sheet-1');
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>('dev-qf1');
@@ -166,10 +174,10 @@ export default function App() {
     });
   }, []);
 
-  const [bom, setBom] = useState<BomRow[]>(() => buildBom(createSeedProject()));
-  const [cables, setCables] = useState<CableJournalRow[]>(() => buildCableJournal(createSeedProject()));
-  const [terminals, setTerminals] = useState<TerminalPlanRow[]>(() => buildTerminalPlan(createSeedProject()));
-  const [erc, setErc] = useState<ErcIssue[]>(() => runErc(createSeedProject()));
+  const [bom, setBom] = useState<BomRow[]>(() => buildBom(project));
+  const [cables, setCables] = useState<CableJournalRow[]>(() => buildCableJournal(project));
+  const [terminals, setTerminals] = useState<TerminalPlanRow[]>(() => buildTerminalPlan(project));
+  const [erc, setErc] = useState<ErcIssue[]>(() => runErc(project));
   const [lastWorkerMs, setLastWorkerMs] = useState<number>(1.2);
   const [isBusy, setIsBusy] = useState<boolean>(false);
   const [isSyncConnected, setIsSyncConnected] = useState<boolean>(false);
@@ -276,6 +284,17 @@ export default function App() {
     };
   }, [project, appendLog]);
 
+  const setProjectRemote = useCallback(
+    (nextOrUpdater: E3Project | ((curr: E3Project) => E3Project)) => {
+      setDocState((s) => {
+        const next =
+          typeof nextOrUpdater === 'function' ? nextOrUpdater(s.present) : nextOrUpdater;
+        return next === s.present ? s : { ...s, present: next };
+      });
+    },
+    []
+  );
+
   // Real-time multi-tab + Server-Sent Events sync
   useEffect(() => {
     if (typeof BroadcastChannel !== 'undefined') {
@@ -285,7 +304,7 @@ export default function App() {
         if (ev.data?.sender === clientIdRef.current) return;
         if (ev.data?.project) {
           suppressSyncPushRef.current = true;
-          setProject(ev.data.project);
+          setProjectRemote(ev.data.project);
           appendLog('SYNC', 'SYNC-API', `Получено обновление ревизии ${ev.data.project.revision} из соседней вкладки.`);
         }
       };
@@ -303,7 +322,7 @@ export default function App() {
           const payload = JSON.parse(ev.data);
           if (payload.type === 'project-update' && payload.sender !== clientIdRef.current && payload.project) {
             suppressSyncPushRef.current = true;
-            setProject(payload.project);
+            setProjectRemote(payload.project);
             appendLog(
               'SYNC',
               'SYNC-API',
@@ -344,7 +363,7 @@ export default function App() {
       broadcastRef.current?.close();
       es?.close();
     };
-  }, [appendLog]);
+  }, [appendLog, setProjectRemote]);
 
   // Push local changes to server & BroadcastChannel
   const pushSync = useCallback((nextProject: E3Project) => {
@@ -364,43 +383,46 @@ export default function App() {
 
   const commitProject = useCallback(
     (updater: (prev: E3Project) => E3Project, recordHistory = true) => {
-      setProject((prev) => {
-        const next = updater(prev);
-        if (recordHistory) {
-          setHistory((h) => [...h.slice(-24), prev]);
-          setFuture([]);
-        }
-        if (!suppressSyncPushRef.current) {
-          pushSync(next);
-        }
-        suppressSyncPushRef.current = false;
-        return next;
-      });
+      const cur = docStateRef.current.present;
+      const next = updater(cur);
+      setDocState((s) => ({
+        past: recordHistory ? [...s.past.slice(-29), s.present] : s.past,
+        present: next,
+        future: recordHistory ? [] : s.future,
+      }));
+      if (!suppressSyncPushRef.current) {
+        pushSync(next);
+      }
+      suppressSyncPushRef.current = false;
     },
     [pushSync]
   );
 
   const handleUndo = useCallback(() => {
-    setHistory((h) => {
-      if (h.length === 0) return h;
-      const previous = h[h.length - 1];
-      setFuture((f) => [project, ...f]);
-      setProject(previous);
-      appendLog('INFO', 'E3-CORE', `Отмена действия (возврат к ревизии ${previous.revision}).`);
-      return h.slice(0, -1);
+    const s = docStateRef.current;
+    if (s.past.length === 0) return;
+    const previous = s.past[s.past.length - 1];
+    setDocState({
+      past: s.past.slice(0, -1),
+      present: previous,
+      future: [s.present, ...s.future],
     });
-  }, [project, appendLog]);
+    pushSync(previous);
+    appendLog('INFO', 'E3-CORE', `Отмена действия (возврат к ревизии ${previous.revision}).`);
+  }, [pushSync, appendLog]);
 
   const handleRedo = useCallback(() => {
-    setFuture((f) => {
-      if (f.length === 0) return f;
-      const next = f[0];
-      setHistory((h) => [...h, project]);
-      setProject(next);
-      appendLog('INFO', 'E3-CORE', `Повтор действия (ревизия ${next.revision}).`);
-      return f.slice(1);
+    const s = docStateRef.current;
+    if (s.future.length === 0) return;
+    const next = s.future[0];
+    setDocState({
+      past: [...s.past, s.present],
+      present: next,
+      future: s.future.slice(1),
     });
-  }, [project, appendLog]);
+    pushSync(next);
+    appendLog('INFO', 'E3-CORE', `Повтор действия (ревизия ${next.revision}).`);
+  }, [pushSync, appendLog]);
 
   const activeSheet = useMemo(
     () => project.sheets.find((s) => s.id === activeSheetId) || project.sheets[0],
@@ -442,13 +464,44 @@ export default function App() {
     });
   };
 
+  const dragSnapshotRef = useRef<E3Project | null>(null);
+
+  const handleBeginDrag = useCallback(() => {
+    dragSnapshotRef.current = docStateRef.current.present;
+  }, []);
+
+  const handleCommitDrag = useCallback(
+    (moved: boolean) => {
+      const snap = dragSnapshotRef.current;
+      dragSnapshotRef.current = null;
+      if (!moved || !snap) return;
+      const cur = docStateRef.current.present;
+      const committed: E3Project = {
+        ...cur,
+        revision: cur.revision + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      setDocState((s) => ({
+        past: [...s.past.slice(-29), snap],
+        present: committed,
+        future: [],
+      }));
+      pushSync(committed);
+    },
+    [pushSync]
+  );
+
   const handleMoveDevice = useCallback(
     (deviceId: string, x: number, y: number) => {
-      setProject((prev) => {
+      setDocState((s) => {
+        const prev = s.present;
         const devices = prev.devices.map((d) => (d.id === deviceId ? { ...d, x, y } : d));
         const moved = devices.find((d) => d.id === deviceId);
         const wires = moved ? rerouteDeviceWires(moved, devices, prev.wires) : prev.wires;
-        return { ...prev, devices, wires, updatedAt: new Date().toISOString() };
+        return {
+          ...s,
+          present: { ...prev, devices, wires, updatedAt: new Date().toISOString() },
+        };
       });
     },
     []
@@ -519,7 +572,7 @@ export default function App() {
       const existingWithPrefix = project.devices.filter((d) =>
         d.designation.startsWith(`-${item.defaultPrefix}`)
       ).length;
-      const des = `-${item.defaultPrefix}${existingWithPrefix + 1}`;
+      const des = nextUniqueDesignation(project.devices, item.defaultPrefix);
       const id = `dev-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
       const posX = x ?? 180 + (existingWithPrefix % 5) * 160;
       const posY = y ?? 180 + Math.floor(existingWithPrefix / 5) * 150;
@@ -592,10 +645,13 @@ export default function App() {
   );
 
   const handleMoveAnnotation = useCallback((annId: string, x: number, y: number) => {
-    setProject((prev) => ({
-      ...prev,
-      updatedAt: new Date().toISOString(),
-      annotations: (prev.annotations || []).map((a) => (a.id === annId ? { ...a, x, y } : a)),
+    setDocState((s) => ({
+      ...s,
+      present: {
+        ...s.present,
+        updatedAt: new Date().toISOString(),
+        annotations: (s.present.annotations || []).map((a) => (a.id === annId ? { ...a, x, y } : a)),
+      },
     }));
   }, []);
 
@@ -637,7 +693,10 @@ export default function App() {
       const obstacles = project.devices
         .filter((d) => d.sheetId === d1.sheetId && d.id !== d1.id && d.id !== d2.id && d.category !== 'io_matrix')
         .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
-      const wireIdx = project.wires.length + 1;
+      let wireIdx = project.wires.length + 1;
+      while (project.wires.some((w) => w.netName === `NET_${wireIdx}`)) {
+        wireIdx += 1;
+      }
       const newWire: E3Wire = {
         id: `w-${Date.now()}`,
         sheetId: d1.sheetId,
@@ -963,11 +1022,14 @@ export default function App() {
       const res = generateHvacDiagram(options, mergedCatalog, project);
       commitProject(() => res.nextProject);
       setActiveSheetId(res.fsaSheetId);
+      setViewportSheetIds((prev) =>
+        prev.map((id, idx) => (idx === activeViewportIdx ? res.fsaSheetId : id))
+      );
       setSelectedDeviceId(null);
       setSelectedWireId(null);
       const fsaSheet = res.nextProject.sheets.find((s) => s.id === res.fsaSheetId);
       if (fsaSheet) {
-        fitSheetToViewport(fsaSheet);
+        window.requestAnimationFrame(() => fitSheetToViewport(fsaSheet, activeViewportIdx));
       }
       appendLog(
         'INFO',
@@ -975,7 +1037,7 @@ export default function App() {
         `Сгенерирована ФСА ${options.systemTag} (${options.sheetFormat}, шрифт ${options.fontFamily}): ${res.createdDevicesCount} узлов, ${res.createdWiresCount} связей${res.wiringSheetId ? ' + лист внешних соединений' : ''}.`
       );
     },
-    [mergedCatalog, project, commitProject, fitSheetToViewport, appendLog]
+    [mergedCatalog, project, commitProject, activeViewportIdx, fitSheetToViewport, appendLog]
   );
 
   const handleAutoRouteActiveSheetWires = useCallback(() => {
@@ -1019,16 +1081,29 @@ export default function App() {
     [commitProject, appendLog]
   );
 
+  const anyModalOpen =
+    exchangeOpen ||
+    visualOpen ||
+    reportOpen ||
+    portableOpen ||
+    hvacWizardOpen ||
+    catalogModalOpen;
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (anyModalOpen) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        handleUndo();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         handleRedo();
@@ -1046,7 +1121,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleUndo, handleRedo, handleDeleteSelected, handleRotateSelected]);
+  }, [anyModalOpen, handleUndo, handleRedo, handleDeleteSelected, handleRotateSelected]);
 
   // Export & Import handlers (.e3s OLE2 + XML + Flux Bridge)
   const handleExportE3sOle2 = async () => {
@@ -1076,6 +1151,7 @@ export default function App() {
       let comLog = '';
       let durationMs = 0;
 
+      let serverError: string | null = null;
       if (lowerName.endsWith('.e3s') || lowerName.endsWith('.e3d')) {
         try {
           const resp = await fetch(
@@ -1098,15 +1174,16 @@ export default function App() {
           } else if (resp.status === 400) {
             const errData = await resp.json().catch(() => null);
             if (errData?.error) {
-              throw new Error(String(errData.error));
+              serverError = String(errData.error);
             }
           }
-        } catch (err) {
-          // If server explicitly returned a parse error, rethrow; otherwise fall back to local Web Worker
-          if (err instanceof Error && !err.message.includes('fetch') && !err.message.includes('NetworkError')) {
-            // Try local Web Worker fallback before failing
-          }
+        } catch {
+          // Network/offline error: fall back to local Web Worker
         }
+      }
+
+      if (serverError) {
+        throw new Error(serverError);
       }
 
       if (!importedProj) {
@@ -1118,7 +1195,15 @@ export default function App() {
       }
 
       commitProject(() => importedProj as E3Project);
-      if (importedProj.sheets[0]) setActiveSheetId(importedProj.sheets[0].id);
+      const sheetIds = importedProj.sheets.map((s) => s.id);
+      if (sheetIds[0]) {
+        setActiveSheetId(sheetIds[0]);
+        setViewportSheetIds((prev) =>
+          prev.map((_, vpIdx) => sheetIds[vpIdx % sheetIds.length] || sheetIds[0])
+        );
+        const firstSheet = importedProj.sheets[0];
+        window.requestAnimationFrame(() => fitSheetToViewport(firstSheet, 0));
+      }
       setSelectedDeviceId(importedProj.devices[0]?.id ?? null);
       setSelectedWireId(null);
 
@@ -1130,7 +1215,7 @@ export default function App() {
         comLog || undefined
       );
     },
-    [project.id, commitProject, appendLog]
+    [project.id, commitProject, fitSheetToViewport, appendLog]
   );
 
   const handleExportFluxBridge = async () => {
@@ -1154,7 +1239,15 @@ export default function App() {
     if (trimmed.startsWith('<')) {
       const res = await ecadAsync.importXml(trimmed);
       commitProject(() => res.project);
-      if (res.project.sheets[0]) setActiveSheetId(res.project.sheets[0].id);
+      const sheetIds = res.project.sheets.map((s) => s.id);
+      if (sheetIds[0]) {
+        setActiveSheetId(sheetIds[0]);
+        setViewportSheetIds((prev) =>
+          prev.map((_, vpIdx) => sheetIds[vpIdx % sheetIds.length] || sheetIds[0])
+        );
+        const firstSheet = res.project.sheets[0];
+        window.requestAnimationFrame(() => fitSheetToViewport(firstSheet, 0));
+      }
       appendLog(
         'SYNC',
         'E3-XML',
@@ -1198,7 +1291,7 @@ export default function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        designation: `-KM${project.devices.length + 1}`,
+        designation: nextUniqueDesignation(project.devices, 'KM'),
         componentName: 'Контактор синхронизации API 24VDC',
         article: 'LC1D25BD',
         manufacturer: 'Schneider Electric',
@@ -1213,7 +1306,7 @@ export default function App() {
     const data = await res.json();
     if (data?.project) {
       suppressSyncPushRef.current = true;
-      setProject(data.project);
+      setProjectRemote(data.project);
       appendLog(
         'SYNC',
         'SYNC-API',
@@ -1247,7 +1340,7 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : null))
       .then((srvProj: E3Project | null) => {
         if (srvProj && srvProj.id && Array.isArray(srvProj.devices)) {
-          setProject((curr) => {
+          setProjectRemote((curr) => {
             if (srvProj.revision > curr.revision || srvProj.id !== curr.id) {
               suppressSyncPushRef.current = true;
               if (srvProj.sheets[0]) setActiveSheetId(srvProj.sheets[0].id);
@@ -1726,6 +1819,7 @@ export default function App() {
                       if (target) fitSheetToViewport(target, idx);
                     }}
                     onAddSheet={handleAddSheet}
+                    onSetTool={setTool}
                     onSetZoom={(nextZ) =>
                       setViewportTransforms((prev) => ({
                         ...prev,
@@ -1737,6 +1831,24 @@ export default function App() {
                         ...prev,
                         [idx]: { zoom: prev[idx]?.zoom ?? 0.45, pan: nextPan },
                       }))
+                    }
+                    onSetTransform={(nextZ, nextPan) =>
+                      setViewportTransforms((prev) => ({
+                        ...prev,
+                        [idx]: { zoom: nextZ, pan: nextPan },
+                      }))
+                    }
+                    onToggleGrid={() =>
+                      handleApplyVisualSettings({
+                        ...project.visualSettings,
+                        showGrid: !project.visualSettings.showGrid,
+                      })
+                    }
+                    onToggleSnapToGrid={() =>
+                      handleApplyVisualSettings({
+                        ...project.visualSettings,
+                        snapToGrid: !project.visualSettings.snapToGrid,
+                      })
                     }
                     onSelectDevice={(id) => {
                       setSelectedDeviceId(id);
@@ -1759,6 +1871,8 @@ export default function App() {
                         setSelectedWireId(null);
                       }
                     }}
+                    onBeginDrag={handleBeginDrag}
+                    onCommitDrag={handleCommitDrag}
                     onCreateAnnotation={handleCreateAnnotation}
                     onMoveAnnotation={handleMoveAnnotation}
                     onMoveDevice={handleMoveDevice}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Cpu, Plus, Sparkles, Trash2, Wand2, X } from 'lucide-react';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type { CatalogItem, E3Project, HvacStageRole, SchematicFontFamily, SheetFormat } from '../core/e3Types';
@@ -36,14 +36,26 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
   const [createExternalWiring, setCreateExternalWiring] = useState<boolean>(true);
   const [stages, setStages] = useState<HvacWizardStage[]>([]);
   const [addRole, setAddRole] = useState<HvacStageRole>('temp_sensor');
+  const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      const parsed = parseFluxSpecsFromProject(project);
+      setSpecs(parsed);
+      setFontFamily(project.visualSettings.fontFamily || 'GOST');
+      setStages(buildDefaultHvacStages(templateId, parsed, catalog));
+    }
+    wasOpenRef.current = open;
+  }, [open, project, catalog, templateId]);
 
   useEffect(() => {
     if (!open) return;
-    const parsed = parseFluxSpecsFromProject(project);
-    setSpecs(parsed);
-    setFontFamily(project.visualSettings.fontFamily || 'GOST');
-    setStages(buildDefaultHvacStages(templateId, parsed, catalog));
-  }, [open, project, catalog, templateId]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   const handleAutoMatchFromFlux = () => {
     setStages((prev) =>
@@ -106,6 +118,9 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="hvac-wizard-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
     >
       <div className="w-full max-w-4xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -349,7 +364,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                         )
                       }
                       aria-label={`Изделие для секции ${idx + 1}`}
-                      className="flex-1 min-w-[200px] h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
+                      className="flex-1 min-w-[180px] h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
                     >
                       {catalog.map((item) => (
                         <option key={item.id} value={item.id}>
@@ -357,6 +372,18 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                         </option>
                       ))}
                     </select>
+                    <input
+                      type="text"
+                      value={stg.tagOverride || ''}
+                      onChange={(e) =>
+                        setStages((prev) =>
+                          prev.map((s) => (s.id === stg.id ? { ...s, tagOverride: e.target.value } : s))
+                        )
+                      }
+                      placeholder="Автотег"
+                      aria-label={`Позиционное обозначение секции ${idx + 1}`}
+                      className="w-28 h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)] shrink-0"
+                    />
                     {selectedItem?.ioProfile && (
                       <span className="font-mono text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
                         DI:{selectedItem.ioProfile.di} DO:{selectedItem.ioProfile.do} AI:{selectedItem.ioProfile.ai} AO:{selectedItem.ioProfile.ao}

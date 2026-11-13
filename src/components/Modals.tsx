@@ -65,6 +65,15 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, busy, onClose]);
+
   if (!open) return null;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,6 +161,9 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="exchange-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !busy) onClose();
+      }}
       className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
     >
       <div className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden">
@@ -433,6 +445,15 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
     if (open) setDraft(structuredClone(settings));
   }, [open, settings]);
 
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const handleExportJson = () => {
@@ -463,6 +484,9 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="vis-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
     >
       <div className="w-full max-w-xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden">
@@ -666,6 +690,15 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   erc,
   onClose,
 }) => {
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const totalQty = bom.reduce((s, r) => s + r.quantity, 0);
@@ -675,6 +708,9 @@ export const ReportModal: React.FC<ReportModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="report-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
     >
       <div className="w-full max-w-4xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[88vh]">

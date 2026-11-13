@@ -122,6 +122,15 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
     }
   }, [open, runBuild]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const fullBuildLogText = [
@@ -156,6 +165,9 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="portable-build-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
     >
       <div className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden">

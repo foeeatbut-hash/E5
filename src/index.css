@@ -43,9 +43,11 @@
   --flux-text-muted: oklch(53.0% 0.012 163);
   --flux-accent: oklch(54.0% 0.115 163);
   --flux-accent-hover: oklch(50.0% 0.112 163);
+  --flux-accent-soft: oklch(54.0% 0.115 163 / 0.11);
   --flux-focus: oklch(54.0% 0.115 163);
   --flux-canvas-bg: #fcfdfd;
   --flux-grid-dot: oklch(82% 0.008 163);
+  --flux-paper-shadow: 0 12px 32px -10px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
 }
 
 .dark {
@@ -59,9 +61,11 @@
   --flux-text-muted: oklch(68.0% 0.010 163);
   --flux-accent: oklch(76.0% 0.120 163);
   --flux-accent-hover: oklch(70.0% 0.120 163);
+  --flux-accent-soft: oklch(76.0% 0.120 163 / 0.16);
   --flux-focus: oklch(76.0% 0.120 163);
   --flux-canvas-bg: oklch(17.5% 0.009 163);
   --flux-grid-dot: oklch(32.0% 0.012 163);
+  --flux-paper-shadow: 0 16px 38px -8px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 html, body, #root {
@@ -78,6 +82,22 @@ html, body, #root {
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--flux-focus);
+  outline-offset: -1px;
 }
 
 /* Custom crisp engineering scrollbars */

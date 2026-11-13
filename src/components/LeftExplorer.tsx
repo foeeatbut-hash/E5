@@ -56,6 +56,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
     else setInternalTab(next);
   };
   const [query, setQuery] = useState('');
+  const [catalogFilter, setCatalogFilter] = useState<'all' | 'hvac' | 'elec' | 'custom'>('all');
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     sheets: true,
     devices: true,
@@ -78,15 +79,30 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
   }, [project.devices, q]);
 
   const filteredCatalog = useMemo(() => {
-    if (!q) return catalog;
-    return catalog.filter(
-      (c) =>
+    const hvacCats = new Set([
+      'fan',
+      'damper',
+      'filter',
+      'heater',
+      'cooler',
+      'sensor',
+      'kip_circle',
+      'airflow_arrow',
+      'junction_box',
+    ]);
+    return catalog.filter((c) => {
+      if (catalogFilter === 'custom' && !c.isCustom) return false;
+      if (catalogFilter === 'hvac' && !c.stageRole && !hvacCats.has(c.category)) return false;
+      if (catalogFilter === 'elec' && (Boolean(c.stageRole) || hvacCats.has(c.category))) return false;
+      if (!q) return true;
+      return (
         c.componentName.toLowerCase().includes(q) ||
         c.article.toLowerCase().includes(q) ||
         c.manufacturer.toLowerCase().includes(q) ||
         c.defaultPrefix.toLowerCase().includes(q)
-    );
-  }, [catalog, q]);
+      );
+    });
+  }, [catalog, catalogFilter, q]);
 
   const toggleSection = (key: string) =>
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -326,9 +342,49 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
                 <span>Схема ПВ</span>
               </button>
             </div>
+            <div
+              role="group"
+              aria-label="Фильтр категории базы"
+              className="grid grid-cols-4 gap-0.5 p-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] mx-0.5"
+            >
+              {(
+                [
+                  ['all', 'Все'],
+                  ['hvac', 'ФСА'],
+                  ['elec', 'Электр.'],
+                  ['custom', 'Мои'],
+                ] as const
+              ).map(([catKey, label]) => (
+                <button
+                  key={catKey}
+                  type="button"
+                  data-testid={`catalog-filter-${catKey}`}
+                  onClick={() => setCatalogFilter(catKey)}
+                  className={`h-6 rounded-xs text-[11px] font-medium transition-colors whitespace-nowrap ${
+                    catalogFilter === catKey
+                      ? 'bg-[var(--flux-sel)] text-[var(--flux-text)]'
+                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             {filteredCatalog.length === 0 ? (
-              <div className="px-2 py-4 text-[12px] text-[var(--flux-text-muted)]">
-                Компонент не найден.
+              <div className="px-2 py-4 text-[12px] text-[var(--flux-text-muted)] space-y-1.5 text-center">
+                <div>Компоненты в выбранной категории не найдены.</div>
+                {(q || catalogFilter !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery('');
+                      setCatalogFilter('all');
+                    }}
+                    className="text-[11px] text-[var(--flux-accent)] hover:underline"
+                  >
+                    Сбросить фильтры
+                  </button>
+                )}
               </div>
             ) : (
               filteredCatalog.map((item) => (

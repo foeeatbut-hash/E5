@@ -149,3 +149,55 @@ test('every catalog item has >=3 attributes and deviceToCatalogItem creates a wh
   assert.ok(!saved.defaultAttributes.some((a) => a.name === 'SYS_ONLY'));
 });
 
+test('generateHvacDiagram handles 10+ stages on narrow A4 without arrowOut overlap or External Wiring truncation', () => {
+  const seed = createSeedProject();
+  const specs = parseFluxSpecsFromProject(seed);
+  const baseStages = buildDefaultHvacStages('supply_ahu', specs, E3_CATALOG);
+  const manyStages = [
+    ...baseStages,
+    ...baseStages.slice(0, 3).map((s, idx) => ({ ...s, id: `${s.id}-extra-${idx}` })),
+  ];
+  assert.ok(manyStages.length >= 10);
+
+  const res = generateHvacDiagram(
+    {
+      templateId: 'supply_ahu',
+      systemTag: 'ПВ-WIDE',
+      cabinetTag: 'ШУ-9',
+      sheetFormat: 'A4',
+      fontFamily: 'GOST',
+      createExternalWiringSheet: true,
+      stages: manyStages,
+    },
+    E3_CATALOG,
+    seed
+  );
+
+  const fsaSheet = res.nextProject.sheets.find((s) => s.id === res.fsaSheetId)!;
+  const fsaDevs = res.nextProject.devices.filter((d) => d.sheetId === res.fsaSheetId);
+  const arrowOut = fsaDevs.find((d) => d.article === 'AIRFLOW-OUT')!;
+  const nonPostStages = fsaDevs.filter(
+    (d) =>
+      d.category !== 'airflow_arrow' &&
+      d.category !== 'io_matrix' &&
+      d.category !== 'kip_circle'
+  );
+  const rightmostStageEnd = Math.max(...nonPostStages.map((d) => d.x + d.width));
+  assert.ok(arrowOut.x > rightmostStageEnd, `arrowOut.x (${arrowOut.x}) must follow rightmost stage (${rightmostStageEnd})`);
+  assert.ok(fsaSheet.width >= arrowOut.x + arrowOut.width);
+
+  const extSheet = res.nextProject.sheets.find((s) => s.id === res.wiringSheetId)!;
+  const extFieldUnits = res.nextProject.devices.filter(
+    (d) => d.sheetId === res.wiringSheetId && d.e3BlockName === 'EXT_FIELD_UNIT'
+  );
+  const extTerminals = res.nextProject.devices.filter(
+    (d) => d.sheetId === res.wiringSheetId && d.e3BlockName === 'EXT_CABINET_XT'
+  );
+  assert.equal(extFieldUnits.length, manyStages.length);
+  assert.equal(extTerminals.length, manyStages.length);
+  const rightmostUnitEnd = Math.max(...extFieldUnits.map((d) => d.x + d.width));
+  assert.ok(extSheet.width >= rightmostUnitEnd);
+  assert.ok(extTerminals[0].y > 120 + 140 + (manyStages.length - 1) * 28);
+});
+
+

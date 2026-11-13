@@ -16,6 +16,7 @@ import {
   generateE3ComScript,
   generateWindowsBridgeCmd,
   importFromFluxBridge,
+  nextUniqueDesignation,
   parseE3Xml,
   parseVisualSettings,
   runErc,
@@ -94,6 +95,7 @@ function persistPortableProject(project: E3Project) {
 const projects = new Map<string, E3Project>();
 const seed = loadInitialProject();
 projects.set(seed.id, seed);
+let activeProjectId = seed.id;
 
 // Connected SSE real-time sync clients
 const sseClients = new Set<express.Response>();
@@ -140,8 +142,11 @@ function isBridgeOnline(): boolean {
 }
 
 function getOrDefaultProject(id?: string): E3Project {
-  if (id && projects.has(id)) return projects.get(id)!;
-  return projects.values().next().value!;
+  if (!id || id === 'current') {
+    return projects.get(activeProjectId) || projects.values().next().value!;
+  }
+  if (projects.has(id)) return projects.get(id)!;
+  return projects.get(activeProjectId) || projects.values().next().value!;
 }
 
 const CYR_MAP: Record<string, string> = {
@@ -230,6 +235,7 @@ app.put('/api/v1/projects/:id', (req, res) => {
     return;
   }
   projects.set(incoming.id, incoming);
+  activeProjectId = incoming.id;
   const sender = String(req.headers['x-flux-client'] || 'api');
   broadcastUpdate(incoming, 'client-sync', sender);
   res.json({ ok: true, revision: incoming.revision });
@@ -245,7 +251,7 @@ app.post('/api/v1/projects/:id/devices', (req, res) => {
   const newDevice: E3Device = {
     id,
     elementId: body.elementId || `el-api-${Date.now().toString(36)}`,
-    designation: body.designation || `-${cat.defaultPrefix}${idx}`,
+    designation: body.designation || nextUniqueDesignation(proj.devices, cat.defaultPrefix),
     componentName: body.componentName || cat.componentName,
     article: body.article || cat.article,
     manufacturer: body.manufacturer || cat.manufacturer,
@@ -265,6 +271,7 @@ app.post('/api/v1/projects/:id/devices', (req, res) => {
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
   projects.set(proj.id, proj);
+  activeProjectId = proj.id;
   broadcastUpdate(proj, 'REST API POST /devices', 'api');
   res.status(201).json({ ok: true, device: newDevice, project: proj });
 });
@@ -276,6 +283,7 @@ app.patch('/api/v1/projects/:id/visual-settings', (req, res) => {
     proj.revision += 1;
     proj.updatedAt = new Date().toISOString();
     projects.set(proj.id, proj);
+    activeProjectId = proj.id;
     broadcastUpdate(proj, 'REST API PATCH /visual-settings', 'api');
     res.json({ ok: true, visualSettings: proj.visualSettings });
   } catch (err) {
@@ -403,6 +411,7 @@ app.post('/api/v1/e3-bridge/ack', (req, res) => {
         const base = getOrDefaultProject();
         const merged = importFromFluxBridge(parsed, base);
         projects.set(merged.id, merged);
+        activeProjectId = merged.id;
         broadcastUpdate(merged, `E³.series (${host || 'ПК'})`, 'e3-bridge');
       }
     } catch (err) {
@@ -517,6 +526,7 @@ app.post('/api/v1/projects/:id/e3-direct-open', async (req, res) => {
           const parsed = JSON.parse(fs.readFileSync(expPath, 'utf8').replace(/^\uFEFF/, ''));
           const merged = importFromFluxBridge(parsed, proj);
           projects.set(merged.id, merged);
+          activeProjectId = merged.id;
           broadcastUpdate(merged, 'Локальный E³.series (Win32 COM)', 'e3-bridge');
         } catch (expErr) {
           diagLogger.log('ERROR', 'E3-COM', 'Ошибка импорта flux_e3_export.json', {
@@ -602,6 +612,7 @@ app.post('/api/v1/projects/:id/import/e3s', express.raw({ type: '*/*', limit: '2
           const merged = importFromFluxBridge(comJson, parsed.project);
           merged.projectCode = safeBaseName.replace(/\.e3s$/i, '');
           projects.set(merged.id, merged);
+          activeProjectId = merged.id;
           diagLogger.log(
             'SYNC',
             'E3-COM',
@@ -633,6 +644,7 @@ app.post('/api/v1/projects/:id/import/e3s', express.raw({ type: '*/*', limit: '2
     }
 
     projects.set(parsed.project.id, parsed.project);
+    activeProjectId = parsed.project.id;
     broadcastUpdate(parsed.project, `REST API POST /import/e3s (${parsed.sourceKind})`, 'api');
     res.json({ ok: true, sourceKind: parsed.sourceKind, discoveredStreams: parsed.discoveredStreams, project: parsed.project });
   } catch (err) {
@@ -655,6 +667,7 @@ app.post('/api/v1/projects/:id/import/e3xml', (req, res) => {
     const xmlText = typeof req.body === 'string' ? req.body : String(req.body?.xml || '');
     const imported = parseE3Xml(xmlText);
     projects.set(imported.id, imported);
+    activeProjectId = imported.id;
     broadcastUpdate(imported, 'REST API POST /import/e3xml', 'api');
     res.json({ ok: true, project: imported });
   } catch (err) {
@@ -787,6 +800,7 @@ app.post('/api/build/portable', async (req, res) => {
     let targetProject = getOrDefaultProject(typeof req.body?.projectId === 'string' ? req.body.projectId : undefined);
     if (incomingProject && incomingProject.id && Array.isArray(incomingProject.devices)) {
       projects.set(incomingProject.id, incomingProject);
+      activeProjectId = incomingProject.id;
       targetProject = incomingProject;
     }
 
