@@ -30,6 +30,7 @@ import { SchematicCanvas } from './components/SchematicCanvas';
 import { StampEditorModal, type StampModalMode } from './components/StampEditorModal';
 import { TerminalStripModal } from './components/TerminalStripModal';
 import { AutoNumberingModal } from './components/AutoNumberingModal';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
 import {
   clampDockLayoutToViewport,
@@ -159,6 +160,7 @@ import {
 } from './core/sheetRevisions';
 import { findSmartCatalogSpot } from './core/smartSnap';
 import { generateOrUpdateTerminalStripSheet } from './core/terminalStrip';
+import { buildCommandPaletteItems, type CommandPaletteItem } from './core/commandPalette';
 import { ecadAsync } from './workers/ecadAsync';
 
 function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
@@ -330,6 +332,7 @@ export default function App() {
   const [fluxPublishOpen, setFluxPublishOpen] = useState(false);
   const [terminalEditorOpen, setTerminalEditorOpen] = useState(false);
   const [autoNumberModalOpen, setAutoNumberModalOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const fluxHostStatus = useMemo(() => detectFluxHost(), []);
   const [stampModalState, setStampModalState] = useState<{
     open: boolean;
@@ -1500,6 +1503,63 @@ export default function App() {
     [activeViewportIdx]
   );
 
+  const handleJumpToIssue = useCallback(
+    (issue: ErcIssue) => {
+      const cur = docStateRef.current.present;
+      const dev = issue.deviceId ? cur.devices.find((d) => d.id === issue.deviceId) : undefined;
+      const wire = issue.wireId ? cur.wires.find((w) => w.id === issue.wireId) : undefined;
+      const targetSheetId = issue.sheetId || dev?.sheetId || wire?.sheetId;
+      const targetSheet = targetSheetId ? cur.sheets.find((s) => s.id === targetSheetId) : undefined;
+
+      if (dev) {
+        applySelection({ deviceIds: [dev.id] });
+        setHighlightedPotentialSeed(null);
+        const b = getDeviceBounds(dev);
+        centerCameraOnCoords(dev.sheetId, b.x + b.width / 2, b.y + b.height / 2, activeViewportIdx);
+      } else if (wire) {
+        applySelection({ wireIds: [wire.id] });
+        setHighlightedPotentialSeed({ wireId: wire.id });
+        const pts = wire.waypoints && wire.waypoints.length > 0 ? wire.waypoints : [];
+        let wx = 400;
+        let wy = 300;
+        if (pts.length >= 2) {
+          const mid = pts[Math.floor(pts.length / 2)];
+          const prevPt = pts[Math.floor(pts.length / 2) - 1] || mid;
+          wx = (prevPt.x + mid.x) / 2;
+          wy = (prevPt.y + mid.y) / 2;
+        } else if (pts.length === 1) {
+          wx = pts[0].x;
+          wy = pts[0].y;
+        } else {
+          const dFrom = cur.devices.find((d) => d.id === wire.fromDeviceId);
+          const dTo = cur.devices.find((d) => d.id === wire.toDeviceId);
+          const pFrom = dFrom?.pins.find((p) => p.id === wire.fromPinId);
+          const pTo = dTo?.pins.find((p) => p.id === wire.toPinId);
+          if (dFrom && dTo && pFrom && pTo) {
+            const p1 = getAbsolutePinPos(dFrom, pFrom);
+            const p2 = getAbsolutePinPos(dTo, pTo);
+            wx = (p1.x + p2.x) / 2;
+            wy = (p1.y + p2.y) / 2;
+          }
+        }
+        centerCameraOnCoords(wire.sheetId, wx, wy, activeViewportIdx);
+      } else if (targetSheet) {
+        setActiveSheetId(targetSheet.id);
+        setViewportSheetIds((prev) =>
+          prev.map((sId, idx) => (idx === activeViewportIdx ? targetSheet.id : sId))
+        );
+        fitSheetToViewport(targetSheet, activeViewportIdx);
+      }
+
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Переход к замечанию ${issue.code}${targetSheet ? ` (Лист ${targetSheet.number})` : ''}: ${issue.message}`
+      );
+    },
+    [applySelection, centerCameraOnCoords, activeViewportIdx, fitSheetToViewport, appendLog]
+  );
+
   const handleNavigateOffPage = useCallback(
     (device: E3Device) => {
       const cur = docStateRef.current.present;
@@ -1992,10 +2052,6 @@ export default function App() {
       sheetId: string,
       opts: { revisionLabel: string; changeDoc?: string; changeDate?: string; comment?: string }
     ) => {
-      if (isLayerLocked(docStateRef.current.present.layers, 'frame')) {
-        appendLog('WARN', 'E3-CORE', 'Выпуск ревизии не выполнен: слой «Рамка и штамп ГОСТ» заблокирован.');
-        return;
-      }
       const cleanLabel = opts.revisionLabel.trim();
       if (!cleanLabel) return;
       const cur = docStateRef.current.present;
@@ -2013,7 +2069,7 @@ export default function App() {
       appendLog(
         'SYNC',
         'E3-CORE',
-        `Лист «${sheet.name}»: в штампе зафиксирована и сохранена ревизия «Изм. ${cleanLabel}».`
+        `Лист «${sheet.name}»: сохранена внутренняя ревизия «Изм. ${cleanLabel}».`
       );
     },
     [commitProject, appendLog]
@@ -2032,48 +2088,32 @@ export default function App() {
         return;
       }
       const shouldCopyForm = applyFormToAll || patch.stampForm === 'custom';
-      const cur = docStateRef.current.present;
-      const targetSheet = cur.sheets.find((s) => s.id === sheetId);
-      const prevIzm = targetSheet?.titleBlock.izm?.trim() || '';
-      const nextIzm = typeof patch.izm === 'string' ? patch.izm.trim() : prevIzm;
-      const izmReleased = Boolean(nextIzm && nextIzm !== prevIzm);
 
-      commitProject((prev) => {
-        const updatedBase: E3Project = {
-          ...prev,
-          revision: prev.revision + 1,
-          updatedAt: new Date().toISOString(),
-          sheets: prev.sheets.map((s) => {
-            if (s.id === sheetId) {
-              return { ...s, titleBlock: { ...s.titleBlock, ...patch } };
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        sheets: prev.sheets.map((s) => {
+          if (s.id === sheetId) {
+            return { ...s, titleBlock: { ...s.titleBlock, ...patch } };
+          }
+          if (applyToAll) {
+            const sharedPatch: Partial<E3TitleBlock> = { ...patch };
+            delete sharedPatch.izm;
+            delete sharedPatch.changeDoc;
+            delete sharedPatch.changeDate;
+            if (!shouldCopyForm) {
+              delete sharedPatch.stampForm;
+              delete sharedPatch.customTemplateId;
             }
-            if (applyToAll) {
-              const sharedPatch: Partial<E3TitleBlock> = { ...patch };
-              delete sharedPatch.izm;
-              delete sharedPatch.changeDoc;
-              delete sharedPatch.changeDate;
-              if (!shouldCopyForm) {
-                delete sharedPatch.stampForm;
-                delete sharedPatch.customTemplateId;
-              }
-              if (!includeSheetTitleOnAll) {
-                delete sharedPatch.sheetTitle;
-              }
-              return { ...s, titleBlock: { ...s.titleBlock, ...sharedPatch } };
+            if (!includeSheetTitleOnAll) {
+              delete sharedPatch.sheetTitle;
             }
-            return s;
-          }),
-        };
-        if (izmReleased) {
-          return releaseSheetRevision(updatedBase, sheetId, {
-            revisionLabel: nextIzm,
-            changeDoc: patch.changeDoc,
-            changeDate: patch.changeDate,
-            author: patch.designer || targetSheet?.titleBlock.designer || prev.author,
-          });
-        }
-        return updatedBase;
-      });
+            return { ...s, titleBlock: { ...s.titleBlock, ...sharedPatch } };
+          }
+          return s;
+        }),
+      }));
 
       fetch(`/api/v1/projects/${encodeURIComponent(project.id)}/sheets/${encodeURIComponent(sheetId)}/stamp`, {
         method: 'PATCH',
@@ -2089,11 +2129,9 @@ export default function App() {
       appendLog(
         'SYNC',
         'E3-CORE',
-        izmReleased
-          ? `В штампе листа зафиксирована ревизия «Изм. ${nextIzm}».`
-          : applyToAll
-            ? `Обновлён штамп ГОСТ 2.104 на всех листах (${project.sheets.length}).`
-            : 'Обновлён штамп ГОСТ 2.104 на выбранном листе.'
+        applyToAll
+          ? `Обновлён штамп ГОСТ 2.104 на всех листах (${project.sheets.length}).`
+          : 'Обновлён штамп ГОСТ 2.104 на выбранном листе.'
       );
     },
     [commitProject, project.id, project.sheets.length, appendLog]
@@ -2194,11 +2232,6 @@ export default function App() {
       if (!curSheet) return;
       const prevVal = String(curSheet.titleBlock[fieldKey] ?? '');
       const clean = nextValue.trim();
-      if (fieldKey === 'izm') {
-        if (!clean || clean === prevVal.trim()) return;
-        handleReleaseSheetRevision(sheetId, { revisionLabel: clean });
-        return;
-      }
       if (prevVal === clean) return;
       commitProject(
         (prev) => ({
@@ -2215,7 +2248,7 @@ export default function App() {
       );
       appendLog('INFO', 'E3-CORE', `Графа штампа «${fieldKey}» обновлена на холсте: «${clean}».`);
     },
-    [commitProject, handleReleaseSheetRevision, appendLog]
+    [commitProject, appendLog]
   );
 
   const handleSaveCustomTemplate = useCallback(
@@ -2410,67 +2443,10 @@ export default function App() {
     hvacWizardOpen ||
     catalogModalOpen ||
     publishModalOpen ||
+    terminalEditorOpen ||
+    autoNumberModalOpen ||
+    fluxPublishOpen ||
     stampModalState.open;
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (anyModalOpen) return;
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) {
-        return;
-      }
-      const key = e.key.toLowerCase();
-      if ((e.ctrlKey || e.metaKey) && key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          handleRedo();
-        } else {
-          handleUndo();
-        }
-      } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
-        e.preventDefault();
-        handleRedo();
-      } else if ((e.ctrlKey || e.metaKey) && key === 'c') {
-        e.preventDefault();
-        handleCopySelected();
-      } else if ((e.ctrlKey || e.metaKey) && key === 'v') {
-        e.preventDefault();
-        handlePasteClipboard();
-      } else if ((e.ctrlKey || e.metaKey) && key === 'd') {
-        e.preventDefault();
-        handleDuplicateSelected();
-      } else if ((e.ctrlKey || e.metaKey) && key === 'a') {
-        e.preventDefault();
-        handleSelectAllOnSheet();
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        handleDeleteSelected();
-      } else if (!e.ctrlKey && !e.metaKey && key === 'r') {
-        handleRotateSelected();
-      } else if (e.key === 'Escape') {
-        setHighlightedPotentialSeed(null);
-        setTool('select');
-      } else if (!e.ctrlKey && !e.metaKey && key === 'v') {
-        setTool('select');
-      } else if (!e.ctrlKey && !e.metaKey && key === 'w') {
-        setTool('wire');
-      } else if (!e.ctrlKey && !e.metaKey && key === 'h') {
-        setTool('pan');
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    anyModalOpen,
-    handleUndo,
-    handleRedo,
-    handleCopySelected,
-    handlePasteClipboard,
-    handleDuplicateSelected,
-    handleSelectAllOnSheet,
-    handleDeleteSelected,
-    handleRotateSelected,
-  ]);
 
   // Export & Import handlers (.e3s OLE2 + XML + Flux Bridge)
   const handleExportE3sOle2 = async () => {
@@ -2640,6 +2616,256 @@ export default function App() {
     },
     [commitProject, appendLog]
   );
+
+  const commandPaletteItems = useMemo(
+    () =>
+      buildCommandPaletteItems(project, {
+        hasSelection:
+          selectedDeviceIds.length > 0 ||
+          selectedWireIds.length > 0 ||
+          selectedAnnotationIds.length > 0,
+        selectedDeviceCount: selectedDeviceIds.length,
+        canUndo: history.length > 0,
+        canRedo: future.length > 0,
+        snapToGrid: project.visualSettings.snapToGrid,
+        smartGuides: project.visualSettings.smartGuides !== false,
+        showGrid: project.visualSettings.showGrid,
+      }),
+    [
+      project,
+      selectedDeviceIds.length,
+      selectedWireIds.length,
+      selectedAnnotationIds.length,
+      history.length,
+      future.length,
+    ]
+  );
+
+  const handleExecuteCommandPaletteItem = useCallback(
+    (item: CommandPaletteItem) => {
+      const act = item.action;
+      switch (act.type) {
+        case 'set-tool':
+          setTool(act.tool);
+          break;
+        case 'rotate-selected':
+          handleRotateSelected();
+          break;
+        case 'align-selected':
+          handleAlignSelectedDevices(act.align);
+          break;
+        case 'zoom-fit':
+          fitSheetToViewport(undefined, activeViewportIdx);
+          break;
+        case 'zoom-delta':
+          setZoom(Math.min(2.5, Math.max(0.18, Math.round((zoom + act.delta) * 100) / 100)));
+          break;
+        case 'toggle-snap':
+          handleApplyVisualSettings({
+            ...project.visualSettings,
+            snapToGrid: !project.visualSettings.snapToGrid,
+          });
+          appendLog(
+            'INFO',
+            'E3-CORE',
+            `Привязка к сетке (F3): ${!project.visualSettings.snapToGrid ? 'включена' : 'выключена'}.`
+          );
+          break;
+        case 'toggle-guides': {
+          const next = !(project.visualSettings.smartGuides !== false);
+          handleApplyVisualSettings({ ...project.visualSettings, smartGuides: next });
+          appendLog('INFO', 'E3-CORE', `Орто / направляющие (F8): ${next ? 'включены' : 'выключены'}.`);
+          break;
+        }
+        case 'toggle-grid':
+          handleApplyVisualSettings({
+            ...project.visualSettings,
+            showGrid: !project.visualSettings.showGrid,
+          });
+          appendLog(
+            'INFO',
+            'E3-CORE',
+            `Координатная сетка (F9): ${!project.visualSettings.showGrid ? 'показана' : 'скрыта'}.`
+          );
+          break;
+        case 'autoroute':
+          handleAutoRouteActiveSheetWires();
+          break;
+        case 'open-erc':
+          setConsoleTab('erc');
+          setConsoleCollapsed(false);
+          break;
+        case 'open-bom':
+          setConsoleTab('bom');
+          setConsoleCollapsed(false);
+          break;
+        case 'open-terminals':
+          setTerminalEditorOpen(true);
+          break;
+        case 'open-autonum':
+          setAutoNumberModalOpen(true);
+          break;
+        case 'export-dxf':
+          void handleExportDxf();
+          break;
+        case 'open-publish':
+          setPublishModalOpen(true);
+          break;
+        case 'open-stamp':
+          setStampModalState({
+            open: true,
+            sheetId: activeSheet?.id || project.sheets[0]?.id || 'sheet-1',
+            mode: 'values',
+            field: null,
+          });
+          break;
+        case 'undo':
+          handleUndo();
+          break;
+        case 'redo':
+          handleRedo();
+          break;
+        case 'jump-sheet': {
+          const sh = project.sheets.find((s) => s.id === act.sheetId);
+          if (sh) {
+            setActiveSheetId(sh.id);
+            setViewportSheetIds((prev) =>
+              prev.map((sId, idx) => (idx === activeViewportIdx ? sh.id : sId))
+            );
+            fitSheetToViewport(sh, activeViewportIdx);
+            appendLog('INFO', 'E3-CORE', `Переход на Лист ${sh.number}: «${sh.name}».`);
+          }
+          break;
+        }
+        case 'jump-device': {
+          const dev = project.devices.find((d) => d.id === act.deviceId);
+          if (dev) {
+            applySelection({ deviceIds: [dev.id] });
+            const b = getDeviceBounds(dev);
+            centerCameraOnCoords(dev.sheetId, b.x + b.width / 2, b.y + b.height / 2, activeViewportIdx);
+            appendLog('INFO', 'E3-CORE', `Переход к изделию ${dev.designation} (${dev.componentName}).`);
+          }
+          break;
+        }
+      }
+    },
+    [
+      handleRotateSelected,
+      handleAlignSelectedDevices,
+      fitSheetToViewport,
+      activeViewportIdx,
+      setZoom,
+      zoom,
+      handleApplyVisualSettings,
+      project.visualSettings,
+      project.sheets,
+      project.devices,
+      appendLog,
+      handleAutoRouteActiveSheetWires,
+      setConsoleCollapsed,
+      handleExportDxf,
+      activeSheet?.id,
+      handleUndo,
+      handleRedo,
+      applySelection,
+      centerCameraOnCoords,
+    ]
+  );
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && key === 'k') {
+        if (anyModalOpen) return;
+        e.preventDefault();
+        setCommandPaletteOpen((o) => !o);
+        return;
+      }
+      if (anyModalOpen || commandPaletteOpen) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === 'F3') {
+        e.preventDefault();
+        const nextSnap = !project.visualSettings.snapToGrid;
+        handleApplyVisualSettings({ ...project.visualSettings, snapToGrid: nextSnap });
+        appendLog('INFO', 'E3-CORE', `Привязка к сетке (F3): ${nextSnap ? 'включена' : 'выключена'}.`);
+      } else if (e.key === 'F8') {
+        e.preventDefault();
+        const nextGuides = !(project.visualSettings.smartGuides !== false);
+        handleApplyVisualSettings({ ...project.visualSettings, smartGuides: nextGuides });
+        appendLog('INFO', 'E3-CORE', `Орто / направляющие (F8): ${nextGuides ? 'включены' : 'выключены'}.`);
+      } else if (e.key === 'F9') {
+        e.preventDefault();
+        const nextGrid = !project.visualSettings.showGrid;
+        handleApplyVisualSettings({ ...project.visualSettings, showGrid: nextGrid });
+        appendLog('INFO', 'E3-CORE', `Сетка чертежа (F9): ${nextGrid ? 'показана' : 'скрыта'}.`);
+      } else if ((e.code === 'Space' || e.key === ' ') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (target && (target.tagName === 'BUTTON' || target.tagName === 'A')) return;
+        e.preventDefault();
+        setTool((prev) => (prev === 'wire' ? 'select' : 'wire'));
+      } else if ((e.ctrlKey || e.metaKey) && key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      } else if ((e.ctrlKey || e.metaKey) && key === 'c') {
+        e.preventDefault();
+        handleCopySelected();
+      } else if ((e.ctrlKey || e.metaKey) && key === 'v') {
+        e.preventDefault();
+        handlePasteClipboard();
+      } else if ((e.ctrlKey || e.metaKey) && key === 'd') {
+        e.preventDefault();
+        handleDuplicateSelected();
+      } else if ((e.ctrlKey || e.metaKey) && key === 'a') {
+        e.preventDefault();
+        handleSelectAllOnSheet();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        handleDeleteSelected();
+      } else if (!e.ctrlKey && !e.metaKey && key === 'r') {
+        handleRotateSelected();
+      } else if (e.key === 'Escape') {
+        setHighlightedPotentialSeed(null);
+        setTool('select');
+      } else if (!e.ctrlKey && !e.metaKey && key === 'v') {
+        setTool('select');
+      } else if (!e.ctrlKey && !e.metaKey && key === 'w') {
+        setTool('wire');
+      } else if (!e.ctrlKey && !e.metaKey && key === 'h') {
+        setTool('pan');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    anyModalOpen,
+    commandPaletteOpen,
+    project.visualSettings,
+    handleApplyVisualSettings,
+    appendLog,
+    handleUndo,
+    handleRedo,
+    handleCopySelected,
+    handlePasteClipboard,
+    handleDuplicateSelected,
+    handleSelectAllOnSheet,
+    handleDeleteSelected,
+    handleRotateSelected,
+  ]);
 
   const handlePatchVisualSettings = useCallback(
     (patch: Partial<E3VisualSettings>) => {
@@ -3083,23 +3309,7 @@ export default function App() {
         onSetTab={setConsoleTab}
         onExpandPanel={() => setConsoleCollapsed(false)}
         onToggleCollapse={() => setConsoleCollapsed((c) => !c)}
-        onJumpToIssue={(issue) => {
-          if (issue.sheetId) {
-            setActiveSheetId(issue.sheetId);
-            setViewportSheetIds((prev) =>
-              prev.map((sId, idx) => (idx === activeViewportIdx ? issue.sheetId! : sId))
-            );
-          }
-          if (issue.deviceId) {
-            setSelectedDeviceId(issue.deviceId);
-            setSelectedWireId(null);
-            setSelectedAnnotationId(null);
-          } else if (issue.wireId) {
-            setSelectedWireId(issue.wireId);
-            setSelectedDeviceId(null);
-            setSelectedAnnotationId(null);
-          }
-        }}
+        onJumpToIssue={handleJumpToIssue}
         onSelectDeviceByDesignation={(designation) => {
           const dev = project.devices.find((d) => d.designation === designation);
           if (!dev) return;
@@ -3485,6 +3695,7 @@ export default function App() {
         onToggleLayerLock={handleToggleLayerLock}
         onShowAllLayers={handleShowAllLayers}
         onUnlockAllLayers={handleUnlockAllLayers}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
       />
 
       {/* Dockable Workspace Shell */}
@@ -3866,6 +4077,13 @@ export default function App() {
             `Переиндексация ОУО (${orderLabel}): переименовано изделий — ${count}.`
           );
         }}
+      />
+
+      <CommandPaletteModal
+        open={commandPaletteOpen}
+        items={commandPaletteItems}
+        onClose={() => setCommandPaletteOpen(false)}
+        onExecute={handleExecuteCommandPaletteItem}
       />
     </div>
     </MotionConfig>

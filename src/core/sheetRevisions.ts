@@ -59,8 +59,6 @@ export function getReleasedSheetRevisions(sheet: E3Sheet): E3SheetRevisionEntry[
 }
 
 export function getSheetRevisionLabel(sheet: E3Sheet): string {
-  const stampIzm = sheet.titleBlock?.izm?.trim();
-  if (stampIzm) return `Изм.${stampIzm}`;
   const curRev = getSheetRevisionNumber(sheet);
   const activeEntry = (sheet.revisions || []).find((r) => r.revision === curRev);
   if (activeEntry?.released && activeEntry.revisionLabel) {
@@ -247,16 +245,11 @@ export function normalizeProjectSheetRevisions(
         : [
             {
               revision: revNum,
-              released: Boolean(sheet.titleBlock?.izm?.trim()),
-              revisionLabel: sheet.titleBlock?.izm?.trim() || undefined,
-              changeDoc: sheet.titleBlock?.changeDoc?.trim() || undefined,
-              changeDate: sheet.titleBlock?.changeDate?.trim() || undefined,
+              released: false,
               projectRevision: project.revision,
               timestamp: sheet.updatedAt || ts,
               author,
-              summary: sheet.titleBlock?.izm?.trim()
-                ? `Выпущена ревизия «${sheet.titleBlock.izm.trim()}»`
-                : 'Базовая версия листа',
+              summary: 'Базовая версия листа',
               changedAreas: ['metadata'] as SheetChangeArea[],
               snapshot: snap,
             },
@@ -284,9 +277,8 @@ export function normalizeProjectSheetRevisions(
 }
 
 /**
- * Releases and snapshots a formal per-sheet revision when the engineer explicitly
- * writes a revision code ("Изм.") in the GOST 2.104 stamp or releases a revision.
- * Normal drawing edits do NOT create revision entries automatically.
+ * Releases and snapshots an internal per-sheet revision inside the application
+ * without writing revision codes or change-table rows onto the drawing sheet stamp.
  */
 export function releaseSheetRevision(
   project: E3Project,
@@ -313,7 +305,7 @@ export function releaseSheetRevision(
     sheet.titleBlock.designer?.trim() ||
     normalized.author ||
     'Инженер';
-  const changeDoc = opts.changeDoc?.trim() ?? sheet.titleBlock.changeDoc?.trim() ?? '';
+  const changeDoc = opts.changeDoc?.trim() || '';
   const changeDate =
     opts.changeDate?.trim() ||
     formatDefaultChangeDate(now);
@@ -323,35 +315,18 @@ export function releaseSheetRevision(
   const nextRev = prevMaxRev + 1;
 
   const prevSnap = prevHistory[prevHistory.length - 1]?.snapshot;
-
-  const nextTitleBlock = {
-    ...sheet.titleBlock,
-    izm: cleanLabel,
-    changeDoc: changeDoc || sheet.titleBlock.changeDoc,
-    changeDate,
-  };
-
-  const draftWithStamp: E3Project = {
-    ...normalized,
-    revision: normalized.revision + 1,
-    updatedAt: now,
-    sheets: normalized.sheets.map((s) =>
-      s.id === sheetId ? { ...s, titleBlock: nextTitleBlock } : s
-    ),
-  };
-
-  const nextSnap = captureSheetSnapshot(draftWithStamp, sheetId) || undefined;
+  const nextSnap = captureSheetSnapshot(normalized, sheetId) || undefined;
   const diff = prevSnap && nextSnap ? describeSheetChanges(prevSnap, nextSnap) : null;
-  const changedAreas: SheetChangeArea[] = diff?.changedAreas || ['stamp'];
-  if (!changedAreas.includes('stamp')) changedAreas.push('stamp');
+  const changedAreas: SheetChangeArea[] =
+    diff?.changedAreas && diff.changedAreas.length > 0 ? diff.changedAreas : ['metadata'];
 
   const userNote = opts.comment?.trim();
-  const diffDetail = diff?.summary && diff.summary !== 'Обновлён штамп ГОСТ 2.104' ? diff.summary : '';
+  const diffDetail = diff?.summary || '';
   const summary = userNote
     ? `Изм. «${cleanLabel}»: ${userNote}`
     : diffDetail
       ? `Выпуск ревизии «${cleanLabel}» (${diffDetail})`
-      : `Выпущена ревизия «${cleanLabel}» в штампе`;
+      : `Зафиксирована внутренняя ревизия листа «${cleanLabel}»`;
 
   const entry: E3SheetRevisionEntry = {
     revision: nextRev,
@@ -359,7 +334,7 @@ export function releaseSheetRevision(
     changeDoc: changeDoc || undefined,
     changeDate,
     released: true,
-    projectRevision: draftWithStamp.revision,
+    projectRevision: normalized.revision + 1,
     timestamp: now,
     author,
     summary,
@@ -368,14 +343,15 @@ export function releaseSheetRevision(
   };
 
   return {
-    ...draftWithStamp,
-    sheets: draftWithStamp.sheets.map((s) =>
+    ...normalized,
+    revision: normalized.revision + 1,
+    updatedAt: now,
+    sheets: normalized.sheets.map((s) =>
       s.id === sheetId
         ? {
             ...s,
             revision: nextRev,
             updatedAt: now,
-            titleBlock: nextTitleBlock,
             revisions: capRevisionHistory([...prevHistory, entry]),
           }
         : s

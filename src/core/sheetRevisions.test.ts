@@ -54,7 +54,7 @@ test('normal drawing edits mark uncommitted changes without auto-releasing a she
   assert.equal(hasSheetUncommittedChanges(edited, s2), false);
 });
 
-test('releaseSheetRevision records revision only when stamp Изм. is issued and populates GOST stamp table', () => {
+test('releaseSheetRevision records revision internally while leaving GOST sheet stamp blank', () => {
   const base = normalizeProjectSheetRevisions(createSeedProject(), {
     timestamp: '2026-11-10T10:00:00.000Z',
   });
@@ -80,17 +80,20 @@ test('releaseSheetRevision records revision only when stamp Изм. is issued an
 
   assert.equal(getSheetRevisionNumber(s1), 2);
   assert.equal(getSheetRevisionLabel(s1), 'Изм.1');
-  assert.equal(s1.titleBlock.izm, '1');
-  assert.equal(s1.titleBlock.changeDoc, 'ИИ-04');
-  assert.equal(s1.titleBlock.changeDate, '13.11.26');
+  assert.equal(s1.titleBlock.izm || '', '');
+  assert.equal(s1.titleBlock.changeDoc || '', '');
+  assert.equal(s1.titleBlock.changeDate || '', '');
   assert.equal(getReleasedSheetRevisions(s1).length, 1);
   assert.equal(hasSheetUncommittedChanges(released, s1), false);
 
+  // Sheet drawing GOST stamp change-table cells must remain empty
   const geom = buildGostSheetGeometry(s1, released);
   const izmCell = geom.stamp.cells.find((c) => c.id === 'f1-chg-izm-0');
+  const listCell = geom.stamp.cells.find((c) => c.id === 'f1-chg-list-0');
   const docCell = geom.stamp.cells.find((c) => c.id === 'f1-chg-doc-0');
-  assert.equal(izmCell?.text, '1');
-  assert.equal(docCell?.text, 'ИИ-04');
+  assert.equal(izmCell?.text, '');
+  assert.equal(listCell?.text, '');
+  assert.equal(docCell?.text, '');
 
   // Untouched sheet stays unreleased at v1
   assert.equal(getSheetRevisionNumber(s2), 1);
@@ -138,7 +141,7 @@ test('restoreSheetFromRevision reverts target sheet snapshot without creating a 
   assert.equal(hasSheetUncommittedChanges(normalizedAfterRestore, normalizedAfterRestore.sheets[0]), false);
 });
 
-test('serializeE3Xml and parseE3Xml preserve stamp revision metadata and released sheet history', () => {
+test('serializeE3Xml and parseE3Xml preserve internal released sheet history without writing onto stamp', () => {
   const base = normalizeProjectSheetRevisions(createSeedProject());
   const released = releaseSheetRevision(
     {
@@ -163,12 +166,11 @@ test('serializeE3Xml and parseE3Xml preserve stamp revision metadata and release
   const s1 = parsed.sheets[0];
   assert.equal(getSheetRevisionNumber(s1), 2);
   assert.equal(getSheetRevisionLabel(s1), 'Изм.А');
-  assert.equal(s1.titleBlock.izm, 'А');
-  assert.equal(s1.titleBlock.changeDoc, 'ИИ-12');
-  assert.equal(s1.titleBlock.changeDate, '13.11.26');
+  assert.equal(s1.titleBlock.izm || '', '');
   assert.equal(s1.revisions?.length, 2);
   assert.equal(s1.revisions?.[1].released, true);
   assert.equal(s1.revisions?.[1].revisionLabel, 'А');
+  assert.equal(s1.revisions?.[1].changeDoc, 'ИИ-12');
   assert.equal(s1.revisions?.[1].snapshot?.titleBlock.checker, 'Смирнов К.А.');
   assert.equal(getSheetRevisionNumber(parsed.sheets[1]), 1);
 });

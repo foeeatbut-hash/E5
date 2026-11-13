@@ -1308,9 +1308,73 @@ const INCOMPATIBLE_SIGNAL_PAIRS: Array<[SignalType, SignalType]> = [
   ['power', 'neutral'],
   ['power', 'dc24'],
   ['power', 'dc0'],
+  ['neutral', 'pe'],
   ['dc24', 'dc0'],
   ['dc24', 'pe'],
 ];
+
+function areSignalsIncompatible(a: SignalType, b: SignalType): boolean {
+  return INCOMPATIBLE_SIGNAL_PAIRS.some(
+    ([x, y]) => (a === x && b === y) || (a === y && b === x)
+  );
+}
+
+const SIGNAL_DISPLAY_NAME: Record<SignalType, string> = {
+  power: '380В/220В сила',
+  neutral: 'N (нейтраль)',
+  pe: 'PE (земля)',
+  dc24: '24VDC',
+  dc0: '0VDC',
+  signal: 'Сигнал',
+  bus: 'Шина данных',
+};
+
+// Допустимый длительный ток для медных жил с ПВХ изоляцией (ПУЭ табл. 1.3.4 / ГОСТ)
+const COPPER_AMPACITY_TABLE: Array<{ maxSection: number; maxAmps: number }> = [
+  { maxSection: 0.5, maxAmps: 6 },
+  { maxSection: 0.75, maxAmps: 10 },
+  { maxSection: 1.0, maxAmps: 13 },
+  { maxSection: 1.5, maxAmps: 16 },
+  { maxSection: 2.5, maxAmps: 25 },
+  { maxSection: 4.0, maxAmps: 32 },
+  { maxSection: 6.0, maxAmps: 40 },
+  { maxSection: 10.0, maxAmps: 63 },
+  { maxSection: 16.0, maxAmps: 80 },
+  { maxSection: 25.0, maxAmps: 100 },
+  { maxSection: 35.0, maxAmps: 135 },
+  { maxSection: 50.0, maxAmps: 170 },
+];
+
+export function parseCrossSectionMm2(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const m = raw.replace(',', '.').match(/(\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const val = Number(m[1]);
+  return Number.isFinite(val) && val > 0 ? val : null;
+}
+
+export function getMaxAmpacityForSection(mm2: number): number {
+  for (const row of COPPER_AMPACITY_TABLE) {
+    if (mm2 <= row.maxSection + 1e-6) return row.maxAmps;
+  }
+  return Math.round(mm2 * 3.5);
+}
+
+export function parseBreakerRatedCurrent(dev: E3Device): number | null {
+  if (dev.category !== 'breaker') return null;
+  const attr = dev.attributes.find((a) =>
+    /номинал|ток/i.test(a.name)
+  );
+  const candidates = [attr?.value || '', dev.componentName || ''];
+  for (const text of candidates) {
+    const m = text.replace(',', '.').match(/(\d+(?:\.\d+)?)\s*(?:[АA]\b)/);
+    if (m) {
+      const val = Number(m[1]);
+      if (Number.isFinite(val) && val > 0) return val;
+    }
+  }
+  return null;
+}
 
 export function runErc(project: E3Project): ErcIssue[] {
   const issues: ErcIssue[] = [];
@@ -1379,9 +1443,33 @@ export function runErc(project: E3Project): ErcIssue[] {
   }
 
   const connectedPins = new Set<string>();
+  const potentialConflictWireIds = new Set<string>();
+  const wiresByNetName = new Map<string, E3Wire[]>();
+  const wiresByPinKey = new Map<string, E3Wire[]>();
+  const wiresByWireNumber = new Map<string, E3Wire[]>();
+
   for (const wire of project.wires) {
     connectedPins.add(`${wire.fromDeviceId}:${wire.fromPinId}`);
     connectedPins.add(`${wire.toDeviceId}:${wire.toPinId}`);
+
+    const normNet = wire.netName.trim().toUpperCase();
+    if (normNet && normNet !== '—') {
+      const list = wiresByNetName.get(normNet) || [];
+      list.push(wire);
+      wiresByNetName.set(normNet, list);
+    }
+
+    const fromPinKey = `${wire.fromDeviceId}:${wire.fromPinId}`;
+    const toPinKey = `${wire.toDeviceId}:${wire.toPinId}`;
+    wiresByPinKey.set(fromPinKey, [...(wiresByPinKey.get(fromPinKey) || []), wire]);
+    wiresByPinKey.set(toPinKey, [...(wiresByPinKey.get(toPinKey) || []), wire]);
+
+    const normNum = wire.wireNumber.trim().toUpperCase();
+    if (normNum && normNum !== '—') {
+      const list = wiresByWireNumber.get(normNum) || [];
+      list.push(wire);
+      wiresByWireNumber.set(normNum, list);
+    }
 
     const dFrom = devMap.get(wire.fromDeviceId);
     const dTo = devMap.get(wire.toDeviceId);
@@ -1399,31 +1487,167 @@ export function runErc(project: E3Project): ErcIssue[] {
       continue;
     }
 
-    const isIncompatible = INCOMPATIBLE_SIGNAL_PAIRS.some(
-      ([a, b]) =>
-        (pFrom.signalType === a && pTo.signalType === b) ||
-        (pFrom.signalType === b && pTo.signalType === a)
-    );
-    if (isIncompatible) {
+    if (
+      areSignalsIncompatible(pFrom.signalType, pTo.signalType) ||
+      areSignalsIncompatible(wire.signalType, pFrom.signalType) ||
+      areSignalsIncompatible(wire.signalType, pTo.signalType)
+    ) {
+      potentialConflictWireIds.add(wire.id);
       issues.push({
         id: `erc-short-${wire.id}`,
         severity: 'error',
         code: 'E3-POTENTIAL-CONFLICT',
-        message: `Конфликт потенциалов в цепи ${wire.netName}: ${dFrom.designation}:${pFrom.name} (${pFrom.signalType}) → ${dTo.designation}:${pTo.name} (${pTo.signalType})`,
+        message: `Конфликт потенциалов в цепи ${wire.netName}: ${dFrom.designation}:${pFrom.name} (${SIGNAL_DISPLAY_NAME[pFrom.signalType]}) → ${dTo.designation}:${pTo.name} (${SIGNAL_DISPLAY_NAME[pTo.signalType]})`,
         sheetId: wire.sheetId,
         wireId: wire.id,
       });
     }
   }
 
+  // 6.2a: Heterogeneous potentials sharing the same netName or electrical pin junction
+  for (const [normNet, netWires] of wiresByNetName.entries()) {
+    const distinctSignals = Array.from(new Set(netWires.map((w) => w.signalType)));
+    const hasConflict = distinctSignals.some((s1, idx) =>
+      distinctSignals.slice(idx + 1).some((s2) => areSignalsIncompatible(s1, s2))
+    );
+    if (hasConflict) {
+      const sigDesc = distinctSignals.map((s) => SIGNAL_DISPLAY_NAME[s]).join(' ↔ ');
+      for (const w of netWires) {
+        if (potentialConflictWireIds.has(w.id)) continue;
+        potentialConflictWireIds.add(w.id);
+        issues.push({
+          id: `erc-netmix-${w.id}`,
+          severity: 'error',
+          code: 'E3-POTENTIAL-CONFLICT',
+          message: `Смешение разнородных потенциалов на одной цепи «${w.netName || normNet}» (${sigDesc})`,
+          sheetId: w.sheetId,
+          wireId: w.id,
+        });
+      }
+    }
+  }
+
+  for (const [, junctionWires] of wiresByPinKey.entries()) {
+    if (junctionWires.length < 2) continue;
+    const distinctSignals = Array.from(new Set(junctionWires.map((w) => w.signalType)));
+    const hasConflict = distinctSignals.some((s1, idx) =>
+      distinctSignals.slice(idx + 1).some((s2) => areSignalsIncompatible(s1, s2))
+    );
+    if (hasConflict) {
+      const sigDesc = distinctSignals.map((s) => SIGNAL_DISPLAY_NAME[s]).join(' ↔ ');
+      for (const w of junctionWires) {
+        if (potentialConflictWireIds.has(w.id)) continue;
+        potentialConflictWireIds.add(w.id);
+        issues.push({
+          id: `erc-juncmix-${w.id}`,
+          severity: 'error',
+          code: 'E3-POTENTIAL-CONFLICT',
+          message: `Соединение разнородных потенциалов в узле цепи «${w.netName}» (${sigDesc})`,
+          sheetId: w.sheetId,
+          wireId: w.id,
+        });
+      }
+    }
+  }
+
+  // 6.2b: Wire cross-section vs protective breaker rated current (direct + 1-hop pass-through)
+  const breakerRatings = new Map<string, { dev: E3Device; amps: number }>();
+  for (const dev of project.devices) {
+    const amps = parseBreakerRatedCurrent(dev);
+    if (amps !== null) breakerRatings.set(dev.id, { dev, amps });
+  }
+
+  const wireBreakerMap = new Map<string, { dev: E3Device; amps: number }>();
+  for (const w of project.wires) {
+    if (w.signalType === 'pe') continue;
+    const bFrom = breakerRatings.get(w.fromDeviceId);
+    const bTo = breakerRatings.get(w.toDeviceId);
+    const directBreaker = bFrom || bTo;
+    if (directBreaker) {
+      wireBreakerMap.set(w.id, directBreaker);
+    }
+  }
+  // Propagate 1 hop downstream through passive/switching power devices (contactor, terminal)
+  const passThroughCategories = new Set(['contactor', 'terminal']);
+  for (const w of project.wires) {
+    if (w.signalType !== 'power' || wireBreakerMap.has(w.id)) continue;
+    const endpoints = [w.fromDeviceId, w.toDeviceId];
+    for (const devId of endpoints) {
+      const dev = devMap.get(devId);
+      if (!dev || !passThroughCategories.has(dev.category)) continue;
+      const upstreamWire = project.wires.find(
+        (uw) =>
+          uw.id !== w.id &&
+          uw.signalType === 'power' &&
+          wireBreakerMap.has(uw.id) &&
+          (uw.fromDeviceId === devId || uw.toDeviceId === devId)
+      );
+      if (upstreamWire) {
+        wireBreakerMap.set(w.id, wireBreakerMap.get(upstreamWire.id)!);
+        break;
+      }
+    }
+  }
+
+  for (const w of project.wires) {
+    const br = wireBreakerMap.get(w.id);
+    if (!br) continue;
+    const mm2 = parseCrossSectionMm2(w.crossSection);
+    if (mm2 === null) continue;
+    const maxAmps = getMaxAmpacityForSection(mm2);
+    if (br.amps > maxAmps) {
+      issues.push({
+        id: `erc-amp-${w.id}`,
+        severity: br.amps > maxAmps * 1.25 ? 'error' : 'warning',
+        code: 'E3-WIRE-AMPACITY',
+        message: `Завышен номинал автомата ${br.dev.designation} (${br.amps} А) для сечения ${w.crossSection} (доп. ${maxAmps} А) в цепи ${w.netName}`,
+        sheetId: w.sheetId,
+        wireId: w.id,
+      });
+    }
+  }
+
+  // 6.2c: Duplicate wireNumber across different potentials (netName)
+  for (const [, numWires] of wiresByWireNumber.entries()) {
+    if (numWires.length < 2) continue;
+    const distinctNets = new Set(
+      numWires.map((w) => w.netName.trim().toUpperCase()).filter(Boolean)
+    );
+    if (distinctNets.size > 1) {
+      for (const w of numWires) {
+        issues.push({
+          id: `erc-dupwire-${w.id}`,
+          severity: 'warning',
+          code: 'E3-DUP-WIRE-NUM',
+          message: `Дубль маркировки провода «${w.wireNumber}» в разных потенциалах (${Array.from(distinctNets).join(', ')})`,
+          sheetId: w.sheetId,
+          wireId: w.id,
+        });
+      }
+    }
+  }
+
+  // 6.2d: Assigned cable overflow + unused reserve cores
   for (const cab of project.cables) {
-    const used = project.wires.filter((w) => w.cableId === cab.id).length;
+    const cableWires = project.wires.filter((w) => w.cableId === cab.id);
+    const used = cableWires.length;
     if (used > cab.coresCount) {
       issues.push({
         id: `erc-cab-${cab.id}`,
         severity: 'error',
         code: 'E3-CABLE-OVERFLOW',
         message: `Кабель ${cab.designation} (${cab.cableType}): задействовано ${used} жил из ${cab.coresCount}`,
+        sheetId: cableWires[0]?.sheetId,
+        wireId: cableWires[0]?.id,
+      });
+    } else if (used > 0 && used < cab.coresCount) {
+      issues.push({
+        id: `erc-cab-unused-${cab.id}`,
+        severity: 'info',
+        code: 'E3-CABLE-UNUSED',
+        message: `Кабель ${cab.designation} (${cab.cableType}): свободно ${cab.coresCount - used} из ${cab.coresCount} жил (резерв)`,
+        sheetId: cableWires[0]?.sheetId,
+        wireId: cableWires[0]?.id,
       });
     }
   }

@@ -30,9 +30,6 @@ export const STAMP_FIELD_OPTIONS: Array<{ key: StampFieldKey; label: string; sho
   { key: 'date', label: 'Дата выпуска', shortLabel: 'Дата' },
   { key: 'invOriginal', label: 'Инв. № подл.', shortLabel: 'Подл.' },
   { key: 'invDuplicate', label: 'Инв. № дубл.', shortLabel: 'Дубл.' },
-  { key: 'izm', label: 'Выпуск ревизии (Изм.)', shortLabel: 'Изм.' },
-  { key: 'changeDoc', label: '№ докум. (Изм.)', shortLabel: 'Док.изм.' },
-  { key: 'changeDate', label: 'Дата изменения', shortLabel: 'Дата изм.' },
 ];
 
 function buildChangeTableCells(
@@ -44,68 +41,23 @@ function buildChangeTableCells(
   c3: number,
   c4: number,
   rx: number,
-  sheet: E3Sheet
+  _sheet: E3Sheet
 ): GostStampCell[] {
-  const tb = sheet.titleBlock;
-  const maxActiveRev = typeof sheet.revision === 'number' ? sheet.revision : Infinity;
-  const released = (sheet.revisions || []).filter(
-    (r) =>
-      r.revision <= maxActiveRev &&
-      (r.released || Boolean(r.revisionLabel && r.revisionLabel !== '0' && r.revisionLabel !== '—'))
-  );
-  const rowsData: Array<{
-    izm: string;
-    sheetCol: string;
-    doc: string;
-    sign: string;
-    date: string;
-  }> = released.slice(-2).map((r) => {
-    let dt = r.changeDate || '';
-    if (!dt && r.timestamp) {
-      try {
-        const d = new Date(r.timestamp);
-        dt = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(-2)}`;
-      } catch {
-        dt = '';
-      }
-    }
-    return {
-      izm: r.revisionLabel || String(r.revision),
-      sheetCol: 'Зам.',
-      doc: r.changeDoc || tb.changeDoc || '',
-      sign: (r.author || tb.designer || '').split(' ')[0] || '',
-      date: dt,
-    };
-  });
-  if (rowsData.length === 0 && tb.izm?.trim()) {
-    rowsData.push({
-      izm: tb.izm.trim(),
-      sheetCol: 'Зам.',
-      doc: tb.changeDoc?.trim() || '',
-      sign: (tb.designer || '').split(' ')[0] || '',
-      date: tb.changeDate?.trim() || '',
-    });
-  }
-
+  // Листовые ревизии ведутся строго внутри программы и не заполняются в штамп листа
   // Row 0 = sy+18..36 (bottom row, right above header), Row 1 = sy+0..18 (top row)
   const out: GostStampCell[] = [];
   for (let rowIdx = 0; rowIdx < 2; rowIdx++) {
     const ry = rowIdx === 0 ? sy + 18 : sy;
-    const data = rowsData[rowsData.length - 1 - rowIdx];
     out.push(
       {
         id: `${prefix}-chg-izm-${rowIdx}`,
-        fieldKey: 'izm',
-        label: 'Выпуск ревизии (Изм.)',
         x: sx,
         y: ry,
         width: c1 - sx,
         height: 18,
-        text: data?.izm || '',
+        text: '',
         align: 'center',
         fontSize: 7.5,
-        bold: Boolean(data?.izm),
-        editable: true,
       },
       {
         id: `${prefix}-chg-list-${rowIdx}`,
@@ -113,22 +65,19 @@ function buildChangeTableCells(
         y: ry,
         width: c2 - c1,
         height: 18,
-        text: data ? data.sheetCol : '',
+        text: '',
         align: 'center',
         fontSize: 7,
       },
       {
         id: `${prefix}-chg-doc-${rowIdx}`,
-        fieldKey: 'changeDoc',
-        label: '№ докум. изменения',
         x: c2,
         y: ry,
         width: c3 - c2,
         height: 18,
-        text: data?.doc || '',
+        text: '',
         align: 'center',
         fontSize: 7,
-        editable: true,
       },
       {
         id: `${prefix}-chg-sign-${rowIdx}`,
@@ -136,22 +85,19 @@ function buildChangeTableCells(
         y: ry,
         width: c4 - c3,
         height: 18,
-        text: data?.sign || '',
+        text: '',
         align: 'center',
         fontSize: 7,
       },
       {
         id: `${prefix}-chg-date-${rowIdx}`,
-        fieldKey: 'changeDate',
-        label: 'Дата изменения',
         x: c4,
         y: ry,
         width: rx - c4,
         height: 18,
-        text: data?.date || '',
+        text: '',
         align: 'center',
         fontSize: 7,
-        editable: true,
       }
     );
   }

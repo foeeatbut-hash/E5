@@ -168,9 +168,6 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
     invOriginal: '',
     invDuplicate: '',
     sheetTitle: '',
-    izm: '',
-    changeDoc: '',
-    changeDate: '',
   });
   const [applySheetTitleToAll, setApplySheetTitleToAll] = useState(false);
 
@@ -205,9 +202,6 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
       invOriginal: sheet.titleBlock.invOriginal || '',
       invDuplicate: sheet.titleBlock.invDuplicate || '',
       sheetTitle: sheet.titleBlock.sheetTitle || '',
-      izm: sheet.titleBlock.izm || '',
-      changeDoc: sheet.titleBlock.changeDoc || '',
-      changeDate: sheet.titleBlock.changeDate || '',
     });
   };
 
@@ -739,23 +733,6 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                     {renderInput('scale', 'Масштаб', { mono: true })}
                     {renderInput('invOriginal', 'Инв. № подл.', { mono: true })}
                     {renderInput('invDuplicate', 'Инв. № дубл.', { mono: true })}
-                  </div>
-
-                  {/* GOST 2.104 Revision Release Table */}
-                  <div className="pt-3 border-t border-[var(--flux-line)] space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--flux-text-muted)]">
-                        Выпуск ревизии в штамп (Таблица изменений ГОСТ 2.104)
-                      </h3>
-                      <span className="text-[10.5px] text-[var(--flux-text-muted)]">
-                        При изменении «Изм.» фиксируется новая ревизия листа
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {renderInput('izm', 'Изм. (код ревизии)', { mono: true, placeholder: '1, 2, А…' })}
-                      {renderInput('changeDoc', '№ докум. изм.', { mono: true, placeholder: 'ИИ-01' })}
-                      {renderInput('changeDate', 'Дата изм.', { mono: true, placeholder: 'ДД.ММ.ГГ' })}
-                    </div>
                   </div>
 
                   <label className="flex items-center gap-2 text-[12px] text-[var(--flux-text)] pt-1 cursor-pointer select-none">

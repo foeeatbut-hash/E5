@@ -413,9 +413,6 @@ app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
     'invOriginal',
     'invDuplicate',
     'sheetTitle',
-    'izm',
-    'changeDoc',
-    'changeDate',
   ];
   const cleanPatch: Partial<E3TitleBlock> = {};
   for (const k of safeKeys) {
@@ -426,9 +423,6 @@ app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
 
   let updatedCount = 0;
   const applyFormToAll = Boolean(req.body?.applyFormToAll) || cleanPatch.stampForm === 'custom';
-  const prevTargetSheet = base.sheets.find((s) => s.id === req.params.sheetId);
-  const nextIzm = typeof cleanPatch.izm === 'string' ? cleanPatch.izm.trim() : '';
-  const prevIzm = prevTargetSheet?.titleBlock.izm?.trim() || '';
 
   proj.sheets = proj.sheets.map((s) => {
     if (!applyToAll && s.id !== req.params.sheetId) return s;
@@ -439,9 +433,6 @@ app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
         stampForm: _ignoredForm,
         customTemplateId: _ignoredTpl,
         sheetTitle: _ignoredTitle,
-        izm: _ignoredIzm,
-        changeDoc: _ignoredDoc,
-        changeDate: _ignoredDate,
         ...rest
       } = cleanPatch;
       nextPatch = {
@@ -466,15 +457,7 @@ app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
 
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  let tracked = normalizeProjectSheetRevisions(proj);
-  if (nextIzm && nextIzm !== prevIzm) {
-    tracked = releaseSheetRevision(tracked, req.params.sheetId, {
-      revisionLabel: nextIzm,
-      changeDoc: cleanPatch.changeDoc,
-      changeDate: cleanPatch.changeDate,
-      author: cleanPatch.designer || prevTargetSheet?.titleBlock.designer || 'REST API',
-    });
-  }
+  const tracked = normalizeProjectSheetRevisions(proj);
   projects.set(tracked.id, tracked);
   activeProjectId = tracked.id;
   broadcastUpdate(

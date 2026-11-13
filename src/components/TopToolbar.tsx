@@ -44,6 +44,7 @@ import {
   RefreshCw,
   RotateCcw,
   RotateCw,
+  Search,
   Send,
   Settings,
   Share2,
@@ -158,6 +159,7 @@ interface TopToolbarProps {
   onToggleLayerLock?: (layerId: CadLayerId) => void;
   onShowAllLayers?: () => void;
   onUnlockAllLayers?: () => void;
+  onOpenCommandPalette?: () => void;
 }
 
 const RIBBON_TABS: Array<{ id: RibbonSectionId; label: string }> = [
@@ -450,6 +452,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onToggleLayerLock,
   onShowAllLayers,
   onUnlockAllLayers,
+  onOpenCommandPalette,
 }) => {
   const isDark = project.visualSettings.theme === 'dark';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -640,6 +643,22 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 
         {/* Right Window Utilities */}
         <div className="flex items-center gap-0.5 shrink-0">
+          {onOpenCommandPalette && (
+            <button
+              type="button"
+              data-testid="toolbar-command-palette-btn"
+              onClick={onOpenCommandPalette}
+              aria-label="Палитра команд (Ctrl+K)"
+              title="Палитра команд и быстрый переход (Ctrl+K)"
+              className="inline-flex items-center gap-1.5 h-7 px-2 mr-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+            >
+              <Search className="w-3 h-3 text-[var(--flux-accent)]" />
+              <span className="hidden sm:inline">Команды</span>
+              <kbd className="font-mono text-[10px] px-1 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)]">
+                Ctrl+K
+              </kbd>
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpenVisualModal}

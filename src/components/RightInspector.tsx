@@ -1685,7 +1685,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--flux-text-muted)]">
                       <History className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                      <span>Ревизии листа (штамп)</span>
+                      <span>Ревизии листа</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span
@@ -1705,7 +1705,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       data-testid="sheet-uncommitted-badge"
                       className="px-2 py-1.5 rounded border border-amber-500/40 bg-amber-500/10 text-[11px] text-amber-700 dark:text-amber-300 leading-snug"
                     >
-                      Есть правки на листе. Впишите код «Изм.» в штамп ГОСТ или ниже, чтобы зафиксировать ревизию.
+                      Есть правки на листе. Выпустите ревизию ниже, чтобы сохранить снимок.
                     </div>
                   )}
 
@@ -1715,7 +1715,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] space-y-1.5"
                     >
                       <div className="text-[11px] font-medium text-[var(--flux-text)]">
-                        Выпуск ревизии в штамп ГОСТ 2.104
+                        Выпуск ревизии листа (внутри программы)
                       </div>
                       <div className="grid grid-cols-2 gap-1.5">
                         <input

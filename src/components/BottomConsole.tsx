@@ -954,35 +954,46 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                         </span>
                       </div>
                     ) : (
-                      filteredErc.map((issue) => (
-                        <button
-                          key={issue.id}
-                          type="button"
-                          onClick={() => onJumpToIssue(issue)}
-                          className="w-full px-2.5 py-1.5 flex items-center justify-between gap-3 text-left hover:bg-[var(--flux-hover)] transition-colors"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                issue.severity === 'error'
-                                  ? 'bg-rose-500'
-                                  : issue.severity === 'warning'
-                                    ? 'bg-amber-500'
-                                    : 'bg-sky-500'
-                              }`}
-                            />
-                            <span className="font-mono text-[10.5px] text-[var(--flux-text-muted)] shrink-0">
-                              {issue.code}
+                      filteredErc.map((issue) => {
+                        const targetSheet = issue.sheetId
+                          ? project.sheets.find((s) => s.id === issue.sheetId)
+                          : undefined;
+                        return (
+                          <button
+                            key={issue.id}
+                            type="button"
+                            data-testid={`erc-issue-${issue.id}`}
+                            onClick={() => onJumpToIssue(issue)}
+                            className="w-full px-2.5 py-1.5 flex items-center justify-between gap-3 text-left hover:bg-[var(--flux-hover)] transition-colors"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                  issue.severity === 'error'
+                                    ? 'bg-rose-500'
+                                    : issue.severity === 'warning'
+                                      ? 'bg-amber-500'
+                                      : 'bg-sky-500'
+                                }`}
+                              />
+                              <span className="font-mono text-[10.5px] text-[var(--flux-text-muted)] shrink-0">
+                                {issue.code}
+                              </span>
+                              {targetSheet && (
+                                <span className="px-1 py-0 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[10px] text-[var(--flux-text-muted)] shrink-0">
+                                  Л.{targetSheet.number}
+                                </span>
+                              )}
+                              <span className="text-[11.5px] text-[var(--flux-text)] truncate">
+                                {issue.message}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-medium text-[var(--flux-accent)] shrink-0">
+                              Перейти →
                             </span>
-                            <span className="text-[11.5px] text-[var(--flux-text)] truncate">
-                              {issue.message}
-                            </span>
-                          </div>
-                          <span className="text-[11px] font-medium text-[var(--flux-accent)] shrink-0">
-                            Перейти →
-                          </span>
-                        </button>
-                      ))
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </>
