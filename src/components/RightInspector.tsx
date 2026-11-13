@@ -32,7 +32,13 @@ import { CAD_LAYER_DEFS, resolveCadLayers } from '../core/cadLayers';
 import type { DeviceAlignKind } from '../core/cadSelection';
 import { getOffPageMeta, resolveOffPageLinks } from '../core/crossSheetRefs';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
-import { getSheetRevisionNumber, SHEET_CHANGE_AREA_LABELS } from '../core/sheetRevisions';
+import {
+  getReleasedSheetRevisions,
+  getSheetRevisionLabel,
+  getSheetRevisionNumber,
+  hasSheetUncommittedChanges,
+  SHEET_CHANGE_AREA_LABELS,
+} from '../core/sheetRevisions';
 import type {
   AnnotationKind,
   AnnotationStrokeStyle,
@@ -85,6 +91,10 @@ interface RightInspectorProps {
   onUpdateOffPageMeta?: (deviceId: string, patch: Partial<OffPageRefMeta>) => void;
   onHighlightPotential?: (seed: { wireId?: string; netName?: string; deviceId?: string; pinId?: string }) => void;
   onRestoreSheetRevision?: (sheetId: string, targetRevision: number) => void;
+  onReleaseSheetRevision?: (
+    sheetId: string,
+    opts: { revisionLabel: string; changeDoc?: string; comment?: string }
+  ) => void;
 }
 
 export const RightInspector: React.FC<RightInspectorProps> = ({
@@ -121,12 +131,16 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   onUpdateOffPageMeta,
   onHighlightPotential,
   onRestoreSheetRevision,
+  onReleaseSheetRevision,
 }) => {
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
   const [copiedElId, setCopiedElId] = useState(false);
   const [counterpartSheetId, setCounterpartSheetId] = useState<string>('');
   const [pendingScrollToHistory, setPendingScrollToHistory] = useState(false);
+  const [releaseCode, setReleaseCode] = useState('');
+  const [releaseDoc, setReleaseDoc] = useState('');
+  const [releaseNote, setReleaseNote] = useState('');
   const sheetHistoryRef = useRef<HTMLDivElement | null>(null);
 
   const totalSelectedCount =
@@ -227,28 +241,35 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               )}
             </button>
           )}
-          {activeSheet && (
-            <button
-              type="button"
-              data-testid="active-sheet-rev-btn"
-              onClick={() => {
-                setPendingScrollToHistory(true);
-                if (!isSheetMode) {
-                  onClearSelection?.();
-                } else {
-                  requestAnimationFrame(() => {
-                    sheetHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    setPendingScrollToHistory(false);
-                  });
-                }
-              }}
-              title={`Открыть историю версий листа «${activeSheet.name}»`}
-              className="inline-flex items-center gap-1 px-1.5 h-6 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
-            >
-              <History className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
-              <span>v{getSheetRevisionNumber(activeSheet)}</span>
-            </button>
-          )}
+          {activeSheet && (() => {
+            const dirty = hasSheetUncommittedChanges(project, activeSheet);
+            const revLabel = getSheetRevisionLabel(activeSheet);
+            return (
+              <button
+                type="button"
+                data-testid="active-sheet-rev-btn"
+                onClick={() => {
+                  setPendingScrollToHistory(true);
+                  if (!isSheetMode) {
+                    onClearSelection?.();
+                  } else {
+                    requestAnimationFrame(() => {
+                      sheetHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      setPendingScrollToHistory(false);
+                    });
+                  }
+                }}
+                title={`Открыть историю версий листа «${activeSheet.name}»${dirty ? ' (есть невыпущенные правки)' : ''}`}
+                className="inline-flex items-center gap-1 px-1.5 h-6 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+              >
+                <History className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                <span>
+                  {revLabel}
+                  {dirty ? '*' : ''}
+                </span>
+              </button>
+            );
+          })()}
         </div>
       </div>
 
@@ -1625,6 +1646,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 
             {(() => {
               const currentSheetRev = getSheetRevisionNumber(activeSheet);
+              const currentRevLabel = getSheetRevisionLabel(activeSheet);
+              const releasedCount = getReleasedSheetRevisions(activeSheet).length;
+              const isDirty = hasSheetUncommittedChanges(project, activeSheet);
               const sheetHistory = activeSheet.revisions || [];
               const reversedHistory = [...sheetHistory].reverse();
               const fmtTime = (iso: string) => {
@@ -1640,41 +1664,118 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   return iso;
                 }
               };
+              const submitRelease = (e: React.FormEvent) => {
+                e.preventDefault();
+                if (!releaseCode.trim() || !onReleaseSheetRevision) return;
+                onReleaseSheetRevision(activeSheet.id, {
+                  revisionLabel: releaseCode.trim(),
+                  changeDoc: releaseDoc.trim() || undefined,
+                  comment: releaseNote.trim() || undefined,
+                });
+                setReleaseCode('');
+                setReleaseDoc('');
+                setReleaseNote('');
+              };
               return (
                 <div
                   ref={sheetHistoryRef}
                   data-testid="sheet-history-panel"
-                  className="pt-3 border-t border-[var(--flux-line)] space-y-2"
+                  className="pt-3 border-t border-[var(--flux-line)] space-y-2.5"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--flux-text-muted)]">
                       <History className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                      <span>История версий листа</span>
+                      <span>Ревизии листа (штамп)</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span
                         data-testid="sheet-revision-badge"
                         className="px-1.5 py-0.5 rounded bg-[var(--flux-sel)] text-[var(--flux-accent)] font-mono tabular-nums text-[11px] font-semibold"
                       >
-                        v{currentSheetRev}
+                        {currentRevLabel}
                       </span>
                       <span className="font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)]">
-                        ({sheetHistory.length})
+                        (вып. {releasedCount})
                       </span>
                     </div>
                   </div>
+
+                  {isDirty && (
+                    <div
+                      data-testid="sheet-uncommitted-badge"
+                      className="px-2 py-1.5 rounded border border-amber-500/40 bg-amber-500/10 text-[11px] text-amber-700 dark:text-amber-300 leading-snug"
+                    >
+                      Есть правки на листе. Впишите код «Изм.» в штамп ГОСТ или ниже, чтобы зафиксировать ревизию.
+                    </div>
+                  )}
+
+                  {onReleaseSheetRevision && (
+                    <form
+                      onSubmit={submitRelease}
+                      className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] space-y-1.5"
+                    >
+                      <div className="text-[11px] font-medium text-[var(--flux-text)]">
+                        Выпуск ревизии в штамп ГОСТ 2.104
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input
+                          type="text"
+                          data-testid="release-revision-code-input"
+                          value={releaseCode}
+                          onChange={(e) => setReleaseCode(e.target.value)}
+                          placeholder="Изм. (1, 2, А…)"
+                          aria-label="Код ревизии (Изм.)"
+                          className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11.5px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                        />
+                        <input
+                          type="text"
+                          data-testid="release-revision-doc-input"
+                          value={releaseDoc}
+                          onChange={(e) => setReleaseDoc(e.target.value)}
+                          placeholder="№ докум. (опц.)"
+                          aria-label="Номер документа изменения"
+                          className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11.5px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          data-testid="release-revision-note-input"
+                          value={releaseNote}
+                          onChange={(e) => setReleaseNote(e.target.value)}
+                          placeholder="Примечание к выпуску…"
+                          aria-label="Примечание к ревизии"
+                          className="flex-1 min-w-0 h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11.5px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                        />
+                        <button
+                          type="submit"
+                          data-testid="release-revision-submit-btn"
+                          disabled={!releaseCode.trim() || activeLayerLocked}
+                          className="h-7 px-2.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[11px] font-medium whitespace-nowrap shrink-0 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                        >
+                          Выпустить
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
                   <div
                     data-testid="sheet-history-list"
                     className="max-h-[260px] overflow-y-auto space-y-1.5 pr-0.5"
                   >
                     {reversedHistory.length === 0 ? (
                       <div className="px-2.5 py-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text-muted)]">
-                        Базовая ревизия v{currentSheetRev}
+                        Базовая ревизия {currentRevLabel}
                       </div>
                     ) : (
                       reversedHistory.map((entry) => {
                         const isCurrent = entry.revision === currentSheetRev;
-                        const canRestore = Boolean(entry.snapshot && !isCurrent && onRestoreSheetRevision);
+                        const canRestore = Boolean(
+                          entry.snapshot && onRestoreSheetRevision && (!isCurrent || isDirty)
+                        );
+                        const isReleasedEntry = Boolean(
+                          entry.released || (entry.revisionLabel && entry.revisionLabel !== '0')
+                        );
                         return (
                           <div
                             key={`${activeSheet.id}-rev-${entry.revision}`}
@@ -1691,12 +1792,17 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                                   className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[10px] font-semibold shrink-0 ${
                                     isCurrent
                                       ? 'bg-[var(--flux-accent-solid)] text-white'
-                                      : 'bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text)]'
+                                      : isReleasedEntry
+                                        ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
+                                        : 'bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text)]'
                                   }`}
                                 >
-                                  v{entry.revision}
+                                  {isReleasedEntry
+                                    ? `Изм.${entry.revisionLabel || entry.revision}`
+                                    : `База v${entry.revision}`}
                                 </span>
                                 <span className="font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)] truncate">
+                                  {entry.changeDate ? `${entry.changeDate} · ` : ''}
                                   {fmtTime(entry.timestamp)}
                                 </span>
                               </div>
@@ -1705,7 +1811,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                                   type="button"
                                   data-testid={`restore-sheet-rev-${entry.revision}`}
                                   onClick={() => onRestoreSheetRevision?.(activeSheet.id, entry.revision)}
-                                  title={`Откатить лист к состоянию v${entry.revision}`}
+                                  title={`Откатить лист к снимку ${isReleasedEntry ? `Изм.${entry.revisionLabel || entry.revision}` : `v${entry.revision}`}`}
                                   className="inline-flex items-center gap-1 h-5 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[10px] font-medium text-[var(--flux-text)] shrink-0 transition-colors"
                                 >
                                   <RotateCcw className="w-2.5 h-2.5" />
@@ -1718,6 +1824,11 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                             </div>
                             <div className="flex flex-wrap items-center justify-between gap-1 pt-0.5">
                               <div className="flex flex-wrap gap-1">
+                                {entry.changeDoc && (
+                                  <span className="px-1 py-0 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[10px] text-[var(--flux-text)]">
+                                    {entry.changeDoc}
+                                  </span>
+                                )}
                                 {entry.changedAreas.map((area) => (
                                   <span
                                     key={area}

@@ -14,7 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { CatalogItem, E3Device, E3Project } from '../core/e3Types';
-import { getSheetRevisionNumber } from '../core/sheetRevisions';
+import { getSheetRevisionLabel, hasSheetUncommittedChanges } from '../core/sheetRevisions';
 import { isTwoPinBreakEligible } from '../core/wireEditing';
 
 interface LeftExplorerProps {
@@ -238,7 +238,8 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
                                 data-testid={`explorer-sheet-rev-${s.id}`}
                                 className="font-mono tabular-nums text-[10px] px-1 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] text-[var(--flux-text-muted)]"
                               >
-                                v{getSheetRevisionNumber(s)}
+                                {getSheetRevisionLabel(s)}
+                                {hasSheetUncommittedChanges(project, s) ? '*' : ''}
                               </span>
                               <span className="font-mono text-[11px] text-[var(--flux-text-muted)]">
                                 {s.format}

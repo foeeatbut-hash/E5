@@ -28,6 +28,8 @@ import { PublishModal } from './components/PublishModal';
 import { RightInspector } from './components/RightInspector';
 import { SchematicCanvas } from './components/SchematicCanvas';
 import { StampEditorModal, type StampModalMode } from './components/StampEditorModal';
+import { TerminalStripModal } from './components/TerminalStripModal';
+import { AutoNumberingModal } from './components/AutoNumberingModal';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
 import {
   clampDockLayoutToViewport,
@@ -149,12 +151,14 @@ import {
 } from './core/gostFrame';
 import { generateHvacDiagram, type HvacBuildOptions } from './core/hvacBuilder';
 import {
-  applySheetRevisionTracking,
+  getSheetRevisionLabel,
   getSheetRevisionNumber,
   normalizeProjectSheetRevisions,
+  releaseSheetRevision,
   restoreSheetFromRevision,
 } from './core/sheetRevisions';
 import { findSmartCatalogSpot } from './core/smartSnap';
+import { generateOrUpdateTerminalStripSheet } from './core/terminalStrip';
 import { ecadAsync } from './workers/ecadAsync';
 
 function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
@@ -324,6 +328,8 @@ export default function App() {
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [fluxPublishOpen, setFluxPublishOpen] = useState(false);
+  const [terminalEditorOpen, setTerminalEditorOpen] = useState(false);
+  const [autoNumberModalOpen, setAutoNumberModalOpen] = useState(false);
   const fluxHostStatus = useMemo(() => detectFluxHost(), []);
   const [stampModalState, setStampModalState] = useState<{
     open: boolean;
@@ -546,17 +552,11 @@ export default function App() {
     (
       updater: (prev: E3Project) => E3Project,
       recordHistory = true,
-      opts?: { coalesceSheetRev?: boolean; sheetSummary?: string; skipSheetTracking?: boolean }
+      _opts?: { coalesceSheetRev?: boolean; sheetSummary?: string; skipSheetTracking?: boolean }
     ) => {
       const cur = docStateRef.current.present;
       const rawNext = updater(cur);
-      const next = opts?.skipSheetTracking
-        ? normalizeProjectSheetRevisions(rawNext)
-        : applySheetRevisionTracking(cur, rawNext, {
-            author: rawNext.author || cur.author,
-            coalesceLast: opts?.coalesceSheetRev,
-            summaryOverride: opts?.sheetSummary,
-          });
+      const next = normalizeProjectSheetRevisions(rawNext);
       setDocState((s) => ({
         past: recordHistory ? [...s.past.slice(-29), s.present] : s.past,
         present: next,
@@ -688,9 +688,7 @@ export default function App() {
             revision: nextProject.revision + 1,
             updatedAt: new Date().toISOString(),
           };
-      const committed = applySheetRevisionTracking(snap, rawCommitted, {
-        author: rawCommitted.author || snap.author,
-      });
+      const committed = normalizeProjectSheetRevisions(rawCommitted);
       setDocState((s) => ({
         past: [...s.past.slice(-29), snap],
         present: committed,
@@ -1989,6 +1987,38 @@ export default function App() {
     [commitProject, appendLog]
   );
 
+  const handleReleaseSheetRevision = useCallback(
+    (
+      sheetId: string,
+      opts: { revisionLabel: string; changeDoc?: string; changeDate?: string; comment?: string }
+    ) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'frame')) {
+        appendLog('WARN', 'E3-CORE', 'Выпуск ревизии не выполнен: слой «Рамка и штамп ГОСТ» заблокирован.');
+        return;
+      }
+      const cleanLabel = opts.revisionLabel.trim();
+      if (!cleanLabel) return;
+      const cur = docStateRef.current.present;
+      const sheet = cur.sheets.find((s) => s.id === sheetId);
+      if (!sheet) return;
+      const released = releaseSheetRevision(cur, sheetId, {
+        revisionLabel: cleanLabel,
+        changeDoc: opts.changeDoc,
+        changeDate: opts.changeDate,
+        comment: opts.comment,
+        author: sheet.titleBlock.designer || cur.author,
+      });
+      if (released === cur) return;
+      commitProject(() => released, true, { skipSheetTracking: true });
+      appendLog(
+        'SYNC',
+        'E3-CORE',
+        `Лист «${sheet.name}»: в штампе зафиксирована и сохранена ревизия «Изм. ${cleanLabel}».`
+      );
+    },
+    [commitProject, appendLog]
+  );
+
   const handleApplyStamp = useCallback(
     (
       sheetId: string,
@@ -2002,29 +2032,48 @@ export default function App() {
         return;
       }
       const shouldCopyForm = applyFormToAll || patch.stampForm === 'custom';
-      commitProject((prev) => ({
-        ...prev,
-        revision: prev.revision + 1,
-        updatedAt: new Date().toISOString(),
-        sheets: prev.sheets.map((s) => {
-          if (s.id === sheetId) {
-            return { ...s, titleBlock: { ...s.titleBlock, ...patch } };
-          }
-          if (applyToAll) {
-            const sharedPatch: Partial<E3TitleBlock> = { ...patch };
-            if (!shouldCopyForm) {
-              // Preserve standard Form 1 / Form 2a split across sheets unless applying custom template or explicit form change
-              delete sharedPatch.stampForm;
-              delete sharedPatch.customTemplateId;
+      const cur = docStateRef.current.present;
+      const targetSheet = cur.sheets.find((s) => s.id === sheetId);
+      const prevIzm = targetSheet?.titleBlock.izm?.trim() || '';
+      const nextIzm = typeof patch.izm === 'string' ? patch.izm.trim() : prevIzm;
+      const izmReleased = Boolean(nextIzm && nextIzm !== prevIzm);
+
+      commitProject((prev) => {
+        const updatedBase: E3Project = {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          sheets: prev.sheets.map((s) => {
+            if (s.id === sheetId) {
+              return { ...s, titleBlock: { ...s.titleBlock, ...patch } };
             }
-            if (!includeSheetTitleOnAll) {
-              delete sharedPatch.sheetTitle;
+            if (applyToAll) {
+              const sharedPatch: Partial<E3TitleBlock> = { ...patch };
+              delete sharedPatch.izm;
+              delete sharedPatch.changeDoc;
+              delete sharedPatch.changeDate;
+              if (!shouldCopyForm) {
+                delete sharedPatch.stampForm;
+                delete sharedPatch.customTemplateId;
+              }
+              if (!includeSheetTitleOnAll) {
+                delete sharedPatch.sheetTitle;
+              }
+              return { ...s, titleBlock: { ...s.titleBlock, ...sharedPatch } };
             }
-            return { ...s, titleBlock: { ...s.titleBlock, ...sharedPatch } };
-          }
-          return s;
-        }),
-      }));
+            return s;
+          }),
+        };
+        if (izmReleased) {
+          return releaseSheetRevision(updatedBase, sheetId, {
+            revisionLabel: nextIzm,
+            changeDoc: patch.changeDoc,
+            changeDate: patch.changeDate,
+            author: patch.designer || targetSheet?.titleBlock.designer || prev.author,
+          });
+        }
+        return updatedBase;
+      });
 
       fetch(`/api/v1/projects/${encodeURIComponent(project.id)}/sheets/${encodeURIComponent(sheetId)}/stamp`, {
         method: 'PATCH',
@@ -2040,9 +2089,11 @@ export default function App() {
       appendLog(
         'SYNC',
         'E3-CORE',
-        applyToAll
-          ? `Обновлён штамп ГОСТ 2.104 на всех листах (${project.sheets.length}).`
-          : 'Обновлён штамп ГОСТ 2.104 на выбранном листе.'
+        izmReleased
+          ? `В штампе листа зафиксирована ревизия «Изм. ${nextIzm}».`
+          : applyToAll
+            ? `Обновлён штамп ГОСТ 2.104 на всех листах (${project.sheets.length}).`
+            : 'Обновлён штамп ГОСТ 2.104 на выбранном листе.'
       );
     },
     [commitProject, project.id, project.sheets.length, appendLog]
@@ -2053,9 +2104,7 @@ export default function App() {
       const cur = docStateRef.current.present;
       const sheet = cur.sheets.find((s) => s.id === sheetId);
       if (!sheet) return;
-      const restored = restoreSheetFromRevision(cur, sheetId, targetRevision, {
-        author: cur.author,
-      });
+      const restored = restoreSheetFromRevision(cur, sheetId, targetRevision);
       if (restored === cur) return;
       commitProject(() => restored, true, { skipSheetTracking: true });
       applySelection({});
@@ -2063,7 +2112,7 @@ export default function App() {
       appendLog(
         'INFO',
         'E3-CORE',
-        `Лист «${sheet.name}» откачен к ревизии v${targetRevision} (новая ревизия v${getSheetRevisionNumber(nextSheet)}).`
+        `Лист «${sheet.name}» восстановлен из снимка ${getSheetRevisionLabel(nextSheet)} (v${getSheetRevisionNumber(nextSheet)}).`
       );
     },
     [commitProject, applySelection, appendLog]
@@ -2085,8 +2134,7 @@ export default function App() {
             d.id === deviceId ? { ...d, designation: clean } : d
           ),
         }),
-        true,
-        { sheetSummary: `ОУО (на холсте): ${curDev.designation} → ${clean}` }
+        true
       );
       appendLog('INFO', 'E3-CORE', `ОУО изменено на холсте: ${curDev.designation} → ${clean}.`);
     },
@@ -2109,8 +2157,7 @@ export default function App() {
             w.id === wireId ? { ...w, wireNumber: clean } : w
           ),
         }),
-        true,
-        { sheetSummary: `Маркировка провода: ${curWire.wireNumber} → ${clean}` }
+        true
       );
       appendLog('INFO', 'E3-CORE', `Маркировка провода изменена на холсте: ${curWire.wireNumber} → ${clean}.`);
     },
@@ -2133,8 +2180,7 @@ export default function App() {
             a.id === annId ? { ...a, text: clean } : a
           ),
         }),
-        true,
-        { sheetSummary: `Текст аннотации: «${clean.slice(0, 28)}»` }
+        true
       );
       appendLog('INFO', 'E3-CORE', `Аннотация изменена на холсте: «${clean.slice(0, 40)}».`);
     },
@@ -2148,6 +2194,11 @@ export default function App() {
       if (!curSheet) return;
       const prevVal = String(curSheet.titleBlock[fieldKey] ?? '');
       const clean = nextValue.trim();
+      if (fieldKey === 'izm') {
+        if (!clean || clean === prevVal.trim()) return;
+        handleReleaseSheetRevision(sheetId, { revisionLabel: clean });
+        return;
+      }
       if (prevVal === clean) return;
       commitProject(
         (prev) => ({
@@ -2160,12 +2211,11 @@ export default function App() {
               : s
           ),
         }),
-        true,
-        { sheetSummary: `Штамп (${fieldKey}): «${clean.slice(0, 28)}»` }
+        true
       );
       appendLog('INFO', 'E3-CORE', `Графа штампа «${fieldKey}» обновлена на холсте: «${clean}».`);
     },
-    [commitProject, appendLog]
+    [commitProject, handleReleaseSheetRevision, appendLog]
   );
 
   const handleSaveCustomTemplate = useCallback(
@@ -2998,6 +3048,7 @@ export default function App() {
           onUpdateOffPageMeta={handleUpdateOffPageMeta}
           onHighlightPotential={(seed) => setHighlightedPotentialSeed(seed)}
           onRestoreSheetRevision={handleRestoreSheetRevision}
+          onReleaseSheetRevision={handleReleaseSheetRevision}
         />
       );
     }
@@ -3098,6 +3149,7 @@ export default function App() {
         }}
         onOpenReportModal={() => setReportOpen(true)}
         onOpenFluxPublishModal={() => setFluxPublishOpen(true)}
+        onOpenTerminalEditor={() => setTerminalEditorOpen(true)}
         onClearLogs={() => setLogs([])}
         onTestApiSyncPush={handleTestApiSyncPush}
       />
@@ -3427,6 +3479,8 @@ export default function App() {
           })
         }
         onOpenPublishModal={() => setPublishModalOpen(true)}
+        onOpenTerminalEditor={() => setTerminalEditorOpen(true)}
+        onOpenAutoNumbering={() => setAutoNumberModalOpen(true)}
         onToggleLayerVisibility={handleToggleLayerVisibility}
         onToggleLayerLock={handleToggleLayerLock}
         onShowAllLayers={handleShowAllLayers}
@@ -3758,6 +3812,58 @@ export default function App() {
             'SYNC',
             'FLUX-BRIDGE',
             `Опубликован пакет Flux Studio: ${filename} (${manifestId} v${version}).`
+          );
+        }}
+      />
+
+      <TerminalStripModal
+        open={terminalEditorOpen}
+        project={project}
+        initialDeviceId={selectedDevice?.category === 'terminal' ? selectedDevice.id : null}
+        onClose={() => setTerminalEditorOpen(false)}
+        onUpdateProject={(nextProj, logMsg) => {
+          commitProject(() => nextProj, true);
+          appendLog('INFO', 'E3-CORE', logMsg);
+        }}
+        onGenerateSheet={(targetDevId) => {
+          const res = generateOrUpdateTerminalStripSheet(docStateRef.current.present, targetDevId);
+          commitProject(() => res.nextProject, true);
+          setTerminalEditorOpen(false);
+          setActiveSheetId(res.sheetId);
+          setViewportSheetIds((prev) =>
+            prev.map((sId, idx) => (idx === activeViewportIdx ? res.sheetId : sId))
+          );
+          const nextSheet = res.nextProject.sheets.find((s) => s.id === res.sheetId);
+          if (nextSheet) fitSheetToViewport(nextSheet, activeViewportIdx);
+          appendLog(
+            'INFO',
+            'E3-CORE',
+            res.created
+              ? 'Создан графический лист клеммных рядов «Клеммные ряды -XT».'
+              : 'Обновлён графический лист клеммных рядов «Клеммные ряды -XT».'
+          );
+        }}
+      />
+
+      <AutoNumberingModal
+        open={autoNumberModalOpen}
+        project={project}
+        activeSheetId={activeSheetId}
+        onClose={() => setAutoNumberModalOpen(false)}
+        onApplyWires={(nextProj, count, modeLabel) => {
+          commitProject(() => nextProj, true);
+          appendLog(
+            'INFO',
+            'E3-CORE',
+            `Автонумерация цепей по ГОСТ 2.710 (${modeLabel}): обновлено проводов — ${count}.`
+          );
+        }}
+        onApplyDevices={(nextProj, count, orderLabel) => {
+          commitProject(() => nextProj, true);
+          appendLog(
+            'INFO',
+            'E3-CORE',
+            `Переиндексация ОУО (${orderLabel}): переименовано изделий — ${count}.`
           );
         }}
       />

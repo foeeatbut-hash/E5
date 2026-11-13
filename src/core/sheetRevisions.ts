@@ -52,6 +52,35 @@ export function getSheetRevisionNumber(sheet: E3Sheet): number {
   return 1;
 }
 
+export function getReleasedSheetRevisions(sheet: E3Sheet): E3SheetRevisionEntry[] {
+  return (sheet.revisions || []).filter(
+    (r) => r.released || Boolean(r.revisionLabel && r.revisionLabel !== '0' && r.revisionLabel !== '—')
+  );
+}
+
+export function getSheetRevisionLabel(sheet: E3Sheet): string {
+  const stampIzm = sheet.titleBlock?.izm?.trim();
+  if (stampIzm) return `Изм.${stampIzm}`;
+  const curRev = getSheetRevisionNumber(sheet);
+  const activeEntry = (sheet.revisions || []).find((r) => r.revision === curRev);
+  if (activeEntry?.released && activeEntry.revisionLabel) {
+    return `Изм.${activeEntry.revisionLabel}`;
+  }
+  return `v${curRev}`;
+}
+
+export function hasSheetUncommittedChanges(project: E3Project, sheet: E3Sheet): boolean {
+  const history = sheet.revisions || [];
+  if (history.length === 0) return false;
+  const currentRev = getSheetRevisionNumber(sheet);
+  const activeEntry =
+    history.find((r) => r.revision === currentRev) || history[history.length - 1];
+  if (!activeEntry?.snapshot) return false;
+  const curSnap = captureSheetSnapshot(project, sheet.id);
+  if (!curSnap) return false;
+  return describeSheetChanges(activeEntry.snapshot, curSnap) !== null;
+}
+
 function summarizeDeviceDiff(prevDevices: E3Device[], nextDevices: E3Device[]): string {
   if (nextDevices.length > prevDevices.length) {
     const prevIds = new Set(prevDevices.map((d) => d.id));
@@ -190,6 +219,18 @@ function capRevisionHistory(entries: E3SheetRevisionEntry[]): E3SheetRevisionEnt
   return [entries[0], ...entries.slice(-(MAX_REVISIONS_PER_SHEET - 1))];
 }
 
+function formatDefaultChangeDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    return `${dd}.${mm}.${yy}`;
+  } catch {
+    return '';
+  }
+}
+
 export function normalizeProjectSheetRevisions(
   project: E3Project,
   opts?: { timestamp?: string; author?: string }
@@ -200,34 +241,146 @@ export function normalizeProjectSheetRevisions(
   const sheets = project.sheets.map((sheet) => {
     const revNum = getSheetRevisionNumber(sheet);
     const snap = captureSheetSnapshot(project, sheet.id) || undefined;
-    const existing = Array.isArray(sheet.revisions) && sheet.revisions.length > 0
-      ? sheet.revisions.map((r) => ({ ...r }))
-      : [
-          {
-            revision: revNum,
-            projectRevision: project.revision,
-            timestamp: sheet.updatedAt || ts,
-            author,
-            summary: 'Базовая версия листа',
-            changedAreas: ['metadata'] as SheetChangeArea[],
-            snapshot: snap,
-          },
-        ];
+    const existing =
+      Array.isArray(sheet.revisions) && sheet.revisions.length > 0
+        ? sheet.revisions.map((r) => ({ ...r }))
+        : [
+            {
+              revision: revNum,
+              released: Boolean(sheet.titleBlock?.izm?.trim()),
+              revisionLabel: sheet.titleBlock?.izm?.trim() || undefined,
+              changeDoc: sheet.titleBlock?.changeDoc?.trim() || undefined,
+              changeDate: sheet.titleBlock?.changeDate?.trim() || undefined,
+              projectRevision: project.revision,
+              timestamp: sheet.updatedAt || ts,
+              author,
+              summary: sheet.titleBlock?.izm?.trim()
+                ? `Выпущена ревизия «${sheet.titleBlock.izm.trim()}»`
+                : 'Базовая версия листа',
+              changedAreas: ['metadata'] as SheetChangeArea[],
+              snapshot: snap,
+            },
+          ];
 
     const lastIdx = existing.length - 1;
     if (!existing[lastIdx].snapshot && snap) {
       existing[lastIdx] = { ...existing[lastIdx], snapshot: snap };
     }
 
+    const preservedRev =
+      typeof sheet.revision === 'number' && Number.isFinite(sheet.revision) && sheet.revision >= 1
+        ? Math.floor(sheet.revision)
+        : existing[lastIdx].revision;
+
     return {
       ...sheet,
-      revision: Math.max(revNum, existing[lastIdx].revision),
+      revision: preservedRev,
       updatedAt: sheet.updatedAt || existing[lastIdx].timestamp || ts,
       revisions: capRevisionHistory(existing),
     };
   });
 
   return { ...project, sheets };
+}
+
+/**
+ * Releases and snapshots a formal per-sheet revision when the engineer explicitly
+ * writes a revision code ("Изм.") in the GOST 2.104 stamp or releases a revision.
+ * Normal drawing edits do NOT create revision entries automatically.
+ */
+export function releaseSheetRevision(
+  project: E3Project,
+  sheetId: string,
+  opts: {
+    revisionLabel: string;
+    changeDoc?: string;
+    changeDate?: string;
+    comment?: string;
+    author?: string;
+    timestamp?: string;
+  }
+): E3Project {
+  const cleanLabel = opts.revisionLabel.trim();
+  if (!cleanLabel) return project;
+
+  const normalized = normalizeProjectSheetRevisions(project, opts);
+  const sheet = normalized.sheets.find((s) => s.id === sheetId);
+  if (!sheet) return project;
+
+  const now = opts.timestamp || new Date().toISOString();
+  const author =
+    opts.author?.trim() ||
+    sheet.titleBlock.designer?.trim() ||
+    normalized.author ||
+    'Инженер';
+  const changeDoc = opts.changeDoc?.trim() ?? sheet.titleBlock.changeDoc?.trim() ?? '';
+  const changeDate =
+    opts.changeDate?.trim() ||
+    formatDefaultChangeDate(now);
+
+  const prevHistory = sheet.revisions || [];
+  const prevMaxRev = prevHistory.reduce((mx, r) => Math.max(mx, r.revision), getSheetRevisionNumber(sheet));
+  const nextRev = prevMaxRev + 1;
+
+  const prevSnap = prevHistory[prevHistory.length - 1]?.snapshot;
+
+  const nextTitleBlock = {
+    ...sheet.titleBlock,
+    izm: cleanLabel,
+    changeDoc: changeDoc || sheet.titleBlock.changeDoc,
+    changeDate,
+  };
+
+  const draftWithStamp: E3Project = {
+    ...normalized,
+    revision: normalized.revision + 1,
+    updatedAt: now,
+    sheets: normalized.sheets.map((s) =>
+      s.id === sheetId ? { ...s, titleBlock: nextTitleBlock } : s
+    ),
+  };
+
+  const nextSnap = captureSheetSnapshot(draftWithStamp, sheetId) || undefined;
+  const diff = prevSnap && nextSnap ? describeSheetChanges(prevSnap, nextSnap) : null;
+  const changedAreas: SheetChangeArea[] = diff?.changedAreas || ['stamp'];
+  if (!changedAreas.includes('stamp')) changedAreas.push('stamp');
+
+  const userNote = opts.comment?.trim();
+  const diffDetail = diff?.summary && diff.summary !== 'Обновлён штамп ГОСТ 2.104' ? diff.summary : '';
+  const summary = userNote
+    ? `Изм. «${cleanLabel}»: ${userNote}`
+    : diffDetail
+      ? `Выпуск ревизии «${cleanLabel}» (${diffDetail})`
+      : `Выпущена ревизия «${cleanLabel}» в штампе`;
+
+  const entry: E3SheetRevisionEntry = {
+    revision: nextRev,
+    revisionLabel: cleanLabel,
+    changeDoc: changeDoc || undefined,
+    changeDate,
+    released: true,
+    projectRevision: draftWithStamp.revision,
+    timestamp: now,
+    author,
+    summary,
+    changedAreas,
+    snapshot: nextSnap,
+  };
+
+  return {
+    ...draftWithStamp,
+    sheets: draftWithStamp.sheets.map((s) =>
+      s.id === sheetId
+        ? {
+            ...s,
+            revision: nextRev,
+            updatedAt: now,
+            titleBlock: nextTitleBlock,
+            revisions: capRevisionHistory([...prevHistory, entry]),
+          }
+        : s
+    ),
+  };
 }
 
 export function applySheetRevisionTracking(
@@ -300,7 +453,6 @@ export function applySheetRevisionTracking(
 
     const diff = describeSheetChanges(prevSnap, nextSnap);
     if (!diff) {
-      // Sheet content did not change: keep previous revision & history untouched
       return {
         ...sheet,
         revision: prevRev,
@@ -352,11 +504,16 @@ export function applySheetRevisionTracking(
   };
 }
 
+/**
+ * Restores a sheet's content & stamp to the selected revision snapshot WITHOUT
+ * fabricating a phantom new revision entry (history stays intact; user releases a new
+ * revision explicitly via the stamp when ready).
+ */
 export function restoreSheetFromRevision(
   project: E3Project,
   sheetId: string,
   targetRevision: number,
-  opts?: { author?: string; timestamp?: string }
+  opts?: { timestamp?: string }
 ): E3Project {
   const sheet = project.sheets.find((s) => s.id === sheetId);
   if (!sheet || !sheet.revisions) return project;
@@ -377,9 +534,12 @@ export function restoreSheetFromRevision(
     width: snap.width,
     height: snap.height,
     titleBlock: snap.titleBlock,
+    revision: targetEntry.revision,
+    updatedAt: targetEntry.timestamp || now,
+    revisions: sheet.revisions,
   };
 
-  const nextDraft: E3Project = {
+  return {
     ...project,
     revision: project.revision + 1,
     updatedAt: now,
@@ -388,10 +548,4 @@ export function restoreSheetFromRevision(
     wires: [...otherWires, ...snap.wires.map((w) => ({ ...w, sheetId }))],
     annotations: [...otherAnns, ...snap.annotations.map((a) => ({ ...a, sheetId }))],
   };
-
-  return applySheetRevisionTracking(project, nextDraft, {
-    author: opts?.author || project.author,
-    timestamp: now,
-    summaryOverride: `Откат листа к ревизии v${targetRevision}`,
-  });
 }

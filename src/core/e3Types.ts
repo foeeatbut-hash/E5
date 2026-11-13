@@ -128,6 +128,9 @@ export interface E3TitleBlock {
   date?: string;
   invOriginal?: string;
   invDuplicate?: string;
+  izm?: string;
+  changeDoc?: string;
+  changeDate?: string;
   sheetTitle: string;
 }
 
@@ -179,6 +182,10 @@ export interface E3SheetSnapshot {
 
 export interface E3SheetRevisionEntry {
   revision: number;
+  revisionLabel?: string;
+  changeDoc?: string;
+  changeDate?: string;
+  released?: boolean;
   projectRevision: number;
   timestamp: string;
   author: string;
@@ -393,6 +400,8 @@ export interface TerminalPlanRow {
   crossSection: string;
   connectedTo: string;
   cableInfo: string;
+  bridgeGroup?: string;
+  isSpare?: boolean;
 }
 
 export type ErcSeverity = 'error' | 'warning' | 'info';

@@ -152,6 +152,8 @@ interface TopToolbarProps {
   onOpenStampEditor: () => void;
   onOpenStampDesigner: () => void;
   onOpenPublishModal: () => void;
+  onOpenTerminalEditor?: () => void;
+  onOpenAutoNumbering?: () => void;
   onToggleLayerVisibility?: (layerId: CadLayerId) => void;
   onToggleLayerLock?: (layerId: CadLayerId) => void;
   onShowAllLayers?: () => void;
@@ -442,6 +444,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onOpenStampEditor,
   onOpenStampDesigner,
   onOpenPublishModal,
+  onOpenTerminalEditor,
+  onOpenAutoNumbering,
   onToggleLayerVisibility,
   onToggleLayerLock,
   onShowAllLayers,
@@ -885,6 +889,22 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                       subtitle="Перестроить маршруты в обход всех устройств и параллельных цепей"
                       onClick={() => runMenuAction(onAutoRouteWires)}
                     />
+                    {onOpenTerminalEditor && (
+                      <AppMenuActionRow
+                        icon={<Tag className="w-4 h-4" />}
+                        title="Редактор клеммных рядов (-XT)"
+                        subtitle="Перемычки, резервные клеммы, генерация листа клеммника"
+                        onClick={() => runMenuAction(onOpenTerminalEditor)}
+                      />
+                    )}
+                    {onOpenAutoNumbering && (
+                      <AppMenuActionRow
+                        icon={<Hash className="w-4 h-4" />}
+                        title="Автонумерация цепей и ОУО (ГОСТ 2.710)"
+                        subtitle="Маркировка проводов по листам/зонам и переиндексация -QF/-KM"
+                        onClick={() => runMenuAction(onOpenAutoNumbering)}
+                      />
+                    )}
                     <AppMenuActionRow
                       icon={<Magnet className="w-4 h-4" />}
                       title={vs.snapToGrid ? `Привязка к сетке включена (${vs.gridSize} мм)` : 'Включить привязку к сетке'}
@@ -1170,6 +1190,28 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                             onClick={onGenerateBom}
                           />
                         </RibbonStack>
+                        {(onOpenTerminalEditor || onOpenAutoNumbering) && (
+                          <RibbonStack>
+                            {onOpenTerminalEditor && (
+                              <SmallRibbonBtn
+                                icon={<Tag className="w-3.5 h-3.5" />}
+                                label="Клеммы XT"
+                                title="Интерактивный редактор клеммных рядов (-XT): перемычки, резервы, лист"
+                                testId="toolbar-terminal-editor-btn"
+                                onClick={onOpenTerminalEditor}
+                              />
+                            )}
+                            {onOpenAutoNumbering && (
+                              <SmallRibbonBtn
+                                icon={<Hash className="w-3.5 h-3.5" />}
+                                label="Нумерация"
+                                title="Пакетная автонумерация цепей и ОУО по ГОСТ 2.710"
+                                testId="toolbar-autonumber-btn"
+                                onClick={onOpenAutoNumbering}
+                              />
+                            )}
+                          </RibbonStack>
+                        )}
                         <RibbonStack>
                           <SmallRibbonBtn
                             icon={<Type className="w-3.5 h-3.5" />}
@@ -1607,6 +1649,24 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                             onClick={onOpenAddCatalogItem}
                           />
                         </RibbonStack>
+                        {(onOpenTerminalEditor || onOpenAutoNumbering) && (
+                          <RibbonStack>
+                            {onOpenTerminalEditor && (
+                              <SmallRibbonBtn
+                                icon={<Tag className="w-3.5 h-3.5" />}
+                                label="Клеммы XT"
+                                onClick={onOpenTerminalEditor}
+                              />
+                            )}
+                            {onOpenAutoNumbering && (
+                              <SmallRibbonBtn
+                                icon={<Hash className="w-3.5 h-3.5" />}
+                                label="Нумерация"
+                                onClick={onOpenAutoNumbering}
+                              />
+                            )}
+                          </RibbonStack>
+                        )}
                       </RibbonPanel>
                     </>
                   )}

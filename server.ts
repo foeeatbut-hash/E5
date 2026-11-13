@@ -35,8 +35,8 @@ import {
 } from './src/core/fluxStudioManifest.ts';
 import { exportProjectToPdfBytes } from './src/core/pdfExporter.ts';
 import {
-  applySheetRevisionTracking,
   normalizeProjectSheetRevisions,
+  releaseSheetRevision,
 } from './src/core/sheetRevisions.ts';
 import { diagLogger } from './src/server/diagLogger.ts';
 import {
@@ -376,7 +376,7 @@ app.post('/api/v1/projects/:id/devices', (req, res) => {
   proj.devices.push(newDevice);
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  const tracked = normalizeProjectSheetRevisions(proj);
   projects.set(tracked.id, tracked);
   activeProjectId = tracked.id;
   broadcastUpdate(tracked, 'REST API POST /devices', 'api');
@@ -413,6 +413,9 @@ app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
     'invOriginal',
     'invDuplicate',
     'sheetTitle',
+    'izm',
+    'changeDoc',
+    'changeDate',
   ];
   const cleanPatch: Partial<E3TitleBlock> = {};
   for (const k of safeKeys) {
@@ -423,12 +426,24 @@ app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
 
   let updatedCount = 0;
   const applyFormToAll = Boolean(req.body?.applyFormToAll) || cleanPatch.stampForm === 'custom';
+  const prevTargetSheet = base.sheets.find((s) => s.id === req.params.sheetId);
+  const nextIzm = typeof cleanPatch.izm === 'string' ? cleanPatch.izm.trim() : '';
+  const prevIzm = prevTargetSheet?.titleBlock.izm?.trim() || '';
+
   proj.sheets = proj.sheets.map((s) => {
     if (!applyToAll && s.id !== req.params.sheetId) return s;
     updatedCount += 1;
     let nextPatch: Partial<E3TitleBlock> = cleanPatch;
     if (applyToAll && s.id !== req.params.sheetId) {
-      const { stampForm: _ignoredForm, customTemplateId: _ignoredTpl, sheetTitle: _ignoredTitle, ...rest } = cleanPatch;
+      const {
+        stampForm: _ignoredForm,
+        customTemplateId: _ignoredTpl,
+        sheetTitle: _ignoredTitle,
+        izm: _ignoredIzm,
+        changeDoc: _ignoredDoc,
+        changeDate: _ignoredDate,
+        ...rest
+      } = cleanPatch;
       nextPatch = {
         ...rest,
         ...(applyFormToAll && _ignoredForm ? { stampForm: _ignoredForm, customTemplateId: _ignoredTpl } : {}),
@@ -451,7 +466,15 @@ app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
 
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  let tracked = normalizeProjectSheetRevisions(proj);
+  if (nextIzm && nextIzm !== prevIzm) {
+    tracked = releaseSheetRevision(tracked, req.params.sheetId, {
+      revisionLabel: nextIzm,
+      changeDoc: cleanPatch.changeDoc,
+      changeDate: cleanPatch.changeDate,
+      author: cleanPatch.designer || prevTargetSheet?.titleBlock.designer || 'REST API',
+    });
+  }
   projects.set(tracked.id, tracked);
   activeProjectId = tracked.id;
   broadcastUpdate(
@@ -468,6 +491,32 @@ app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
   res.json({ ok: true, updatedCount, project: tracked });
 });
 
+app.post('/api/v1/projects/:id/sheets/:sheetId/revisions', (req, res) => {
+  const base = getOrDefaultProject(req.params.id);
+  const label = String(req.body?.revisionLabel || '').trim();
+  if (!label) {
+    res.status(400).json({ error: 'Укажите код ревизии (Изм.)' });
+    return;
+  }
+  const sheetExists = base.sheets.some((s) => s.id === req.params.sheetId);
+  if (!sheetExists) {
+    res.status(404).json({ error: 'Лист не найден' });
+    return;
+  }
+  const released = releaseSheetRevision(base, req.params.sheetId, {
+    revisionLabel: label,
+    changeDoc: req.body?.changeDoc ? String(req.body.changeDoc) : undefined,
+    changeDate: req.body?.changeDate ? String(req.body.changeDate) : undefined,
+    comment: req.body?.comment ? String(req.body.comment) : undefined,
+    author: req.body?.author ? String(req.body.author) : undefined,
+  });
+  projects.set(released.id, released);
+  activeProjectId = released.id;
+  broadcastUpdate(released, `Выпуск ревизии «${label}» (лист ${req.params.sheetId})`, 'api');
+  const nextSheet = released.sheets.find((s) => s.id === req.params.sheetId);
+  res.status(201).json({ ok: true, sheet: nextSheet, project: released });
+});
+
 app.patch('/api/v1/projects/:id/devices/:devId', (req, res) => {
   const base = getOrDefaultProject(req.params.id);
   const proj = structuredClone(base);
@@ -479,7 +528,7 @@ app.patch('/api/v1/projects/:id/devices/:devId', (req, res) => {
   Object.assign(target, req.body || {});
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  const tracked = normalizeProjectSheetRevisions(proj);
   const updatedTarget = tracked.devices.find((d) => d.id === req.params.devId) || target;
   projects.set(tracked.id, tracked);
   activeProjectId = tracked.id;
@@ -504,7 +553,7 @@ app.delete('/api/v1/projects/:id/devices/:devId', (req, res) => {
   proj.wires = proj.wires.filter((w) => w.fromDeviceId !== req.params.devId && w.toDeviceId !== req.params.devId);
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  const tracked = normalizeProjectSheetRevisions(proj);
   projects.set(tracked.id, tracked);
   activeProjectId = tracked.id;
   broadcastUpdate(tracked, 'REST API DELETE /devices', 'api');
@@ -523,7 +572,7 @@ app.post('/api/v1/projects/:id/reroute', (req, res) => {
   proj.wires = nextWires;
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  const tracked = normalizeProjectSheetRevisions(proj);
   projects.set(tracked.id, tracked);
   activeProjectId = tracked.id;
   broadcastUpdate(tracked, 'REST API POST /reroute', 'api');

@@ -72,6 +72,7 @@ interface BottomConsoleProps {
   onDownloadNetLengthsCsv?: () => void;
   onOpenReportModal?: () => void;
   onOpenFluxPublishModal?: () => void;
+  onOpenTerminalEditor?: () => void;
   onClearLogs?: () => void;
   onTestApiSyncPush: () => Promise<void>;
 }
@@ -104,6 +105,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   onDownloadNetLengthsCsv,
   onOpenReportModal,
   onOpenFluxPublishModal,
+  onOpenTerminalEditor,
   onClearLogs,
   onTestApiSyncPush,
 }) => {
@@ -672,6 +674,17 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                             ? `Цепей: ${netLengths.length} · Проводов: ${totalNetWireCount} · Сумм. длина: ${totalNetLengthMm} мм (${totalNetLengthMeters} м)`
                             : `Клеммных соединений: ${terminals.length}`}
                       </span>
+                      {cableSubTab === 'terminals' && onOpenTerminalEditor && (
+                        <button
+                          type="button"
+                          data-testid="open-terminal-editor-btn"
+                          onClick={onOpenTerminalEditor}
+                          className="inline-flex items-center gap-1 h-6 px-2.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+                        >
+                          <Cable className="w-3 h-3" />
+                          <span>Редактор клеммника -XT</span>
+                        </button>
+                      )}
                       {(cableSubTab === 'cables' || cableSubTab === 'nets') && onDownloadNetLengthsCsv && (
                         <button
                           type="button"

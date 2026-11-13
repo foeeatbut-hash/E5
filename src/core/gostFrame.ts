@@ -30,7 +30,133 @@ export const STAMP_FIELD_OPTIONS: Array<{ key: StampFieldKey; label: string; sho
   { key: 'date', label: 'Дата выпуска', shortLabel: 'Дата' },
   { key: 'invOriginal', label: 'Инв. № подл.', shortLabel: 'Подл.' },
   { key: 'invDuplicate', label: 'Инв. № дубл.', shortLabel: 'Дубл.' },
+  { key: 'izm', label: 'Выпуск ревизии (Изм.)', shortLabel: 'Изм.' },
+  { key: 'changeDoc', label: '№ докум. (Изм.)', shortLabel: 'Док.изм.' },
+  { key: 'changeDate', label: 'Дата изменения', shortLabel: 'Дата изм.' },
 ];
+
+function buildChangeTableCells(
+  prefix: 'f1' | 'f2a',
+  sx: number,
+  sy: number,
+  c1: number,
+  c2: number,
+  c3: number,
+  c4: number,
+  rx: number,
+  sheet: E3Sheet
+): GostStampCell[] {
+  const tb = sheet.titleBlock;
+  const maxActiveRev = typeof sheet.revision === 'number' ? sheet.revision : Infinity;
+  const released = (sheet.revisions || []).filter(
+    (r) =>
+      r.revision <= maxActiveRev &&
+      (r.released || Boolean(r.revisionLabel && r.revisionLabel !== '0' && r.revisionLabel !== '—'))
+  );
+  const rowsData: Array<{
+    izm: string;
+    sheetCol: string;
+    doc: string;
+    sign: string;
+    date: string;
+  }> = released.slice(-2).map((r) => {
+    let dt = r.changeDate || '';
+    if (!dt && r.timestamp) {
+      try {
+        const d = new Date(r.timestamp);
+        dt = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getFullYear()).slice(-2)}`;
+      } catch {
+        dt = '';
+      }
+    }
+    return {
+      izm: r.revisionLabel || String(r.revision),
+      sheetCol: 'Зам.',
+      doc: r.changeDoc || tb.changeDoc || '',
+      sign: (r.author || tb.designer || '').split(' ')[0] || '',
+      date: dt,
+    };
+  });
+  if (rowsData.length === 0 && tb.izm?.trim()) {
+    rowsData.push({
+      izm: tb.izm.trim(),
+      sheetCol: 'Зам.',
+      doc: tb.changeDoc?.trim() || '',
+      sign: (tb.designer || '').split(' ')[0] || '',
+      date: tb.changeDate?.trim() || '',
+    });
+  }
+
+  // Row 0 = sy+18..36 (bottom row, right above header), Row 1 = sy+0..18 (top row)
+  const out: GostStampCell[] = [];
+  for (let rowIdx = 0; rowIdx < 2; rowIdx++) {
+    const ry = rowIdx === 0 ? sy + 18 : sy;
+    const data = rowsData[rowsData.length - 1 - rowIdx];
+    out.push(
+      {
+        id: `${prefix}-chg-izm-${rowIdx}`,
+        fieldKey: 'izm',
+        label: 'Выпуск ревизии (Изм.)',
+        x: sx,
+        y: ry,
+        width: c1 - sx,
+        height: 18,
+        text: data?.izm || '',
+        align: 'center',
+        fontSize: 7.5,
+        bold: Boolean(data?.izm),
+        editable: true,
+      },
+      {
+        id: `${prefix}-chg-list-${rowIdx}`,
+        x: c1,
+        y: ry,
+        width: c2 - c1,
+        height: 18,
+        text: data ? data.sheetCol : '',
+        align: 'center',
+        fontSize: 7,
+      },
+      {
+        id: `${prefix}-chg-doc-${rowIdx}`,
+        fieldKey: 'changeDoc',
+        label: '№ докум. изменения',
+        x: c2,
+        y: ry,
+        width: c3 - c2,
+        height: 18,
+        text: data?.doc || '',
+        align: 'center',
+        fontSize: 7,
+        editable: true,
+      },
+      {
+        id: `${prefix}-chg-sign-${rowIdx}`,
+        x: c3,
+        y: ry,
+        width: c4 - c3,
+        height: 18,
+        text: data?.sign || '',
+        align: 'center',
+        fontSize: 7,
+      },
+      {
+        id: `${prefix}-chg-date-${rowIdx}`,
+        fieldKey: 'changeDate',
+        label: 'Дата изменения',
+        x: c4,
+        y: ry,
+        width: rx - c4,
+        height: 18,
+        text: data?.date || '',
+        align: 'center',
+        fontSize: 7,
+        editable: true,
+      }
+    );
+  }
+  return out;
+}
 
 export const DEFAULT_CUSTOM_STAMP_PRESETS: GostStampTemplate[] = [
   {
@@ -329,6 +455,7 @@ export function buildGostSheetGeometry(
       lines.push({ x1: xLine, y1: sy, x2: xLine, y2: sy + topChangeH });
     }
     cells.push(
+      ...buildChangeTableCells('f1', sx, sy, c1, c2, c3, c4, rx, sheet),
       { id: 'f1-hdr-izm', x: sx, y: sy + 36, width: c1 - sx, height: 18, text: 'Изм.', align: 'center', fontSize: 7.5 },
       { id: 'f1-hdr-list', x: c1, y: sy + 36, width: c2 - c1, height: 18, text: 'Лист', align: 'center', fontSize: 7.5 },
       { id: 'f1-hdr-doc', x: c2, y: sy + 36, width: c3 - c2, height: 18, text: '№ докум.', align: 'center', fontSize: 7.5 },
@@ -601,6 +728,7 @@ export function buildGostSheetGeometry(
     }
 
     cells.push(
+      ...buildChangeTableCells('f2a', sx, sy, c1, c2, c3, c4, rx, sheet),
       { id: 'f2a-hdr-izm', x: sx, y: sy + 36, width: c1 - sx, height: 18, text: 'Изм.', align: 'center', fontSize: 7.5 },
       { id: 'f2a-hdr-list', x: c1, y: sy + 36, width: c2 - c1, height: 18, text: 'Лист', align: 'center', fontSize: 7.5 },
       { id: 'f2a-hdr-doc', x: c2, y: sy + 36, width: c3 - c2, height: 18, text: '№ докум.', align: 'center', fontSize: 7.5 },

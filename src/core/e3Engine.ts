@@ -1493,7 +1493,7 @@ export function serializeE3Xml(project: E3Project): string {
     const sRev = getSheetRevisionNumber(s);
     const sUpdatedAt = s.updatedAt || project.updatedAt;
     lines.push(
-      `    <Sheet id="${xmlEscape(s.id)}" number="${s.number}" name="${xmlEscape(s.name)}" format="${s.format}" width="${s.width}" height="${s.height}" revision="${sRev}" updatedAt="${xmlEscape(sUpdatedAt)}" stampForm="${xmlEscape(tb.stampForm || 'form1')}" customTemplateId="${xmlEscape(tb.customTemplateId || '')}" documentCode="${xmlEscape(tb.documentCode)}" projectTitle="${xmlEscape(tb.projectTitle || '')}" organization="${xmlEscape(tb.organization)}" designer="${xmlEscape(tb.designer)}" checker="${xmlEscape(tb.checker)}" techControl="${xmlEscape(tb.techControl || '')}" normControl="${xmlEscape(tb.normControl || '')}" approver="${xmlEscape(tb.approver || '')}" litera="${xmlEscape(tb.litera || '')}" mass="${xmlEscape(tb.mass || '')}" scale="${xmlEscape(tb.scale || '')}" date="${xmlEscape(tb.date || '')}" invOriginal="${xmlEscape(tb.invOriginal || '')}" invDuplicate="${xmlEscape(tb.invDuplicate || '')}" sheetTitle="${xmlEscape(tb.sheetTitle)}" />`
+      `    <Sheet id="${xmlEscape(s.id)}" number="${s.number}" name="${xmlEscape(s.name)}" format="${s.format}" width="${s.width}" height="${s.height}" revision="${sRev}" updatedAt="${xmlEscape(sUpdatedAt)}" stampForm="${xmlEscape(tb.stampForm || 'form1')}" customTemplateId="${xmlEscape(tb.customTemplateId || '')}" documentCode="${xmlEscape(tb.documentCode)}" projectTitle="${xmlEscape(tb.projectTitle || '')}" organization="${xmlEscape(tb.organization)}" designer="${xmlEscape(tb.designer)}" checker="${xmlEscape(tb.checker)}" techControl="${xmlEscape(tb.techControl || '')}" normControl="${xmlEscape(tb.normControl || '')}" approver="${xmlEscape(tb.approver || '')}" litera="${xmlEscape(tb.litera || '')}" mass="${xmlEscape(tb.mass || '')}" scale="${xmlEscape(tb.scale || '')}" date="${xmlEscape(tb.date || '')}" invOriginal="${xmlEscape(tb.invOriginal || '')}" invDuplicate="${xmlEscape(tb.invDuplicate || '')}" izm="${xmlEscape(tb.izm || '')}" changeDoc="${xmlEscape(tb.changeDoc || '')}" changeDate="${xmlEscape(tb.changeDate || '')}" sheetTitle="${xmlEscape(tb.sheetTitle)}" />`
     );
   }
   lines.push('  </Sheets>');
@@ -1570,8 +1570,12 @@ export function serializeE3Xml(project: E3Project): string {
     for (const s of project.sheets) {
       for (const entry of s.revisions || []) {
         const snapAttr = entry.snapshot ? ` snapshot="${xmlEscape(JSON.stringify(entry.snapshot))}"` : '';
+        const labelAttr = entry.revisionLabel ? ` revisionLabel="${xmlEscape(entry.revisionLabel)}"` : '';
+        const docAttr = entry.changeDoc ? ` changeDoc="${xmlEscape(entry.changeDoc)}"` : '';
+        const dateAttr = entry.changeDate ? ` changeDate="${xmlEscape(entry.changeDate)}"` : '';
+        const relAttr = entry.released ? ' released="true"' : '';
         lines.push(
-          `    <SheetRevision sheetId="${xmlEscape(s.id)}" revision="${entry.revision}" projectRevision="${entry.projectRevision}" timestamp="${xmlEscape(entry.timestamp)}" author="${xmlEscape(entry.author)}" summary="${xmlEscape(entry.summary)}" changedAreas="${xmlEscape(entry.changedAreas.join(','))}"${snapAttr} />`
+          `    <SheetRevision sheetId="${xmlEscape(s.id)}" revision="${entry.revision}"${labelAttr}${docAttr}${dateAttr}${relAttr} projectRevision="${entry.projectRevision}" timestamp="${xmlEscape(entry.timestamp)}" author="${xmlEscape(entry.author)}" summary="${xmlEscape(entry.summary)}" changedAreas="${xmlEscape(entry.changedAreas.join(','))}"${snapAttr} />`
         );
       }
     }
@@ -1674,6 +1678,9 @@ export function parseE3Xml(xml: string): E3Project {
         date: sa.date || '',
         invOriginal: sa.invOriginal || '',
         invDuplicate: sa.invDuplicate || '',
+        izm: sa.izm || '',
+        changeDoc: sa.changeDoc || '',
+        changeDate: sa.changeDate || '',
         sheetTitle: sa.sheetTitle || '',
       },
     });
@@ -1867,6 +1874,10 @@ export function parseE3Xml(xml: string): E3Project {
     const list = revBySheet.get(sra.sheetId) || [];
     list.push({
       revision: Number(sra.revision || list.length + 1),
+      revisionLabel: sra.revisionLabel || undefined,
+      changeDoc: sra.changeDoc || undefined,
+      changeDate: sra.changeDate || undefined,
+      released: sra.released === 'true' ? true : undefined,
       projectRevision: Number(sra.projectRevision || rootAttrs.revision || 1),
       timestamp: sra.timestamp || rootAttrs.updatedAt || new Date().toISOString(),
       author: sra.author || rootAttrs.author || 'Инженер',

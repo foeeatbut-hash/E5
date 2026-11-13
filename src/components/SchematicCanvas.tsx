@@ -12,7 +12,7 @@ import {
   type SelectionBox,
 } from '../core/cadSelection';
 import { resolveSchematicCssFont } from '../core/e3Catalog';
-import { getSheetRevisionNumber } from '../core/sheetRevisions';
+import { getSheetRevisionLabel, hasSheetUncommittedChanges } from '../core/sheetRevisions';
 import {
   autoRouteOrthogonal,
   computeWireCrossingArcs,
@@ -1112,7 +1112,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
             >
               {project.sheets.map((s) => (
                 <option key={s.id} value={s.id}>
-                  Лист {s.number}: {s.name} (v{getSheetRevisionNumber(s)} · {s.format})
+                  Лист {s.number}: {s.name} ({getSheetRevisionLabel(s)}{hasSheetUncommittedChanges(project, s) ? '*' : ''} · {s.format})
                 </option>
               ))}
             </select>
@@ -1181,6 +1181,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   <button
                     key={s.id}
                     type="button"
+                    data-testid={`sheet-tab-${s.id}`}
                     onClick={() => onSelectSheet(s.id)}
                     title={`Лист ${s.number}: ${s.name} (${s.format})`}
                     className={`relative h-8 px-2.5 max-w-[200px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
@@ -1200,7 +1201,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                           : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)]'
                       }`}
                     >
-                      v{getSheetRevisionNumber(s)}
+                      {getSheetRevisionLabel(s)}
+                      {hasSheetUncommittedChanges(project, s) ? '*' : ''}
                     </span>
                     {active && (
                       <motion.span
