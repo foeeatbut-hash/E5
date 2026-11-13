@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
   Check,
@@ -131,8 +132,6 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   const fullBuildLogText = [
     ...(result?.buildLogs || []),
     ...(result?.stack ? ['', '=== STACK TRACE ===', result.stack] : []),
@@ -161,17 +160,29 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="portable-build-title"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
-    >
-      <div className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden">
-        <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.14 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="portable-build-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.985 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden"
+          >
+            <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-[var(--flux-accent)]" />
             <h2 id="portable-build-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
@@ -342,7 +353,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                 <a
                   href={result.downloadUrl}
                   download={result.filename}
-                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white font-medium"
+                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Скачать .zip</span>
@@ -351,7 +362,9 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

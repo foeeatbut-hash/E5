@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Cpu, Plus, Sparkles, Trash2, Wand2, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ArrowDown, ArrowUp, Cpu, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type { CatalogItem, E3Project, HvacStageRole, SchematicFontFamily, SheetFormat } from '../core/e3Types';
 import {
@@ -111,26 +112,36 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
     );
   }, [stages, catalog]);
 
-  if (!open) return null;
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="hvac-wizard-title"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
-    >
-      <div className="w-full max-w-4xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <Wand2 className="w-4 h-4 text-[var(--flux-accent)]" />
-            <h2 id="hvac-wizard-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
-              Мастер построения ФСА и Схемы внешних соединений (Приточная / Вытяжная система)
-            </h2>
-          </div>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.14 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="hvac-wizard-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.985 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full max-w-4xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+          >
+            <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-[var(--flux-accent)]" />
+                <h2 id="hvac-wizard-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
+                  Мастер построения ФСА и Схемы внешних соединений (Приточная / Вытяжная система)
+                </h2>
+              </div>
           <button
             type="button"
             onClick={onClose}
@@ -237,30 +248,46 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
           {/* Selection Mode Tabs: Auto from Flux vs Manual */}
           <div className="p-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1 bg-[var(--flux-surface)] p-0.5 rounded border border-[var(--flux-line)]">
+              <div className="flex items-center gap-0.5 bg-[var(--flux-surface)] p-0.5 rounded border border-[var(--flux-line)]">
                 <button
                   type="button"
                   onClick={() => setSelectionMode('flux')}
-                  className={`inline-flex items-center gap-1.5 h-7 px-3 rounded text-[12px] font-medium transition-colors ${
+                  className={`relative inline-flex items-center gap-1.5 h-7 px-3 rounded text-[12px] font-medium transition-colors ${
                     selectionMode === 'flux'
-                      ? 'bg-[var(--flux-accent)] text-white'
+                      ? 'text-[var(--flux-text)]'
                       : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Автоподбор из проекта / Flux</span>
+                  {selectionMode === 'flux' && (
+                    <motion.span
+                      layoutId="hvac-mode-pill"
+                      transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded bg-[var(--flux-sel)] border border-[var(--flux-accent)]/60"
+                    />
+                  )}
+                  <SlidersHorizontal className={`relative z-10 w-3.5 h-3.5 ${selectionMode === 'flux' ? 'text-[var(--flux-accent)]' : ''}`} />
+                  <span className="relative z-10">Автоподбор из проекта / Flux</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSelectionMode('manual')}
-                  className={`inline-flex items-center gap-1.5 h-7 px-3 rounded text-[12px] font-medium transition-colors ${
+                  className={`relative inline-flex items-center gap-1.5 h-7 px-3 rounded text-[12px] font-medium transition-colors ${
                     selectionMode === 'manual'
-                      ? 'bg-[var(--flux-accent)] text-white'
+                      ? 'text-[var(--flux-text)]'
                       : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                   }`}
                 >
-                  <Cpu className="w-3.5 h-3.5" />
-                  <span>Ручной выбор из базы</span>
+                  {selectionMode === 'manual' && (
+                    <motion.span
+                      layoutId="hvac-mode-pill"
+                      transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded bg-[var(--flux-sel)] border border-[var(--flux-accent)]/60"
+                    />
+                  )}
+                  <Cpu className={`relative z-10 w-3.5 h-3.5 ${selectionMode === 'manual' ? 'text-[var(--flux-accent)]' : ''}`} />
+                  <span className="relative z-10">Ручной выбор из базы</span>
                 </button>
               </div>
 
@@ -268,9 +295,9 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                 <button
                   type="button"
                   onClick={handleAutoMatchFromFlux}
-                  className="inline-flex items-center gap-1.5 h-7 px-3 rounded border border-[var(--flux-accent)] text-[var(--flux-accent)] hover:bg-[var(--flux-accent-soft)] font-medium"
+                  className="inline-flex items-center gap-1.5 h-7 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[var(--flux-text)] hover:border-[var(--flux-accent)] hover:bg-[var(--flux-accent-soft)] font-medium transition-colors"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                   <span>Подобрать точные изделия</span>
                 </button>
               )}
@@ -473,14 +500,16 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                 });
                 onClose();
               }}
-              className="inline-flex items-center gap-1.5 h-8 px-4 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white font-medium"
+              className="inline-flex items-center gap-1.5 h-8 px-4 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium"
             >
-              <Wand2 className="w-3.5 h-3.5" />
+              <Cpu className="w-3.5 h-3.5" />
               <span>Построить схему на листе</span>
             </button>
           </div>
         </div>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

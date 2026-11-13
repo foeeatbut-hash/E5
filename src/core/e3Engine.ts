@@ -56,6 +56,56 @@ export function getAbsolutePinPos(device: E3Device, pin: E3Pin): { x: number; y:
   };
 }
 
+export function getDeviceBounds(
+  device: Pick<E3Device, 'id' | 'x' | 'y' | 'width' | 'height' | 'rotation'>
+): RoutingRect {
+  const rot = ((device.rotation || 0) % 360 + 360) % 360;
+  if (rot === 90 || rot === 270) {
+    const cx = device.x + device.width / 2;
+    const cy = device.y + device.height / 2;
+    return {
+      id: device.id,
+      x: Math.round(cx - device.height / 2),
+      y: Math.round(cy - device.width / 2),
+      width: device.height,
+      height: device.width,
+    };
+  }
+  return {
+    id: device.id,
+    x: device.x,
+    y: device.y,
+    width: device.width,
+    height: device.height,
+  };
+}
+
+export interface SheetDrawableBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  stampBox?: RoutingRect;
+}
+
+export function getSheetDrawableBounds(sheet?: Pick<E3Sheet, 'width' | 'height'>): SheetDrawableBounds | undefined {
+  if (!sheet) return undefined;
+  const w = sheet.width || 1400;
+  const h = sheet.height || 920;
+  return {
+    minX: 28,
+    minY: 22,
+    maxX: Math.max(120, w - 12),
+    maxY: Math.max(120, h - 12),
+    stampBox: {
+      x: Math.max(28, w - 566),
+      y: Math.max(22, h - 184),
+      width: 556,
+      height: 174,
+    },
+  };
+}
+
 export interface RoutingRect {
   id?: string;
   x: number;
@@ -69,13 +119,14 @@ export interface WireSegment {
   y1: number;
   x2: number;
   y2: number;
+  netName?: string;
 }
 
 function segmentIntersectsRect(
   a: { x: number; y: number },
   b: { x: number; y: number },
   r: RoutingRect,
-  pad = 8
+  pad = 6
 ): boolean {
   const minX = Math.min(a.x, b.x);
   const maxX = Math.max(a.x, b.x);
@@ -105,26 +156,34 @@ function pathHitsAnyObstacle(
   return undefined;
 }
 
-export function extractWireSegments(waypoints: Array<{ x: number; y: number }>): WireSegment[] {
+export function extractWireSegments(
+  waypoints: Array<{ x: number; y: number }>,
+  netName?: string
+): WireSegment[] {
   const segs: WireSegment[] = [];
   for (let i = 0; i < waypoints.length - 1; i++) {
     const a = waypoints[i];
     const b = waypoints[i + 1];
     if (a.x !== b.x || a.y !== b.y) {
-      segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+      segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, netName });
     }
   }
   return segs;
 }
 
-/** Computes collinear overlap length and perpendicular crossings against existing wires. */
+/** Computes collinear overlap, near-parallel proximity, and perpendicular crossings against existing wires. */
 function measureWireConflicts(
   a: { x: number; y: number },
   b: { x: number; y: number },
-  occupied: WireSegment[]
-): { overlapLen: number; crossings: number } {
+  occupied: WireSegment[],
+  currentNetName?: string,
+  wireGap = 8
+): { overlapLen: number; nearParallelLen: number; sameNetOverlapLen: number; crossings: number; touchConflicts: number } {
   let overlapLen = 0;
+  let nearParallelLen = 0;
+  let sameNetOverlapLen = 0;
   let crossings = 0;
+  let touchConflicts = 0;
   const isHoriz = Math.abs(a.y - b.y) < 0.5;
   const minX = Math.min(a.x, b.x);
   const maxX = Math.max(a.x, b.x);
@@ -137,29 +196,69 @@ function measureWireConflicts(
     const sMaxX = Math.max(s.x1, s.x2);
     const sMinY = Math.min(s.y1, s.y2);
     const sMaxY = Math.max(s.y1, s.y2);
+    const sameNet = Boolean(currentNetName && s.netName && currentNetName === s.netName);
 
     if (isHoriz && sHoriz) {
-      if (Math.abs(a.y - s.y1) < 5) {
+      const dist = Math.abs(a.y - s.y1);
+      if (dist < wireGap) {
         const ov = Math.min(maxX, sMaxX) - Math.max(minX, sMinX);
-        if (ov > 0) overlapLen += ov;
+        if (ov > 0.5) {
+          if (sameNet) {
+            if (dist < 1.5) sameNetOverlapLen += ov;
+            else nearParallelLen += ov;
+          } else if (dist < 2.5) {
+            overlapLen += ov;
+          } else {
+            nearParallelLen += ov;
+          }
+        }
       }
     } else if (!isHoriz && !sHoriz) {
-      if (Math.abs(a.x - s.x1) < 5) {
+      const dist = Math.abs(a.x - s.x1);
+      if (dist < wireGap) {
         const ov = Math.min(maxY, sMaxY) - Math.max(minY, sMinY);
-        if (ov > 0) overlapLen += ov;
+        if (ov > 0.5) {
+          if (sameNet) {
+            if (dist < 1.5) sameNetOverlapLen += ov;
+            else nearParallelLen += ov;
+          } else if (dist < 2.5) {
+            overlapLen += ov;
+          } else {
+            nearParallelLen += ov;
+          }
+        }
       }
     } else if (isHoriz && !sHoriz) {
       if (s.x1 > minX + 1 && s.x1 < maxX - 1 && a.y > sMinY + 1 && a.y < sMaxY - 1) {
         crossings += 1;
+      } else if (!sameNet) {
+        // Endpoint/corner touching interior of another net's perpendicular line
+        const hitsEndpoint =
+          (Math.abs(a.x - s.x1) < 2.5 || Math.abs(b.x - s.x1) < 2.5) &&
+          a.y > sMinY + 1 &&
+          a.y < sMaxY - 1;
+        const hitsOtherEnd =
+          a.y >= sMinY - 2 && a.y <= sMaxY + 2 && s.x1 > minX + 1 && s.x1 < maxX - 1 &&
+          (Math.abs(a.y - s.y1) < 2.5 || Math.abs(a.y - s.y2) < 2.5);
+        if (hitsEndpoint || hitsOtherEnd) touchConflicts += 1;
       }
     } else if (!isHoriz && sHoriz) {
       if (a.x > sMinX + 1 && a.x < sMaxX - 1 && s.y1 > minY + 1 && s.y1 < maxY - 1) {
         crossings += 1;
+      } else if (!sameNet) {
+        const hitsEndpoint =
+          (Math.abs(a.y - s.y1) < 2.5 || Math.abs(b.y - s.y1) < 2.5) &&
+          a.x > sMinX + 1 &&
+          a.x < sMaxX - 1;
+        const hitsOtherEnd =
+          a.x >= sMinX - 2 && a.x <= sMaxX + 2 && s.y1 > minY + 1 && s.y1 < maxY - 1 &&
+          (Math.abs(a.x - s.x1) < 2.5 || Math.abs(a.x - s.x2) < 2.5);
+        if (hitsEndpoint || hitsOtherEnd) touchConflicts += 1;
       }
     }
   }
 
-  return { overlapLen, crossings };
+  return { overlapLen, nearParallelLen, sameNetOverlapLen, crossings, touchConflicts };
 }
 
 class MinHeap<T extends { f: number }> {
@@ -213,17 +312,31 @@ export interface AutoRouteEndpoint {
   deviceId?: string;
 }
 
+export interface AutoRouteOptions {
+  netName?: string;
+  sheetBounds?: SheetDrawableBounds;
+  wireGap?: number;
+  exitStub?: number;
+  entryStub?: number;
+}
+
 export function autoRouteOrthogonal(
   p1: AutoRouteEndpoint,
   p2: AutoRouteEndpoint,
   stub = 20,
   obstacles: RoutingRect[] = [],
   laneOffset = 0,
-  occupiedSegments: WireSegment[] = []
+  occupiedSegments: WireSegment[] = [],
+  options?: AutoRouteOptions
 ): Array<{ x: number; y: number }> {
   const step = Math.max(12, stub);
+  const exitStep = Math.max(10, options?.exitStub ?? step);
+  const entryStep = Math.max(10, options?.entryStub ?? step);
+  const wireGap = Math.max(6, options?.wireGap ?? 8);
+  const netName = options?.netName;
+  const sheetBounds = options?.sheetBounds;
 
-  // Separate interior check for endpoint devices (allowed only to touch at pin exit/entry) vs external obstacles
+  // Separate interior check for endpoint devices vs external obstacles
   const externalObstacles = obstacles.filter(
     (o) => !o.id || (o.id !== p1.deviceId && o.id !== p2.deviceId)
   );
@@ -231,17 +344,20 @@ export function autoRouteOrthogonal(
     (o) => o.id && (o.id === p1.deviceId || o.id === p2.deviceId)
   );
 
-  // 1. Direct straight colinear line if completely clear of obstacles AND wire overlaps
+  // 1. Direct straight collinear line if exact alignment and completely clear of obstacles & conflicts
   if (
     ((p1.direction === 'right' && p2.direction === 'left' && p2.x >= p1.x) ||
       (p1.direction === 'left' && p2.direction === 'right' && p2.x <= p1.x)) &&
-    Math.abs(p1.y - p2.y) <= 2
+    Math.abs(p1.y - p2.y) < 0.5
   ) {
-    const direct = [{ x: p1.x, y: p1.y }, { x: p2.x, y: p1.y }];
+    const direct = [{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }];
+    const conflicts = measureWireConflicts(direct[0], direct[1], occupiedSegments, netName, wireGap);
     if (
-      !pathHitsAnyObstacle(direct, externalObstacles, 6) &&
+      !pathHitsAnyObstacle(direct, externalObstacles, 5) &&
       !pathHitsAnyObstacle(direct, endpointObstacles, -2) &&
-      measureWireConflicts(direct[0], direct[1], occupiedSegments).overlapLen === 0
+      conflicts.overlapLen === 0 &&
+      conflicts.nearParallelLen === 0 &&
+      conflicts.touchConflicts === 0
     ) {
       return deduplicatePoints(direct);
     }
@@ -249,20 +365,23 @@ export function autoRouteOrthogonal(
   if (
     ((p1.direction === 'bottom' && p2.direction === 'top' && p2.y >= p1.y) ||
       (p1.direction === 'top' && p2.direction === 'bottom' && p2.y <= p1.y)) &&
-    Math.abs(p1.x - p2.x) <= 2
+    Math.abs(p1.x - p2.x) < 0.5
   ) {
-    const direct = [{ x: p1.x, y: p1.y }, { x: p1.x, y: p2.y }];
+    const direct = [{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }];
+    const conflicts = measureWireConflicts(direct[0], direct[1], occupiedSegments, netName, wireGap);
     if (
-      !pathHitsAnyObstacle(direct, externalObstacles, 6) &&
+      !pathHitsAnyObstacle(direct, externalObstacles, 5) &&
       !pathHitsAnyObstacle(direct, endpointObstacles, -2) &&
-      measureWireConflicts(direct[0], direct[1], occupiedSegments).overlapLen === 0
+      conflicts.overlapLen === 0 &&
+      conflicts.nearParallelLen === 0 &&
+      conflicts.touchConflicts === 0
     ) {
       return deduplicatePoints(direct);
     }
   }
 
   // Filter nearby obstacles if sheet is very crowded so A* remains sub-millisecond
-  const margin = 420;
+  const margin = 460;
   const minBoxX = Math.min(p1.x, p2.x) - margin;
   const maxBoxX = Math.max(p1.x, p2.x) + margin;
   const minBoxY = Math.min(p1.y, p2.y) - margin;
@@ -278,12 +397,12 @@ export function autoRouteOrthogonal(
         )
       : obstacles;
 
-  // Build visibility grid coordinates with parallel bus channel tracks (every 14px)
+  // Build visibility grid coordinates with parallel bus channel tracks
   const rawXs: number[] = [p1.x, p2.x];
   const rawYs: number[] = [p1.y, p2.y];
 
-  const pushExitTracks = (pt: AutoRouteEndpoint) => {
-    const offsets = [step, step + 14, step + 28, step + 42, step + 56];
+  const pushExitTracks = (pt: AutoRouteEndpoint, baseStep: number) => {
+    const offsets = [baseStep, baseStep + 12, baseStep + 24, baseStep + 36, baseStep + 48, 12, 22, 34];
     for (const d of offsets) {
       if (pt.direction === 'left') rawXs.push(pt.x - d);
       else if (pt.direction === 'right') rawXs.push(pt.x + d);
@@ -291,15 +410,17 @@ export function autoRouteOrthogonal(
       else rawYs.push(pt.y + d);
     }
   };
-  pushExitTracks(p1);
-  pushExitTracks(p2);
+  pushExitTracks(p1, exitStep);
+  pushExitTracks(p2, entryStep);
 
   const midX = Math.round((p1.x + p2.x) / 2) + laneOffset;
   const midY = Math.round((p1.y + p2.y) / 2) + laneOffset;
-  rawXs.push(midX, midX - 14, midX + 14, midX - 28, midX + 28);
-  rawYs.push(midY, midY - 14, midY + 14, midY - 28, midY + 28);
+  for (const delta of [-36, -24, -12, 0, 12, 24, 36]) {
+    rawXs.push(midX + delta);
+    rawYs.push(midY + delta);
+  }
 
-  const channelOffsets = [14, 28, 42, 56];
+  const channelOffsets = [10, 20, 32, 44, 58];
   for (const obs of localObstacles) {
     for (const c of channelOffsets) {
       rawXs.push(obs.x - c, obs.x + obs.width + c);
@@ -307,21 +428,43 @@ export function autoRouteOrthogonal(
     }
   }
 
-  const dedupCoordList = (vals: number[], anchors: number[]): number[] => {
-    const sorted = Array.from(new Set(vals.map((v) => Math.round(v)))).sort((a, b) => a - b);
+  if (sheetBounds) {
+    rawXs.push(sheetBounds.minX + 10, sheetBounds.maxX - 10);
+    rawYs.push(sheetBounds.minY + 10, sheetBounds.maxY - 10);
+    if (sheetBounds.stampBox) {
+      rawXs.push(sheetBounds.stampBox.x - 14, sheetBounds.stampBox.x - 28);
+      rawYs.push(sheetBounds.stampBox.y - 14, sheetBounds.stampBox.y - 28);
+    }
+  }
+
+  const dedupCoordList = (
+    vals: number[],
+    anchors: number[],
+    minB?: number,
+    maxB?: number
+  ): number[] => {
+    const filtered = vals
+      .map((v) => Math.round(v))
+      .filter((v) => {
+        if (anchors.some((a) => Math.abs(v - Math.round(a)) <= 1)) return true;
+        if (minB !== undefined && v < minB) return false;
+        if (maxB !== undefined && v > maxB) return false;
+        return true;
+      });
+    const sorted = Array.from(new Set(filtered)).sort((a, b) => a - b);
     const out: number[] = [];
     for (const v of sorted) {
       const isAnchor = anchors.some((a) => Math.abs(v - Math.round(a)) <= 1);
       const prev = out[out.length - 1];
-      if (prev === undefined || isAnchor || v - prev >= 6) {
+      if (prev === undefined || isAnchor || v - prev >= 5) {
         out.push(v);
       }
     }
     return out;
   };
 
-  const xs = dedupCoordList(rawXs, [p1.x, p2.x]);
-  const ys = dedupCoordList(rawYs, [p1.y, p2.y]);
+  const xs = dedupCoordList(rawXs, [p1.x, p2.x], sheetBounds?.minX, sheetBounds?.maxX);
+  const ys = dedupCoordList(rawYs, [p1.y, p2.y], sheetBounds?.minY, sheetBounds?.maxY);
 
   const startXi = xs.findIndex((x) => Math.abs(x - Math.round(p1.x)) <= 1);
   const startYi = ys.findIndex((y) => Math.abs(y - Math.round(p1.y)) <= 1);
@@ -329,7 +472,7 @@ export function autoRouteOrthogonal(
   const endYi = ys.findIndex((y) => Math.abs(y - Math.round(p2.y)) <= 1);
 
   if (startXi < 0 || startYi < 0 || endXi < 0 || endYi < 0) {
-    return deduplicatePoints([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+    return ensureOrthogonalPoints([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
   }
 
   // Allowed pin-exit direction check: leaving p1 or entering p2 must move cleanly along pin axis
@@ -369,18 +512,23 @@ export function autoRouteOrthogonal(
   let bestGoalState = -1;
   let bestGoalCost = Infinity;
   let expanded = 0;
-  const maxExpand = 18000;
+  const maxExpand = 22000;
 
   while (heap.size > 0 && expanded < maxExpand) {
     const cur = heap.pop()!;
     const curG = gScore[cur.s];
     if (cur.f > bestGoalCost + 1) break;
-    expanded += 1;
 
     const lastDir = cur.s % 3;
     const cellIdx = (cur.s - lastDir) / 3;
     const xi = cellIdx % W;
     const yi = (cellIdx - xi) / W;
+
+    // Prune stale heap entries
+    const curH = Math.abs(xs[endXi] - xs[xi]) + Math.abs(ys[endYi] - ys[yi]);
+    if (cur.f > curG + curH + 1e-6) continue;
+
+    expanded += 1;
 
     if (xi === endXi && yi === endYi) {
       if (curG < bestGoalCost) {
@@ -418,7 +566,6 @@ export function autoRouteOrthogonal(
       if (touchesStart && isWrongExitFromPin(p1, bx, by)) continue;
       if (touchesEnd && isWrongExitFromPin(p2, ax, ay)) continue;
 
-      // Obstacle intersection penalty / block
       let obsPenalty = 0;
       const segA = { x: ax, y: ay };
       const segB = { x: bx, y: by };
@@ -426,24 +573,52 @@ export function autoRouteOrthogonal(
       for (const obs of localObstacles) {
         const isStartDev = obs.id && obs.id === p1.deviceId && touchesStart;
         const isEndDev = obs.id && obs.id === p2.deviceId && touchesEnd;
-        const pad = isStartDev || isEndDev ? -2 : 7;
+        const pad = isStartDev || isEndDev ? -2 : 5;
         if (segmentIntersectsRect(segA, segB, obs, pad)) {
           obsPenalty += 60000;
         }
       }
 
-      // Wire-to-wire separation penalty (anti-merging)
-      const { overlapLen, crossings } =
+      // Keep wires inside GOST drawable sheet bounds and outside GOST stamp box
+      if (sheetBounds) {
+        if (
+          !touchesStart &&
+          !touchesEnd &&
+          (bx < sheetBounds.minX ||
+            bx > sheetBounds.maxX ||
+            by < sheetBounds.minY ||
+            by > sheetBounds.maxY)
+        ) {
+          obsPenalty += 30000;
+        }
+        if (sheetBounds.stampBox && segmentIntersectsRect(segA, segB, sheetBounds.stampBox, 4)) {
+          obsPenalty += 25000;
+        }
+      }
+
+      // Wire-to-wire separation penalty (anti-merging & net awareness)
+      const { overlapLen, nearParallelLen, sameNetOverlapLen, crossings, touchConflicts } =
         occupiedSegments.length > 0
-          ? measureWireConflicts(segA, segB, occupiedSegments)
-          : { overlapLen: 0, crossings: 0 };
+          ? measureWireConflicts(segA, segB, occupiedSegments, netName, wireGap)
+          : { overlapLen: 0, nearParallelLen: 0, sameNetOverlapLen: 0, crossings: 0, touchConflicts: 0 };
 
       const segLen = Math.abs(bx - ax) + Math.abs(by - ay);
-      const bendPenalty = lastDir !== 2 && lastDir !== nextDir ? 24 : 0;
-      const wirePenalty = overlapLen > 0 ? 9000 + overlapLen * 120 : 0;
-      const crossPenalty = crossings * 55;
+      const bendPenalty = lastDir !== 2 && lastDir !== nextDir ? 26 : 0;
+      // Encourage first exit bend to align close to desired exitStep/entryStep for bundle fan-out
+      let stubBias = 0;
+      if (touchesStart) {
+        stubBias = Math.abs(segLen - exitStep) * 0.4;
+      } else if (touchesEnd) {
+        stubBias = Math.abs(segLen - entryStep) * 0.4;
+      }
+      const wirePenalty =
+        (overlapLen > 0 ? 18000 + overlapLen * 220 : 0) +
+        (nearParallelLen > 0 ? 2400 + nearParallelLen * 40 : 0) +
+        (sameNetOverlapLen > 0 ? sameNetOverlapLen * 10 : 0) +
+        touchConflicts * 6500;
+      const crossPenalty = crossings * 65;
 
-      const nextG = curG + segLen + bendPenalty + wirePenalty + crossPenalty + obsPenalty;
+      const nextG = curG + segLen + bendPenalty + stubBias + wirePenalty + crossPenalty + obsPenalty;
       const nextState = (nyi * W + nxi) * 3 + nextDir;
       if (nextG < gScore[nextState]) {
         gScore[nextState] = nextG;
@@ -466,21 +641,20 @@ export function autoRouteOrthogonal(
       s = parent[s];
     }
     rawPts.reverse();
-    // Snap exact endpoints in case rounding shifted by 1px
     rawPts[0] = { x: p1.x, y: p1.y };
     rawPts[rawPts.length - 1] = { x: p2.x, y: p2.y };
-    return simplifyColinearPoints(deduplicatePoints(rawPts));
+    return ensureOrthogonalPoints(simplifyColinearPoints(deduplicatePoints(rawPts)));
   }
 
   // Fallback orthogonal route if graph search couldn't finish
-  const offsetPt = (pt: AutoRouteEndpoint) => {
-    if (pt.direction === 'top') return { x: pt.x, y: pt.y - step };
-    if (pt.direction === 'bottom') return { x: pt.x, y: pt.y + step };
-    if (pt.direction === 'left') return { x: pt.x - step, y: pt.y };
-    return { x: pt.x + step, y: pt.y };
+  const offsetPt = (pt: AutoRouteEndpoint, d: number) => {
+    if (pt.direction === 'top') return { x: pt.x, y: pt.y - d };
+    if (pt.direction === 'bottom') return { x: pt.x, y: pt.y + d };
+    if (pt.direction === 'left') return { x: pt.x - d, y: pt.y };
+    return { x: pt.x + d, y: pt.y };
   };
-  const s1 = offsetPt(p1);
-  const s2 = offsetPt(p2);
+  const s1 = offsetPt(p1, exitStep);
+  const s2 = offsetPt(p2, entryStep);
   const pts: Array<{ x: number; y: number }> = [{ x: p1.x, y: p1.y }, s1];
   const isH1 = p1.direction === 'left' || p1.direction === 'right';
   const isH2 = p2.direction === 'left' || p2.direction === 'right';
@@ -494,7 +668,23 @@ export function autoRouteOrthogonal(
     pts.push({ x: s1.x, y: s2.y });
   }
   pts.push(s2, { x: p2.x, y: p2.y });
-  return simplifyColinearPoints(deduplicatePoints(pts));
+  return ensureOrthogonalPoints(simplifyColinearPoints(deduplicatePoints(pts)));
+}
+
+function ensureOrthogonalPoints(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
+  if (points.length <= 1) return points;
+  const out: Array<{ x: number; y: number }> = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const prev = out[out.length - 1];
+    const curr = points[i];
+    if (prev.x !== curr.x && prev.y !== curr.y) {
+      out.push({ x: curr.x, y: prev.y });
+    }
+    if (prev.x !== curr.x || prev.y !== curr.y) {
+      out.push(curr);
+    }
+  }
+  return simplifyColinearPoints(deduplicatePoints(out));
 }
 
 function simplifyColinearPoints(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
@@ -514,15 +704,107 @@ function simplifyColinearPoints(points: Array<{ x: number; y: number }>): Array<
   return out;
 }
 
+function assignBundleRoutingPlans(
+  wires: E3Wire[],
+  devMap: Map<string, E3Device>,
+  stub = 20
+): Array<{ wire: E3Wire; abs1: AutoRouteEndpoint; abs2: AutoRouteEndpoint; exitStub: number; entryStub: number; laneOffset: number }> {
+  type WireMeta = {
+    wire: E3Wire;
+    abs1: AutoRouteEndpoint;
+    abs2: AutoRouteEndpoint;
+    bundleKey: string;
+    sortCoord: number;
+  };
+  const metas: WireMeta[] = [];
+  for (const w of wires) {
+    const d1 = devMap.get(w.fromDeviceId);
+    const d2 = devMap.get(w.toDeviceId);
+    const p1 = d1?.pins.find((p) => p.id === w.fromPinId);
+    const p2 = d2?.pins.find((p) => p.id === w.toPinId);
+    if (!d1 || !d2 || !p1 || !p2) continue;
+    const abs1: AutoRouteEndpoint = { ...getAbsolutePinPos(d1, p1), deviceId: d1.id };
+    const abs2: AutoRouteEndpoint = { ...getAbsolutePinPos(d2, p2), deviceId: d2.id };
+    const pairKey = [d1.id, d2.id].sort().join('|');
+    const dirKey = `${abs1.direction}->${abs2.direction}`;
+    const primaryCoord =
+      abs1.direction === 'top' || abs1.direction === 'bottom' ? abs1.x : abs1.y;
+    metas.push({
+      wire: w,
+      abs1,
+      abs2,
+      bundleKey: `${pairKey}:${dirKey}`,
+      sortCoord: primaryCoord,
+    });
+  }
+
+  const byBundle = new Map<string, WireMeta[]>();
+  for (const m of metas) {
+    const arr = byBundle.get(m.bundleKey) || [];
+    arr.push(m);
+    byBundle.set(m.bundleKey, arr);
+  }
+
+  const plans: Array<{
+    wire: E3Wire;
+    abs1: AutoRouteEndpoint;
+    abs2: AutoRouteEndpoint;
+    exitStub: number;
+    entryStub: number;
+    laneOffset: number;
+  }> = [];
+
+  for (const group of byBundle.values()) {
+    group.sort((a, b) => a.sortCoord - b.sortCoord || a.wire.id.localeCompare(b.wire.id, 'ru', { numeric: true }));
+    const n = group.length;
+    const goingRight = group.reduce((s, m) => s + (m.abs2.x - m.abs1.x), 0) >= 0;
+    const goingDown = group.reduce((s, m) => s + (m.abs2.y - m.abs1.y), 0) >= 0;
+
+    group.forEach((m, i) => {
+      let exitStub = stub;
+      let entryStub = stub;
+      let laneOffset = 0;
+      if (n > 1) {
+        const isVertExit = m.abs1.direction === 'bottom' || m.abs1.direction === 'top';
+        const invertExit = isVertExit ? goingRight : goingDown;
+        const exitIdx = invertExit ? n - 1 - i : i;
+        const entryIdx = i;
+        exitStub = 12 + exitIdx * 12;
+        entryStub = 12 + entryIdx * 12;
+        laneOffset = Math.round((i - (n - 1) / 2) * 14);
+      }
+      plans.push({
+        wire: m.wire,
+        abs1: m.abs1,
+        abs2: m.abs2,
+        exitStub,
+        entryStub,
+        laneOffset,
+      });
+    });
+  }
+
+  // Deterministic order: shortest span or multi-wire bundles cleanly sequenced
+  plans.sort(
+    (a, b) =>
+      Math.hypot(a.abs2.x - a.abs1.x, a.abs2.y - a.abs1.y) -
+        Math.hypot(b.abs2.x - b.abs1.x, b.abs2.y - b.abs1.y) ||
+      a.wire.id.localeCompare(b.wire.id, 'ru', { numeric: true })
+  );
+  return plans;
+}
+
 /** Re-routes all wires attached to one or more moved/updated devices, preserving stationary wire separation. */
 export function rerouteAttachedWires(
   movedDeviceIds: string | string[],
   allDevices: E3Device[],
   allWires: E3Wire[],
-  stub = 20
+  stub = 20,
+  sheets?: E3Sheet[]
 ): E3Wire[] {
   const movedSet = new Set(Array.isArray(movedDeviceIds) ? movedDeviceIds : [movedDeviceIds]);
   const devMap = new Map(allDevices.map((d) => [d.id, d]));
+  const sheetMap = new Map((sheets || []).map((s) => [s.id, s]));
 
   // Seed occupied segments from stationary wires on affected sheets
   const affectedSheets = new Set<string>();
@@ -538,38 +820,37 @@ export function rerouteAttachedWires(
   for (const shId of affectedSheets) {
     const sheetObs = allDevices
       .filter((d) => d.sheetId === shId && d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
-      .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
+      .map((d) => getDeviceBounds(d));
     obstaclesBySheet.set(shId, sheetObs);
 
     const occ: WireSegment[] = [];
     for (const w of allWires) {
       if (w.sheetId !== shId) continue;
       if (movedSet.has(w.fromDeviceId) || movedSet.has(w.toDeviceId)) continue;
-      occ.push(...extractWireSegments(w.waypoints));
+      occ.push(...extractWireSegments(w.waypoints, w.netName));
     }
     occupiedBySheet.set(shId, occ);
   }
 
-  // Determine deterministic routing order for attached wires so parallel phase bundles stay crisp
-  const attachedWires = allWires
-    .filter((w) => movedSet.has(w.fromDeviceId) || movedSet.has(w.toDeviceId))
-    .sort((a, b) => a.id.localeCompare(b.id, 'ru', { numeric: true }));
+  const attachedWires = allWires.filter(
+    (w) => movedSet.has(w.fromDeviceId) || movedSet.has(w.toDeviceId)
+  );
+  const plans = assignBundleRoutingPlans(attachedWires, devMap, stub);
 
   const routedById = new Map<string, Array<{ x: number; y: number }>>();
-  for (const w of attachedWires) {
-    const d1 = devMap.get(w.fromDeviceId);
-    const d2 = devMap.get(w.toDeviceId);
-    const p1 = d1?.pins.find((p) => p.id === w.fromPinId);
-    const p2 = d2?.pins.find((p) => p.id === w.toPinId);
-    if (!d1 || !d2 || !p1 || !p2) continue;
-
-    const abs1: AutoRouteEndpoint = { ...getAbsolutePinPos(d1, p1), deviceId: d1.id };
-    const abs2: AutoRouteEndpoint = { ...getAbsolutePinPos(d2, p2), deviceId: d2.id };
+  for (const plan of plans) {
+    const w = plan.wire;
     const occ = occupiedBySheet.get(w.sheetId) || [];
     const obs = obstaclesBySheet.get(w.sheetId) || [];
-    const pts = autoRouteOrthogonal(abs1, abs2, stub, obs, 0, occ);
+    const sheetBounds = getSheetDrawableBounds(sheetMap.get(w.sheetId));
+    const pts = autoRouteOrthogonal(plan.abs1, plan.abs2, stub, obs, plan.laneOffset, occ, {
+      netName: w.netName,
+      sheetBounds,
+      exitStub: plan.exitStub,
+      entryStub: plan.entryStub,
+    });
     routedById.set(w.id, pts);
-    occ.push(...extractWireSegments(pts));
+    occ.push(...extractWireSegments(pts, w.netName));
     occupiedBySheet.set(w.sheetId, occ);
   }
 
@@ -584,41 +865,207 @@ export function routeSheetWiresCleanly(
   devices: E3Device[],
   wires: E3Wire[],
   targetSheetId: string,
-  gridSize = 20
+  gridSize = 20,
+  sheets?: E3Sheet[]
 ): E3Wire[] {
   const sheetDevices = devices.filter(
     (d) => d.sheetId === targetSheetId && d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix'
   );
   const devMap = new Map(sheetDevices.map((d) => [d.id, d]));
-  const obstacles: RoutingRect[] = sheetDevices.map((d) => ({
-    id: d.id,
-    x: d.x,
-    y: d.y,
-    width: d.width,
-    height: d.height,
-  }));
+  const obstacles: RoutingRect[] = sheetDevices.map((d) => getDeviceBounds(d));
+  const targetSheet = sheets?.find((s) => s.id === targetSheetId);
+  const sheetBounds = getSheetDrawableBounds(targetSheet);
+
+  const targetWires = wires.filter((w) => w.sheetId === targetSheetId);
+  const plans = assignBundleRoutingPlans(targetWires, devMap, Math.max(16, Math.round(gridSize)));
   const occupied: WireSegment[] = [];
-  const laneStep = Math.max(12, Math.round(gridSize * 0.7));
+  const routedById = new Map<string, Array<{ x: number; y: number }>>();
 
-  return wires.map((w, idx) => {
+  for (const plan of plans) {
+    const w = plan.wire;
+    const pts = autoRouteOrthogonal(plan.abs1, plan.abs2, 20, obstacles, plan.laneOffset, occupied, {
+      netName: w.netName,
+      sheetBounds,
+      exitStub: plan.exitStub,
+      entryStub: plan.entryStub,
+    });
+    routedById.set(w.id, pts);
+    occupied.push(...extractWireSegments(pts, w.netName));
+  }
+
+  return wires.map((w) => {
     if (w.sheetId !== targetSheetId) return w;
-    const d1 = devMap.get(w.fromDeviceId);
-    const d2 = devMap.get(w.toDeviceId);
-    const p1 = d1?.pins.find((p) => p.id === w.fromPinId);
-    const p2 = d2?.pins.find((p) => p.id === w.toPinId);
-    if (!d1 || !d2 || !p1 || !p2) return w;
-
-    const abs1: AutoRouteEndpoint = { ...getAbsolutePinPos(d1, p1), deviceId: d1.id };
-    const abs2: AutoRouteEndpoint = { ...getAbsolutePinPos(d2, p2), deviceId: d2.id };
-    const laneOffset = ((idx % 5) - 2) * laneStep;
-    const pts = autoRouteOrthogonal(abs1, abs2, 20, obstacles, laneOffset, occupied);
-    occupied.push(...extractWireSegments(pts));
-
-    return {
-      ...w,
-      waypoints: pts,
-    };
+    const pts = routedById.get(w.id);
+    return pts ? { ...w, waypoints: pts } : w;
   });
+}
+
+export interface WireJunctionDot {
+  x: number;
+  y: number;
+  netName: string;
+  signalType: SignalType;
+}
+
+/** Detects both multi-way shared nodes (>=3 wires) and T-tap endpoints resting on another same-net wire segment. */
+export function computeWireJunctionDots(sheetWires: E3Wire[]): WireJunctionDot[] {
+  const dots: WireJunctionDot[] = [];
+  const addDot = (x: number, y: number, netName: string, signalType: SignalType) => {
+    if (!dots.some((d) => d.netName === netName && Math.abs(d.x - x) <= 2 && Math.abs(d.y - y) <= 2)) {
+      dots.push({ x: Math.round(x), y: Math.round(y), netName, signalType });
+    }
+  };
+
+  // 1. Multi-segment vertex degree >= 3 on same net
+  const nodeDegrees = new Map<string, { x: number; y: number; netName: string; signalType: SignalType; count: number }>();
+  for (const w of sheetWires) {
+    for (let i = 0; i < w.waypoints.length; i++) {
+      const pt = w.waypoints[i];
+      const degHere = i === 0 || i === w.waypoints.length - 1 ? 1 : 2;
+      const key = `${w.netName}|${Math.round(pt.x)},${Math.round(pt.y)}`;
+      const prev = nodeDegrees.get(key);
+      if (prev) prev.count += degHere;
+      else nodeDegrees.set(key, { x: pt.x, y: pt.y, netName: w.netName, signalType: w.signalType, count: degHere });
+    }
+  }
+  for (const item of nodeDegrees.values()) {
+    if (item.count >= 3) {
+      addDot(item.x, item.y, item.netName, item.signalType);
+    }
+  }
+
+  // 2. Wire endpoint landing strictly inside a same-net wire segment (T-tap)
+  for (const w1 of sheetWires) {
+    if (w1.waypoints.length < 2) continue;
+    const ends = [w1.waypoints[0], w1.waypoints[w1.waypoints.length - 1]];
+    for (const endPt of ends) {
+      for (const w2 of sheetWires) {
+        if (w2.id === w1.id || w2.netName !== w1.netName) continue;
+        for (let i = 0; i < w2.waypoints.length - 1; i++) {
+          const a = w2.waypoints[i];
+          const b = w2.waypoints[i + 1];
+          const isH = Math.abs(a.y - b.y) < 1;
+          const isV = Math.abs(a.x - b.x) < 1;
+          if (isH) {
+            const minX = Math.min(a.x, b.x);
+            const maxX = Math.max(a.x, b.x);
+            if (Math.abs(endPt.y - a.y) <= 1.5 && endPt.x > minX + 2 && endPt.x < maxX - 2) {
+              addDot(endPt.x, a.y, w1.netName, w1.signalType);
+            }
+          } else if (isV) {
+            const minY = Math.min(a.y, b.y);
+            const maxY = Math.max(a.y, b.y);
+            if (Math.abs(endPt.x - a.x) <= 1.5 && endPt.y > minY + 2 && endPt.y < maxY - 2) {
+              addDot(a.x, endPt.y, w1.netName, w1.signalType);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return dots;
+}
+
+export interface WireCrossingArc {
+  x: number;
+  y: number;
+  wireId: string;
+  signalType: SignalType;
+}
+
+/** Finds non-connected orthogonal wire crossings (bridges/hops on horizontal segments). */
+export function computeWireCrossingArcs(
+  sheetWires: E3Wire[],
+  junctionDots: WireJunctionDot[]
+): WireCrossingArc[] {
+  const horizSegs: Array<{ wireId: string; netName: string; signalType: SignalType; y: number; minX: number; maxX: number }> = [];
+  const vertSegs: Array<{ wireId: string; netName: string; x: number; minY: number; maxY: number }> = [];
+
+  for (const w of sheetWires) {
+    for (let i = 0; i < w.waypoints.length - 1; i++) {
+      const a = w.waypoints[i];
+      const b = w.waypoints[i + 1];
+      if (Math.abs(a.y - b.y) < 0.5 && Math.abs(a.x - b.x) > 12) {
+        horizSegs.push({
+          wireId: w.id,
+          netName: w.netName,
+          signalType: w.signalType,
+          y: Math.round(a.y),
+          minX: Math.min(a.x, b.x),
+          maxX: Math.max(a.x, b.x),
+        });
+      } else if (Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) > 12) {
+        vertSegs.push({
+          wireId: w.id,
+          netName: w.netName,
+          x: Math.round(a.x),
+          minY: Math.min(a.y, b.y),
+          maxY: Math.max(a.y, b.y),
+        });
+      }
+    }
+  }
+
+  const arcs: WireCrossingArc[] = [];
+  for (const h of horizSegs) {
+    for (const v of vertSegs) {
+      if (h.wireId === v.wireId || h.netName === v.netName) continue;
+      if (v.x > h.minX + 7 && v.x < h.maxX - 7 && h.y > v.minY + 7 && h.y < v.maxY - 7) {
+        const isDot = junctionDots.some((d) => Math.abs(d.x - v.x) <= 5 && Math.abs(d.y - h.y) <= 5);
+        if (isDot) continue;
+        if (!arcs.some((a) => a.wireId === h.wireId && Math.abs(a.y - h.y) <= 2 && Math.abs(a.x - v.x) < 11)) {
+          arcs.push({ x: v.x, y: h.y, wireId: h.wireId, signalType: h.signalType });
+        }
+      }
+    }
+  }
+  return arcs;
+}
+
+export function computeWireLabelPositions(
+  sheetWires: E3Wire[],
+  sheetDevices: E3Device[]
+): Map<string, { x: number; y: number }> {
+  const result = new Map<string, { x: number; y: number }>();
+  const devBounds = sheetDevices
+    .filter((d) => d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
+    .map((d) => getDeviceBounds(d));
+  const placed: Array<{ x: number; y: number }> = [];
+
+  for (const wire of sheetWires) {
+    if (wire.waypoints.length < 2) continue;
+    const candidates: Array<{ x: number; y: number; score: number }> = [];
+    for (let i = 0; i < wire.waypoints.length - 1; i++) {
+      const a = wire.waypoints[i];
+      const b = wire.waypoints[i + 1];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 6) continue;
+      for (const t of [0.5, 0.35, 0.65]) {
+        const cx = Math.round(a.x + (b.x - a.x) * t);
+        const cy = Math.round(a.y + (b.y - a.y) * t);
+        let penalty = t === 0.5 ? 0 : 12;
+        for (const db of devBounds) {
+          if (cx >= db.x - 14 && cx <= db.x + db.width + 14 && cy >= db.y - 12 && cy <= db.y + db.height + 12) {
+            penalty += 300;
+          }
+        }
+        for (const p of placed) {
+          if (Math.abs(cx - p.x) < 28 && Math.abs(cy - p.y) < 15) {
+            penalty += 180;
+          }
+        }
+        candidates.push({ x: cx, y: cy, score: len - penalty });
+      }
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    const chosen = candidates[0]
+      ? { x: candidates[0].x, y: candidates[0].y }
+      : { x: wire.waypoints[0].x, y: wire.waypoints[0].y };
+    result.set(wire.id, chosen);
+    placed.push(chosen);
+  }
+  return result;
 }
 
 function deduplicatePoints(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
@@ -920,7 +1367,7 @@ export function serializeE3Xml(project: E3Project): string {
   // Visual Settings synchronization block
   const vs = project.visualSettings;
   lines.push(
-    `  <VisualSettings schemaVersion="${vs.schemaVersion}" presetName="${xmlEscape(vs.presetName)}" theme="${vs.theme}" gridSize="${vs.gridSize}" snapToGrid="${vs.snapToGrid}" showGrid="${vs.showGrid}" showGostFrame="${vs.showGostFrame}" showPinNumbers="${vs.showPinNumbers}" showWireNumbers="${vs.showWireNumbers}" showCrossRefs="${vs.showCrossRefs}" wireWidth="${vs.wireWidth}" symbolStrokeWidth="${vs.symbolStrokeWidth}" fontScale="${vs.fontScale}" fontFamily="${xmlEscape(vs.fontFamily || 'GOST')}">`
+    `  <VisualSettings schemaVersion="${vs.schemaVersion}" presetName="${xmlEscape(vs.presetName)}" theme="${vs.theme}" gridSize="${vs.gridSize}" snapToGrid="${vs.snapToGrid}" smartGuides="${vs.smartGuides !== false}" showGrid="${vs.showGrid}" showGostFrame="${vs.showGostFrame}" showPinNumbers="${vs.showPinNumbers}" showWireNumbers="${vs.showWireNumbers}" showCrossRefs="${vs.showCrossRefs}" wireWidth="${vs.wireWidth}" symbolStrokeWidth="${vs.symbolStrokeWidth}" frameStrokeWidth="${vs.frameStrokeWidth ?? 1.6}" annotationStrokeWidth="${vs.annotationStrokeWidth ?? 1.4}" wireCrossingBridge="${vs.wireCrossingBridge !== false}" fontScale="${vs.fontScale}" fontFamily="${xmlEscape(vs.fontFamily || 'GOST')}">`
   );
   for (const [sig, color] of Object.entries(vs.netColors)) {
     lines.push(`    <NetColor signalType="${xmlEscape(sig)}" hex="${xmlEscape(color)}" />`);
@@ -984,7 +1431,7 @@ export function serializeE3Xml(project: E3Project): string {
     lines.push('  <Annotations>');
     for (const ann of project.annotations) {
       lines.push(
-        `    <Annotation id="${xmlEscape(ann.id)}" sheetId="${xmlEscape(ann.sheetId)}" kind="${xmlEscape(ann.kind)}" x="${ann.x}" y="${ann.y}" width="${ann.width}" height="${ann.height}" text="${xmlEscape(ann.text)}" color="${xmlEscape(ann.color || '')}" fontSize="${ann.fontSize || 12}" />`
+        `    <Annotation id="${xmlEscape(ann.id)}" sheetId="${xmlEscape(ann.sheetId)}" kind="${xmlEscape(ann.kind)}" x="${ann.x}" y="${ann.y}" width="${ann.width}" height="${ann.height}" text="${xmlEscape(ann.text)}" color="${xmlEscape(ann.color || '')}" fontSize="${ann.fontSize || 12}" strokeWidth="${ann.strokeWidth ?? ''}" strokeStyle="${xmlEscape(ann.strokeStyle || '')}" />`
       );
     }
     lines.push('  </Annotations>');
@@ -1029,6 +1476,7 @@ export function parseE3Xml(xml: string): E3Project {
     visualSettings.theme = va.theme === 'dark' ? 'dark' : 'light';
     visualSettings.gridSize = Number(va.gridSize || 20);
     visualSettings.snapToGrid = va.snapToGrid !== 'false';
+    if (va.smartGuides !== undefined) visualSettings.smartGuides = va.smartGuides !== 'false';
     visualSettings.showGrid = va.showGrid !== 'false';
     visualSettings.showGostFrame = va.showGostFrame !== 'false';
     visualSettings.showPinNumbers = va.showPinNumbers !== 'false';
@@ -1036,6 +1484,11 @@ export function parseE3Xml(xml: string): E3Project {
     visualSettings.showCrossRefs = va.showCrossRefs !== 'false';
     visualSettings.wireWidth = Number(va.wireWidth || 2);
     visualSettings.symbolStrokeWidth = Number(va.symbolStrokeWidth || 1.75);
+    visualSettings.frameStrokeWidth = va.frameStrokeWidth ? Number(va.frameStrokeWidth) : 1.6;
+    visualSettings.annotationStrokeWidth = va.annotationStrokeWidth ? Number(va.annotationStrokeWidth) : 1.4;
+    if (va.wireCrossingBridge !== undefined) {
+      visualSettings.wireCrossingBridge = va.wireCrossingBridge !== 'false';
+    }
     visualSettings.fontScale = Number(va.fontScale || 1);
     if (va.fontFamily) {
       visualSettings.fontFamily = va.fontFamily as SchematicFontFamily;
@@ -1216,6 +1669,11 @@ export function parseE3Xml(xml: string): E3Project {
       text: aa.text || '',
       color: aa.color || undefined,
       fontSize: aa.fontSize ? Number(aa.fontSize) : undefined,
+      strokeWidth: aa.strokeWidth ? Number(aa.strokeWidth) : undefined,
+      strokeStyle:
+        aa.strokeStyle === 'solid' || aa.strokeStyle === 'dashed' || aa.strokeStyle === 'dotted'
+          ? aa.strokeStyle
+          : undefined,
     });
   }
 

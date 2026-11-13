@@ -8,8 +8,11 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ClipboardPaste,
   Columns2,
+  Copy,
   CopyPlus,
+  Cpu,
   Database,
   Download,
   FileCode2,
@@ -36,8 +39,10 @@ import {
   Plus,
   Printer,
   Redo2,
+  RefreshCw,
   RotateCcw,
   RotateCw,
+  Send,
   Settings,
   Share2,
   Spline,
@@ -49,7 +54,6 @@ import {
   Type,
   Undo2,
   Upload,
-  Wand2,
   Workflow,
   Zap,
   ZoomIn,
@@ -67,13 +71,14 @@ import type {
   CadTool,
   E3Project,
   E3Sheet,
+  E3VisualSettings,
   SchematicFontFamily,
   SheetFormat,
 } from '../core/e3Types';
 import { LayerManagerPopover } from './LayerManagerPopover';
 
 export type { CadTool };
-export type RibbonSectionId = 'home' | 'drafting' | 'annotations' | 'sheet' | 'view' | 'export';
+export type RibbonSectionId = 'home' | 'drafting' | 'annotations' | 'sheet' | 'view' | 'flux' | 'export';
 type AppMenuCategory = 'file' | 'export' | 'stamps' | 'system';
 
 interface TopToolbarProps {
@@ -85,14 +90,19 @@ interface TopToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   hasSelection: boolean;
+  hasClipboard?: boolean;
   ercErrorCount: number;
   isBusy: boolean;
   e3BridgeHost: string | null;
+  fluxHosted?: boolean;
   onSetTool: (tool: CadTool) => void;
   onSetViewportLayout: (mode: ViewportLayoutMode) => void;
   onResetDockLayout: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onCopySelected?: () => void;
+  onPasteClipboard?: () => void;
+  onDuplicateSelected?: () => void;
   onRotateSelected: () => void;
   onDeleteSelected: () => void;
   onZoomChange: (nextZoom: number) => void;
@@ -106,6 +116,7 @@ interface TopToolbarProps {
   onToggleCrossRefs: () => void;
   onUpdateSheetFormat: (sheetId: string, format: SheetFormat) => void;
   onUpdateFontFamily: (font: SchematicFontFamily) => void;
+  onUpdateVisualSettings?: (patch: Partial<E3VisualSettings>) => void;
   onDuplicateSheet: (sheetId: string) => void;
   onDeleteSheet: (sheetId: string) => void;
   onRunErc: () => void;
@@ -121,6 +132,9 @@ interface TopToolbarProps {
   onToggleTheme: () => void;
   onDownloadCodebase: () => void;
   onDownloadFluxStudioZip: () => void;
+  onOpenFluxPublishModal: () => void;
+  onPushToFluxHost: () => void;
+  onOpenFluxBusConsole: () => void;
   onExportE3sOle2: () => void;
   onExportE3sXml: () => void;
   onExportFluxBridge: () => void;
@@ -147,6 +161,7 @@ const RIBBON_TABS: Array<{ id: RibbonSectionId; label: string }> = [
   { id: 'annotations', label: 'Аннотации' },
   { id: 'sheet', label: 'Лист и ФСА' },
   { id: 'view', label: 'Вид' },
+  { id: 'flux', label: 'Flux' },
   { id: 'export', label: 'E³.series' },
 ];
 
@@ -157,11 +172,11 @@ const RibbonPanel: React.FC<{ title: string; isLast?: boolean; children: React.R
 }) => (
   <div
     className={`flex flex-col justify-between h-full px-2.5 py-1 shrink-0 ${
-      isLast ? '' : 'border-r border-[var(--flux-line)]'
+      isLast ? '' : 'border-r border-[var(--flux-line)]/80'
     }`}
   >
     <div className="flex-1 flex items-center gap-1 min-h-0">{children}</div>
-    <div className="text-[10px] leading-none text-center text-[var(--flux-text-muted)] tracking-wide pt-0.5 select-none whitespace-nowrap">
+    <div className="text-[9.5px] leading-none font-medium text-center text-[var(--flux-text-muted)]/85 tracking-[0.03em] pt-0.5 select-none whitespace-nowrap">
       {title}
     </div>
   </div>
@@ -190,25 +205,93 @@ const LargeRibbonBtn: React.FC<LargeRibbonBtnProps> = ({
   testId,
   onClick,
 }) => (
-  <button
+  <motion.button
     type="button"
     data-testid={testId}
     onClick={onClick}
     disabled={disabled}
     title={title || label}
-    className={`flex flex-col items-center justify-center gap-1 min-w-[56px] h-[54px] px-2 rounded border transition-colors whitespace-nowrap shrink-0 disabled:opacity-35 ${
+    whileTap={disabled ? undefined : { scale: 0.97 }}
+    transition={{ duration: 0.1 }}
+    className={`group flex flex-col items-center justify-center gap-1 min-w-[52px] h-[52px] px-2 rounded border transition-colors whitespace-nowrap shrink-0 disabled:opacity-35 ${
       active
-        ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)] text-[var(--flux-text)] shadow-xs'
+        ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)]/75 text-[var(--flux-text)] shadow-xs'
         : accent
-          ? 'bg-[var(--flux-accent-soft)] border-[var(--flux-accent)]/70 text-[var(--flux-text)] hover:border-[var(--flux-accent)] hover:bg-[var(--flux-hover)]'
+          ? 'bg-[var(--flux-accent-soft)] border-[var(--flux-accent)]/45 text-[var(--flux-text)] hover:border-[var(--flux-accent)] hover:bg-[var(--flux-sel)]'
           : danger
-            ? 'border-transparent text-rose-600 dark:text-rose-400 hover:bg-[var(--flux-hover)] hover:border-[var(--flux-line)]'
+            ? 'border-transparent text-[var(--flux-text)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--flux-hover)] hover:border-[var(--flux-line)]'
             : 'border-transparent text-[var(--flux-text)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-line)]'
     }`}
   >
-    <span className="shrink-0 flex items-center justify-center">{icon}</span>
+    <span
+      className={`shrink-0 flex items-center justify-center transition-colors ${
+        active || accent
+          ? 'text-[var(--flux-accent)]'
+          : danger
+            ? 'text-[var(--flux-text-muted)] group-hover:text-rose-600 dark:group-hover:text-rose-400'
+            : 'text-[var(--flux-text-muted)] group-hover:text-[var(--flux-text)]'
+      }`}
+    >
+      {icon}
+    </span>
     <span className="text-[11px] leading-none font-medium text-center">{label}</span>
-  </button>
+  </motion.button>
+);
+
+const RibbonStack: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="flex flex-col justify-between h-[52px] gap-0.5 shrink-0">{children}</div>
+);
+
+interface SmallRibbonBtnProps {
+  icon: React.ReactNode;
+  label: string;
+  title?: string;
+  active?: boolean;
+  danger?: boolean;
+  disabled?: boolean;
+  testId?: string;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}
+
+const SmallRibbonBtn: React.FC<SmallRibbonBtnProps> = ({
+  icon,
+  label,
+  title,
+  active = false,
+  danger = false,
+  disabled = false,
+  testId,
+  onClick,
+}) => (
+  <motion.button
+    type="button"
+    data-testid={testId}
+    onClick={onClick}
+    disabled={disabled}
+    title={title || label}
+    whileTap={disabled ? undefined : { scale: 0.98 }}
+    transition={{ duration: 0.08 }}
+    className={`group h-[25px] px-2 rounded border inline-flex items-center gap-1.5 text-[11px] font-medium transition-colors whitespace-nowrap shrink-0 disabled:opacity-35 ${
+      active
+        ? 'bg-[var(--flux-hover)] border-[var(--flux-line-strong)] text-[var(--flux-text)]'
+        : danger
+          ? 'border-transparent text-[var(--flux-text)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--flux-hover)] hover:border-[var(--flux-line)]'
+          : 'border-transparent text-[var(--flux-text)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-line)]'
+    }`}
+  >
+    <span
+      className={`shrink-0 flex items-center justify-center transition-colors ${
+        active
+          ? 'text-[var(--flux-accent)]'
+          : danger
+            ? 'text-[var(--flux-text-muted)] group-hover:text-rose-600 dark:group-hover:text-rose-400'
+            : 'text-[var(--flux-text-muted)] group-hover:text-[var(--flux-text)]'
+      }`}
+    >
+      {icon}
+    </span>
+    <span className="leading-none">{label}</span>
+  </motion.button>
 );
 
 interface AppMenuActionRowProps {
@@ -236,7 +319,7 @@ const AppMenuActionRow: React.FC<AppMenuActionRowProps> = ({
   testId,
   onClick,
 }) => {
-  const cls = `w-full px-3 py-2 flex items-center justify-between gap-3 text-left transition-colors rounded ${
+  const cls = `group w-full px-3 py-2 flex items-center justify-between gap-3 text-left transition-colors rounded ${
     disabled
       ? 'opacity-40 pointer-events-none'
       : danger
@@ -247,7 +330,15 @@ const AppMenuActionRow: React.FC<AppMenuActionRowProps> = ({
   const inner = (
     <>
       <div className="flex items-start gap-2.5 min-w-0">
-        <span className="mt-0.5 shrink-0 text-[var(--flux-accent)]">{icon}</span>
+        <span
+          className={`mt-0.5 shrink-0 transition-colors ${
+            danger
+              ? 'text-rose-600 dark:text-rose-400'
+              : 'text-[var(--flux-text-muted)] group-hover:text-[var(--flux-accent)]'
+          }`}
+        >
+          {icon}
+        </span>
         <div className="min-w-0">
           <div className="text-[12px] font-medium leading-tight truncate">{title}</div>
           {subtitle && (
@@ -289,14 +380,18 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   canUndo,
   canRedo,
   hasSelection,
+  hasClipboard = false,
   ercErrorCount,
   isBusy,
   e3BridgeHost,
+  fluxHosted = false,
   onSetTool,
   onSetViewportLayout,
   onResetDockLayout,
   onUndo,
   onRedo,
+  onCopySelected,
+  onPasteClipboard,
   onRotateSelected,
   onDeleteSelected,
   onZoomChange,
@@ -310,6 +405,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onToggleCrossRefs,
   onUpdateSheetFormat,
   onUpdateFontFamily,
+  onUpdateVisualSettings,
   onDuplicateSheet,
   onDeleteSheet,
   onRunErc,
@@ -325,6 +421,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onToggleTheme,
   onDownloadCodebase,
   onDownloadFluxStudioZip,
+  onOpenFluxPublishModal,
+  onPushToFluxHost,
+  onOpenFluxBusConsole,
   onExportE3sOle2,
   onExportE3sXml,
   onExportFluxBridge,
@@ -426,10 +525,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         }}
       />
 
-      {/* Row 1: AutoCAD Main Application Button + Quick Access Toolbar + Centered Document Title */}
+      {/* Row 1: Architectural Application Button + Monochrome Quick Access Toolbar + Document Title */}
       <div className="flex items-center justify-between gap-2 lg:gap-4 px-2 lg:px-2.5 h-9 border-b border-[var(--flux-line)] min-w-0 bg-[var(--flux-surface)]">
-        <div className="flex items-center gap-1 shrink-0">
-          {/* AutoCAD-style Left Main Application Button */}
+        <div className="flex items-center gap-0.5 shrink-0">
           <button
             ref={menuBtnRef}
             type="button"
@@ -438,24 +536,24 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             aria-expanded={appMenuOpen}
             onClick={() => setAppMenuOpen((o) => !o)}
             title="Главное меню программы: файлы, экспорт, штампы, настройки"
-            className={`inline-flex items-center gap-1.5 h-7 pl-2 pr-2 rounded font-semibold text-[12px] tracking-tight transition-colors whitespace-nowrap shrink-0 mr-1 ${
+            className={`inline-flex items-center gap-1.5 h-7 pl-2 pr-2 rounded font-semibold text-[12px] tracking-tight border transition-colors whitespace-nowrap shrink-0 mr-1.5 ${
               appMenuOpen
-                ? 'bg-[var(--flux-accent-hover)] text-white shadow-xs'
-                : 'bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white'
+                ? 'bg-slate-800 dark:bg-slate-700 text-white border-[var(--flux-accent)]/70 shadow-xs'
+                : 'bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-slate-50 border-slate-700/70'
             }`}
           >
             <svg width="14" height="14" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-              <rect x="1.5" y="1.5" width="15" height="15" rx="2.5" stroke="currentColor" strokeWidth="1.7" />
+              <rect x="1.5" y="1.5" width="15" height="15" rx="2.5" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.5" />
               <path
-                d="M4.5 9h3.5l2-3.5 2 7 1.5-3.5H13.5"
-                stroke="currentColor"
+                d="M4.2 9h3.4l1.9-3.6 2 7.2 1.6-3.6H14"
+                stroke="#10b981"
                 strokeWidth="1.6"
                 strokeLinecap="square"
                 strokeLinejoin="miter"
               />
             </svg>
             <span style={{ fontFamily: 'var(--font-display)' }}>E3ProMax</span>
-            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${appMenuOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-3.5 h-3.5 opacity-75 transition-transform duration-150 ${appMenuOpen ? 'rotate-180' : ''}`} />
           </button>
 
           <span className="h-4 w-px bg-[var(--flux-line)] mr-1 shrink-0" aria-hidden="true" />
@@ -466,9 +564,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             onClick={() => fileInputRef.current?.click()}
             title="Открыть файл .e3s / .e3d / XML / JSON"
             aria-label="Открыть файл .e3s"
-            className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
           >
-            <Upload className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <Upload className="w-3.5 h-3.5" />
           </button>
 
           <button
@@ -476,9 +574,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             onClick={onOpenPublishModal}
             title="Пакетная публикация (PDF / AutoCAD DXF)"
             aria-label="Пакетная публикация"
-            className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
           >
-            <Download className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <Download className="w-3.5 h-3.5" />
           </button>
 
           <button
@@ -490,15 +588,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                 : 'Перенести проект в E³.series 2022'
             }
             aria-label="В E3.series"
-            className="relative inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            className="relative inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
           >
-            <Share2 className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <Share2 className="w-3.5 h-3.5" />
             {e3BridgeHost && (
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 absolute top-1 right-1" />
             )}
           </button>
 
-          <span className="h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
+          <span className="h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
 
           <button
             type="button"
@@ -506,7 +604,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             disabled={!canUndo}
             title="Отменить (Ctrl+Z)"
             aria-label="Отменить действие"
-            className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-35 transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
           >
             <Undo2 className="w-3.5 h-3.5" />
           </button>
@@ -516,7 +614,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             disabled={!canRedo}
             title="Повторить (Ctrl+Y)"
             aria-label="Повторить действие"
-            className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-35 transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
           >
             <Redo2 className="w-3.5 h-3.5" />
           </button>
@@ -524,7 +622,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 
         {/* Centered Document Title */}
         <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
-          <span className="text-[12px] font-medium text-[var(--flux-text)] truncate max-w-[200px] md:max-w-[320px] lg:max-w-[440px]">
+          <span className="text-[12px] font-medium text-[var(--flux-text)] truncate max-w-[200px] md:max-w-[320px] lg:max-w-[460px]">
             {project.name}
           </span>
           <span className="hidden xl:inline text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
@@ -532,8 +630,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           </span>
         </div>
 
-        {/* Minimal Right Window Utilities (Theme + Ribbon Collapse) */}
-        <div className="flex items-center gap-1 shrink-0">
+        {/* Right Window Utilities */}
+        <div className="flex items-center gap-0.5 shrink-0">
           <button
             type="button"
             onClick={onOpenVisualModal}
@@ -571,7 +669,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         </div>
       </div>
 
-      {/* AutoCAD-style Floating Application Menu Drawer */}
+      {/* Floating Application Menu Drawer */}
       <AnimatePresence>
         {appMenuOpen && (
           <motion.div
@@ -583,7 +681,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.99 }}
             transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute top-9 left-2 z-50 w-[min(640px,calc(100vw-16px))] rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden flex flex-col"
+            style={{ boxShadow: 'var(--flux-popover-shadow)' }}
+            className="absolute top-9 left-2 z-50 w-[min(640px,calc(100vw-16px))] rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] overflow-hidden flex flex-col"
           >
             <div className="grid grid-cols-1 sm:grid-cols-12 min-h-[340px] max-h-[78vh]">
               {/* Left Navigation Categories */}
@@ -621,7 +720,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                   })}
                 </div>
 
-                {/* Project Summary Metadata */}
                 <div className="pt-2.5 border-t border-[var(--flux-line)] px-1.5 space-y-1 text-[11px] text-[var(--flux-text-muted)]">
                   <div className="font-mono text-[var(--flux-text)] truncate">{project.projectCode}</div>
                   <div className="font-mono tabular-nums">
@@ -672,7 +770,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                       onClick={() => activeSheet && runMenuAction(() => onDuplicateSheet(activeSheet.id))}
                     />
                     <AppMenuActionRow
-                      icon={<FileX2 className="w-4 h-4 text-rose-600 dark:text-rose-400" />}
+                      icon={<FileX2 className="w-4 h-4" />}
                       title="Удалить активный лист"
                       danger
                       disabled={!activeSheet || project.sheets.length <= 1}
@@ -833,12 +931,12 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Row 2: AutoCAD Section Tabs */}
+      {/* Row 2: Ribbon Section Tabs */}
       <div className="flex items-center justify-between px-3 h-7 border-b border-[var(--flux-line)] bg-[var(--flux-surface)]">
         <div
           role="tablist"
           aria-label="Разделы ленты инструментов"
-          className="flex items-end gap-1 h-full pt-0.5 overflow-x-auto no-scrollbar"
+          className="flex items-end gap-0.5 h-full pt-0.5 overflow-x-auto no-scrollbar"
         >
           {RIBBON_TABS.map((tab) => {
             const isActive = activeTab === tab.id;
@@ -880,621 +978,887 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         </div>
       </div>
 
-      {/* Row 3: AutoCAD Ribbon Panels */}
+      {/* Row 3: Dual-Hierarchy Structured Ribbon */}
       <AnimatePresence initial={false}>
         {!ribbonCollapsed && (
           <motion.div
             key="ribbon-body"
             data-testid="ribbon-body"
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 78, opacity: 1 }}
+            animate={{ height: 76, opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden bg-[var(--flux-bg)]"
           >
-            <div className="flex items-stretch h-[78px] px-1.5 bg-[var(--flux-bg)] overflow-x-auto no-scrollbar">
-          {activeTab === 'home' && (
-            <>
-              <RibbonPanel title="Инструменты">
-                <LargeRibbonBtn
-                  icon={<MousePointer2 className="w-5 h-5" />}
-                  label="Выбор"
-                  title="Выбор и перетаскивание элементов (V)"
-                  active={tool === 'select'}
-                  onClick={() => onSetTool('select')}
-                />
-                <LargeRibbonBtn
-                  icon={<Spline className="w-5 h-5" />}
-                  label="Провод"
-                  title="Соединить выводы проводом (W)"
-                  active={tool === 'wire'}
-                  onClick={() => onSetTool('wire')}
-                />
-                <LargeRibbonBtn
-                  icon={<Hand className="w-5 h-5" />}
-                  label="Панорама"
-                  title="Перемещение листа (H)"
-                  active={tool === 'pan'}
-                  onClick={() => onSetTool('pan')}
-                />
-              </RibbonPanel>
+            <div className="flex items-stretch h-[76px] px-1.5 bg-[var(--flux-bg)] overflow-x-auto no-scrollbar">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0, y: 2 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.13, ease: [0.22, 1, 0.36, 1] }}
+                  className="flex items-stretch h-full"
+                >
+                  {activeTab === 'home' && (
+                    <>
+                      <RibbonPanel title="Инструменты">
+                        <LargeRibbonBtn
+                          icon={<MousePointer2 className="w-[17px] h-[17px]" />}
+                          label="Выбор"
+                          title="Выбор и перетаскивание элементов (V)"
+                          active={tool === 'select'}
+                          onClick={() => onSetTool('select')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Spline className="w-[17px] h-[17px]" />}
+                          label="Провод"
+                          title="Соединить выводы проводом (W)"
+                          active={tool === 'wire'}
+                          onClick={() => onSetTool('wire')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Hand className="w-[17px] h-[17px]" />}
+                          label="Панорама"
+                          title="Перемещение листа (H)"
+                          active={tool === 'pan'}
+                          onClick={() => onSetTool('pan')}
+                        />
+                      </RibbonPanel>
 
-              <RibbonPanel title="Правка">
-                <LargeRibbonBtn
-                  icon={<RotateCw className="w-5 h-5" />}
-                  label="Поворот"
-                  title="Повернуть выбранный элемент на 90° (R)"
-                  disabled={!hasSelection}
-                  onClick={onRotateSelected}
-                />
-                <LargeRibbonBtn
-                  icon={<Trash2 className="w-5 h-5" />}
-                  label="Удалить"
-                  title="Удалить выбранный элемент (Del)"
-                  danger
-                  disabled={!hasSelection}
-                  onClick={onDeleteSelected}
-                />
-                {onToggleLayerVisibility && onToggleLayerLock && (
-                  <LargeRibbonBtn
-                    icon={<Layers className="w-5 h-5 text-[var(--flux-accent)]" />}
-                    label={
-                      layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
-                        ? `Слои (${layerSummary.visibleCount}/4)`
-                        : 'Слои'
-                    }
-                    title="Диспетчер слоёв AutoCAD (видимость и блокировка)"
-                    active={layersPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0}
-                    testId="toolbar-layers-btn"
-                    onClick={(e) => {
-                      toggleRibbonLayers(e.currentTarget);
-                    }}
-                  />
-                )}
-              </RibbonPanel>
+                      <RibbonPanel title="Правка и Трассировка">
+                        <LargeRibbonBtn
+                          icon={<Workflow className="w-[17px] h-[17px]" />}
+                          label="Выровнять"
+                          title="Выровнять соединительные линии без пересечения блоков"
+                          onClick={onAutoRouteWires}
+                        />
+                        {(onCopySelected || onPasteClipboard) && (
+                          <RibbonStack>
+                            <SmallRibbonBtn
+                              icon={<Copy className="w-3.5 h-3.5" />}
+                              label="Копир."
+                              title="Копировать выделенные объекты (Ctrl+C)"
+                              disabled={!hasSelection}
+                              testId="toolbar-copy-btn"
+                              onClick={() => onCopySelected?.()}
+                            />
+                            <SmallRibbonBtn
+                              icon={<ClipboardPaste className="w-3.5 h-3.5" />}
+                              label="Вставить"
+                              title="Вставить скопированный фрагмент схемы с авто-ОУО (Ctrl+V)"
+                              disabled={!hasClipboard}
+                              testId="toolbar-paste-btn"
+                              onClick={() => onPasteClipboard?.()}
+                            />
+                          </RibbonStack>
+                        )}
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<RotateCw className="w-3.5 h-3.5" />}
+                            label="Поворот"
+                            title="Повернуть выбранные элементы на 90° (R)"
+                            disabled={!hasSelection}
+                            onClick={onRotateSelected}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Trash2 className="w-3.5 h-3.5" />}
+                            label="Удалить"
+                            title="Удалить выбранные элементы (Del)"
+                            danger
+                            disabled={!hasSelection}
+                            onClick={onDeleteSelected}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
 
-              <RibbonPanel title="Сборка ФСА и База">
-                <LargeRibbonBtn
-                  icon={<Wand2 className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Собрать ФСА"
-                  title="Мастер автоматической сборки приточной/вытяжной схемы и внешки"
-                  accent
-                  onClick={onOpenHvacWizard}
-                />
-                <LargeRibbonBtn
-                  icon={<Workflow className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Выровнять"
-                  title="Выровнять соединительные линии без пересечения блоков"
-                  onClick={onAutoRouteWires}
-                />
-                <LargeRibbonBtn
-                  icon={<Plus className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="+ Изделие"
-                  title="Создать новое изделие с атрибутами в базе"
-                  onClick={onOpenAddCatalogItem}
-                />
-                <LargeRibbonBtn
-                  icon={<Database className="w-5 h-5" />}
-                  label="База"
-                  title="Открыть каталог изделий в левом окне"
-                  onClick={onOpenCatalogTab}
-                />
-              </RibbonPanel>
+                      <RibbonPanel title="Слои и Сетка">
+                        {onToggleLayerVisibility && onToggleLayerLock && (
+                          <LargeRibbonBtn
+                            icon={<Layers className="w-[17px] h-[17px]" />}
+                            label={
+                              layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
+                                ? `Слои (${layerSummary.visibleCount}/4)`
+                                : 'Слои'
+                            }
+                            title="Диспетчер слоёв AutoCAD (видимость и блокировка)"
+                            active={layersPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0}
+                            testId="toolbar-layers-btn"
+                            onClick={(e) => {
+                              toggleRibbonLayers(e.currentTarget);
+                            }}
+                          />
+                        )}
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Grid3X3 className="w-3.5 h-3.5" />}
+                            label="Сетка"
+                            title="Показать/скрыть чертёжную сетку"
+                            active={vs.showGrid}
+                            onClick={onToggleGrid}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Magnet className="w-3.5 h-3.5" />}
+                            label="Привязка"
+                            title="Магнитная привязка к сетке и направляющие"
+                            active={vs.snapToGrid}
+                            onClick={onToggleSnapToGrid}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
 
-              <RibbonPanel title="Проверка и Документы" isLast>
-                <LargeRibbonBtn
-                  icon={
-                    isBusy ? (
-                      <Activity className="w-5 h-5 text-[var(--flux-accent)] animate-spin" />
-                    ) : (
-                      <CheckCircle2
-                        className={`w-5 h-5 ${
-                          ercErrorCount > 0
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : 'text-emerald-600 dark:text-emerald-400'
-                        }`}
-                      />
-                    )
-                  }
-                  label={`ERC (${ercErrorCount})`}
-                  title="Проверка электрических правил схемы (ERC)"
-                  onClick={onRunErc}
-                />
-                <LargeRibbonBtn
-                  icon={<FileSpreadsheet className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Спецификация"
-                  title="Открыть панель спецификации ПЭ3 (ГОСТ 2.701)"
-                  testId="toolbar-bom-btn"
-                  onClick={onGenerateBom}
-                />
-                <LargeRibbonBtn
-                  icon={<Printer className="w-5 h-5" />}
-                  label="Отчёт ПЭ3"
-                  title="Печатная форма и перечень элементов ГОСТ"
-                  onClick={onOpenReportModal}
-                />
-                <LargeRibbonBtn
-                  icon={<FileCode2 className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="PDF / DXF"
-                  title="Пакетная публикация листов в редактируемый AutoCAD (.dxf) и PDF"
-                  testId="toolbar-publish-btn"
-                  onClick={onOpenPublishModal}
-                />
-                <LargeRibbonBtn
-                  icon={<Type className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Штамп ГОСТ"
-                  title="Редактировать основную надпись ГОСТ 2.104 (один лист или все листы)"
-                  testId="toolbar-stamp-btn"
-                  onClick={onOpenStampEditor}
-                />
-                <LargeRibbonBtn
-                  icon={<LayoutTemplate className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Конструктор"
-                  title="Создать и настроить собственный шаблон штампа"
-                  testId="toolbar-stamp-designer-btn"
-                  onClick={onOpenStampDesigner}
-                />
-              </RibbonPanel>
-            </>
-          )}
+                      <RibbonPanel title="ФСА и База">
+                        <LargeRibbonBtn
+                          icon={<Cpu className="w-[17px] h-[17px]" />}
+                          label="Схема ФСА"
+                          title="Мастер автоматической сборки приточной/вытяжной схемы и внешки"
+                          accent
+                          onClick={onOpenHvacWizard}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Plus className="w-3.5 h-3.5" />}
+                            label="+ Изделие"
+                            title="Создать новое изделие с атрибутами в базе"
+                            onClick={onOpenAddCatalogItem}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Database className="w-3.5 h-3.5" />}
+                            label="База изделий"
+                            title="Открыть каталог изделий в левом окне"
+                            onClick={onOpenCatalogTab}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
 
-          {activeTab === 'drafting' && (
-            <>
-              <RibbonPanel title="Черчение и Примитивы">
-                <LargeRibbonBtn
-                  icon={<MousePointer2 className="w-5 h-5" />}
-                  label="Выбор"
-                  active={tool === 'select'}
-                  onClick={() => onSetTool('select')}
-                />
-                <LargeRibbonBtn
-                  icon={<Spline className="w-5 h-5" />}
-                  label="Провод"
-                  active={tool === 'wire'}
-                  onClick={() => onSetTool('wire')}
-                />
-                <LargeRibbonBtn
-                  icon={<Square className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Рамка"
-                  title="Начертить пунктирный контур / зону шкафа на листе"
-                  active={tool === 'rect'}
-                  testId="tool-rect-btn"
-                  onClick={() => onSetTool('rect')}
-                />
-                <LargeRibbonBtn
-                  icon={<ArrowUpRight className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Выноска"
-                  title="Поставить выноску со стрелкой на листе"
-                  active={tool === 'callout'}
-                  testId="tool-callout-btn"
-                  onClick={() => onSetTool('callout')}
-                />
-                <LargeRibbonBtn
-                  icon={<Type className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Текст"
-                  title="Добавить текстовую надпись / примечание на лист"
-                  active={tool === 'text'}
-                  testId="tool-text-btn"
-                  onClick={() => onSetTool('text')}
-                />
-              </RibbonPanel>
+                      <RibbonPanel title="Контроль и Выпуск" isLast>
+                        <LargeRibbonBtn
+                          icon={<FileCode2 className="w-[17px] h-[17px]" />}
+                          label="PDF / DXF"
+                          title="Пакетная публикация листов в редактируемый AutoCAD (.dxf) и PDF"
+                          testId="toolbar-publish-btn"
+                          onClick={onOpenPublishModal}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={
+                              isBusy ? (
+                                <Activity className="w-3.5 h-3.5 text-[var(--flux-accent)] animate-spin" />
+                              ) : (
+                                <CheckCircle2
+                                  className={`w-3.5 h-3.5 ${
+                                    ercErrorCount > 0
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : 'text-emerald-600 dark:text-emerald-400'
+                                  }`}
+                                />
+                              )
+                            }
+                            label={`ERC (${ercErrorCount})`}
+                            title="Проверка электрических правил схемы (ERC)"
+                            onClick={onRunErc}
+                          />
+                          <SmallRibbonBtn
+                            icon={<FileSpreadsheet className="w-3.5 h-3.5" />}
+                            label="Спецификация"
+                            title="Открыть панель спецификации ПЭ3 (ГОСТ 2.701)"
+                            testId="toolbar-bom-btn"
+                            onClick={onGenerateBom}
+                          />
+                        </RibbonStack>
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Type className="w-3.5 h-3.5" />}
+                            label="Штамп ГОСТ"
+                            title="Редактировать основную надпись ГОСТ 2.104 (один лист или все листы)"
+                            testId="toolbar-stamp-btn"
+                            onClick={onOpenStampEditor}
+                          />
+                          <SmallRibbonBtn
+                            icon={<LayoutTemplate className="w-3.5 h-3.5" />}
+                            label="Конструктор"
+                            title="Создать и настроить собственный шаблон штампа"
+                            testId="toolbar-stamp-designer-btn"
+                            onClick={onOpenStampDesigner}
+                          />
+                        </RibbonStack>
+                        <LargeRibbonBtn
+                          icon={<Printer className="w-[17px] h-[17px]" />}
+                          label="Отчёт ПЭ3"
+                          title="Печатная форма и перечень элементов ГОСТ"
+                          onClick={onOpenReportModal}
+                        />
+                      </RibbonPanel>
+                    </>
+                  )}
 
-              <RibbonPanel title="Сетка и Привязка">
-                <LargeRibbonBtn
-                  icon={<Grid3X3 className="w-5 h-5" />}
-                  label="Сетка"
-                  active={vs.showGrid}
-                  onClick={onToggleGrid}
-                />
-                <LargeRibbonBtn
-                  icon={<Magnet className="w-5 h-5" />}
-                  label="Привязка"
-                  title="Магнитная привязка к сетке"
-                  active={vs.snapToGrid}
-                  onClick={onToggleSnapToGrid}
-                />
-                <div className="flex flex-col justify-center gap-1 px-1.5 h-[54px] shrink-0">
-                  <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">Шаг сетки</span>
-                  <select
-                    aria-label="Шаг чертёжной сетки"
-                    value={vs.gridSize}
-                    onChange={(e) => onChangeGridSize(Number(e.target.value))}
-                    className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
-                  >
-                    <option value={10}>10 мм</option>
-                    <option value={20}>20 мм</option>
-                    <option value={40}>40 мм</option>
-                  </select>
-                </div>
-              </RibbonPanel>
+                  {activeTab === 'drafting' && (
+                    <>
+                      <RibbonPanel title="Инструменты">
+                        <LargeRibbonBtn
+                          icon={<MousePointer2 className="w-[17px] h-[17px]" />}
+                          label="Выбор"
+                          active={tool === 'select'}
+                          onClick={() => onSetTool('select')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Spline className="w-[17px] h-[17px]" />}
+                          label="Провод"
+                          active={tool === 'wire'}
+                          onClick={() => onSetTool('wire')}
+                        />
+                      </RibbonPanel>
 
-              <RibbonPanel title="Операции" isLast>
-                <LargeRibbonBtn
-                  icon={<Workflow className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Выровнять"
-                  onClick={onAutoRouteWires}
-                />
-                <LargeRibbonBtn
-                  icon={<RotateCw className="w-5 h-5" />}
-                  label="Поворот"
-                  disabled={!hasSelection}
-                  onClick={onRotateSelected}
-                />
-                <LargeRibbonBtn
-                  icon={<Trash2 className="w-5 h-5" />}
-                  label="Удалить"
-                  danger
-                  disabled={!hasSelection}
-                  onClick={onDeleteSelected}
-                />
-              </RibbonPanel>
-            </>
-          )}
+                      <RibbonPanel title="Графика и Зоны">
+                        <LargeRibbonBtn
+                          icon={<Square className="w-[17px] h-[17px]" />}
+                          label="Рамка"
+                          title="Начертить пунктирный контур / зону шкафа на листе"
+                          active={tool === 'rect'}
+                          testId="tool-rect-btn"
+                          onClick={() => onSetTool('rect')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<ArrowUpRight className="w-[17px] h-[17px]" />}
+                          label="Выноска"
+                          title="Поставить выноску со стрелкой на листе"
+                          active={tool === 'callout'}
+                          testId="tool-callout-btn"
+                          onClick={() => onSetTool('callout')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Type className="w-[17px] h-[17px]" />}
+                          label="Текст"
+                          title="Добавить текстовую надпись / примечание на лист"
+                          active={tool === 'text'}
+                          testId="tool-text-btn"
+                          onClick={() => onSetTool('text')}
+                        />
+                      </RibbonPanel>
 
-          {activeTab === 'annotations' && (
-            <>
-              <RibbonPanel title="Размещение аннотаций">
-                <LargeRibbonBtn
-                  icon={<Type className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Текст"
-                  title="Кликните на лист для вставки надписи"
-                  active={tool === 'text'}
-                  onClick={() => onSetTool('text')}
-                />
-                <LargeRibbonBtn
-                  icon={<ArrowUpRight className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Выноска"
-                  title="Кликните на лист для вставки выноски"
-                  active={tool === 'callout'}
-                  onClick={() => onSetTool('callout')}
-                />
-                <LargeRibbonBtn
-                  icon={<Square className="w-5 h-5" />}
-                  label="Зона"
-                  title="Пунктирная рамка зоны или шкафа"
-                  active={tool === 'rect'}
-                  onClick={() => onSetTool('rect')}
-                />
-              </RibbonPanel>
+                      <RibbonPanel title="Сетка и Шаг">
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Grid3X3 className="w-3.5 h-3.5" />}
+                            label="Сетка"
+                            active={vs.showGrid}
+                            onClick={onToggleGrid}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Magnet className="w-3.5 h-3.5" />}
+                            label="Привязка"
+                            title="Магнитная привязка к сетке"
+                            active={vs.snapToGrid}
+                            onClick={onToggleSnapToGrid}
+                          />
+                        </RibbonStack>
+                        <div className="flex flex-col justify-center gap-1 px-1.5 h-[52px] shrink-0">
+                          <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">Шаг сетки</span>
+                          <select
+                            aria-label="Шаг чертёжной сетки"
+                            value={vs.gridSize}
+                            onChange={(e) => onChangeGridSize(Number(e.target.value))}
+                            className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+                          >
+                            <option value={10}>10 мм</option>
+                            <option value={20}>20 мм</option>
+                            <option value={40}>40 мм</option>
+                          </select>
+                        </div>
+                      </RibbonPanel>
 
-              <RibbonPanel title="Обозначения и Штампы">
-                <LargeRibbonBtn
-                  icon={<Tag className="w-5 h-5" />}
-                  label="Выводы"
-                  title="Показывать номера контактов"
-                  active={vs.showPinNumbers}
-                  onClick={onTogglePinNumbers}
-                />
-                <LargeRibbonBtn
-                  icon={<Hash className="w-5 h-5" />}
-                  label="Провода"
-                  title="Показывать маркировку проводов"
-                  active={vs.showWireNumbers}
-                  onClick={onToggleWireNumbers}
-                />
-                <LargeRibbonBtn
-                  icon={<PanelsTopLeft className="w-5 h-5" />}
-                  label="Ссылки"
-                  title="Перекрёстные ссылки между листами"
-                  active={vs.showCrossRefs}
-                  onClick={onToggleCrossRefs}
-                />
-                <LargeRibbonBtn
-                  icon={<Frame className="w-5 h-5" />}
-                  label="Рамка ГОСТ"
-                  active={vs.showGostFrame}
-                  onClick={onToggleFrame}
-                />
-                <LargeRibbonBtn
-                  icon={<Type className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Штамп ГОСТ"
-                  title="Заполнение граф основной надписи"
-                  onClick={onOpenStampEditor}
-                />
-                <LargeRibbonBtn
-                  icon={<LayoutTemplate className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Создать штамп"
-                  title="Конструктор шаблонов штампов"
-                  onClick={onOpenStampDesigner}
-                />
-              </RibbonPanel>
+                      <RibbonPanel title="Операции" isLast>
+                        <LargeRibbonBtn
+                          icon={<Workflow className="w-[17px] h-[17px]" />}
+                          label="Выровнять"
+                          onClick={onAutoRouteWires}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<RotateCw className="w-3.5 h-3.5" />}
+                            label="Поворот"
+                            disabled={!hasSelection}
+                            onClick={onRotateSelected}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Trash2 className="w-3.5 h-3.5" />}
+                            label="Удалить"
+                            danger
+                            disabled={!hasSelection}
+                            onClick={onDeleteSelected}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
+                    </>
+                  )}
 
-              <RibbonPanel title="Шрифты и Выпуск" isLast>
-                <div className="flex flex-col justify-center gap-1 px-1.5 h-[54px] shrink-0">
-                  <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">Шрифт ГОСТ</span>
-                  <select
-                    aria-label="Шрифт аннотаций и таблиц"
-                    value={vs.fontFamily || 'GOST'}
-                    onChange={(e) => onUpdateFontFamily(e.target.value as SchematicFontFamily)}
-                    className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] max-w-[140px]"
-                  >
-                    {SCHEMATIC_FONT_OPTIONS.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <LargeRibbonBtn
-                  icon={<Palette className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Графика"
-                  onClick={onOpenVisualModal}
-                />
-                <LargeRibbonBtn
-                  icon={<Printer className="w-5 h-5" />}
-                  label="Отчёт ПЭ3"
-                  onClick={onOpenReportModal}
-                />
-              </RibbonPanel>
-            </>
-          )}
+                  {activeTab === 'annotations' && (
+                    <>
+                      <RibbonPanel title="Размещение аннотаций">
+                        <LargeRibbonBtn
+                          icon={<Type className="w-[17px] h-[17px]" />}
+                          label="Текст"
+                          title="Кликните на лист для вставки надписи"
+                          active={tool === 'text'}
+                          onClick={() => onSetTool('text')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<ArrowUpRight className="w-[17px] h-[17px]" />}
+                          label="Выноска"
+                          title="Кликните на лист для вставки выноски"
+                          active={tool === 'callout'}
+                          onClick={() => onSetTool('callout')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Square className="w-[17px] h-[17px]" />}
+                          label="Зона"
+                          title="Пунктирная рамка зоны или шкафа"
+                          active={tool === 'rect'}
+                          onClick={() => onSetTool('rect')}
+                        />
+                      </RibbonPanel>
 
-          {activeTab === 'sheet' && (
-            <>
-              <RibbonPanel title="Настройки листа">
-                <div className="flex flex-col justify-center gap-1 px-1.5 h-[54px] shrink-0">
-                  <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
-                    Формат ({activeSheet?.format || 'A3'})
-                  </span>
-                  <select
-                    aria-label="Формат активного листа"
-                    value={activeSheet?.format || 'A3'}
-                    onChange={(e) =>
-                      activeSheet && onUpdateSheetFormat(activeSheet.id, e.target.value as SheetFormat)
-                    }
-                    className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] max-w-[155px]"
-                  >
-                    {(Object.keys(SHEET_DIMENSIONS) as SheetFormat[]).map((fmt) => (
-                      <option key={fmt} value={fmt}>
-                        {SHEET_DIMENSIONS[fmt].label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <LargeRibbonBtn
-                  icon={<FilePlus2 className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="+ Лист"
-                  onClick={onAddSheet}
-                />
-                <LargeRibbonBtn
-                  icon={<CopyPlus className="w-5 h-5" />}
-                  label="Копия"
-                  title="Дублировать текущий лист вместе с элементами"
-                  disabled={!activeSheet}
-                  onClick={() => activeSheet && onDuplicateSheet(activeSheet.id)}
-                />
-                <LargeRibbonBtn
-                  icon={<FileX2 className="w-5 h-5" />}
-                  label="Удал. лист"
-                  title="Удалить текущий лист (если в проекте больше 1 листа)"
-                  danger
-                  disabled={!activeSheet || project.sheets.length <= 1}
-                  onClick={() => activeSheet && onDeleteSheet(activeSheet.id)}
-                />
-              </RibbonPanel>
+                      <RibbonPanel title="Обозначения ГОСТ">
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Tag className="w-3.5 h-3.5" />}
+                            label="Выводы"
+                            title="Показывать номера контактов"
+                            active={vs.showPinNumbers}
+                            onClick={onTogglePinNumbers}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Hash className="w-3.5 h-3.5" />}
+                            label="Провода"
+                            title="Показывать маркировку проводов"
+                            active={vs.showWireNumbers}
+                            onClick={onToggleWireNumbers}
+                          />
+                        </RibbonStack>
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<PanelsTopLeft className="w-3.5 h-3.5" />}
+                            label="Ссылки"
+                            title="Перекрёстные ссылки между листами"
+                            active={vs.showCrossRefs}
+                            onClick={onToggleCrossRefs}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Frame className="w-3.5 h-3.5" />}
+                            label="Рамка ГОСТ"
+                            active={vs.showGostFrame}
+                            onClick={onToggleFrame}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
 
-              <RibbonPanel title="Оформление и Штамп">
-                <LargeRibbonBtn
-                  icon={<Type className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Штамп ГОСТ"
-                  title="Редактор основной надписи ГОСТ 2.104 (один лист / все листы)"
-                  testId="sheet-stamp-btn"
-                  onClick={onOpenStampEditor}
-                />
-                <LargeRibbonBtn
-                  icon={<LayoutTemplate className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Создать штамп"
-                  title="Конструктор пользовательских штампов"
-                  onClick={onOpenStampDesigner}
-                />
-                <LargeRibbonBtn
-                  icon={<Frame className="w-5 h-5" />}
-                  label="Рамка"
-                  active={vs.showGostFrame}
-                  onClick={onToggleFrame}
-                />
-                <LargeRibbonBtn
-                  icon={<Grid3X3 className="w-5 h-5" />}
-                  label="Сетка"
-                  active={vs.showGrid}
-                  onClick={onToggleGrid}
-                />
-                <LargeRibbonBtn
-                  icon={<Palette className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Шрифты"
-                  onClick={onOpenVisualModal}
-                />
-              </RibbonPanel>
+                      <RibbonPanel title="Основная надпись">
+                        <LargeRibbonBtn
+                          icon={<Type className="w-[17px] h-[17px]" />}
+                          label="Штамп ГОСТ"
+                          title="Заполнение граф основной надписи"
+                          onClick={onOpenStampEditor}
+                        />
+                        <LargeRibbonBtn
+                          icon={<LayoutTemplate className="w-[17px] h-[17px]" />}
+                          label="Создать штамп"
+                          title="Конструктор шаблонов штампов"
+                          onClick={onOpenStampDesigner}
+                        />
+                      </RibbonPanel>
 
-              <RibbonPanel title="Автоматизация ОВКВ (ФСА)" isLast>
-                <LargeRibbonBtn
-                  icon={<Wand2 className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Собрать ФСА"
-                  accent
-                  onClick={onOpenHvacWizard}
-                />
-                <LargeRibbonBtn
-                  icon={<Workflow className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Выровнять"
-                  onClick={onAutoRouteWires}
-                />
-                <LargeRibbonBtn
-                  icon={<Plus className="w-5 h-5" />}
-                  label="+ Изделие"
-                  onClick={onOpenAddCatalogItem}
-                />
-              </RibbonPanel>
-            </>
-          )}
+                      <RibbonPanel title="Толщины и линии">
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 px-1 shrink-0">
+                          <label className="flex items-center justify-between gap-1.5 text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
+                            <span>Изделия</span>
+                            <input
+                              type="number"
+                              data-testid="thickness-devices-input"
+                              aria-label="Толщина линий изделий (px)"
+                              step="0.25"
+                              min="0.5"
+                              max="6"
+                              value={vs.symbolStrokeWidth}
+                              onChange={(e) => {
+                                const val = Math.max(0.5, Math.min(6, Number(e.target.value) || 1.8));
+                                onUpdateVisualSettings?.({ symbolStrokeWidth: val });
+                              }}
+                              className="h-[22px] w-14 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)] text-right"
+                            />
+                          </label>
+                          <label className="flex items-center justify-between gap-1.5 text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
+                            <span>Цепи</span>
+                            <input
+                              type="number"
+                              data-testid="thickness-wires-input"
+                              aria-label="Толщина линий цепей (px)"
+                              step="0.25"
+                              min="0.5"
+                              max="6"
+                              value={vs.wireWidth}
+                              onChange={(e) => {
+                                const val = Math.max(0.5, Math.min(6, Number(e.target.value) || 2));
+                                onUpdateVisualSettings?.({ wireWidth: val });
+                              }}
+                              className="h-[22px] w-14 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)] text-right"
+                            />
+                          </label>
+                          <label className="flex items-center justify-between gap-1.5 text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
+                            <span>Границы</span>
+                            <input
+                              type="number"
+                              data-testid="thickness-frame-input"
+                              aria-label="Толщина границ и рамки ГОСТ (px)"
+                              step="0.2"
+                              min="0.5"
+                              max="6"
+                              value={vs.frameStrokeWidth ?? 1.6}
+                              onChange={(e) => {
+                                const val = Math.max(0.5, Math.min(6, Number(e.target.value) || 1.6));
+                                onUpdateVisualSettings?.({ frameStrokeWidth: val });
+                              }}
+                              className="h-[22px] w-14 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)] text-right"
+                            />
+                          </label>
+                          <label className="flex items-center justify-between gap-1.5 text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
+                            <span>Аннот.</span>
+                            <input
+                              type="number"
+                              data-testid="thickness-annotations-input"
+                              aria-label="Толщина линий аннотаций и зон (px)"
+                              step="0.2"
+                              min="0.5"
+                              max="6"
+                              value={vs.annotationStrokeWidth ?? 1.4}
+                              onChange={(e) => {
+                                const val = Math.max(0.5, Math.min(6, Number(e.target.value) || 1.4));
+                                onUpdateVisualSettings?.({ annotationStrokeWidth: val });
+                              }}
+                              className="h-[22px] w-14 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)] text-right"
+                            />
+                          </label>
+                        </div>
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Spline className="w-3.5 h-3.5" />}
+                            label="Мостики"
+                            title="Отрисовка перемычек (дуг) на пересечении несвязанных цепей"
+                            active={vs.wireCrossingBridge !== false}
+                            testId="toggle-crossing-bridge-btn"
+                            onClick={() =>
+                              onUpdateVisualSettings?.({
+                                wireCrossingBridge: !(vs.wireCrossingBridge !== false),
+                              })
+                            }
+                          />
+                          <SmallRibbonBtn
+                            icon={<Palette className="w-3.5 h-3.5" />}
+                            label="Все стили"
+                            title="Подробные настройки графики и палитры"
+                            onClick={onOpenVisualModal}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
 
-          {activeTab === 'view' && (
-            <>
-              <RibbonPanel title="Листы в центре (Окна)">
-                <LargeRibbonBtn
-                  icon={<PanelLeft className="w-5 h-5" />}
-                  label="1 лист"
-                  title="Показывать один активный лист в центре"
-                  active={viewportLayout === 'single'}
-                  testId="viewport-mode-single"
-                  onClick={() => onSetViewportLayout('single')}
-                />
-                <LargeRibbonBtn
-                  icon={<Columns2 className="w-5 h-5" />}
-                  label="2 листа"
-                  title="Расположить 2 листа рядом в центре"
-                  active={viewportLayout === 'two'}
-                  testId="viewport-mode-two"
-                  onClick={() => onSetViewportLayout('two')}
-                />
-                <LargeRibbonBtn
-                  icon={<LayoutGrid className="w-5 h-5" />}
-                  label="3 листа"
-                  title="Расположить 3 листа одновременно"
-                  active={viewportLayout === 'three'}
-                  testId="viewport-mode-three"
-                  onClick={() => onSetViewportLayout('three')}
-                />
-                <LargeRibbonBtn
-                  icon={<Grid2X2 className="w-5 h-5" />}
-                  label="4 листа"
-                  title="Расположить 4 листа сеткой 2×2"
-                  active={viewportLayout === 'four'}
-                  testId="viewport-mode-four"
-                  onClick={() => onSetViewportLayout('four')}
-                />
-              </RibbonPanel>
+                      <RibbonPanel title="Стиль и Отчёт" isLast>
+                        <div className="flex flex-col justify-center gap-1 px-1.5 h-[52px] shrink-0">
+                          <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">Шрифт ГОСТ</span>
+                          <select
+                            aria-label="Шрифт аннотаций и таблиц"
+                            value={vs.fontFamily || 'GOST'}
+                            onChange={(e) => onUpdateFontFamily(e.target.value as SchematicFontFamily)}
+                            className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] max-w-[140px]"
+                          >
+                            {SCHEMATIC_FONT_OPTIONS.map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <LargeRibbonBtn
+                          icon={<Printer className="w-[17px] h-[17px]" />}
+                          label="Отчёт ПЭ3"
+                          onClick={onOpenReportModal}
+                        />
+                      </RibbonPanel>
+                    </>
+                  )}
 
-              <RibbonPanel title="Навигация и Масштаб">
-                <LargeRibbonBtn
-                  icon={<Maximize2 className="w-5 h-5" />}
-                  label="По листу"
-                  onClick={onFitView}
-                />
-                <LargeRibbonBtn
-                  icon={<Hand className="w-5 h-5" />}
-                  label="Панорама"
-                  active={tool === 'pan'}
-                  onClick={() => onSetTool('pan')}
-                />
-                <div className="flex items-center gap-1 px-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => onZoomChange(Math.max(0.18, Math.round((zoom - 0.1) * 100) / 100))}
-                    aria-label="Уменьшить масштаб"
-                    className="inline-flex items-center justify-center w-7 h-8 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]"
-                  >
-                    <ZoomOut className="w-4 h-4" />
-                  </button>
-                  <span className="w-11 text-center font-mono tabular-nums text-[12px] text-[var(--flux-text)]">
-                    {Math.round(zoom * 100)}%
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => onZoomChange(Math.min(2.5, Math.round((zoom + 0.15) * 100) / 100))}
-                    aria-label="Увеличить масштаб"
-                    className="inline-flex items-center justify-center w-7 h-8 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]"
-                  >
-                    <ZoomIn className="w-4 h-4" />
-                  </button>
-                </div>
-              </RibbonPanel>
+                  {activeTab === 'sheet' && (
+                    <>
+                      <RibbonPanel title="Листы схемы">
+                        <div className="flex flex-col justify-center gap-1 px-1.5 h-[52px] shrink-0">
+                          <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
+                            Формат ({activeSheet?.format || 'A3'})
+                          </span>
+                          <select
+                            aria-label="Формат активного листа"
+                            value={activeSheet?.format || 'A3'}
+                            onChange={(e) =>
+                              activeSheet && onUpdateSheetFormat(activeSheet.id, e.target.value as SheetFormat)
+                            }
+                            className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] max-w-[180px]"
+                          >
+                            {(Object.keys(SHEET_DIMENSIONS) as SheetFormat[]).map((fmt) => (
+                              <option key={fmt} value={fmt}>
+                                {SHEET_DIMENSIONS[fmt].label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <LargeRibbonBtn
+                          icon={<FilePlus2 className="w-[17px] h-[17px]" />}
+                          label="+ Лист"
+                          onClick={onAddSheet}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<CopyPlus className="w-3.5 h-3.5" />}
+                            label="Копия"
+                            title="Дублировать текущий лист вместе с элементами"
+                            disabled={!activeSheet}
+                            onClick={() => activeSheet && onDuplicateSheet(activeSheet.id)}
+                          />
+                          <SmallRibbonBtn
+                            icon={<FileX2 className="w-3.5 h-3.5" />}
+                            label="Удал. лист"
+                            title="Удалить текущий лист (если в проекте больше 1 листа)"
+                            danger
+                            disabled={!activeSheet || project.sheets.length <= 1}
+                            onClick={() => activeSheet && onDeleteSheet(activeSheet.id)}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
 
-              <RibbonPanel title="Панели и Тема" isLast>
-                {onToggleLayerVisibility && onToggleLayerLock && (
-                  <LargeRibbonBtn
-                    icon={<Layers className="w-5 h-5 text-[var(--flux-accent)]" />}
-                    label={`Слои (${layerSummary.visibleCount}/4)`}
-                    title="Управление видимостью и блокировкой слоёв чертежа"
-                    testId="ribbon-view-layers-btn"
-                    active={layersPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0}
-                    onClick={(e) => toggleRibbonLayers(e.currentTarget)}
-                  />
-                )}
-                <LargeRibbonBtn
-                  icon={<RotateCcw className="w-5 h-5" />}
-                  label="Сброс окон"
-                  title="Вернуть боковые и нижнюю панели в исходное положение"
-                  testId="reset-dock-layout-btn"
-                  onClick={onResetDockLayout}
-                />
-                <LargeRibbonBtn
-                  icon={isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                  label={isDark ? 'Светлая' : 'Тёмная'}
-                  onClick={onToggleTheme}
-                />
-              </RibbonPanel>
-            </>
-          )}
+                      <RibbonPanel title="Оформление ГОСТ">
+                        <LargeRibbonBtn
+                          icon={<Type className="w-[17px] h-[17px]" />}
+                          label="Штамп ГОСТ"
+                          title="Редактор основной надписи ГОСТ 2.104 (один лист / все листы)"
+                          testId="sheet-stamp-btn"
+                          onClick={onOpenStampEditor}
+                        />
+                        <LargeRibbonBtn
+                          icon={<LayoutTemplate className="w-[17px] h-[17px]" />}
+                          label="Создать штамп"
+                          title="Конструктор пользовательских штампов"
+                          onClick={onOpenStampDesigner}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Frame className="w-3.5 h-3.5" />}
+                            label="Рамка"
+                            active={vs.showGostFrame}
+                            onClick={onToggleFrame}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Grid3X3 className="w-3.5 h-3.5" />}
+                            label="Сетка"
+                            active={vs.showGrid}
+                            onClick={onToggleGrid}
+                          />
+                        </RibbonStack>
+                        <LargeRibbonBtn
+                          icon={<Palette className="w-[17px] h-[17px]" />}
+                          label="Шрифты"
+                          onClick={onOpenVisualModal}
+                        />
+                      </RibbonPanel>
 
-          {activeTab === 'export' && (
-            <>
-              <RibbonPanel title="Интеграция Zuken E³.series">
-                <LargeRibbonBtn
-                  icon={<Upload className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Открыть .e3s"
-                  onClick={() => fileInputRef.current?.click()}
-                />
-                <LargeRibbonBtn
-                  icon={<Share2 className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="В E³.series"
-                  onClick={onDirectOpenE3}
-                />
-                <LargeRibbonBtn
-                  icon={<FolderOpen className="w-5 h-5" />}
-                  label="Обмен E3"
-                  onClick={onOpenExchangeModal}
-                />
-              </RibbonPanel>
+                      <RibbonPanel title="Автоматизация ОВКВ (ФСА)" isLast>
+                        <LargeRibbonBtn
+                          icon={<Cpu className="w-[17px] h-[17px]" />}
+                          label="Собрать ФСА"
+                          accent
+                          onClick={onOpenHvacWizard}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Workflow className="w-3.5 h-3.5" />}
+                            label="Выровнять"
+                            onClick={onAutoRouteWires}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Plus className="w-3.5 h-3.5" />}
+                            label="+ Изделие"
+                            onClick={onOpenAddCatalogItem}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
+                    </>
+                  )}
 
-              <RibbonPanel title="Документация и Публикация">
-                <LargeRibbonBtn
-                  icon={<FileSpreadsheet className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Список ПЭ3"
-                  onClick={onGenerateBom}
-                />
-                <LargeRibbonBtn
-                  icon={<Printer className="w-5 h-5" />}
-                  label="Отчёт ПЭ3"
-                  onClick={onOpenReportModal}
-                />
-                <LargeRibbonBtn
-                  icon={<FileCode2 className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Пакет PDF/DXF"
-                  title="Пакетная публикация в PDF и редактируемый AutoCAD DXF"
-                  onClick={onOpenPublishModal}
-                />
-                <LargeRibbonBtn
-                  icon={<FileCode2 className="w-5 h-5" />}
-                  label="Лист DXF"
-                  onClick={onExportDxf}
-                />
-              </RibbonPanel>
+                  {activeTab === 'view' && (
+                    <>
+                      <RibbonPanel title="Окна листов в центре">
+                        <LargeRibbonBtn
+                          icon={<PanelLeft className="w-[17px] h-[17px]" />}
+                          label="1 лист"
+                          title="Показывать один активный лист в центре"
+                          active={viewportLayout === 'single'}
+                          testId="viewport-mode-single"
+                          onClick={() => onSetViewportLayout('single')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Columns2 className="w-[17px] h-[17px]" />}
+                          label="2 листа"
+                          title="Расположить 2 листа рядом в центре"
+                          active={viewportLayout === 'two'}
+                          testId="viewport-mode-two"
+                          onClick={() => onSetViewportLayout('two')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<LayoutGrid className="w-[17px] h-[17px]" />}
+                          label="3 листа"
+                          title="Расположить 3 листа одновременно"
+                          active={viewportLayout === 'three'}
+                          testId="viewport-mode-three"
+                          onClick={() => onSetViewportLayout('three')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Grid2X2 className="w-[17px] h-[17px]" />}
+                          label="4 листа"
+                          title="Расположить 4 листа сеткой 2×2"
+                          active={viewportLayout === 'four'}
+                          testId="viewport-mode-four"
+                          onClick={() => onSetViewportLayout('four')}
+                        />
+                      </RibbonPanel>
 
-              <RibbonPanel title="Сборка и Код" isLast>
-                <LargeRibbonBtn
-                  icon={<Package className="w-5 h-5 text-[var(--flux-accent)]" />}
-                  label="Portable"
-                  onClick={onOpenPortableBuild}
-                />
-                <LargeRibbonBtn
-                  icon={<Archive className="w-5 h-5" />}
-                  label="Код (.zip)"
-                  onClick={onDownloadCodebase}
-                />
-              </RibbonPanel>
-            </>
-          )}
+                      <RibbonPanel title="Навигация и Масштаб">
+                        <LargeRibbonBtn
+                          icon={<Maximize2 className="w-[17px] h-[17px]" />}
+                          label="По листу"
+                          onClick={onFitView}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Hand className="w-[17px] h-[17px]" />}
+                          label="Панорама"
+                          active={tool === 'pan'}
+                          onClick={() => onSetTool('pan')}
+                        />
+                        <div className="flex items-center gap-1 px-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => onZoomChange(Math.max(0.18, Math.round((zoom - 0.1) * 100) / 100))}
+                            aria-label="Уменьшить масштаб"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
+                          >
+                            <ZoomOut className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="w-11 text-center font-mono tabular-nums text-[11.5px] text-[var(--flux-text)]">
+                            {Math.round(zoom * 100)}%
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onZoomChange(Math.min(2.5, Math.round((zoom + 0.15) * 100) / 100))}
+                            aria-label="Увеличить масштаб"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
+                          >
+                            <ZoomIn className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Слои и Среда" isLast>
+                        {onToggleLayerVisibility && onToggleLayerLock && (
+                          <LargeRibbonBtn
+                            icon={<Layers className="w-[17px] h-[17px]" />}
+                            label={`Слои (${layerSummary.visibleCount}/4)`}
+                            title="Управление видимостью и блокировкой слоёв чертежа"
+                            testId="ribbon-view-layers-btn"
+                            active={layersPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0}
+                            onClick={(e) => toggleRibbonLayers(e.currentTarget)}
+                          />
+                        )}
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<RotateCcw className="w-3.5 h-3.5" />}
+                            label="Сброс окон"
+                            title="Вернуть боковые и нижнюю панели в исходное положение"
+                            testId="reset-dock-layout-btn"
+                            onClick={onResetDockLayout}
+                          />
+                          <SmallRibbonBtn
+                            icon={isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+                            label={isDark ? 'Светлая тема' : 'Тёмная тема'}
+                            onClick={onToggleTheme}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
+                    </>
+                  )}
+
+                  {activeTab === 'flux' && (
+                    <>
+                      <RibbonPanel title="Среда Flux и Хост">
+                        <LargeRibbonBtn
+                          icon={<Send className="w-[17px] h-[17px]" />}
+                          label="Во Flux Host"
+                          title={
+                            fluxHosted
+                              ? 'Передать текущую модель и ПЭ3 в родительскую среду Flux'
+                              : `Синхронизировать проект (${project.fluxProjectKey}) по шине Flux Studio`
+                          }
+                          testId="ribbon-flux-push-btn"
+                          onClick={onPushToFluxHost}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<RefreshCw className="w-3.5 h-3.5" />}
+                            label="Шина RPC"
+                            title="Открыть шину вызовов модулей внутри Flux Studio"
+                            testId="ribbon-flux-bus-btn"
+                            onClick={onOpenFluxBusConsole}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Hash className="w-3.5 h-3.5" />}
+                            label={`Ключ: ${project.fluxProjectKey}`}
+                            title="Настроить привязку ключа проекта Flux и манифеста"
+                            onClick={onOpenFluxPublishModal}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Подпрограммы и Обмен">
+                        <LargeRibbonBtn
+                          icon={<Cpu className="w-[17px] h-[17px]" />}
+                          label="Подбор ОВКВ"
+                          title="Интеграция с подбором ОВКВ и сборка схемы ФСА"
+                          onClick={onOpenHvacWizard}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Share2 className="w-[17px] h-[17px]" />}
+                          label="Мост (.json)"
+                          title="Экспортировать пакет обмена flux-e3-bridge/v1 JSON"
+                          onClick={onExportFluxBridge}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Upload className="w-3.5 h-3.5" />}
+                            label="Импорт Flux"
+                            title="Загрузить пакет JSON от модуля Flux"
+                            onClick={onOpenExchangeModal}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Terminal className="w-3.5 h-3.5" />}
+                            label="Контракт API"
+                            title="Просмотреть capabilities и OpenAPI для Flux"
+                            onClick={onOpenFluxBusConsole}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Публикация во Flux Studio">
+                        <LargeRibbonBtn
+                          icon={<Layers className="w-[17px] h-[17px]" />}
+                          label="Студия Flux"
+                          title="Настроить manifest.json (contractVersion 2) и опубликовать подпрограмму во Flux Studio"
+                          accent
+                          testId="ribbon-flux-publish-btn"
+                          onClick={onOpenFluxPublishModal}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Archive className="w-[17px] h-[17px]" />}
+                          label="Пакет (.zip)"
+                          title="Быстро скачать архив модуля Flux Studio (.zip)"
+                          testId="ribbon-flux-zip-btn"
+                          onClick={onDownloadFluxStudioZip}
+                        />
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Сборка и Код" isLast>
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Package className="w-3.5 h-3.5" />}
+                            label="Portable (.zip)"
+                            onClick={onOpenPortableBuild}
+                          />
+                          <SmallRibbonBtn
+                            icon={<FileCode2 className="w-3.5 h-3.5" />}
+                            label="Исходники (.zip)"
+                            onClick={onDownloadCodebase}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
+                    </>
+                  )}
+
+                  {activeTab === 'export' && (
+                    <>
+                      <RibbonPanel title="Zuken E³.series">
+                        <LargeRibbonBtn
+                          icon={<Upload className="w-[17px] h-[17px]" />}
+                          label="Открыть .e3s"
+                          onClick={() => fileInputRef.current?.click()}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Share2 className="w-[17px] h-[17px]" />}
+                          label="В E³.series"
+                          onClick={onDirectOpenE3}
+                        />
+                        <LargeRibbonBtn
+                          icon={<FolderOpen className="w-[17px] h-[17px]" />}
+                          label="Обмен E3"
+                          onClick={onOpenExchangeModal}
+                        />
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Документация">
+                        <LargeRibbonBtn
+                          icon={<FileCode2 className="w-[17px] h-[17px]" />}
+                          label="Пакет PDF/DXF"
+                          title="Пакетная публикация в PDF и редактируемый AutoCAD DXF"
+                          accent
+                          onClick={onOpenPublishModal}
+                        />
+                        <LargeRibbonBtn
+                          icon={<FileCode2 className="w-[17px] h-[17px]" />}
+                          label="Лист DXF"
+                          onClick={onExportDxf}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<FileSpreadsheet className="w-3.5 h-3.5" />}
+                            label="Список ПЭ3"
+                            onClick={onGenerateBom}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Printer className="w-3.5 h-3.5" />}
+                            label="Отчёт ПЭ3"
+                            onClick={onOpenReportModal}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Сборка и Код" isLast>
+                        <LargeRibbonBtn
+                          icon={<Package className="w-[17px] h-[17px]" />}
+                          label="Portable"
+                          onClick={onOpenPortableBuild}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Archive className="w-[17px] h-[17px]" />}
+                          label="Код (.zip)"
+                          onClick={onDownloadCodebase}
+                        />
+                      </RibbonPanel>
+                    </>
+                  )}
+                </motion.div>
+              </AnimatePresence>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Unclipped Ribbon Layer Manager Popover */}
-      {layersPopoverOpen && onToggleLayerVisibility && onToggleLayerLock && (
-        <div
-          className="absolute top-full z-50"
-          style={layersPopoverLeft !== null ? { left: layersPopoverLeft } : { right: 12 }}
-        >
+      <div
+        className="absolute top-full z-50"
+        style={layersPopoverLeft !== null ? { left: layersPopoverLeft } : { right: 12 }}
+      >
+        {onToggleLayerVisibility && onToggleLayerLock && (
           <LayerManagerPopover
             open={layersPopoverOpen}
             layers={resolvedLayers}
@@ -1506,8 +1870,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             onShowAll={() => onShowAllLayers?.()}
             onUnlockAll={() => onUnlockAllLayers?.()}
           />
-        </div>
-      )}
+        )}
+      </div>
     </header>
   );
 };

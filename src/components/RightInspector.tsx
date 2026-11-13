@@ -1,8 +1,18 @@
 import React, { useState } from 'react';
+import { motion } from 'motion/react';
 import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalDistributeCenter,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalDistributeCenter,
   BookmarkPlus,
   Check,
   Copy,
+  CopyPlus,
   FileSpreadsheet,
   LayoutTemplate,
   Lock,
@@ -11,11 +21,14 @@ import {
   Trash2,
   Type,
   Unlink,
+  Workflow,
 } from 'lucide-react';
 import { CAD_LAYER_DEFS, resolveCadLayers } from '../core/cadLayers';
+import type { DeviceAlignKind } from '../core/cadSelection';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type {
   AnnotationKind,
+  AnnotationStrokeStyle,
   CadLayerId,
   E3Annotation,
   E3Attribute,
@@ -37,9 +50,18 @@ interface RightInspectorProps {
   selectedDevice: E3Device | null;
   selectedWire: E3Wire | null;
   selectedAnnotation: E3Annotation | null;
+  selectedDeviceIds?: string[];
+  selectedWireIds?: string[];
+  selectedAnnotationIds?: string[];
+  onAlignDevices?: (kind: DeviceAlignKind) => void;
+  onRotateSelected?: () => void;
+  onDuplicateSelected?: () => void;
+  onDeleteSelected?: () => void;
+  onClearSelection?: () => void;
   onUpdateDevice: (deviceId: string, patch: Partial<E3Device>) => void;
   onSaveDeviceToCatalog?: (device: E3Device) => void;
   onUpdateWire: (wireId: string, patch: Partial<E3Wire>) => void;
+  onRerouteWire?: (wireId: string) => void;
   onDeleteWire: (wireId: string) => void;
   onUpdateAnnotation: (annId: string, patch: Partial<E3Annotation>) => void;
   onDeleteAnnotation: (annId: string) => void;
@@ -59,9 +81,18 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   selectedDevice,
   selectedWire,
   selectedAnnotation,
+  selectedDeviceIds = [],
+  selectedWireIds = [],
+  selectedAnnotationIds = [],
+  onAlignDevices,
+  onRotateSelected,
+  onDuplicateSelected,
+  onDeleteSelected,
+  onClearSelection,
   onUpdateDevice,
   onSaveDeviceToCatalog,
   onUpdateWire,
+  onRerouteWire,
   onDeleteWire,
   onUpdateAnnotation,
   onDeleteAnnotation,
@@ -77,6 +108,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   const [newAttrValue, setNewAttrValue] = useState('');
   const [copiedElId, setCopiedElId] = useState(false);
 
+  const totalSelectedCount =
+    selectedDeviceIds.length + selectedWireIds.length + selectedAnnotationIds.length;
+  const isMultiSelection = totalSelectedCount > 1;
+
   const layersMap = resolveCadLayers(project.layers, project.visualSettings.showGostFrame);
   const activeLayerId: CadLayerId = selectedDevice
     ? 'devices'
@@ -85,7 +120,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
       : selectedAnnotation
         ? 'annotations'
         : 'frame';
-  const activeLayerLocked = layersMap[activeLayerId].locked;
+  const activeLayerLocked = !isMultiSelection && layersMap[activeLayerId].locked;
   const activeLayerMeta = CAD_LAYER_DEFS[activeLayerId];
   const wiresLocked = layersMap.wires.locked;
 
@@ -127,15 +162,17 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     >
       <div className="px-3 h-8 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between shrink-0">
         <span className="text-[12px] font-semibold text-[var(--flux-text)] truncate">
-          {selectedDevice
-            ? `Элемент ${selectedDevice.designation}`
-            : selectedWire
-              ? `Цепь ${selectedWire.netName}`
-              : selectedAnnotation
-                ? `Аннотация (${selectedAnnotation.kind === 'rect' ? 'Зона' : selectedAnnotation.kind === 'callout' ? 'Выноска' : 'Текст'})`
-                : 'Параметры листа'}
+          {isMultiSelection
+            ? `Группа: ${totalSelectedCount} об.`
+            : selectedDevice
+              ? `Элемент ${selectedDevice.designation}`
+              : selectedWire
+                ? `Цепь ${selectedWire.netName}`
+                : selectedAnnotation
+                  ? `Аннотация (${selectedAnnotation.kind === 'rect' ? 'Зона' : selectedAnnotation.kind === 'callout' ? 'Выноска' : 'Текст'})`
+                  : 'Параметры листа'}
         </span>
-        {selectedDevice && (
+        {selectedDevice && !isMultiSelection && (
           <button
             type="button"
             onClick={async () => {
@@ -160,7 +197,17 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
         )}
       </div>
 
-      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-4">
+      <motion.div
+        key={
+          isMultiSelection
+            ? `multi-${totalSelectedCount}`
+            : selectedDevice?.id || selectedWire?.id || selectedAnnotation?.id || `sheet-${activeSheet?.id || 'none'}`
+        }
+        initial={{ opacity: 0.65, y: 3 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-4"
+      >
         {activeLayerLocked && (
           <div
             data-testid="inspector-layer-locked-banner"
@@ -178,7 +225,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 type="button"
                 data-testid="inspector-unlock-layer-btn"
                 onClick={() => onToggleLayerLock(activeLayerId)}
-                className="h-6 px-2 rounded border border-amber-500/60 bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] shrink-0"
+                className="h-6 px-2 rounded border border-amber-500/60 bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] shrink-0 transition-colors"
               >
                 Разблокировать
               </button>
@@ -186,13 +233,173 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
           </div>
         )}
 
-        {selectedDevice ? (
+        {isMultiSelection ? (
+          <div data-testid="inspector-multi-selection" className="space-y-4">
+            <div className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] space-y-1.5">
+              <div className="text-[11px] font-semibold text-[var(--flux-text)]">
+                Состав выделения
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                <div className="px-2 py-1 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] text-center">
+                  <div className="font-mono font-semibold text-[var(--flux-text)]">{selectedDeviceIds.length}</div>
+                  <div className="text-[10px] text-[var(--flux-text-muted)]">Изделий</div>
+                </div>
+                <div className="px-2 py-1 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] text-center">
+                  <div className="font-mono font-semibold text-[var(--flux-text)]">{selectedWireIds.length}</div>
+                  <div className="text-[10px] text-[var(--flux-text-muted)]">Цепей</div>
+                </div>
+                <div className="px-2 py-1 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] text-center">
+                  <div className="font-mono font-semibold text-[var(--flux-text)]">{selectedAnnotationIds.length}</div>
+                  <div className="text-[10px] text-[var(--flux-text-muted)]">Аннот.</div>
+                </div>
+              </div>
+            </div>
+
+            {selectedDeviceIds.length >= 2 && onAlignDevices && (
+              <div className="space-y-2">
+                <h3 className="text-[11px] font-semibold text-[var(--flux-text)] pb-1 border-b border-[var(--flux-line)]">
+                  Выравнивание группы изделий
+                </h3>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="align-left-btn"
+                    onClick={() => onAlignDevices('left')}
+                    title="Выровнять по левому краю"
+                    className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[11px] text-[var(--flux-text)]"
+                  >
+                    <AlignStartVertical className="w-3.5 h-3.5" />
+                    <span>Лево</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="align-center-x-btn"
+                    onClick={() => onAlignDevices('center-x')}
+                    title="Выровнять по центру X"
+                    className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[11px] text-[var(--flux-text)]"
+                  >
+                    <AlignCenterVertical className="w-3.5 h-3.5" />
+                    <span>Центр X</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="align-right-btn"
+                    onClick={() => onAlignDevices('right')}
+                    title="Выровнять по правому краю"
+                    className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[11px] text-[var(--flux-text)]"
+                  >
+                    <AlignEndVertical className="w-3.5 h-3.5" />
+                    <span>Право</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="align-top-btn"
+                    onClick={() => onAlignDevices('top')}
+                    title="Выровнять по верхнему краю"
+                    className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[11px] text-[var(--flux-text)]"
+                  >
+                    <AlignStartHorizontal className="w-3.5 h-3.5" />
+                    <span>Верх</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="align-center-y-btn"
+                    onClick={() => onAlignDevices('center-y')}
+                    title="Выровнять по центру Y"
+                    className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[11px] text-[var(--flux-text)]"
+                  >
+                    <AlignCenterHorizontal className="w-3.5 h-3.5" />
+                    <span>Центр Y</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="align-bottom-btn"
+                    onClick={() => onAlignDevices('bottom')}
+                    title="Выровнять по нижнему краю"
+                    className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[11px] text-[var(--flux-text)]"
+                  >
+                    <AlignEndHorizontal className="w-3.5 h-3.5" />
+                    <span>Низ</span>
+                  </button>
+                </div>
+
+                {selectedDeviceIds.length >= 3 && (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      data-testid="distribute-x-btn"
+                      onClick={() => onAlignDevices('distribute-x')}
+                      className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[11px] text-[var(--flux-text)]"
+                    >
+                      <AlignHorizontalDistributeCenter className="w-3.5 h-3.5" />
+                      <span>Шаг по X</span>
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="distribute-y-btn"
+                      onClick={() => onAlignDevices('distribute-y')}
+                      className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[11px] text-[var(--flux-text)]"
+                    >
+                      <AlignVerticalDistributeCenter className="w-3.5 h-3.5" />
+                      <span>Шаг по Y</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-1.5 pt-1">
+              {selectedDeviceIds.length > 0 && onRotateSelected && (
+                <button
+                  type="button"
+                  data-testid="multi-rotate-btn"
+                  onClick={onRotateSelected}
+                  className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1.5 text-[11.5px] font-medium text-[var(--flux-text)]"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Повернуть изделия на 90° (R)</span>
+                </button>
+              )}
+              {(selectedDeviceIds.length > 0 || selectedAnnotationIds.length > 0) && onDuplicateSelected && (
+                <button
+                  type="button"
+                  data-testid="multi-duplicate-btn"
+                  onClick={onDuplicateSelected}
+                  className="w-full h-8 px-2.5 rounded border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-sel)] inline-flex items-center justify-center gap-1.5 text-[11.5px] font-medium text-[var(--flux-accent)]"
+                >
+                  <CopyPlus className="w-3.5 h-3.5" />
+                  <span>Дублировать группу (Ctrl+D)</span>
+                </button>
+              )}
+              {onDeleteSelected && (
+                <button
+                  type="button"
+                  data-testid="multi-delete-btn"
+                  onClick={onDeleteSelected}
+                  className="w-full h-8 px-2.5 rounded border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 inline-flex items-center justify-center gap-1.5 text-[11.5px] font-medium text-rose-600 dark:text-rose-400"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Удалить выделенные (Del)</span>
+                </button>
+              )}
+              {onClearSelection && (
+                <button
+                  type="button"
+                  onClick={onClearSelection}
+                  className="w-full h-7 rounded text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                >
+                  Снять выделение
+                </button>
+              )}
+            </div>
+          </div>
+        ) : selectedDevice ? (
           <>
             {/* Integral E3 / Flux Component Summary & Save to Base */}
             <div className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-[11px] font-semibold text-[var(--flux-text)] truncate">
-                  Цельное изделие E3 · {selectedDevice.attributes.length} атр. · {selectedDevice.pins.length} выв.
+                  Изделие E3 · {selectedDevice.attributes.length} атр. · {selectedDevice.pins.length} выв.
                 </div>
                 <div className="text-[10px] font-mono text-[var(--flux-text-muted)] truncate">
                   {selectedDevice.e3BlockName || selectedDevice.article}
@@ -203,9 +410,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   type="button"
                   onClick={() => onSaveDeviceToCatalog(selectedDevice)}
                   title="Сохранить изделие со всеми атрибутами и выводами в базу компонентов"
-                  className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
                 >
-                  <BookmarkPlus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                  <BookmarkPlus className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
                   <span>В базу</span>
                 </button>
               )}
@@ -214,6 +421,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             <fieldset disabled={activeLayerLocked} className="space-y-4 min-w-0 disabled:opacity-65">
             {/* Device Core Identity */}
             <div className="space-y-2.5">
+              <h3 className="text-[11px] font-semibold text-[var(--flux-text)] pb-1 border-b border-[var(--flux-line)]">
+                Идентификация и позиция
+              </h3>
               <div>
                 <label
                   htmlFor="insp-designation"
@@ -600,6 +810,36 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               </select>
             </div>
 
+            {(() => {
+              const dFrom = project.devices.find((d) => d.id === selectedWire.fromDeviceId);
+              const dTo = project.devices.find((d) => d.id === selectedWire.toDeviceId);
+              const pFrom = dFrom?.pins.find((p) => p.id === selectedWire.fromPinId);
+              const pTo = dTo?.pins.find((p) => p.id === selectedWire.toPinId);
+              return (
+                <div className="px-2.5 py-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] space-y-1">
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--flux-text-muted)]">
+                    Трасса подключения
+                  </div>
+                  <div className="font-mono text-[var(--flux-text)] truncate">
+                    {dFrom ? `${dFrom.designation}:${pFrom?.name || '?'}` : selectedWire.fromDeviceId} →{' '}
+                    {dTo ? `${dTo.designation}:${pTo?.name || '?'}` : selectedWire.toDeviceId}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {onRerouteWire && (
+              <button
+                type="button"
+                data-testid="inspector-reroute-wire-btn"
+                onClick={() => onRerouteWire(selectedWire.id)}
+                className="w-full h-8 inline-flex items-center justify-center gap-1.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[var(--flux-text)] text-[12px] font-medium transition-colors"
+              >
+                <Workflow className="w-3.5 h-3.5" />
+                <span>Перестроить трассу</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => onDeleteWire(selectedWire.id)}
@@ -742,6 +982,83 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 />
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label
+                  htmlFor="ann-sw"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Толщина
+                </label>
+                <input
+                  id="ann-sw"
+                  data-testid="inspector-ann-stroke-width"
+                  type="number"
+                  step="0.2"
+                  min="0.5"
+                  max="6"
+                  value={selectedAnnotation.strokeWidth ?? project.visualSettings.annotationStrokeWidth ?? 1.4}
+                  onChange={(e) =>
+                    onUpdateAnnotation(selectedAnnotation.id, {
+                      strokeWidth: Math.max(0.5, Math.min(6, Number(e.target.value) || 1.4)),
+                    })
+                  }
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="ann-style"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Линия
+                </label>
+                <select
+                  id="ann-style"
+                  data-testid="inspector-ann-stroke-style"
+                  value={selectedAnnotation.strokeStyle ?? (selectedAnnotation.kind === 'rect' ? 'dashed' : 'solid')}
+                  onChange={(e) =>
+                    onUpdateAnnotation(selectedAnnotation.id, {
+                      strokeStyle: e.target.value as AnnotationStrokeStyle,
+                    })
+                  }
+                  className="w-full h-8 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
+                >
+                  <option value="solid">Сплошная</option>
+                  <option value="dashed">Штриховая</option>
+                  <option value="dotted">Пунктир</option>
+                </select>
+              </div>
+              <div>
+                <label
+                  htmlFor="ann-color"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Цвет
+                </label>
+                <div className="flex items-center gap-1 h-8 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)]">
+                  <input
+                    id="ann-color"
+                    type="color"
+                    value={selectedAnnotation.color || '#0f172a'}
+                    onChange={(e) =>
+                      onUpdateAnnotation(selectedAnnotation.id, { color: e.target.value })
+                    }
+                    className="w-6 h-5 border-0 bg-transparent cursor-pointer shrink-0"
+                  />
+                  {selectedAnnotation.color && (
+                    <button
+                      type="button"
+                      onClick={() => onUpdateAnnotation(selectedAnnotation.id, { color: undefined })}
+                      title="Сбросить цвет"
+                      className="text-[10px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] ml-auto"
+                    >
+                      Авто
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
             <button
               type="button"
               onClick={() => onDeleteAnnotation(selectedAnnotation.id)}
@@ -751,9 +1068,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             </button>
           </fieldset>
         ) : activeSheet ? (
-          <div className="space-y-3 min-w-0">
-            <p className="text-[12px] text-[var(--flux-text-muted)]">
-              Выберите элемент или провод на схеме для редактирования, либо настройте штамп листа ГОСТ 2.104.
+          <div className="space-y-3.5 min-w-0">
+            <p className="text-[11.5px] leading-relaxed text-[var(--flux-text-muted)]">
+              Выберите элемент или провод на схеме для редактирования либо настройте параметры листа ГОСТ 2.104.
             </p>
             <div className="space-y-1.5">
               {(onOpenStampEditor || onOpenStampDesigner) && (
@@ -764,7 +1081,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       disabled={activeLayerLocked}
                       data-testid="inspector-open-stamp-btn"
                       onClick={() => onOpenStampEditor(activeSheet.id)}
-                      className="inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white text-[11px] font-medium truncate disabled:opacity-45"
+                      className="inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[var(--flux-text)] text-[11px] font-medium truncate disabled:opacity-45 transition-colors"
                     >
                       <Type className="w-3.5 h-3.5 shrink-0" />
                       <span className="truncate">Заполнить штамп</span>
@@ -775,9 +1092,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       type="button"
                       onClick={() => onOpenStampDesigner(activeSheet.id)}
                       data-testid="inspector-open-designer-btn"
-                      className="inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[11px] font-medium truncate"
+                      className="inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[11px] font-medium truncate transition-colors"
                     >
-                      <LayoutTemplate className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                      <LayoutTemplate className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
                       <span className="truncate">Конструктор</span>
                     </button>
                   )}
@@ -788,14 +1105,17 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   type="button"
                   data-testid="inspector-open-bom-btn"
                   onClick={onOpenBomPanel}
-                  className="w-full inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[12px] font-medium"
+                  className="w-full inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[12px] font-medium transition-colors"
                 >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
                   <span>Открыть спецификацию ПЭ3</span>
                 </button>
               )}
             </div>
             <fieldset disabled={activeLayerLocked} className="space-y-3 min-w-0 disabled:opacity-65">
+              <h3 className="text-[11px] font-semibold text-[var(--flux-text)] pb-1 border-b border-[var(--flux-line)]">
+                Основная надпись ГОСТ 2.104
+              </h3>
             <div>
               <label
                 htmlFor="sheet-stamp-form"
@@ -1039,7 +1359,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             </div>
           </div>
         ) : null}
-      </div>
+      </motion.div>
     </aside>
   );
 };

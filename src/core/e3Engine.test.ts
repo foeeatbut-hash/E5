@@ -7,18 +7,24 @@ import {
   buildBom,
   buildCableJournal,
   buildTerminalPlan,
+  computeWireCrossingArcs,
+  computeWireJunctionDots,
   encodeUtf16LeWithBom,
   exportBomCsv,
   exportToDxf,
   exportToFluxBridge,
   exportVisualSettings,
+  extractWireSegments,
   generateE3ComScript,
   generateStressBatch,
   generateWindowsBridgeCmd,
+  getDeviceBounds,
+  getSheetDrawableBounds,
   importFromFluxBridge,
   nextUniqueDesignation,
   parseE3Xml,
   parseVisualSettings,
+  rerouteAttachedWires,
   routeSheetWiresCleanly,
   runErc,
   serializeE3Xml,
@@ -495,3 +501,163 @@ test('GOST 2.104 stamp fields round-trip cleanly through E3 XML serialization', 
   assert.equal(parsed.sheets[0].titleBlock.invOriginal, 'ПВА-2026-01');
   assert.equal(parsed.sheets[1].titleBlock.stampForm, 'form2a');
 });
+
+test('getDeviceBounds swaps width/height around center for 90/270 deg rotations and rerouteAttachedWires keeps orthogonality', () => {
+  const dev = { id: 'd1', x: 200, y: 100, width: 120, height: 60, rotation: 90 as const };
+  const b = getDeviceBounds(dev);
+  assert.equal(b.x, 230);
+  assert.equal(b.y, 70);
+  assert.equal(b.width, 60);
+  assert.equal(b.height, 120);
+
+  const seed = createSeedProject();
+  const qf1 = seed.devices.find((d) => d.designation === '-QF1')!;
+  const rotatedDevices = seed.devices.map((d) =>
+    d.id === qf1.id ? { ...d, rotation: 90 as const, x: d.x + 20, y: d.y + 40 } : d
+  );
+  const rerouted = rerouteAttachedWires(qf1.id, rotatedDevices, seed.wires, 20, seed.sheets);
+  for (const w of rerouted.filter((x) => x.sheetId === qf1.sheetId)) {
+    assert.ok(w.waypoints.length >= 2);
+    for (let i = 0; i < w.waypoints.length - 1; i++) {
+      const a = w.waypoints[i];
+      const bPt = w.waypoints[i + 1];
+      assert.ok(a.x === bPt.x || a.y === bPt.y, `Non-orthogonal segment in wire ${w.id}`);
+    }
+  }
+});
+
+test('routeSheetWiresCleanly prevents cross-net parallel overlap and stays inside GOST bounds outside stamp', () => {
+  const seed = createSeedProject();
+  // Shift -KM1 close to another column to stress-test multi-wire bundle anti-merging
+  const shiftedDevices = seed.devices.map((d) =>
+    d.designation === '-KM1' ? { ...d, x: d.x + 80, y: d.y + 40 } : d
+  );
+  const routed = routeSheetWiresCleanly(shiftedDevices, seed.wires, 'sheet-1', 20, seed.sheets);
+  const sheet1Wires = routed.filter((w) => w.sheetId === 'sheet-1');
+  const bounds = getSheetDrawableBounds(seed.sheets[0])!;
+  const stamp = bounds.stampBox!;
+
+  // Verify zero cross-net collinear overlap
+  for (let i = 0; i < sheet1Wires.length; i++) {
+    const segsA = extractWireSegments(sheet1Wires[i].waypoints, sheet1Wires[i].netName);
+    for (const sA of segsA) {
+      // Check intermediate points stay outside GOST stamp box
+      const midX = (sA.x1 + sA.x2) / 2;
+      const midY = (sA.y1 + sA.y2) / 2;
+      const insideStamp =
+        midX > stamp.x && midX < stamp.x + stamp.width && midY > stamp.y && midY < stamp.y + stamp.height;
+      assert.equal(insideStamp, false, `Wire ${sheet1Wires[i].netName} crossed GOST stamp`);
+    }
+    for (let j = i + 1; j < sheet1Wires.length; j++) {
+      if (sheet1Wires[i].netName === sheet1Wires[j].netName) continue;
+      const segsB = extractWireSegments(sheet1Wires[j].waypoints, sheet1Wires[j].netName);
+      for (const a of segsA) {
+        const aH = a.y1 === a.y2;
+        for (const b of segsB) {
+          const bH = b.y1 === b.y2;
+          if (aH && bH && Math.abs(a.y1 - b.y1) < 2) {
+            const ov = Math.min(Math.max(a.x1, a.x2), Math.max(b.x1, b.x2)) - Math.max(Math.min(a.x1, a.x2), Math.min(b.x1, b.x2));
+            assert.ok(ov <= 1, `Horizontal overlap between ${sheet1Wires[i].netName} and ${sheet1Wires[j].netName}`);
+          }
+          if (!aH && !bH && Math.abs(a.x1 - b.x1) < 2) {
+            const ov = Math.min(Math.max(a.y1, a.y2), Math.max(b.y1, b.y2)) - Math.max(Math.min(a.y1, a.y2), Math.min(b.y1, b.y2));
+            assert.ok(ov <= 1, `Vertical overlap between ${sheet1Wires[i].netName} and ${sheet1Wires[j].netName}`);
+          }
+        }
+      }
+    }
+  }
+});
+
+test('computeWireJunctionDots and computeWireCrossingArcs distinguish T-taps from cross-net crossings', () => {
+  const wires = [
+    {
+      id: 'w1',
+      sheetId: 's1',
+      netName: 'L1',
+      signalType: 'power' as const,
+      fromDeviceId: 'd1',
+      fromPinId: 'p1',
+      toDeviceId: 'd2',
+      toPinId: 'p2',
+      waypoints: [{ x: 100, y: 200 }, { x: 300, y: 200 }],
+      crossSection: '2.5',
+      wireNumber: 'L1',
+    },
+    {
+      id: 'w2',
+      sheetId: 's1',
+      netName: 'L1',
+      signalType: 'power' as const,
+      fromDeviceId: 'd3',
+      fromPinId: 'p1',
+      toDeviceId: 'd1',
+      toPinId: 'p1',
+      waypoints: [{ x: 200, y: 200 }, { x: 200, y: 320 }],
+      crossSection: '2.5',
+      wireNumber: 'L1',
+    },
+    {
+      id: 'w3',
+      sheetId: 's1',
+      netName: 'N',
+      signalType: 'neutral' as const,
+      fromDeviceId: 'd4',
+      fromPinId: 'p1',
+      toDeviceId: 'd5',
+      toPinId: 'p1',
+      waypoints: [{ x: 250, y: 120 }, { x: 250, y: 280 }],
+      crossSection: '2.5',
+      wireNumber: 'N',
+    },
+  ];
+
+  const dots = computeWireJunctionDots(wires);
+  assert.equal(dots.length, 1);
+  assert.equal(dots[0].x, 200);
+  assert.equal(dots[0].y, 200);
+
+  const arcs = computeWireCrossingArcs(wires, dots);
+  assert.equal(arcs.length, 1);
+  assert.equal(arcs[0].x, 250);
+  assert.equal(arcs[0].y, 200);
+  assert.equal(arcs[0].wireId, 'w1');
+});
+
+test('XML round-trip preserves visual stroke thicknesses, crossing bridges, and annotation styles', () => {
+  const seed = createSeedProject();
+  seed.visualSettings.symbolStrokeWidth = 2.5;
+  seed.visualSettings.wireWidth = 3.2;
+  seed.visualSettings.frameStrokeWidth = 2.2;
+  seed.visualSettings.annotationStrokeWidth = 1.8;
+  seed.visualSettings.wireCrossingBridge = false;
+  seed.annotations = [
+    {
+      id: 'ann-style-1',
+      sheetId: 'sheet-1',
+      kind: 'rect',
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 120,
+      text: 'Шкаф 1',
+      fontSize: 13,
+      color: '#dc2626',
+      strokeWidth: 2.6,
+      strokeStyle: 'dotted',
+    },
+  ];
+
+  const xml = serializeE3Xml(seed);
+  const parsed = parseE3Xml(xml);
+  assert.equal(parsed.visualSettings.symbolStrokeWidth, 2.5);
+  assert.equal(parsed.visualSettings.wireWidth, 3.2);
+  assert.equal(parsed.visualSettings.frameStrokeWidth, 2.2);
+  assert.equal(parsed.visualSettings.annotationStrokeWidth, 1.8);
+  assert.equal(parsed.visualSettings.wireCrossingBridge, false);
+  assert.equal(parsed.annotations?.length, 1);
+  assert.equal(parsed.annotations?.[0].strokeWidth, 2.6);
+  assert.equal(parsed.annotations?.[0].strokeStyle, 'dotted');
+  assert.equal(parsed.annotations?.[0].color, '#dc2626');
+});
+

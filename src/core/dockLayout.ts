@@ -28,6 +28,7 @@ export interface DockLayoutState {
 }
 
 export const DOCK_LAYOUT_STORAGE_KEY = 'e3promax.dockLayout.v1';
+export const COLLAPSED_BOTTOM_TABS_HEIGHT = 32;
 
 export function createDefaultDockLayout(): DockLayoutState {
   return {
@@ -61,7 +62,7 @@ export function createDefaultDockLayout(): DockLayoutState {
     sizes: {
       left: 280,
       right: 320,
-      bottom: 224,
+      bottom: 240,
       top: 190,
     },
   };

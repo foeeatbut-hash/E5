@@ -25,6 +25,7 @@ export const CAD_FAST_TRANSITION = {
 
 export const COLLAPSED_SIDE_RAIL_WIDTH = 34;
 export const COLLAPSED_HEADER_HEIGHT = 28;
+export const COLLAPSED_BOTTOM_TABS_HEIGHT = 32;
 
 export interface ActivePanelDrag {
   panelId: PanelId;
@@ -101,58 +102,60 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
         onToggleCollapse(panel.id);
       }}
       title="Перетащите заголовок для закрепления или дважды кликните для сворачивания"
-      className="h-7 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 cursor-grab active:cursor-grabbing select-none"
+      className="group/header h-7 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 cursor-grab active:cursor-grabbing select-none"
     >
       <div className="flex items-center gap-1.5 min-w-0">
-        <GripHorizontal className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
-        <span className="text-[11px] font-semibold tracking-wide text-[var(--flux-text)] truncate">
+        <GripHorizontal className="w-3.5 h-3.5 text-[var(--flux-text-muted)]/60 group-hover/header:text-[var(--flux-text-muted)] transition-colors shrink-0" />
+        <span className="text-[11.5px] font-semibold tracking-[-0.01em] text-[var(--flux-text)] truncate">
           {panel.title}
         </span>
       </div>
 
       <div className="flex items-center gap-0.5 shrink-0">
-        <button
-          type="button"
-          onClick={() => onMoveDock(panel.id, 'left')}
-          title="Закрепить слева"
-          aria-label={`Закрепить панель «${panel.title}» слева`}
-          className={dockBtnCls(panel.dock === 'left')}
-        >
-          <PanelLeft className="w-3 h-3" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onMoveDock(panel.id, 'bottom')}
-          title="Закрепить снизу"
-          aria-label={`Закрепить панель «${panel.title}» снизу`}
-          className={dockBtnCls(panel.dock === 'bottom')}
-        >
-          <PanelBottom className="w-3 h-3" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onMoveDock(panel.id, 'right')}
-          title="Закрепить справа"
-          aria-label={`Закрепить панель «${panel.title}» справа`}
-          className={dockBtnCls(panel.dock === 'right')}
-        >
-          <PanelRight className="w-3 h-3" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onMoveDock(panel.id, 'floating')}
-          title="Открепить (плавающее окно)"
-          aria-label={`Открепить панель «${panel.title}»`}
-          className={dockBtnCls(panel.dock === 'floating')}
-        >
-          <PictureInPicture2 className="w-3 h-3" />
-        </button>
+        <div className="flex items-center gap-0.5 opacity-35 group-hover/header:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
+          <button
+            type="button"
+            onClick={() => onMoveDock(panel.id, 'left')}
+            title="Закрепить слева"
+            aria-label={`Закрепить панель «${panel.title}» слева`}
+            className={dockBtnCls(panel.dock === 'left')}
+          >
+            <PanelLeft className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMoveDock(panel.id, 'bottom')}
+            title="Закрепить снизу"
+            aria-label={`Закрепить панель «${panel.title}» снизу`}
+            className={dockBtnCls(panel.dock === 'bottom')}
+          >
+            <PanelBottom className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMoveDock(panel.id, 'right')}
+            title="Закрепить справа"
+            aria-label={`Закрепить панель «${panel.title}» справа`}
+            className={dockBtnCls(panel.dock === 'right')}
+          >
+            <PanelRight className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMoveDock(panel.id, 'floating')}
+            title="Открепить (плавающее окно)"
+            aria-label={`Открепить панель «${panel.title}»`}
+            className={dockBtnCls(panel.dock === 'floating')}
+          >
+            <PictureInPicture2 className="w-3 h-3" />
+          </button>
+        </div>
         <button
           type="button"
           onClick={() => onToggleCollapse(panel.id)}
           title={panel.collapsed ? 'Развернуть панель' : 'Свернуть панель'}
           aria-label={panel.collapsed ? `Развернуть «${panel.title}»` : `Свернуть «${panel.title}»`}
-          className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+          className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors ml-0.5"
         >
           <motion.span
             animate={{ rotate: panel.collapsed ? 180 : 0 }}
@@ -173,6 +176,7 @@ interface DockablePanelFrameProps {
   bandSize: number;
   useSideRail?: boolean;
   multiPanelInBand?: boolean;
+  hideHeaderBar?: boolean;
   isResizing?: boolean;
   className?: string;
   onStartDrag: (panelId: PanelId, e: React.PointerEvent) => void;
@@ -187,6 +191,7 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = ({
   bandSize,
   useSideRail = false,
   multiPanelInBand = false,
+  hideHeaderBar = false,
   isResizing = false,
   className = '',
   onStartDrag,
@@ -197,6 +202,19 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = ({
   const isSideBand = edge === 'left' || edge === 'right';
   const showSideRail = isSideBand && useSideRail && panel.collapsed;
   const collapseMotion = isResizing ? { duration: 0 } : CAD_PANEL_TRANSITION;
+
+  if (hideHeaderBar) {
+    return (
+      <div
+        data-testid={`dock-panel-${panel.id}`}
+        data-dock={panel.dock}
+        data-collapsed={panel.collapsed ? 'true' : 'false'}
+        className={`flex flex-col min-w-0 min-h-0 bg-[var(--flux-surface)] overflow-hidden ${className}`}
+      >
+        {children}
+      </div>
+    );
+  }
 
   if (isSideBand && useSideRail) {
     return (

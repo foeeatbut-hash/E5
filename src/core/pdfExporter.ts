@@ -249,6 +249,7 @@ function drawPdfDevice(
   toX: (x: number) => number,
   toY: (y: number) => number,
   s: number,
+  symbolStrokeWidth: number,
   drawText: (x: number, y: number, txt: string, size: number, bold?: boolean, align?: 'left' | 'center', rgb?: [number, number, number]) => void
 ) {
   const x = toX(dev.x);
@@ -256,8 +257,10 @@ function drawPdfDevice(
   const w = dev.width * s;
   const h = dev.height * s;
   const yBot = yTop - h;
+  const pdfSw = Math.max(0.35, symbolStrokeWidth * 0.52).toFixed(2);
+  const pdfThinSw = Math.max(0.3, symbolStrokeWidth * 0.42).toFixed(2);
 
-  ops.push('0.12 0.16 0.24 RG 0.98 0.99 1 rg 0.9 w');
+  ops.push(`0.12 0.16 0.24 RG 0.98 0.99 1 rg ${pdfSw} w`);
   ops.push(`${x.toFixed(2)} ${yBot.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re B`);
 
   // Category detail symbol
@@ -266,7 +269,7 @@ function drawPdfDevice(
     const cy = yBot + h / 2;
     const r = Math.min(w, h) * 0.35;
     const k = r * 0.5523;
-    ops.push(`0.12 0.16 0.24 RG 0.8 w`);
+    ops.push(`0.12 0.16 0.24 RG ${pdfThinSw} w`);
     ops.push(
       `${(cx + r).toFixed(2)} ${cy.toFixed(2)} m ` +
         `${(cx + r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx + k).toFixed(2)} ${(cy + r).toFixed(2)} ${cx.toFixed(2)} ${(cy + r).toFixed(2)} c ` +
@@ -278,7 +281,7 @@ function drawPdfDevice(
   } else if (dev.category === 'breaker') {
     const poles = dev.pins.filter((p) => p.direction === 'top').length || 1;
     const step = w / (poles + 1);
-    ops.push('0.12 0.16 0.24 RG 0.85 w');
+    ops.push(`0.12 0.16 0.24 RG ${pdfSw} w`);
     for (let i = 1; i <= poles; i++) {
       const px = x + i * step;
       ops.push(`${px.toFixed(2)} ${(yTop - 8 * s).toFixed(2)} m ${px.toFixed(2)} ${(yTop - 32 * s).toFixed(2)} l ${(px - 8 * s).toFixed(2)} ${(yTop - 60 * s).toFixed(2)} l S`);
@@ -357,14 +360,20 @@ function renderSheetPageContent(
     ops.push('ET');
   };
 
+  const frameBase = Math.max(0.5, project.visualSettings.frameStrokeWidth ?? 1.6);
+  const pdfFrameW = (frameBase * 0.68).toFixed(2);
+  const pdfFrameThinW = Math.max(0.25, frameBase * 0.28).toFixed(2);
+  const pdfStampThickW = Math.max(0.4, frameBase * 0.56).toFixed(2);
+  const pdfStampThinW = Math.max(0.25, frameBase * 0.28).toFixed(2);
+
   if (includeGostFrame) {
     const geom = buildGostSheetGeometry(sheet, project);
     const { frame, archivalBox, stamp } = geom;
 
     // Inner & outer GOST border
-    ops.push('0.1 0.12 0.16 RG 1.1 w');
+    ops.push(`0.1 0.12 0.16 RG ${pdfFrameW} w`);
     ops.push(`${toX(frame.left).toFixed(2)} ${toY(frame.bottom).toFixed(2)} ${(frame.width * scale).toFixed(2)} ${(frame.height * scale).toFixed(2)} re S`);
-    ops.push('0.45 0.5 0.58 RG 0.45 w');
+    ops.push(`0.45 0.5 0.58 RG ${pdfFrameThinW} w`);
     ops.push(`${toX(4).toFixed(2)} ${toY(sheet.height - 4).toFixed(2)} ${((sheet.width - 8) * scale).toFixed(2)} ${((sheet.height - 8) * scale).toFixed(2)} re S`);
 
     // Zone headers
@@ -390,7 +399,7 @@ function renderSheetPageContent(
 
     // Archival strip on left border
     if (archivalBox.visible) {
-      ops.push('0.1 0.12 0.16 RG 0.65 w');
+      ops.push(`0.1 0.12 0.16 RG ${(frameBase * 0.42).toFixed(2)} w`);
       ops.push(`${toX(archivalBox.x).toFixed(2)} ${toY(archivalBox.y + archivalBox.height).toFixed(2)} ${(archivalBox.width * scale).toFixed(2)} ${(archivalBox.height * scale).toFixed(2)} re S`);
       let curY = archivalBox.y;
       for (const r of archivalBox.rows) {
@@ -404,10 +413,10 @@ function renderSheetPageContent(
     }
 
     // Stamp box + grid lines + cells
-    ops.push('1 1 1 rg 0.1 0.12 0.16 RG 1.0 w');
+    ops.push(`1 1 1 rg 0.1 0.12 0.16 RG ${pdfFrameW} w`);
     ops.push(`${toX(stamp.x).toFixed(2)} ${toY(stamp.y + stamp.height).toFixed(2)} ${(stamp.width * scale).toFixed(2)} ${(stamp.height * scale).toFixed(2)} re B`);
     for (const ln of stamp.lines) {
-      ops.push(`${ln.thick ? '0.9' : '0.45'} w 0.1 0.12 0.16 RG`);
+      ops.push(`${ln.thick ? pdfStampThickW : pdfStampThinW} w 0.1 0.12 0.16 RG`);
       ops.push(`${toX(ln.x1).toFixed(2)} ${toY(ln.y1).toFixed(2)} m ${toX(ln.x2).toFixed(2)} ${toY(ln.y2).toFixed(2)} l S`);
     }
     for (const cell of stamp.cells) {
@@ -431,14 +440,18 @@ function renderSheetPageContent(
   // Annotations (under wires/devices)
   for (const ann of (project.annotations || []).filter((a) => a.sheetId === sheet.id)) {
     const [r, g, b] = hexColorToRgb01(ann.color);
+    const annSw = Math.max(0.35, (ann.strokeWidth ?? project.visualSettings.annotationStrokeWidth ?? 1.4) * 0.62);
+    const style = ann.strokeStyle ?? (ann.kind === 'rect' ? 'dashed' : 'solid');
+    const dashOp = style === 'dashed' ? '[5 2.5] 0 d' : style === 'dotted' ? '[1.5 2] 0 d' : '[] 0 d';
     if (ann.kind === 'rect') {
-      ops.push(`${r.toFixed(2)} ${g.toFixed(2)} ${b.toFixed(2)} RG [4 2] 0 d 0.8 w`);
+      ops.push(`${r.toFixed(2)} ${g.toFixed(2)} ${b.toFixed(2)} RG ${dashOp} ${annSw.toFixed(2)} w`);
       ops.push(`${toX(ann.x).toFixed(2)} ${toY(ann.y + ann.height).toFixed(2)} ${(ann.width * scale).toFixed(2)} ${(ann.height * scale).toFixed(2)} re S`);
       ops.push('[] 0 d');
       drawText(toX(ann.x + 8), toY(ann.y + 12), ann.text, Math.max(6, (ann.fontSize || 11) * scale), true, 'left', [r, g, b]);
     } else if (ann.kind === 'callout') {
-      ops.push(`${r.toFixed(2)} ${g.toFixed(2)} ${b.toFixed(2)} RG 0.8 w`);
+      ops.push(`${r.toFixed(2)} ${g.toFixed(2)} ${b.toFixed(2)} RG ${dashOp} ${annSw.toFixed(2)} w`);
       ops.push(`${toX(ann.x).toFixed(2)} ${toY(ann.y + ann.height).toFixed(2)} m ${toX(ann.x + 26).toFixed(2)} ${toY(ann.y + 18).toFixed(2)} l ${toX(ann.x + 26 + ann.width).toFixed(2)} ${toY(ann.y + 18).toFixed(2)} l S`);
+      ops.push('[] 0 d');
       drawText(toX(ann.x + 30), toY(ann.y + 12), ann.text, Math.max(6, (ann.fontSize || 10) * scale), false, 'left', [r, g, b]);
     } else {
       drawText(toX(ann.x), toY(ann.y), ann.text, Math.max(6, (ann.fontSize || 11) * scale), false, 'left', [r, g, b]);
@@ -464,7 +477,7 @@ function renderSheetPageContent(
 
   // Devices
   for (const dev of project.devices.filter((d) => d.sheetId === sheet.id && d.bindingState !== 'REMOVED_IN_FLUX')) {
-    drawPdfDevice(ops, dev, toX, toY, scale, drawText);
+    drawPdfDevice(ops, dev, toX, toY, scale, project.visualSettings.symbolStrokeWidth || 1.8, drawText);
   }
 
   return { widthPt: pageW, heightPt: pageH, stream: ops.join('\n') };

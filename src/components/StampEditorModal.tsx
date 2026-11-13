@@ -780,7 +780,7 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                         );
                         onClose();
                       }}
-                      className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white text-[12px] font-medium"
+                      className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium"
                     >
                       <CopyCheck className="w-3.5 h-3.5" />
                       <span>Применить ко всем листам ({project.sheets.length})</span>
@@ -799,7 +799,7 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                         type="button"
                         data-testid="stamp-new-template-btn"
                         onClick={handleCreateNewTemplate}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white text-[11px] font-medium"
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[11px] font-medium"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Новый штамп</span>
@@ -1289,7 +1289,7 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                       type="button"
                       data-testid="stamp-apply-template-all-btn"
                       onClick={() => handleSaveAndApplyTemplate(true)}
-                      className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white text-[12px] font-medium"
+                      className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium"
                     >
                       <CopyCheck className="w-3.5 h-3.5" />
                       <span>Сохранить и на все листы ({project.sheets.length})</span>

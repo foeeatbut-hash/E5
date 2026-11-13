@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Plus, Trash2, X } from 'lucide-react';
 import type { CatalogItem, DeviceCategory, E3Attribute, E3Pin, HvacStageRole } from '../core/e3Types';
 import { HVAC_ROLE_LABELS } from '../core/hvacBuilder';
@@ -132,8 +133,6 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!componentName.trim()) return;
@@ -188,17 +187,29 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="catalog-item-title"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
-    >
-      <div className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[88vh]">
-        <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between shrink-0">
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.14 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="catalog-item-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.985 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
+          >
+            <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between shrink-0">
           <h2 id="catalog-item-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
             {editingItem ? 'Редактировать изделие в базе' : 'Добавить своё изделие в базу E3ProMax'}
           </h2>
@@ -476,13 +487,15 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
             </button>
             <button
               type="submit"
-              className="h-8 px-4 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white font-medium"
+              className="h-8 px-4 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium"
             >
               Сохранить в базу
             </button>
           </div>
-        </form>
-      </div>
-    </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

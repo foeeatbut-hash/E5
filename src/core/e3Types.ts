@@ -205,6 +205,9 @@ export interface E3VisualSettings {
   showCrossRefs: boolean;
   wireWidth: number;
   symbolStrokeWidth: number;
+  frameStrokeWidth?: number;
+  annotationStrokeWidth?: number;
+  wireCrossingBridge?: boolean;
   fontScale: number;
   fontFamily?: SchematicFontFamily;
   netColors: Record<SignalType, string>;
@@ -213,6 +216,7 @@ export interface E3VisualSettings {
 export type CadTool = 'select' | 'wire' | 'pan' | 'text' | 'rect' | 'callout';
 
 export type AnnotationKind = 'text' | 'rect' | 'callout';
+export type AnnotationStrokeStyle = 'solid' | 'dashed' | 'dotted';
 
 export interface E3Annotation {
   id: string;
@@ -225,6 +229,8 @@ export interface E3Annotation {
   text: string;
   color?: string;
   fontSize?: number;
+  strokeWidth?: number;
+  strokeStyle?: AnnotationStrokeStyle;
 }
 
 export type CadLayerId = 'devices' | 'wires' | 'annotations' | 'frame';

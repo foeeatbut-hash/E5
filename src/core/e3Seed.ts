@@ -14,6 +14,9 @@ export const DEFAULT_VISUAL_SETTINGS: E3VisualSettings = {
   showCrossRefs: true,
   wireWidth: 2,
   symbolStrokeWidth: 1.75,
+  frameStrokeWidth: 1.6,
+  annotationStrokeWidth: 1.4,
+  wireCrossingBridge: true,
   fontScale: 1,
   fontFamily: 'GOST',
   netColors: {

@@ -1,12 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { Grid3X3, Layers, Lock, Magnet, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react';
 import {
   countSheetLayerEntities,
   resolveCadLayers,
   summarizeCadLayers,
 } from '../core/cadLayers';
+import {
+  normalizeSelectionBox,
+  selectEntitiesInBox,
+  type SelectionBox,
+} from '../core/cadSelection';
 import { resolveSchematicCssFont } from '../core/e3Catalog';
-import { autoRouteOrthogonal, extractWireSegments, getAbsolutePinPos } from '../core/e3Engine';
+import {
+  autoRouteOrthogonal,
+  computeWireCrossingArcs,
+  computeWireJunctionDots,
+  computeWireLabelPositions,
+  extractWireSegments,
+  getAbsolutePinPos,
+  getDeviceBounds,
+  getSheetDrawableBounds,
+} from '../core/e3Engine';
 import { buildGostSheetGeometry, fitStampCellText, type StampFieldKey } from '../core/gostFrame';
 import {
   type AlignmentGuide,
@@ -25,6 +40,7 @@ import type {
   E3Device,
   E3Project,
   E3Wire,
+  PinDirection,
 } from '../core/e3Types';
 import { LayerManagerPopover } from './LayerManagerPopover';
 import { SchematicSymbol } from './SchematicSymbol';
@@ -43,6 +59,9 @@ interface SchematicCanvasProps {
   selectedDeviceId: string | null;
   selectedWireId: string | null;
   selectedAnnotationId: string | null;
+  selectedDeviceIds?: string[];
+  selectedWireIds?: string[];
+  selectedAnnotationIds?: string[];
   onFocusViewport?: () => void;
   onFitViewport?: () => void;
   onSelectSheet: (sheetId: string) => void;
@@ -60,9 +79,13 @@ interface SchematicCanvasProps {
   onUnlockAllLayers?: () => void;
   onBeginDrag?: () => void;
   onCommitDrag?: (moved: boolean) => void;
-  onSelectDevice: (deviceId: string | null) => void;
-  onSelectWire: (wireId: string | null) => void;
-  onSelectAnnotation: (annId: string | null) => void;
+  onSelectDevice: (deviceId: string | null, opts?: { toggle?: boolean }) => void;
+  onSelectWire: (wireId: string | null, opts?: { toggle?: boolean }) => void;
+  onSelectAnnotation: (annId: string | null, opts?: { toggle?: boolean }) => void;
+  onSetSelection?: (
+    next: { deviceIds: string[]; wireIds: string[]; annotationIds: string[] },
+    additive?: boolean
+  ) => void;
   onCreateAnnotation: (sheetId: string, kind: AnnotationKind, x: number, y: number) => void;
   onMoveAnnotation: (annId: string, x: number, y: number) => void;
   onMoveDevice: (deviceId: string, x: number, y: number) => void;
@@ -85,6 +108,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   selectedDeviceId,
   selectedWireId,
   selectedAnnotationId,
+  selectedDeviceIds,
+  selectedWireIds,
+  selectedAnnotationIds,
   onFocusViewport,
   onFitViewport,
   onSelectSheet,
@@ -105,6 +131,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   onSelectDevice,
   onSelectWire,
   onSelectAnnotation,
+  onSetSelection,
   onCreateAnnotation,
   onMoveAnnotation,
   onMoveDevice,
@@ -128,6 +155,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   const [layerPopoverOpen, setLayerPopoverOpen] = useState(false);
   const layerBtnRef = useRef<HTMLButtonElement | null>(null);
   const [wireStart, setWireStart] = useState<{
+    deviceId: string;
+    pinId: string;
+    x: number;
+    y: number;
+    direction: 'top' | 'right' | 'bottom' | 'left';
+  } | null>(null);
+  const [hoveredPin, setHoveredPin] = useState<{
     deviceId: string;
     pinId: string;
     x: number;
@@ -166,10 +200,34 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   const onSetPanRef = useRef(onSetPan);
   onSetPanRef.current = onSetPan;
 
+  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+
+  const selectedDeviceIdSet = useMemo(() => {
+    const s = new Set<string>(selectedDeviceIds || []);
+    if (selectedDeviceId) s.add(selectedDeviceId);
+    return s;
+  }, [selectedDeviceIds, selectedDeviceId]);
+
+  const selectedWireIdSet = useMemo(() => {
+    const s = new Set<string>(selectedWireIds || []);
+    if (selectedWireId) s.add(selectedWireId);
+    return s;
+  }, [selectedWireIds, selectedWireId]);
+
+  const selectedAnnotationIdSet = useMemo(() => {
+    const s = new Set<string>(selectedAnnotationIds || []);
+    if (selectedAnnotationId) s.add(selectedAnnotationId);
+    return s;
+  }, [selectedAnnotationIds, selectedAnnotationId]);
+
+  const totalSelectedCount =
+    selectedDeviceIdSet.size + selectedWireIdSet.size + selectedAnnotationIdSet.size;
+
   const dragRef = useRef<
     | { kind: 'pan'; startX: number; startY: number; origPanX: number; origPanY: number; moved: boolean }
     | { kind: 'device'; deviceId: string; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean }
     | { kind: 'annotation'; annId: string; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean }
+    | { kind: 'marquee'; startWorldX: number; startWorldY: number; additive: boolean; moved: boolean; currentBox?: SelectionBox }
     | null
   >(null);
 
@@ -226,12 +284,48 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   const finishDrag = useCallback(() => {
     const d = dragRef.current;
     setActiveSnapHud(null);
+    setSelectionBox(null);
     if (!d) return;
     dragRef.current = null;
     if (d.kind === 'device' || d.kind === 'annotation') {
       onCommitDrag?.(d.moved);
+    } else if (d.kind === 'marquee') {
+      if (d.moved && d.currentBox) {
+        const matched = selectEntitiesInBox(
+          sheetDevices,
+          sheetWires,
+          sheetAnnotations,
+          d.currentBox,
+          resolvedLayers,
+          project.visualSettings.showGostFrame
+        );
+        if (onSetSelection) {
+          onSetSelection(matched, d.additive);
+        } else if (matched.deviceIds[0]) {
+          onSelectDevice(matched.deviceIds[0]);
+        }
+      } else if (!d.additive) {
+        if (onSetSelection) {
+          onSetSelection({ deviceIds: [], wireIds: [], annotationIds: [] }, false);
+        } else {
+          onSelectDevice(null);
+          onSelectWire(null);
+          onSelectAnnotation(null);
+        }
+      }
     }
-  }, [onCommitDrag]);
+  }, [
+    onCommitDrag,
+    sheetDevices,
+    sheetWires,
+    sheetAnnotations,
+    resolvedLayers,
+    project.visualSettings.showGostFrame,
+    onSetSelection,
+    onSelectDevice,
+    onSelectWire,
+    onSelectAnnotation,
+  ]);
 
   useEffect(() => {
     window.addEventListener('mouseup', finishDrag);
@@ -292,7 +386,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
 
   const handleMouseDownBg = (e: React.MouseEvent<SVGSVGElement>) => {
     onFocusViewport?.();
-    if (e.button === 1 || tool === 'pan' || e.shiftKey) {
+    if (e.button === 1 || tool === 'pan') {
       dragRef.current = {
         kind: 'pan',
         startX: e.clientX,
@@ -311,6 +405,18 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       if (annotationsLocked || !annotationsVisible) return;
       const world = toWorld(e.clientX, e.clientY);
       onCreateAnnotation(sheet.id, tool, snap(world.x), snap(world.y));
+      return;
+    }
+    if (tool === 'select' && e.button === 0) {
+      const world = toWorld(e.clientX, e.clientY);
+      setSelectionBox(null);
+      dragRef.current = {
+        kind: 'marquee',
+        startWorldX: world.x,
+        startWorldY: world.y,
+        additive: e.shiftKey,
+        moved: false,
+      };
       return;
     }
     onSelectDevice(null);
@@ -332,9 +438,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       };
       return;
     }
-    onSelectWire(null);
-    onSelectAnnotation(null);
-    onSelectDevice(device.id);
+    if (e.shiftKey) {
+      onSelectDevice(device.id, { toggle: true });
+      return;
+    }
+    const alreadyInMulti = selectedDeviceIdSet.has(device.id) && totalSelectedCount > 1;
+    if (!alreadyInMulti) {
+      onSelectDevice(device.id);
+    }
     if (tool === 'select' && !devicesLocked) {
       const world = toWorld(e.clientX, e.clientY);
       onBeginDrag?.();
@@ -364,9 +475,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       };
       return;
     }
-    onSelectDevice(null);
-    onSelectWire(null);
-    onSelectAnnotation(ann.id);
+    if (e.shiftKey) {
+      onSelectAnnotation(ann.id, { toggle: true });
+      return;
+    }
+    const alreadyInMulti = selectedAnnotationIdSet.has(ann.id) && totalSelectedCount > 1;
+    if (!alreadyInMulti) {
+      onSelectAnnotation(ann.id);
+    }
     if (annotationsLocked) return;
     const world = toWorld(e.clientX, e.clientY);
     onBeginDrag?.();
@@ -397,6 +513,16 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         x: drag.origPanX + (e.clientX - drag.startX),
         y: drag.origPanY + (e.clientY - drag.startY),
       });
+    } else if (drag.kind === 'marquee') {
+      const box = normalizeSelectionBox(
+        { x: drag.startWorldX, y: drag.startWorldY },
+        world
+      );
+      if (box.width >= 4 || box.height >= 4) {
+        drag.moved = true;
+        drag.currentBox = box;
+        setSelectionBox(box);
+      }
     } else if (drag.kind === 'device') {
       const dev = sheetDevices.find((d) => d.id === drag.deviceId);
       const rawX = drag.origX + (world.x - drag.startWorldX);
@@ -511,6 +637,26 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     }
   };
 
+  const handlePinHover = useCallback(
+    (device: E3Device, pinId: string | null) => {
+      if (!pinId) {
+        setHoveredPin((prev) => (prev && prev.deviceId === device.id ? null : prev));
+        return;
+      }
+      const pin = device.pins.find((p) => p.id === pinId);
+      if (!pin) return;
+      const abs = getAbsolutePinPos(device, pin);
+      setHoveredPin({
+        deviceId: device.id,
+        pinId: pin.id,
+        x: abs.x,
+        y: abs.y,
+        direction: abs.direction,
+      });
+    },
+    []
+  );
+
   const handlePinClick = (e: React.MouseEvent, device: E3Device, pinId: string) => {
     e.stopPropagation();
     onFocusViewport?.();
@@ -534,6 +680,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       }
       onCreateWire(wireStart.deviceId, wireStart.pinId, device.id, pin.id);
       setWireStart(null);
+      setHoveredPin(null);
     }
   };
 
@@ -588,50 +735,61 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     if (!wireStart) return '';
     const obstacles = sheetDevices
       .filter((d) => d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
-      .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
-    const occupied = sheetWires.flatMap((w) => extractWireSegments(w.waypoints));
+      .map((d) => getDeviceBounds(d));
+    const occupied = sheetWires.flatMap((w) => extractWireSegments(w.waypoints, w.netName));
+    const sheetBounds = getSheetDrawableBounds(sheet);
+    const snapTarget =
+      hoveredPin && !(hoveredPin.deviceId === wireStart.deviceId && hoveredPin.pinId === wireStart.pinId)
+        ? hoveredPin
+        : null;
+    const dx = cursorWorld.x - wireStart.x;
+    const dy = cursorWorld.y - wireStart.y;
+    const inferredDir: PinDirection =
+      Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'left' : 'right') : dy >= 0 ? 'top' : 'bottom';
+    const targetEndpoint = snapTarget
+      ? {
+          x: snapTarget.x,
+          y: snapTarget.y,
+          direction: snapTarget.direction,
+          deviceId: snapTarget.deviceId,
+        }
+      : {
+          x: cursorWorld.x,
+          y: cursorWorld.y,
+          direction: inferredDir,
+        };
     const pts = autoRouteOrthogonal(
       { x: wireStart.x, y: wireStart.y, direction: wireStart.direction, deviceId: wireStart.deviceId },
-      { x: cursorWorld.x, y: cursorWorld.y, direction: 'left' },
+      targetEndpoint,
       20,
       obstacles,
       0,
-      occupied
+      occupied,
+      { sheetBounds }
     );
     return pts.map((p) => `${p.x},${p.y}`).join(' ');
-  }, [wireStart, cursorWorld, sheetDevices, sheetWires]);
+  }, [wireStart, hoveredPin, cursorWorld, sheetDevices, sheetWires, sheet]);
 
   const gostGeom = useMemo(
     () => (sheet ? buildGostSheetGeometry(sheet, project) : null),
     [sheet, project]
   );
 
-  const junctionDots = useMemo(() => {
-    const netPoints = new Map<string, { x: number; y: number; colorKey: string; count: number }>();
-    for (const w of sheetWires) {
-      const seenInWire = new Set<string>();
-      for (const pt of w.waypoints) {
-        const k = `${w.netName}|${Math.round(pt.x)},${Math.round(pt.y)}`;
-        if (seenInWire.has(k)) continue;
-        seenInWire.add(k);
-        const cur = netPoints.get(k);
-        if (cur) {
-          cur.count += 1;
-        } else {
-          netPoints.set(k, { x: pt.x, y: pt.y, colorKey: w.signalType, count: 1 });
-        }
-      }
-    }
-    const dots: Array<{ x: number; y: number; colorKey: string }> = [];
-    for (const item of netPoints.values()) {
-      if (item.count >= 3) {
-        dots.push({ x: item.x, y: item.y, colorKey: item.colorKey });
-      }
-    }
-    return dots;
-  }, [sheetWires]);
+  const junctionDots = useMemo(() => computeWireJunctionDots(sheetWires), [sheetWires]);
 
   const vs = project.visualSettings;
+  const crossingArcs = useMemo(
+    () => (vs.wireCrossingBridge !== false ? computeWireCrossingArcs(sheetWires, junctionDots) : []),
+    [sheetWires, junctionDots, vs.wireCrossingBridge]
+  );
+  const wireLabelMap = useMemo(
+    () => computeWireLabelPositions(sheetWires, sheetDevices),
+    [sheetWires, sheetDevices]
+  );
+  const frameSw = Math.max(0.5, vs.frameStrokeWidth ?? 1.6);
+  const frameThinSw = Math.max(0.35, Number((frameSw * 0.44).toFixed(2)));
+  const stampThickSw = Math.max(0.6, Number((frameSw * 0.88).toFixed(2)));
+  const stampThinSw = Math.max(0.35, Number((frameSw * 0.47).toFixed(2)));
   const fontCss = resolveSchematicCssFont(vs.fontFamily);
   const gridPatternId = `flux-cad-grid-vp-${viewportIndex}`;
 
@@ -657,7 +815,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
             <span
               className={`font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
                 isFocused
-                  ? 'bg-[var(--flux-accent)] text-white font-semibold'
+                  ? 'bg-[var(--flux-accent-solid)] text-white font-semibold'
                   : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] border border-[var(--flux-line)]'
               }`}
             >
@@ -692,12 +850,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                 aria-expanded={layerPopoverOpen}
                 title="Слои чертежа (видимость и блокировка)"
                 className={`inline-flex items-center gap-1 h-5 px-1.5 rounded border text-[10px] font-medium transition-colors ${
-                  layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
+                  layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
                     ? 'border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] text-[var(--flux-text)]'
                     : 'border-[var(--flux-line)] bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                 }`}
               >
-                <Layers className="w-3 h-3 text-[var(--flux-accent)]" />
+                <Layers className={`w-3 h-3 ${layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0 ? 'text-[var(--flux-accent)]' : ''}`} />
                 <span>Слои</span>
               </button>
               {onToggleLayerVisibility && onToggleLayerLock && (
@@ -755,7 +913,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       Лист {s.number}: {s.name}
                     </span>
                     {active && (
-                      <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)]" />
+                      <motion.span
+                        layoutId={`sheet-tab-accent-${viewportIndex}`}
+                        transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                        aria-hidden="true"
+                        className="absolute bottom-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)]"
+                      />
                     )}
                   </button>
                 );
@@ -793,12 +956,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                 aria-expanded={layerPopoverOpen}
                 title="Диспетчер слоёв чертежа (видимость и блокировка)"
                 className={`inline-flex items-center gap-1.5 h-6 px-2 rounded border text-[11px] font-medium transition-colors whitespace-nowrap shrink-0 ${
-                  layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
-                    ? 'border-[var(--flux-accent)] bg-[var(--flux-accent-soft)] text-[var(--flux-text)]'
+                  layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
+                    ? 'border-[var(--flux-accent)]/70 bg-[var(--flux-accent-soft)] text-[var(--flux-text)]'
                     : 'border-[var(--flux-line)] bg-[var(--flux-bg)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
                 }`}
               >
-                <Layers className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                <Layers className={`w-3.5 h-3.5 shrink-0 ${layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0 ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'}`} />
                 <span>Слои</span>
                 <span className="font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)]">
                   {layerSummary.visibleCount}/{layerSummary.total}
@@ -901,13 +1064,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   <g data-testid="layer-group-frame">
                     {/* Outer paper border & inner main GOST frame */}
                     <rect
+                      data-testid="gost-main-frame"
                       x={gostGeom.frame.left}
                       y={gostGeom.frame.top}
                       width={gostGeom.frame.width}
                       height={gostGeom.frame.height}
                       fill="none"
                       stroke="var(--flux-text)"
-                      strokeWidth={1.6}
+                      strokeWidth={frameSw}
                       pointerEvents="none"
                     />
                     <rect
@@ -917,7 +1081,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       height={sheet.height - 8}
                       fill="none"
                       stroke="var(--flux-line-strong)"
-                      strokeWidth={0.7}
+                      strokeWidth={frameThinSw}
                       pointerEvents="none"
                     />
                     {/* Top Coordinate Zones 1..6 */}
@@ -933,7 +1097,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                               x2={zx}
                               y2={gostGeom.frame.top}
                               stroke="var(--flux-line-strong)"
-                              strokeWidth={0.7}
+                              strokeWidth={frameThinSw}
                             />
                           )}
                           <text
@@ -962,7 +1126,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                               x2={20}
                               y2={zy}
                               stroke="var(--flux-line-strong)"
-                              strokeWidth={0.7}
+                              strokeWidth={frameThinSw}
                             />
                           )}
                           <text
@@ -989,7 +1153,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                         height={gostGeom.archivalBox.height}
                         fill="var(--flux-surface)"
                         stroke="var(--flux-text)"
-                        strokeWidth={1.1}
+                        strokeWidth={Math.max(0.5, Number((frameSw * 0.68).toFixed(2)))}
                       />
                       <line
                         x1={gostGeom.archivalBox.x + 17}
@@ -997,7 +1161,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                         x2={gostGeom.archivalBox.x + 17}
                         y2={gostGeom.archivalBox.y + gostGeom.archivalBox.height}
                         stroke="var(--flux-text)"
-                        strokeWidth={0.8}
+                        strokeWidth={stampThinSw}
                       />
                       {(() => {
                         let curY = gostGeom.archivalBox.y;
@@ -1013,7 +1177,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                                   x2={gostGeom.archivalBox.x + gostGeom.archivalBox.width}
                                   y2={rowY}
                                   stroke="var(--flux-text)"
-                                  strokeWidth={0.8}
+                                  strokeWidth={stampThinSw}
                                 />
                               )}
                               <text
@@ -1052,7 +1216,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                         height={gostGeom.stamp.height}
                         fill="var(--flux-surface)"
                         stroke="var(--flux-text)"
-                        strokeWidth={1.6}
+                        strokeWidth={frameSw}
                       />
                       {gostGeom.stamp.lines.map((ln, li) => (
                         <line
@@ -1062,7 +1226,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                           x2={ln.x2}
                           y2={ln.y2}
                           stroke="var(--flux-text)"
-                          strokeWidth={ln.thick ? 1.4 : 0.75}
+                          strokeWidth={ln.thick ? stampThickSw : stampThinSw}
                           pointerEvents="none"
                         />
                       ))}
@@ -1196,12 +1360,17 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
             {annotationsVisible && (
               <g data-testid="layer-group-annotations">
                 {sheetAnnotations.map((ann) => {
-                  const selected = ann.id === selectedAnnotationId;
+                  const selected = selectedAnnotationIdSet.has(ann.id);
                   const strokeColor = selected
                     ? annotationsLocked
                       ? '#d97706'
                       : 'var(--flux-accent)'
                     : ann.color || 'var(--flux-text)';
+                  const annSw = Math.max(0.5, ann.strokeWidth ?? vs.annotationStrokeWidth ?? 1.4);
+                  const activeSw = selected ? Math.max(annSw + 0.6, 2) : annSw;
+                  const annStyle = ann.strokeStyle ?? (ann.kind === 'rect' ? 'dashed' : 'solid');
+                  const dashArray =
+                    annStyle === 'dashed' ? '8 4' : annStyle === 'dotted' ? '2.5 3' : undefined;
                   const fs = (ann.fontSize || 12) * vs.fontScale;
                   const lines = (ann.text || '').split(/\r?\n/);
                   const lineH = Math.round(fs * 1.3);
@@ -1224,8 +1393,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                           fill={selected ? 'var(--flux-accent)' : 'transparent'}
                           fillOpacity={selected ? 0.06 : 0}
                           stroke={strokeColor}
-                          strokeWidth={selected ? 2 : 1.3}
-                          strokeDasharray="8 4"
+                          strokeWidth={activeSw}
+                          strokeDasharray={dashArray}
                           rx={2}
                         />
                         <rect
@@ -1235,7 +1404,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                           height={Math.max(19, lines.length * lineH + 4)}
                           fill="var(--flux-surface)"
                           stroke={strokeColor}
-                          strokeWidth={0.8}
+                          strokeWidth={Math.max(0.6, Number((annSw * 0.65).toFixed(2)))}
                           rx={2}
                         />
                         <text
@@ -1266,12 +1435,18 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                         onMouseDown={(e) => handleAnnotationDown(e, ann)}
                         className={annCls}
                       >
-                        <circle cx={ann.x} cy={ann.y + ann.height} r={3.5} fill={strokeColor} />
+                        <circle
+                          cx={ann.x}
+                          cy={ann.y + ann.height}
+                          r={Math.max(2.8, annSw * 1.6 + 1.2)}
+                          fill={strokeColor}
+                        />
                         <polyline
                           points={`${ann.x},${ann.y + ann.height} ${ann.x + 26},${ann.y + 18} ${ann.x + 26 + boxW + 6},${ann.y + 18}`}
                           fill="none"
                           stroke={strokeColor}
-                          strokeWidth={selected ? 2 : 1.3}
+                          strokeWidth={activeSw}
+                          strokeDasharray={dashArray}
                         />
                         <rect
                           x={ann.x + 28}
@@ -1281,6 +1456,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                           fill="var(--flux-surface)"
                           fillOpacity={0.92}
                           stroke={selected ? strokeColor : 'none'}
+                          strokeWidth={Math.max(0.6, Number((annSw * 0.7).toFixed(2)))}
                           strokeDasharray="3 2"
                         />
                         <text
@@ -1315,8 +1491,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                         height={Math.max(fs + 10, lines.length * lineH + 6)}
                         fill="var(--flux-surface)"
                         fillOpacity={0.85}
-                        stroke={selected ? strokeColor : 'transparent'}
-                        strokeDasharray="4 2"
+                        stroke={selected || annStyle !== 'solid' ? strokeColor : 'transparent'}
+                        strokeWidth={activeSw}
+                        strokeDasharray={dashArray || (selected ? '4 2' : undefined)}
                         rx={2}
                       />
                       <text
@@ -1343,35 +1520,29 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
             {wiresVisible && (
               <g data-testid="layer-group-wires">
                 {sheetWires.map((wire: E3Wire) => {
-                  const selected = wire.id === selectedWireId;
+                  const selected = selectedWireIdSet.has(wire.id);
                   const pts = wire.waypoints.map((p) => `${p.x},${p.y}`).join(' ');
                   const color = selected
                     ? wiresLocked
                       ? '#d97706'
                       : 'var(--flux-accent)'
                     : vs.netColors[wire.signalType] || 'var(--flux-text)';
-                  let midPt = wire.waypoints[0];
-                  if (wire.waypoints.length >= 2) {
-                    let bestLen = -1;
-                    for (let i = 0; i < wire.waypoints.length - 1; i++) {
-                      const a = wire.waypoints[i];
-                      const b = wire.waypoints[i + 1];
-                      const len = Math.hypot(b.x - a.x, b.y - a.y);
-                      if (len > bestLen) {
-                        bestLen = len;
-                        midPt = { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) };
-                      }
-                    }
-                  }
+                  const midPt =
+                    wireLabelMap.get(wire.id) ||
+                    (wire.waypoints.length >= 2
+                      ? {
+                          x: Math.round((wire.waypoints[0].x + wire.waypoints[1].x) / 2),
+                          y: Math.round((wire.waypoints[0].y + wire.waypoints[1].y) / 2),
+                        }
+                      : wire.waypoints[0]);
+                  const wireArcs = crossingArcs.filter((a) => a.wireId === wire.id);
                   return (
                     <g
                       key={wire.id}
                       data-testid={`wire-${wire.id}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSelectDevice(null);
-                        onSelectAnnotation(null);
-                        onSelectWire(wire.id);
+                        onSelectWire(wire.id, { toggle: e.shiftKey });
                       }}
                       className="cursor-pointer"
                     >
@@ -1383,6 +1554,26 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                         strokeWidth={selected ? vs.wireWidth + 1.5 : vs.wireWidth}
                         strokeLinejoin="round"
                       />
+                      {/* GOST Crossing Jump Bridges (Мостики при пересечении разных цепей) */}
+                      {wireArcs.map((arc, ai) => (
+                        <g key={`arc-${wire.id}-${ai}`} pointerEvents="none">
+                          <line
+                            x1={arc.x - 6}
+                            y1={arc.y}
+                            x2={arc.x + 6}
+                            y2={arc.y}
+                            stroke="var(--flux-surface)"
+                            strokeWidth={Math.max(4, vs.wireWidth + 3)}
+                          />
+                          <path
+                            d={`M ${arc.x - 6} ${arc.y} A 6 6 0 0 1 ${arc.x + 6} ${arc.y}`}
+                            fill="none"
+                            stroke={color}
+                            strokeWidth={selected ? vs.wireWidth + 1.2 : vs.wireWidth}
+                            strokeLinecap="round"
+                          />
+                        </g>
+                      ))}
                       {vs.showWireNumbers && midPt && (() => {
                         const boxW = Math.max(24, wire.wireNumber.length * 6.2 + 8);
                         return (
@@ -1418,10 +1609,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                 {junctionDots.map((dot, idx) => (
                   <circle
                     key={`jdot-${idx}`}
+                    data-testid={`junction-dot-${idx}`}
                     cx={dot.x}
                     cy={dot.y}
-                    r={3.4}
-                    fill={vs.netColors[dot.colorKey as keyof typeof vs.netColors] || 'var(--flux-text)'}
+                    r={Math.max(2.6, Number((vs.wireWidth * 1.35 + 0.7).toFixed(2)))}
+                    fill={vs.netColors[dot.signalType] || 'var(--flux-text)'}
                     pointerEvents="none"
                   />
                 ))}
@@ -1429,6 +1621,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                 {/* Live Rubber-band Wire Preview */}
                 {wireStart && previewWirePoints && (
                   <polyline
+                    data-testid="wire-preview-polyline"
                     points={previewWirePoints}
                     fill="none"
                     stroke="var(--flux-accent)"
@@ -1447,17 +1640,46 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   <SchematicSymbol
                     key={device.id}
                     device={device}
-                    selected={device.id === selectedDeviceId}
+                    selected={selectedDeviceIdSet.has(device.id)}
                     locked={devicesLocked}
                     wiresLocked={wiresLocked || !wiresVisible}
                     visual={vs}
                     wireStartPinKey={wireStart ? `${wireStart.deviceId}:${wireStart.pinId}` : null}
+                    hoveredPinKey={
+                      wireStart && hoveredPin ? `${hoveredPin.deviceId}:${hoveredPin.pinId}` : null
+                    }
                     connectedPinKeys={connectedPinKeys}
                     onSelectDevice={handleSelectDeviceDown}
                     onPinClick={handlePinClick}
+                    onPinHover={wireStart ? handlePinHover : undefined}
                   />
                 ))}
               </g>
+            )}
+
+            {/* AutoCAD Window (blue solid) / Crossing (green dashed) Marquee Selection */}
+            {selectionBox && (
+              <rect
+                data-testid="selection-marquee"
+                data-mode={selectionBox.mode}
+                x={selectionBox.x}
+                y={selectionBox.y}
+                width={selectionBox.width}
+                height={selectionBox.height}
+                fill={
+                  selectionBox.mode === 'window'
+                    ? 'rgba(37, 99, 235, 0.09)'
+                    : 'rgba(22, 163, 74, 0.10)'
+                }
+                stroke={selectionBox.mode === 'window' ? '#2563eb' : '#16a34a'}
+                strokeWidth={1.3 / Math.max(0.25, zoom)}
+                strokeDasharray={
+                  selectionBox.mode === 'crossing'
+                    ? `${5 / Math.max(0.25, zoom)} ${3 / Math.max(0.25, zoom)}`
+                    : undefined
+                }
+                pointerEvents="none"
+              />
             )}
 
             {/* CAD Magnetic Alignment Guides, Pin Anchors & Spacing Cadence */}
@@ -1695,6 +1917,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               · {sheet.format} ({sheet.width}×{sheet.height})
             </span>
           )}
+          {totalSelectedCount > 1 && (
+            <span
+              data-testid="canvas-selection-count"
+              className="inline-flex items-center h-5 px-1.5 rounded bg-[var(--flux-sel)] text-[var(--flux-accent)] font-sans font-semibold whitespace-nowrap shrink-0"
+            >
+              Выделено: {totalSelectedCount}
+            </span>
+          )}
           {(wireStart || tool !== 'select') && (
             <button
               type="button"
@@ -1720,11 +1950,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               aria-label="Переключить сетку"
               className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
                 vs.showGrid
-                  ? 'bg-[var(--flux-sel)] text-[var(--flux-text)]'
-                  : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
+                  ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
+                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
               }`}
             >
-              <Grid3X3 className="w-3 h-3" />
+              <Grid3X3 className={`w-3 h-3 ${vs.showGrid ? 'text-[var(--flux-accent)]' : ''}`} />
               <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Сетка</span>
             </button>
           )}
@@ -1737,11 +1967,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               aria-label="Переключить привязку"
               className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
                 vs.snapToGrid
-                  ? 'bg-[var(--flux-sel)] text-[var(--flux-text)]'
-                  : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
+                  ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
+                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
               }`}
             >
-              <Magnet className="w-3 h-3" />
+              <Magnet className={`w-3 h-3 ${vs.snapToGrid ? 'text-[var(--flux-accent)]' : ''}`} />
               <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Привязка</span>
             </button>
           )}
@@ -1754,11 +1984,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               aria-label="Переключить магнитные направляющие"
               className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
                 vs.smartGuides !== false
-                  ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)] font-medium'
-                  : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
+                  ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
+                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
               }`}
             >
-              <Ruler className="w-3 h-3" />
+              <Ruler className={`w-3 h-3 ${vs.smartGuides !== false ? 'text-[var(--flux-accent)]' : ''}`} />
               <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Направл.</span>
             </button>
           )}

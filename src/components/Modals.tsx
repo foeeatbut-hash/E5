@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Archive, Check, Copy, Download, ExternalLink, FileCode2, Package, Printer, Terminal, Upload, X } from 'lucide-react';
 import { SCHEMATIC_FONT_OPTIONS } from '../core/e3Catalog';
 import {
@@ -73,8 +74,6 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, busy, onClose]);
-
-  if (!open) return null;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -157,17 +156,29 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="exchange-title"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
-      }}
-      className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
-    >
-      <div className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden">
-        <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.14 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="exchange-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !busy) onClose();
+          }}
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.985 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden"
+          >
+            <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
           <h2 id="exchange-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
             Совместимость E3.series и Flux Studio
           </h2>
@@ -212,7 +223,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
                 type="button"
                 disabled={busy}
                 onClick={() => handleRunEmbeddedBridge('build')}
-                className="inline-flex items-center justify-between px-3 h-9 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white font-medium text-left disabled:opacity-50"
+                className="inline-flex items-center justify-between px-3 h-9 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium text-left disabled:opacity-50"
               >
                 <span>Открыть прямо в E³.series</span>
                 <ExternalLink className="w-4 h-4 shrink-0" />
@@ -329,7 +340,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
               <button
                 type="button"
                 onClick={onDownloadFluxStudioZip}
-                className="inline-flex items-center gap-2 h-8 px-3 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white font-medium"
+                className="inline-flex items-center gap-2 h-8 px-3 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium"
               >
                 <Archive className="w-4 h-4" />
                 <span>Пакет Flux Studio (.zip)</span>
@@ -403,15 +414,17 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
                 type="button"
                 disabled={busy || !pasteText.trim()}
                 onClick={handlePasteImport}
-                className="h-8 px-3 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white font-medium disabled:opacity-40"
+                className="h-8 px-3 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium disabled:opacity-40"
               >
                 Импортировать текст
               </button>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 
@@ -454,8 +467,6 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   const handleExportJson = () => {
     const json = exportVisualSettings(draft);
     const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
@@ -480,17 +491,29 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="vis-title"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
-    >
-      <div className="w-full max-w-xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden">
-        <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.14 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="vis-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.985 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full max-w-xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden"
+          >
+            <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
           <h2 id="vis-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
             Настройки и синхронизация визуализации графики
           </h2>
@@ -535,17 +558,62 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               </select>
             </div>
             <div>
+              <label htmlFor="vs-sw" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+                Толщина линий изделий (px)
+              </label>
+              <input
+                id="vs-sw"
+                type="number"
+                step="0.25"
+                min="0.5"
+                max="6"
+                value={draft.symbolStrokeWidth}
+                onChange={(e) => setDraft({ ...draft, symbolStrokeWidth: Math.max(0.5, Number(e.target.value) || 1.8) })}
+                className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
+              />
+            </div>
+            <div>
               <label htmlFor="vs-ww" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
                 Толщина линий цепей (px)
               </label>
               <input
                 id="vs-ww"
                 type="number"
-                step="0.5"
-                min="1"
-                max="5"
+                step="0.25"
+                min="0.5"
+                max="6"
                 value={draft.wireWidth}
-                onChange={(e) => setDraft({ ...draft, wireWidth: Number(e.target.value) || 2 })}
+                onChange={(e) => setDraft({ ...draft, wireWidth: Math.max(0.5, Number(e.target.value) || 2) })}
+                className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
+              />
+            </div>
+            <div>
+              <label htmlFor="vs-fw" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+                Толщина границ и рамки ГОСТ (px)
+              </label>
+              <input
+                id="vs-fw"
+                type="number"
+                step="0.2"
+                min="0.5"
+                max="6"
+                value={draft.frameStrokeWidth ?? 1.6}
+                onChange={(e) => setDraft({ ...draft, frameStrokeWidth: Math.max(0.5, Number(e.target.value) || 1.6) })}
+                className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
+              />
+            </div>
+            <div>
+              <label htmlFor="vs-aw" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+                Толщина линий аннотаций (px)
+              </label>
+              <input
+                id="vs-aw"
+                type="number"
+                step="0.2"
+                min="0.5"
+                max="6"
+                value={draft.annotationStrokeWidth ?? 1.4}
+                onChange={(e) => setDraft({ ...draft, annotationStrokeWidth: Math.max(0.5, Number(e.target.value) || 1.4) })}
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
               />
             </div>
@@ -564,7 +632,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
               />
             </div>
-            <div className="col-span-2">
+            <div>
               <label htmlFor="vs-font" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
                 Шрифт обозначений и штампа
               </label>
@@ -588,6 +656,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               [
                 ['snapToGrid', 'Привязка к сетке'],
                 ['smartGuides', 'Магнитные направляющие'],
+                ['wireCrossingBridge', 'Мостики на пересечении цепей'],
                 ['showPinNumbers', 'Номера выводов'],
                 ['showWireNumbers', 'Маркировка проводов'],
                 ['showCrossRefs', 'Перекрёстные ссылки E3'],
@@ -596,7 +665,13 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               <label key={key} className="flex items-center gap-2 text-[var(--flux-text)] cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={key === 'smartGuides' ? draft.smartGuides !== false : Boolean(draft[key])}
+                  checked={
+                    key === 'smartGuides'
+                      ? draft.smartGuides !== false
+                      : key === 'wireCrossingBridge'
+                        ? draft.wireCrossingBridge !== false
+                        : Boolean(draft[key])
+                  }
                   onChange={(e) => setDraft({ ...draft, [key]: e.target.checked })}
                   className="accent-[var(--flux-accent)]"
                 />
@@ -662,15 +737,17 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                   onApply(draft);
                   onClose();
                 }}
-                className="h-8 px-3 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white font-medium"
+                className="h-8 px-3 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium"
               >
                 Применить и синхронизировать
               </button>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 
@@ -700,22 +777,32 @@ export const ReportModal: React.FC<ReportModalProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   const totalQty = bom.reduce((s, r) => s + r.quantity, 0);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="report-title"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4"
-    >
-      <div className="w-full max-w-4xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[88vh]">
-        <div className="no-print px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between shrink-0">
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.14 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="report-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.985 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full max-w-4xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
+          >
+            <div className="no-print px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between shrink-0">
           <h2 id="report-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
             Перечень элементов ПЭ3 и кабельный журнал — {project.projectCode}
           </h2>
@@ -723,7 +810,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             <button
               type="button"
               onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 h-7 px-3 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white text-[12px] font-medium"
+              className="inline-flex items-center gap-1.5 h-7 px-3 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Печать / PDF</span>
@@ -821,7 +908,9 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             {erc.filter((i) => i.severity === 'warning').length} предупреждений.
           </div>
         </div>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

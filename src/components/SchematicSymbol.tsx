@@ -10,9 +10,11 @@ interface SchematicSymbolProps {
   wiresLocked?: boolean;
   visual: E3VisualSettings;
   wireStartPinKey: string | null;
+  hoveredPinKey?: string | null;
   connectedPinKeys: Set<string>;
   onSelectDevice: (e: React.MouseEvent, device: E3Device) => void;
   onPinClick: (e: React.MouseEvent, device: E3Device, pinId: string) => void;
+  onPinHover?: (device: E3Device, pinId: string | null) => void;
 }
 
 export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
@@ -22,16 +24,20 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
   wiresLocked = false,
   visual,
   wireStartPinKey,
+  hoveredPinKey = null,
   connectedPinKeys,
   onSelectDevice,
   onPinClick,
+  onPinHover,
 }) => {
   const cx = device.width / 2;
   const cy = device.height / 2;
   const stroke = selected ? 'var(--flux-accent)' : 'var(--flux-text)';
   const muted = 'var(--flux-text-muted)';
   const kipGreen = '#15803d';
-  const sw = visual.symbolStrokeWidth;
+  const sw = Math.max(0.5, visual.symbolStrokeWidth || 1.8);
+  const thinSw = Math.max(0.5, Number((sw * 0.72).toFixed(2)));
+  const ductSw = Math.max(1, Number((sw * 1.15).toFixed(2)));
   const isRemoved = device.bindingState === 'REMOVED_IN_FLUX';
   const fontCss = resolveSchematicCssFont(visual.fontFamily);
 
@@ -43,7 +49,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         const isOut = device.e3BlockName.includes('OUT');
         return (
           <g>
-            <line x1={0} y1={cy} x2={w} y2={cy} stroke={kipGreen} strokeWidth={2.5} />
+            <line x1={0} y1={cy} x2={w} y2={cy} stroke={kipGreen} strokeWidth={ductSw} />
             <polygon
               points={isOut ? `${w - 18},${cy - 8} ${w},${cy} ${w - 18},${cy + 8}` : `10,${cy - 8} 28,${cy} 10,${cy + 8}`}
               fill={kipGreen}
@@ -71,7 +77,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
             >
               M
             </text>
-            <line x1={cx} y1={0} x2={cx} y2={12} stroke={kipGreen} strokeWidth={1.3} />
+            <line x1={cx} y1={0} x2={cx} y2={12} stroke={kipGreen} strokeWidth={thinSw} />
             <line x1={cx} y1={44} x2={cx} y2={62} stroke={stroke} strokeWidth={sw} />
             {/* Damper frame */}
             <rect
@@ -84,8 +90,8 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               strokeWidth={sw}
             />
             {/* Air inlet/outlet stubs */}
-            <line x1={0} y1={ductY} x2={cx - 24} y2={ductY} stroke={kipGreen} strokeWidth={2} />
-            <line x1={cx + 24} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            <line x1={0} y1={ductY} x2={cx - 24} y2={ductY} stroke={kipGreen} strokeWidth={ductSw} />
+            <line x1={cx + 24} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={ductSw} />
             {/* Diagonal flap + pivot */}
             <line x1={cx - 16} y1={134} x2={cx + 16} y2={76} stroke={stroke} strokeWidth={sw + 0.5} />
             <circle cx={cx} cy={ductY} r={5} fill={stroke} />
@@ -94,7 +100,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                 d={`M ${cx - 16} 142 L ${cx - 8} 135 L ${cx} 142 L ${cx + 8} 135 L ${cx + 16} 142`}
                 fill="none"
                 stroke={kipGreen}
-                strokeWidth={1.4}
+                strokeWidth={thinSw}
               />
             )}
           </g>
@@ -117,14 +123,14 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
             >
               ΔP
             </text>
-            <line x1={cx} y1={0} x2={cx} y2={10} stroke={kipGreen} strokeWidth={1.2} />
-            <line x1={cx} y1={38} x2={cx} y2={65} stroke={stroke} strokeWidth={1.3} strokeDasharray="3 2" />
+            <line x1={cx} y1={0} x2={cx} y2={10} stroke={kipGreen} strokeWidth={thinSw} />
+            <line x1={cx} y1={38} x2={cx} y2={65} stroke={stroke} strokeWidth={thinSw} strokeDasharray="3 2" />
             {/* Filter box split diagonally green/white (VEZA standard) */}
             <rect x={cx - 24} y={65} width={48} height={80} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
             <polygon points={`${cx - 24},65 ${cx + 24},65 ${cx - 24},145`} fill={kipGreen} />
             <line x1={cx - 24} y1={145} x2={cx + 24} y2={65} stroke={stroke} strokeWidth={sw} />
-            <line x1={0} y1={ductY} x2={cx - 24} y2={ductY} stroke={kipGreen} strokeWidth={2} />
-            <line x1={cx + 24} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            <line x1={0} y1={ductY} x2={cx - 24} y2={ductY} stroke={kipGreen} strokeWidth={ductSw} />
+            <line x1={cx + 24} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={ductSw} />
           </g>
         );
       }
@@ -134,34 +140,34 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         return (
           <g>
             {/* Top freeze protection stem */}
-            <line x1={cx} y1={0} x2={cx} y2={46} stroke={kipGreen} strokeWidth={1.3} />
-            <circle cx={cx} cy={22} r={12} fill="var(--flux-surface)" stroke={kipGreen} strokeWidth={1.3} />
+            <line x1={cx} y1={0} x2={cx} y2={46} stroke={kipGreen} strokeWidth={thinSw} />
+            <circle cx={cx} cy={22} r={12} fill="var(--flux-surface)" stroke={kipGreen} strokeWidth={thinSw} />
             <text x={cx} y={25} textAnchor="middle" fill={kipGreen} fontSize={8.5 * visual.fontScale} fontWeight={700} fontFamily={fontCss}>
               {isElec ? 'TS' : 'THT'}
             </text>
             {/* Main heater heat exchanger */}
             <rect x={cx - 32} y={46} width={64} height={88} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
-            <line x1={0} y1={ductY} x2={cx - 32} y2={ductY} stroke={kipGreen} strokeWidth={2} />
-            <line x1={cx + 32} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            <line x1={0} y1={ductY} x2={cx - 32} y2={ductY} stroke={kipGreen} strokeWidth={ductSw} />
+            <line x1={cx + 32} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={ductSw} />
             {isElec ? (
               <path
                 d={`M ${cx - 18} 62 L ${cx + 16} 80 L ${cx - 16} 98 L ${cx + 18} 118`}
                 fill="none"
                 stroke="#dc2626"
-                strokeWidth={2}
+                strokeWidth={sw}
               />
             ) : (
               <g>
-                <line x1={cx - 32} y1={46} x2={cx + 32} y2={134} stroke="#dc2626" strokeWidth={1.6} />
-                <circle cx={cx} cy={ductY} r={12} fill="var(--flux-surface)" stroke="#dc2626" strokeWidth={1.5} />
+                <line x1={cx - 32} y1={46} x2={cx + 32} y2={134} stroke="#dc2626" strokeWidth={sw} />
+                <circle cx={cx} cy={ductY} r={12} fill="var(--flux-surface)" stroke="#dc2626" strokeWidth={thinSw} />
                 <text x={cx} y={ductY + 4} textAnchor="middle" fill="#dc2626" fontSize={10 * visual.fontScale} fontWeight={700} fontFamily={fontCss}>
                   +
                 </text>
               </g>
             )}
             {/* Bottom 3-way mixing valve / protection */}
-            <line x1={cx} y1={134} x2={cx} y2={h} stroke={kipGreen} strokeWidth={1.3} />
-            <polygon points={`${cx - 10},148 ${cx + 10},160 ${cx - 10},160 ${cx + 10},148`} fill="var(--flux-surface)" stroke={stroke} strokeWidth={1.3} />
+            <line x1={cx} y1={134} x2={cx} y2={h} stroke={kipGreen} strokeWidth={thinSw} />
+            <polygon points={`${cx - 10},148 ${cx + 10},160 ${cx - 10},160 ${cx + 10},148`} fill="var(--flux-surface)" stroke={stroke} strokeWidth={thinSw} />
           </g>
         );
       }
@@ -169,16 +175,16 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         const ductY = 90;
         return (
           <g>
-            <line x1={cx} y1={0} x2={cx} y2={46} stroke={kipGreen} strokeWidth={1.3} />
+            <line x1={cx} y1={0} x2={cx} y2={46} stroke={kipGreen} strokeWidth={thinSw} />
             <rect x={cx - 30} y={46} width={60} height={88} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
-            <line x1={0} y1={ductY} x2={cx - 30} y2={ductY} stroke={kipGreen} strokeWidth={2} />
-            <line x1={cx + 30} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={2} />
+            <line x1={0} y1={ductY} x2={cx - 30} y2={ductY} stroke={kipGreen} strokeWidth={ductSw} />
+            <line x1={cx + 30} y1={ductY} x2={w} y2={ductY} stroke={kipGreen} strokeWidth={ductSw} />
             {/* Cooling symbol (blue diagonals + snowflake) */}
-            <line x1={cx - 16} y1={ductY} x2={cx + 16} y2={ductY} stroke="#0284c7" strokeWidth={1.6} />
-            <line x1={cx} y1={ductY - 16} x2={cx} y2={ductY + 16} stroke="#0284c7" strokeWidth={1.6} />
-            <line x1={cx - 11} y1={ductY - 11} x2={cx + 11} y2={ductY + 11} stroke="#0284c7" strokeWidth={1.3} />
-            <line x1={cx + 11} y1={ductY - 11} x2={cx - 11} y2={ductY + 11} stroke="#0284c7" strokeWidth={1.3} />
-            <line x1={cx} y1={134} x2={cx} y2={h} stroke={kipGreen} strokeWidth={1.3} />
+            <line x1={cx - 16} y1={ductY} x2={cx + 16} y2={ductY} stroke="#0284c7" strokeWidth={sw} />
+            <line x1={cx} y1={ductY - 16} x2={cx} y2={ductY + 16} stroke="#0284c7" strokeWidth={sw} />
+            <line x1={cx - 11} y1={ductY - 11} x2={cx + 11} y2={ductY + 11} stroke="#0284c7" strokeWidth={thinSw} />
+            <line x1={cx + 11} y1={ductY - 11} x2={cx - 11} y2={ductY + 11} stroke="#0284c7" strokeWidth={thinSw} />
+            <line x1={cx} y1={134} x2={cx} y2={h} stroke={kipGreen} strokeWidth={thinSw} />
           </g>
         );
       }
@@ -188,21 +194,21 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         return (
           <g>
             {/* Top DP stem */}
-            <line x1={cx} y1={0} x2={cx} y2={fanCy - r} stroke={kipGreen} strokeWidth={1.3} />
+            <line x1={cx} y1={0} x2={cx} y2={fanCy - r} stroke={kipGreen} strokeWidth={thinSw} />
             {/* Duct lines */}
-            <line x1={0} y1={fanCy} x2={cx - r} y2={fanCy} stroke={kipGreen} strokeWidth={2} />
-            <line x1={cx + r} y1={fanCy} x2={w} y2={fanCy} stroke={kipGreen} strokeWidth={2} />
+            <line x1={0} y1={fanCy} x2={cx - r} y2={fanCy} stroke={kipGreen} strokeWidth={ductSw} />
+            <line x1={cx + r} y1={fanCy} x2={w} y2={fanCy} stroke={kipGreen} strokeWidth={ductSw} />
             {/* GOST centrifugal fan circle with tangential blades */}
             <circle cx={cx} cy={fanCy} r={r} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw + 0.3} />
-            <line x1={cx - 18} y1={fanCy - 22} x2={cx + 26} y2={fanCy - 8} stroke={stroke} strokeWidth={1.6} />
-            <line x1={cx - 18} y1={fanCy + 22} x2={cx + 26} y2={fanCy + 8} stroke={stroke} strokeWidth={1.6} />
+            <line x1={cx - 18} y1={fanCy - 22} x2={cx + 26} y2={fanCy - 8} stroke={stroke} strokeWidth={sw} />
+            <line x1={cx - 18} y1={fanCy + 22} x2={cx + 26} y2={fanCy + 8} stroke={stroke} strokeWidth={sw} />
             {/* Motor (M) below fan */}
-            <line x1={cx} y1={fanCy + r} x2={cx} y2={132} stroke={kipGreen} strokeWidth={1.5} />
+            <line x1={cx} y1={fanCy + r} x2={cx} y2={132} stroke={kipGreen} strokeWidth={thinSw} />
             <circle cx={cx} cy={148} r={16} fill="var(--flux-surface)" stroke={kipGreen} strokeWidth={sw} />
             <text x={cx} y={154} textAnchor="middle" fill={kipGreen} fontSize={14 * visual.fontScale} fontWeight={700} fontFamily={fontCss}>
               M
             </text>
-            <line x1={cx} y1={164} x2={cx} y2={h} stroke={kipGreen} strokeWidth={1.4} />
+            <line x1={cx} y1={164} x2={cx} y2={h} stroke={kipGreen} strokeWidth={thinSw} />
           </g>
         );
       }
@@ -219,16 +225,16 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
           : 'KIP';
         return (
           <g>
-            <line x1={cx} y1={0} x2={cx} y2={circY - r} stroke={kipGreen} strokeWidth={1.3} />
-            <line x1={cx} y1={circY + r} x2={cx} y2={h} stroke={kipGreen} strokeWidth={1.3} />
+            <line x1={cx} y1={0} x2={cx} y2={circY - r} stroke={kipGreen} strokeWidth={thinSw} />
+            <line x1={cx} y1={circY + r} x2={cx} y2={h} stroke={kipGreen} strokeWidth={thinSw} />
             {!isPost && (
               <>
-                <line x1={0} y1={90} x2={w} y2={90} stroke={kipGreen} strokeWidth={2} />
+                <line x1={0} y1={90} x2={w} y2={90} stroke={kipGreen} strokeWidth={ductSw} />
                 <circle cx={cx} cy={90} r={4} fill={kipGreen} />
               </>
             )}
             <circle cx={cx} cy={circY} r={r} fill="var(--flux-surface)" stroke={kipGreen} strokeWidth={sw} />
-            <line x1={cx - r + 2} y1={circY} x2={cx + r - 2} y2={circY} stroke={kipGreen} strokeWidth={1} />
+            <line x1={cx - r + 2} y1={circY} x2={cx + r - 2} y2={circY} stroke={kipGreen} strokeWidth={thinSw} />
             <text
               x={cx}
               y={circY - 4}
@@ -272,7 +278,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               strokeWidth={sw}
             />
             <rect x={4} y={4} width={w - 8} height={22} rx={2} fill="var(--flux-bg)" />
-            <line x1={4} y1={26} x2={w - 4} y2={26} stroke="var(--flux-line-strong)" strokeWidth={1} />
+            <line x1={4} y1={26} x2={w - 4} y2={26} stroke="var(--flux-line-strong)" strokeWidth={thinSw} />
             <text x={cx} y={19} textAnchor="middle" fill={stroke} fontSize={8.8 * visual.fontScale} fontWeight={600} fontFamily={fontCss}>
               {artText}
             </text>
@@ -287,8 +293,8 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
             {/* Internal terminal points */}
             {[25, 55, 85, 115].map((px, i) => (
               <g key={i}>
-                <circle cx={px} cy={66} r={3.5} fill="var(--flux-surface)" stroke={stroke} strokeWidth={1.3} />
-                <line x1={px} y1={69.5} x2={px} y2={h} stroke={stroke} strokeWidth={1.2} />
+                <circle cx={px} cy={66} r={3.5} fill="var(--flux-surface)" stroke={stroke} strokeWidth={thinSw} />
+                <line x1={px} y1={69.5} x2={px} y2={h} stroke={stroke} strokeWidth={thinSw} />
               </g>
             ))}
           </g>
@@ -323,10 +329,10 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               rx={3}
               fill="var(--flux-surface)"
               stroke={stroke}
-              strokeWidth={1.4}
+              strokeWidth={sw}
             />
             {/* Cabinet left vertical box */}
-            <rect x={8} y={tableTop} width={54} height={tableH} fill="var(--flux-bg)" stroke={stroke} strokeWidth={1.1} />
+            <rect x={8} y={tableTop} width={54} height={tableH} fill="var(--flux-bg)" stroke={stroke} strokeWidth={thinSw} />
             <text
               x={35}
               y={tableTop + tableH / 2}
@@ -460,7 +466,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                   d={`M ${px - 4} ${h / 2 - 4} L ${px + 4} ${h / 2 - 4} L ${px - 4} ${h / 2 + 4}`}
                   fill="none"
                   stroke={stroke}
-                  strokeWidth={1.2}
+                  strokeWidth={thinSw}
                 />
               </g>
             ))}
@@ -471,7 +477,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                 x2={xs[xs.length - 1] - 5}
                 y2={h / 2}
                 stroke={muted}
-                strokeWidth={1}
+                strokeWidth={thinSw}
                 strokeDasharray="3 2"
               />
             )}
@@ -491,7 +497,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               stroke={stroke}
               strokeWidth={sw}
             />
-            <rect x={14} y={32} width={22} height={56} fill="none" stroke={stroke} strokeWidth={1.3} />
+            <rect x={14} y={32} width={22} height={56} fill="none" stroke={stroke} strokeWidth={thinSw} />
             <line x1={0} y1={40} x2={14} y2={40} stroke={stroke} strokeWidth={sw} />
             <line x1={0} y1={80} x2={14} y2={80} stroke={stroke} strokeWidth={sw} />
             {[30, 60, 90].map((px, idx) => (
@@ -501,7 +507,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                 <line x1={px} y1={85} x2={px} y2={h} stroke={stroke} strokeWidth={sw} />
               </g>
             ))}
-            <line x1={36} y1={60} x2={93} y2={60} stroke={muted} strokeWidth={1} strokeDasharray="3 2" />
+            <line x1={36} y1={60} x2={93} y2={60} stroke={muted} strokeWidth={thinSw} strokeDasharray="3 2" />
           </g>
         );
       }
@@ -510,7 +516,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         return (
           <g>
             <circle cx={cx} cy={cy + 8} r={r} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
-            <circle cx={cx} cy={cy + 8} r={r - 5} fill="none" stroke={muted} strokeWidth={1} />
+            <circle cx={cx} cy={cy + 8} r={r - 5} fill="none" stroke={muted} strokeWidth={thinSw} />
             <text
               x={cx}
               y={cy + 14}
@@ -549,8 +555,8 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
             <rect x={4} y={12} width={w - 8} height={h - 24} rx={2} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
             {xs.map((px, i) => (
               <g key={i}>
-                <line x1={px} y1={0} x2={px} y2={h} stroke={stroke} strokeWidth={1.3} />
-                <circle cx={px} cy={h / 2} r={4} fill="var(--flux-surface)" stroke={stroke} strokeWidth={1.5} />
+                <line x1={px} y1={0} x2={px} y2={h} stroke={stroke} strokeWidth={thinSw} />
+                <circle cx={px} cy={h / 2} r={4} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
               </g>
             ))}
           </g>
@@ -560,10 +566,10 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         return (
           <g>
             <rect x={8} y={6} width={w - 16} height={h - 12} rx={3} fill="var(--flux-surface)" stroke={stroke} strokeWidth={sw} />
-            <rect x={16} y={24} width={22} height={42} fill="none" stroke={stroke} strokeWidth={1.3} />
+            <rect x={16} y={24} width={22} height={42} fill="none" stroke={stroke} strokeWidth={thinSw} />
             <line x1={0} y1={30} x2={16} y2={30} stroke={stroke} strokeWidth={sw} />
             <line x1={0} y1={60} x2={16} y2={60} stroke={stroke} strokeWidth={sw} />
-            <line x1={38} y1={45} x2={66} y2={45} stroke={muted} strokeWidth={1} strokeDasharray="3 2" />
+            <line x1={38} y1={45} x2={66} y2={45} stroke={muted} strokeWidth={thinSw} strokeDasharray="3 2" />
             <line x1={w} y1={30} x2={72} y2={30} stroke={stroke} strokeWidth={sw} />
             <line x1={72} y1={30} x2={60} y2={54} stroke={stroke} strokeWidth={sw} />
             <line x1={72} y1={60} x2={w} y2={60} stroke={stroke} strokeWidth={sw} />
@@ -585,7 +591,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               strokeDasharray={isRemoved ? '4 3' : undefined}
             />
             <rect x={4} y={4} width={w - 8} height={22} rx={3} fill="var(--flux-bg)" />
-            <line x1={4} y1={26} x2={w - 4} y2={26} stroke="var(--flux-line-strong)" strokeWidth={1} />
+            <line x1={4} y1={26} x2={w - 4} y2={26} stroke="var(--flux-line-strong)" strokeWidth={thinSw} />
             <text
               x={12}
               y={19}
@@ -644,6 +650,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
         {device.pins.map((pin) => {
           const pinKey = `${device.id}:${pin.id}`;
           const isStart = wireStartPinKey === pinKey;
+          const isHoveredTarget = hoveredPinKey === pinKey && !isStart;
           const isConnected = connectedPinKeys.has(pinKey);
           const sigColor = visual.netColors[pin.signalType] || stroke;
 
@@ -671,6 +678,9 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
           return (
             <g
               key={pin.id}
+              data-testid={`pin-${device.id}-${pin.id}`}
+              onMouseEnter={() => onPinHover?.(device, pin.id)}
+              onMouseLeave={() => onPinHover?.(device, null)}
               onClick={(e) => {
                 e.stopPropagation();
                 onPinClick(e, device, pin.id);
@@ -681,16 +691,16 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               <circle
                 cx={pin.dx}
                 cy={pin.dy}
-                r={7}
+                r={isHoveredTarget ? 8 : 7}
                 fill="var(--flux-accent)"
-                className="opacity-0 group-hover/pin:opacity-25 transition-opacity pointer-events-none"
+                className={`${isHoveredTarget ? 'opacity-30' : 'opacity-0 group-hover/pin:opacity-25'} transition-opacity pointer-events-none`}
               />
               <circle
                 cx={pin.dx}
                 cy={pin.dy}
-                r={isStart ? 5 : isConnected ? 3.5 : 3}
-                fill={isStart ? 'var(--flux-accent)' : isConnected ? sigColor : 'var(--flux-surface)'}
-                stroke={isStart ? 'var(--flux-accent)' : sigColor}
+                r={isStart || isHoveredTarget ? 5 : isConnected ? 3.5 : 3}
+                fill={isStart || isHoveredTarget ? 'var(--flux-accent)' : isConnected ? sigColor : 'var(--flux-surface)'}
+                stroke={isStart || isHoveredTarget ? 'var(--flux-accent)' : sigColor}
                 strokeWidth={1.5}
               />
               {visual.showPinNumbers && device.category !== 'airflow_arrow' && (

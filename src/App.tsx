@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
-import { BottomConsole, type ConsoleTab } from './components/BottomConsole';
+import { BottomConsole, type ApiSubTab, type ConsoleTab } from './components/BottomConsole';
 import { CatalogItemModal } from './components/CatalogItemModal';
 import {
   type ActivePanelDrag,
   CAD_PANEL_TRANSITION,
+  COLLAPSED_BOTTOM_TABS_HEIGHT,
   COLLAPSED_HEADER_HEIGHT,
   COLLAPSED_SIDE_RAIL_WIDTH,
   DockDropOverlay,
@@ -13,6 +14,7 @@ import {
   FloatingPanelWindow,
   resolveDropTarget,
 } from './components/DockablePanel';
+import { FluxStudioPublishModal } from './components/FluxStudioPublishModal';
 import { HvacWizardModal } from './components/HvacWizardModal';
 import { LeftExplorer } from './components/LeftExplorer';
 import {
@@ -58,6 +60,14 @@ import {
   toggleLayerVisibility,
 } from './core/cadLayers';
 import {
+  alignSelectedDevices,
+  buildClipboardPayload,
+  type CadClipboardPayload,
+  type DeviceAlignKind,
+  pasteClipboardPayload,
+  toggleIdInSelection,
+} from './core/cadSelection';
+import {
   deviceToCatalogItem,
   loadCustomCatalog,
   mergeCatalogItems,
@@ -74,6 +84,8 @@ import {
   extractWireSegments,
   generateStressBatch,
   getAbsolutePinPos,
+  getDeviceBounds,
+  getSheetDrawableBounds,
   importFromFluxBridge,
   nextUniqueDesignation,
   rerouteAttachedWires,
@@ -109,6 +121,7 @@ import {
   detectFluxHost,
   executeFluxInboundCommand,
   type FluxCommandRequest,
+  invokeFluxModule,
   pushProjectToFluxHost,
 } from './core/fluxHostBridge';
 import {
@@ -156,9 +169,42 @@ export default function App() {
   const future = docState.future;
 
   const [activeSheetId, setActiveSheetId] = useState<string>('sheet-1');
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>('dev-qf1');
-  const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
-  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>(['dev-qf1']);
+  const [selectedWireIds, setSelectedWireIds] = useState<string[]>([]);
+  const [selectedAnnotationIds, setSelectedAnnotationIds] = useState<string[]>([]);
+  const [hasClipboard, setHasClipboard] = useState<boolean>(false);
+  const clipboardRef = useRef<CadClipboardPayload | null>(null);
+
+  const selectedDeviceId =
+    selectedDeviceIds.length === 1 && selectedWireIds.length === 0 && selectedAnnotationIds.length === 0
+      ? selectedDeviceIds[0]
+      : null;
+  const selectedWireId =
+    selectedWireIds.length === 1 && selectedDeviceIds.length === 0 && selectedAnnotationIds.length === 0
+      ? selectedWireIds[0]
+      : null;
+  const selectedAnnotationId =
+    selectedAnnotationIds.length === 1 && selectedDeviceIds.length === 0 && selectedWireIds.length === 0
+      ? selectedAnnotationIds[0]
+      : null;
+
+  const setSelectedDeviceId = useCallback((id: string | null) => {
+    setSelectedDeviceIds(id ? [id] : []);
+  }, []);
+  const setSelectedWireId = useCallback((id: string | null) => {
+    setSelectedWireIds(id ? [id] : []);
+  }, []);
+  const setSelectedAnnotationId = useCallback((id: string | null) => {
+    setSelectedAnnotationIds(id ? [id] : []);
+  }, []);
+  const applySelection = useCallback(
+    (next: { deviceIds?: string[]; wireIds?: string[]; annotationIds?: string[] }) => {
+      setSelectedDeviceIds(next.deviceIds ?? []);
+      setSelectedWireIds(next.wireIds ?? []);
+      setSelectedAnnotationIds(next.annotationIds ?? []);
+    },
+    []
+  );
   const [tool, setTool] = useState<CadTool>('select');
 
   // Multi-viewport state (1, 2, 3, or 4 simultaneous sheets in center)
@@ -216,6 +262,7 @@ export default function App() {
   );
 
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>('bom');
+  const [requestedApiSubTab, setRequestedApiSubTab] = useState<ApiSubTab | null>(null);
   const consoleCollapsed = dockLayout.panels.console.collapsed;
   const setConsoleCollapsed = useCallback((nextVal: boolean | ((prev: boolean) => boolean)) => {
     setDockLayout((prev) => {
@@ -240,6 +287,8 @@ export default function App() {
   const [hvacWizardOpen, setHvacWizardOpen] = useState(false);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [fluxPublishOpen, setFluxPublishOpen] = useState(false);
+  const fluxHostStatus = useMemo(() => detectFluxHost(), []);
   const [stampModalState, setStampModalState] = useState<{
     open: boolean;
     sheetId: string;
@@ -533,8 +582,12 @@ export default function App() {
   );
 
   // Reroute attached wires whenever a device moves or rotates (with obstacle & wire-overlap avoidance)
-  const rerouteDeviceWires = (dev: E3Device, allDevices: E3Device[], wires: E3Wire[]): E3Wire[] =>
-    rerouteAttachedWires(dev.id, allDevices, wires, 20);
+  const rerouteDeviceWires = (
+    dev: E3Device,
+    allDevices: E3Device[],
+    wires: E3Wire[],
+    sheets?: E3Sheet[]
+  ): E3Wire[] => rerouteAttachedWires(dev.id, allDevices, wires, 20, sheets);
 
   const dragSnapshotRef = useRef<E3Project | null>(null);
 
@@ -568,16 +621,66 @@ export default function App() {
       setDocState((s) => {
         const prev = s.present;
         if (isLayerLocked(prev.layers, 'devices')) return s;
-        const devices = prev.devices.map((d) => (d.id === deviceId ? { ...d, x, y } : d));
-        const moved = devices.find((d) => d.id === deviceId);
-        const wires = moved ? rerouteDeviceWires(moved, devices, prev.wires) : prev.wires;
+        const target = prev.devices.find((d) => d.id === deviceId);
+        if (!target) return s;
+        const dx = x - target.x;
+        const dy = y - target.y;
+        if (dx === 0 && dy === 0) return s;
+
+        const moveDevSet = new Set(
+          selectedDeviceIds.includes(deviceId) && selectedDeviceIds.length > 1
+            ? selectedDeviceIds
+            : [deviceId]
+        );
+        const moveAnnSet = new Set(
+          selectedDeviceIds.includes(deviceId) && selectedAnnotationIds.length > 0 && !isLayerLocked(prev.layers, 'annotations')
+            ? selectedAnnotationIds
+            : []
+        );
+
+        const devices = prev.devices.map((d) =>
+          moveDevSet.has(d.id) && d.sheetId === target.sheetId ? { ...d, x: d.x + dx, y: d.y + dy } : d
+        );
+        const actuallyMovedIds = new Set(
+          devices
+            .filter((d) => moveDevSet.has(d.id) && d.sheetId === target.sheetId)
+            .map((d) => d.id)
+        );
+        const annotations =
+          moveAnnSet.size > 0
+            ? (prev.annotations || []).map((a) =>
+                moveAnnSet.has(a.id) && a.sheetId === target.sheetId
+                  ? { ...a, x: a.x + dx, y: a.y + dy }
+                  : a
+              )
+            : prev.annotations;
+
+        // Translate internal wires whose both ends moved together; reroute boundary wires cleanly
+        const internalWireIds = new Set(
+          prev.wires
+            .filter((w) => actuallyMovedIds.has(w.fromDeviceId) && actuallyMovedIds.has(w.toDeviceId))
+            .map((w) => w.id)
+        );
+        let wires = prev.wires.map((w) =>
+          internalWireIds.has(w.id)
+            ? { ...w, waypoints: w.waypoints.map((pt) => ({ x: pt.x + dx, y: pt.y + dy })) }
+            : w
+        );
+        for (const movedId of actuallyMovedIds) {
+          const rerouted = rerouteAttachedWires(movedId, devices, wires, 20, prev.sheets);
+          const reroutedMap = new Map(rerouted.map((w) => [w.id, w]));
+          wires = wires.map((w) =>
+            internalWireIds.has(w.id) ? w : reroutedMap.get(w.id) || w
+          );
+        }
+
         return {
           ...s,
-          present: { ...prev, devices, wires, updatedAt: new Date().toISOString() },
+          present: { ...prev, devices, wires, annotations, updatedAt: new Date().toISOString() },
         };
       });
     },
-    []
+    [selectedDeviceIds, selectedAnnotationIds]
   );
 
   const handleUpdateDevice = useCallback(
@@ -591,7 +694,7 @@ export default function App() {
       const apply = (prev: E3Project): E3Project => {
         const devices = prev.devices.map((d) => (d.id === deviceId ? { ...d, ...patch } : d));
         const updated = devices.find((d) => d.id === deviceId);
-        const wires = updated ? rerouteDeviceWires(updated, devices, prev.wires) : prev.wires;
+        const wires = updated ? rerouteDeviceWires(updated, devices, prev.wires, prev.sheets) : prev.wires;
         return {
           ...prev,
           revision: prev.revision + 1,
@@ -610,63 +713,211 @@ export default function App() {
   );
 
   const handleRotateSelected = useCallback(() => {
-    if (!selectedDevice) return;
+    const devIds = selectedDeviceIds.length > 0 ? selectedDeviceIds : selectedDeviceId ? [selectedDeviceId] : [];
+    if (devIds.length === 0) return;
     if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
       appendLog('WARN', 'E3-CORE', 'Нельзя повернуть: слой «Изделия и аппараты» заблокирован.');
       return;
     }
-    const nextRot = ((selectedDevice.rotation + 90) % 360) as 0 | 90 | 180 | 270;
-    handleUpdateDevice(selectedDevice.id, { rotation: nextRot });
-    appendLog('INFO', 'E3-CORE', `Элемент ${selectedDevice.designation} повёрнут на ${nextRot}°.`);
-  }, [selectedDevice, handleUpdateDevice, appendLog]);
+    const idSet = new Set(devIds);
+    commitProject((prev) => {
+      const devices = prev.devices.map((d) =>
+        idSet.has(d.id) ? { ...d, rotation: ((d.rotation + 90) % 360) as 0 | 90 | 180 | 270 } : d
+      );
+      let wires = prev.wires;
+      for (const id of idSet) {
+        const updated = devices.find((d) => d.id === id);
+        if (updated) wires = rerouteDeviceWires(updated, devices, wires, prev.sheets);
+      }
+      return {
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        devices,
+        wires,
+      };
+    });
+    if (devIds.length === 1) {
+      const target = project.devices.find((d) => d.id === devIds[0]);
+      if (target) {
+        const nextRot = ((target.rotation + 90) % 360) as 0 | 90 | 180 | 270;
+        appendLog('INFO', 'E3-CORE', `Элемент ${target.designation} повёрнут на ${nextRot}°.`);
+      }
+    } else {
+      appendLog('INFO', 'E3-CORE', `Повёрнуто элементов: ${devIds.length} на 90°.`);
+    }
+  }, [selectedDeviceIds, selectedDeviceId, project.devices, commitProject, appendLog]);
 
   const handleDeleteSelected = useCallback(() => {
     const curLayers = docStateRef.current.present.layers;
-    if (selectedDeviceId) {
-      if (isLayerLocked(curLayers, 'devices')) {
-        appendLog('WARN', 'E3-CORE', 'Удаление отклонено: слой «Изделия и аппараты» заблокирован.');
-        return;
-      }
-      const target = project.devices.find((d) => d.id === selectedDeviceId);
-      commitProject((prev) => ({
-        ...prev,
-        revision: prev.revision + 1,
-        updatedAt: new Date().toISOString(),
-        devices: prev.devices.filter((d) => d.id !== selectedDeviceId),
-        wires: prev.wires.filter(
-          (w) => w.fromDeviceId !== selectedDeviceId && w.toDeviceId !== selectedDeviceId
-        ),
-      }));
-      setSelectedDeviceId(null);
-      if (target) appendLog('WARN', 'E3-CORE', `Удалён элемент ${target.designation} и связанные цепи.`);
-    } else if (selectedWireId) {
-      if (isLayerLocked(curLayers, 'wires')) {
-        appendLog('WARN', 'E3-CORE', 'Удаление отклонено: слой «Цепи и провода» заблокирован.');
-        return;
-      }
-      commitProject((prev) => ({
-        ...prev,
-        revision: prev.revision + 1,
-        updatedAt: new Date().toISOString(),
-        wires: prev.wires.filter((w) => w.id !== selectedWireId),
-      }));
-      setSelectedWireId(null);
-      appendLog('WARN', 'E3-CORE', 'Удалено соединение со схемы.');
-    } else if (selectedAnnotationId) {
-      if (isLayerLocked(curLayers, 'annotations')) {
-        appendLog('WARN', 'E3-CORE', 'Удаление отклонено: слой «Аннотации и зоны» заблокирован.');
-        return;
-      }
-      commitProject((prev) => ({
-        ...prev,
-        revision: prev.revision + 1,
-        updatedAt: new Date().toISOString(),
-        annotations: (prev.annotations || []).filter((a) => a.id !== selectedAnnotationId),
-      }));
-      setSelectedAnnotationId(null);
-      appendLog('WARN', 'E3-CORE', 'Удалена аннотация с листа.');
+    const devIds = new Set(selectedDeviceIds);
+    const wireIds = new Set(selectedWireIds);
+    const annIds = new Set(selectedAnnotationIds);
+
+    if (devIds.size === 0 && wireIds.size === 0 && annIds.size === 0) return;
+
+    const canDeleteDevs = devIds.size > 0 && !isLayerLocked(curLayers, 'devices');
+    const canDeleteWires = wireIds.size > 0 && !isLayerLocked(curLayers, 'wires');
+    const canDeleteAnns = annIds.size > 0 && !isLayerLocked(curLayers, 'annotations');
+
+    if (!canDeleteDevs && devIds.size > 0) {
+      appendLog('WARN', 'E3-CORE', 'Удаление отклонено: слой «Изделия и аппараты» заблокирован.');
     }
-  }, [selectedDeviceId, selectedWireId, selectedAnnotationId, project.devices, commitProject, appendLog]);
+    if (!canDeleteWires && wireIds.size > 0) {
+      appendLog('WARN', 'E3-CORE', 'Удаление отклонено: слой «Цепи и провода» заблокирован.');
+    }
+    if (!canDeleteAnns && annIds.size > 0) {
+      appendLog('WARN', 'E3-CORE', 'Удаление отклонено: слой «Аннотации и зоны» заблокирован.');
+    }
+    if (!canDeleteDevs && !canDeleteWires && !canDeleteAnns) return;
+
+    commitProject((prev) => ({
+      ...prev,
+      revision: prev.revision + 1,
+      updatedAt: new Date().toISOString(),
+      devices: canDeleteDevs ? prev.devices.filter((d) => !devIds.has(d.id)) : prev.devices,
+      wires: prev.wires.filter((w) => {
+        if (canDeleteWires && wireIds.has(w.id)) return false;
+        if (canDeleteDevs && (devIds.has(w.fromDeviceId) || devIds.has(w.toDeviceId))) return false;
+        return true;
+      }),
+      annotations: canDeleteAnns
+        ? (prev.annotations || []).filter((a) => !annIds.has(a.id))
+        : prev.annotations,
+    }));
+
+    applySelection({});
+    appendLog(
+      'WARN',
+      'E3-CORE',
+      `Удалено объектов — изд.: ${canDeleteDevs ? devIds.size : 0}, цепей: ${canDeleteWires ? wireIds.size : 0}, аннот.: ${canDeleteAnns ? annIds.size : 0}.`
+    );
+  }, [selectedDeviceIds, selectedWireIds, selectedAnnotationIds, commitProject, applySelection, appendLog]);
+
+  const handleCopySelected = useCallback(() => {
+    const cur = docStateRef.current.present;
+    const payload = buildClipboardPayload(cur, selectedDeviceIds, selectedWireIds, selectedAnnotationIds);
+    if (!payload) {
+      appendLog('WARN', 'E3-CORE', 'Нечего копировать: выделите изделие, группу или аннотацию.');
+      return;
+    }
+    clipboardRef.current = payload;
+    setHasClipboard(true);
+    appendLog(
+      'INFO',
+      'E3-CORE',
+      `Скопировано в буфер: изд. ${payload.devices.length}, внутр. цепей ${payload.wires.length}, аннот. ${payload.annotations.length}.`
+    );
+  }, [selectedDeviceIds, selectedWireIds, selectedAnnotationIds, appendLog]);
+
+  const handlePasteClipboard = useCallback(() => {
+    const payload = clipboardRef.current;
+    if (!payload) return;
+    const cur = docStateRef.current.present;
+    if (payload.devices.length > 0 && isLayerLocked(cur.layers, 'devices')) {
+      appendLog('WARN', 'E3-CORE', 'Вставка отклонена: слой «Изделия и аппараты» заблокирован.');
+      return;
+    }
+    const targetSheetId = activeSheet?.id || cur.sheets[0]?.id;
+    if (!targetSheetId) return;
+
+    const res = pasteClipboardPayload(cur, payload, targetSheetId, {
+      offsetX: 40,
+      offsetY: 40,
+      gridSize: cur.visualSettings.gridSize,
+    });
+    commitProject(() => res.nextProject);
+    applySelection({
+      deviceIds: res.pastedDeviceIds,
+      wireIds: res.pastedWireIds,
+      annotationIds: res.pastedAnnotationIds,
+    });
+    appendLog(
+      'INFO',
+      'E3-CORE',
+      `Вставлено: изд. ${res.pastedDeviceIds.length}, цепей ${res.pastedWireIds.length}, аннот. ${res.pastedAnnotationIds.length}.`
+    );
+  }, [activeSheet?.id, commitProject, applySelection, appendLog]);
+
+  const handleDuplicateSelected = useCallback(() => {
+    const cur = docStateRef.current.present;
+    const payload = buildClipboardPayload(cur, selectedDeviceIds, selectedWireIds, selectedAnnotationIds);
+    if (!payload) return;
+    if (payload.devices.length > 0 && isLayerLocked(cur.layers, 'devices')) {
+      appendLog('WARN', 'E3-CORE', 'Дублирование отклонено: слой «Изделия и аппараты» заблокирован.');
+      return;
+    }
+    const targetSheetId = activeSheet?.id || cur.sheets[0]?.id;
+    if (!targetSheetId) return;
+
+    const res = pasteClipboardPayload(cur, payload, targetSheetId, {
+      offsetX: 40,
+      offsetY: 40,
+      gridSize: cur.visualSettings.gridSize,
+    });
+    commitProject(() => res.nextProject);
+    applySelection({
+      deviceIds: res.pastedDeviceIds,
+      wireIds: res.pastedWireIds,
+      annotationIds: res.pastedAnnotationIds,
+    });
+    appendLog('INFO', 'E3-CORE', `Дублировано объектов: ${res.pastedDeviceIds.length + res.pastedAnnotationIds.length}.`);
+  }, [selectedDeviceIds, selectedWireIds, selectedAnnotationIds, activeSheet?.id, commitProject, applySelection, appendLog]);
+
+  const handleSelectAllOnSheet = useCallback(() => {
+    const cur = docStateRef.current.present;
+    const sheetId = activeSheet?.id || cur.sheets[0]?.id;
+    if (!sheetId) return;
+    const layers = resolveCadLayers(cur.layers, cur.visualSettings.showGostFrame);
+    const deviceIds =
+      layers.devices.visible && !layers.devices.locked
+        ? cur.devices
+            .filter((d) => d.sheetId === sheetId && d.bindingState !== 'REMOVED_IN_FLUX')
+            .map((d) => d.id)
+        : [];
+    const wireIds =
+      layers.wires.visible && !layers.wires.locked
+        ? cur.wires.filter((w) => w.sheetId === sheetId).map((w) => w.id)
+        : [];
+    const annotationIds =
+      layers.annotations.visible && !layers.annotations.locked
+        ? (cur.annotations || []).filter((a) => a.sheetId === sheetId).map((a) => a.id)
+        : [];
+    applySelection({ deviceIds, wireIds, annotationIds });
+  }, [activeSheet?.id, applySelection]);
+
+  const handleAlignSelectedDevices = useCallback(
+    (kind: DeviceAlignKind) => {
+      if (selectedDeviceIds.length < 2) return;
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Выравнивание отклонено: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      commitProject((prev) => {
+        const devices = alignSelectedDevices(
+          prev.devices,
+          selectedDeviceIds,
+          kind,
+          prev.visualSettings.gridSize,
+          prev.visualSettings.snapToGrid
+        );
+        let wires = prev.wires;
+        for (const id of selectedDeviceIds) {
+          const moved = devices.find((d) => d.id === id);
+          if (moved) wires = rerouteDeviceWires(moved, devices, wires, prev.sheets);
+        }
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices,
+          wires,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Выровнена группа изделий (${selectedDeviceIds.length} шт., режим: ${kind}).`);
+    },
+    [selectedDeviceIds, commitProject, appendLog]
+  );
 
   const handlePlaceCatalogItem = useCallback(
     (item: CatalogItem, x?: number, y?: number, targetSheetId?: string) => {
@@ -753,28 +1004,45 @@ export default function App() {
         updatedAt: new Date().toISOString(),
         annotations: [...(prev.annotations || []), newAnn],
       }));
-      setSelectedDeviceId(null);
-      setSelectedWireId(null);
-      setSelectedAnnotationId(newAnn.id);
+      applySelection({ annotationIds: [newAnn.id] });
       setTool('select');
       appendLog('INFO', 'E3-CORE', `Добавлена аннотация (${kind}) на лист.`);
     },
-    [commitProject, appendLog]
+    [commitProject, applySelection, appendLog]
   );
 
-  const handleMoveAnnotation = useCallback((annId: string, x: number, y: number) => {
-    setDocState((s) => {
-      if (isLayerLocked(s.present.layers, 'annotations')) return s;
-      return {
-        ...s,
-        present: {
-          ...s.present,
-          updatedAt: new Date().toISOString(),
-          annotations: (s.present.annotations || []).map((a) => (a.id === annId ? { ...a, x, y } : a)),
-        },
-      };
-    });
-  }, []);
+  const handleMoveAnnotation = useCallback(
+    (annId: string, x: number, y: number) => {
+      setDocState((s) => {
+        const prev = s.present;
+        if (isLayerLocked(prev.layers, 'annotations')) return s;
+        const target = (prev.annotations || []).find((a) => a.id === annId);
+        if (!target) return s;
+        const dx = x - target.x;
+        const dy = y - target.y;
+        if (dx === 0 && dy === 0) return s;
+
+        const moveAnnSet = new Set(
+          selectedAnnotationIds.includes(annId) && selectedAnnotationIds.length > 1
+            ? selectedAnnotationIds
+            : [annId]
+        );
+        return {
+          ...s,
+          present: {
+            ...prev,
+            updatedAt: new Date().toISOString(),
+            annotations: (prev.annotations || []).map((a) =>
+              moveAnnSet.has(a.id) && a.sheetId === target.sheetId
+                ? { ...a, x: a.x + dx, y: a.y + dy }
+                : a
+            ),
+          },
+        };
+      });
+    },
+    [selectedAnnotationIds]
+  );
 
   const handleUpdateAnnotation = useCallback(
     (annId: string, patch: Partial<E3Annotation>) => {
@@ -808,40 +1076,83 @@ export default function App() {
 
   const handleCreateWire = useCallback(
     (fromDeviceId: string, fromPinId: string, toDeviceId: string, toPinId: string) => {
-      if (isLayerLocked(docStateRef.current.present.layers, 'wires')) {
+      const cur = docStateRef.current.present;
+      if (isLayerLocked(cur.layers, 'wires')) {
         appendLog('WARN', 'E3-CORE', 'Трассировка отклонена: слой «Цепи и провода» заблокирован.');
         return;
       }
-      const d1 = project.devices.find((d) => d.id === fromDeviceId);
-      const d2 = project.devices.find((d) => d.id === toDeviceId);
+      if (fromDeviceId === toDeviceId && fromPinId === toPinId) return;
+
+      const d1 = cur.devices.find((d) => d.id === fromDeviceId);
+      const d2 = cur.devices.find((d) => d.id === toDeviceId);
       const p1 = d1?.pins.find((p) => p.id === fromPinId);
       const p2 = d2?.pins.find((p) => p.id === toPinId);
       if (!d1 || !d2 || !p1 || !p2) return;
 
-      const abs1 = { ...getAbsolutePinPos(d1, p1), deviceId: d1.id };
-      const abs2 = { ...getAbsolutePinPos(d2, p2), deviceId: d2.id };
-      const obstacles = project.devices
-        .filter((d) => d.sheetId === d1.sheetId && d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
-        .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
-      const occupied = project.wires
-        .filter((w) => w.sheetId === d1.sheetId)
-        .flatMap((w) => extractWireSegments(w.waypoints));
-      let wireIdx = project.wires.length + 1;
-      while (project.wires.some((w) => w.netName === `NET_${wireIdx}`)) {
+      const duplicate = cur.wires.find(
+        (w) =>
+          (w.fromDeviceId === fromDeviceId &&
+            w.fromPinId === fromPinId &&
+            w.toDeviceId === toDeviceId &&
+            w.toPinId === toPinId) ||
+          (w.fromDeviceId === toDeviceId &&
+            w.fromPinId === toPinId &&
+            w.toDeviceId === fromDeviceId &&
+            w.toPinId === fromPinId)
+      );
+      if (duplicate) {
+        setSelectedWireId(duplicate.id);
+        setSelectedDeviceId(null);
+        appendLog('INFO', 'E3-CORE', `Выбрана существующая связь ${duplicate.netName} между этими выводами.`);
+        return;
+      }
+
+      const targetSheetId = d1.sheetId;
+      const targetSheet = cur.sheets.find((s) => s.id === targetSheetId);
+      const sheetBounds = getSheetDrawableBounds(targetSheet);
+
+      // Inherit existing net/signal if branching from an already wired pin (T-junction)
+      const existingPinWire = cur.wires.find(
+        (w) =>
+          w.sheetId === targetSheetId &&
+          ((w.fromDeviceId === fromDeviceId && w.fromPinId === fromPinId) ||
+            (w.toDeviceId === fromDeviceId && w.toPinId === fromPinId) ||
+            (w.fromDeviceId === toDeviceId && w.fromPinId === toPinId) ||
+            (w.toDeviceId === toDeviceId && w.toPinId === toPinId))
+      );
+
+      let wireIdx = cur.wires.length + 1;
+      while (cur.wires.some((w) => w.netName === `NET_${wireIdx}`)) {
         wireIdx += 1;
       }
+      const netName = existingPinWire?.netName || `NET_${wireIdx}`;
+      const signalType = existingPinWire?.signalType || p1.signalType;
+      const wireNumber = existingPinWire?.wireNumber || String(100 + wireIdx);
+
+      const abs1 = { ...getAbsolutePinPos(d1, p1), deviceId: d1.id };
+      const abs2 = { ...getAbsolutePinPos(d2, p2), deviceId: d2.id };
+      const obstacles = cur.devices
+        .filter((d) => d.sheetId === targetSheetId && d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
+        .map((d) => getDeviceBounds(d));
+      const occupied = cur.wires
+        .filter((w) => w.sheetId === targetSheetId)
+        .flatMap((w) => extractWireSegments(w.waypoints, w.netName));
+
       const newWire: E3Wire = {
         id: `w-${Date.now()}`,
-        sheetId: d1.sheetId,
-        netName: `NET_${wireIdx}`,
-        signalType: p1.signalType,
+        sheetId: targetSheetId,
+        netName,
+        signalType,
         fromDeviceId,
         fromPinId,
         toDeviceId,
         toPinId,
-        waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles, 0, occupied),
-        crossSection: p1.signalType === 'power' ? '2.5 мм²' : '0.75 мм²',
-        wireNumber: String(100 + wireIdx),
+        waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles, 0, occupied, {
+          netName,
+          sheetBounds,
+        }),
+        crossSection: signalType === 'power' ? '2.5 мм²' : '0.75 мм²',
+        wireNumber,
       };
 
       commitProject((prev) => ({
@@ -858,7 +1169,47 @@ export default function App() {
         `Создана цепь ${newWire.netName}: ${d1.designation}:${p1.name} → ${d2.designation}:${p2.name}.`
       );
     },
-    [project.devices, project.wires, commitProject, appendLog]
+    [commitProject, appendLog]
+  );
+
+  const handleRerouteWire = useCallback(
+    (wireId: string) => {
+      const cur = docStateRef.current.present;
+      if (isLayerLocked(cur.layers, 'wires')) {
+        appendLog('WARN', 'E3-CORE', 'Слой «Цепи и провода» заблокирован.');
+        return;
+      }
+      const target = cur.wires.find((w) => w.id === wireId);
+      if (!target) return;
+      const d1 = cur.devices.find((d) => d.id === target.fromDeviceId);
+      const d2 = cur.devices.find((d) => d.id === target.toDeviceId);
+      const p1 = d1?.pins.find((p) => p.id === target.fromPinId);
+      const p2 = d2?.pins.find((p) => p.id === target.toPinId);
+      if (!d1 || !d2 || !p1 || !p2) return;
+
+      const abs1 = { ...getAbsolutePinPos(d1, p1), deviceId: d1.id };
+      const abs2 = { ...getAbsolutePinPos(d2, p2), deviceId: d2.id };
+      const obstacles = cur.devices
+        .filter((d) => d.sheetId === target.sheetId && d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
+        .map((d) => getDeviceBounds(d));
+      const occupied = cur.wires
+        .filter((w) => w.sheetId === target.sheetId && w.id !== target.id)
+        .flatMap((w) => extractWireSegments(w.waypoints, w.netName));
+      const sheetBounds = getSheetDrawableBounds(cur.sheets.find((s) => s.id === target.sheetId));
+      const nextPts = autoRouteOrthogonal(abs1, abs2, 20, obstacles, 0, occupied, {
+        netName: target.netName,
+        sheetBounds,
+      });
+
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        wires: prev.wires.map((w) => (w.id === wireId ? { ...w, waypoints: nextPts } : w)),
+      }));
+      appendLog('INFO', 'E3-CORE', `Перестроена трасса цепи ${target.netName} (${target.wireNumber}).`);
+    },
+    [commitProject, appendLog]
   );
 
   const handleAddSheet = useCallback(() => {
@@ -1205,7 +1556,13 @@ export default function App() {
       ...prev,
       revision: prev.revision + 1,
       updatedAt: new Date().toISOString(),
-      wires: routeSheetWiresCleanly(prev.devices, prev.wires, activeSheetId, prev.visualSettings.gridSize),
+      wires: routeSheetWiresCleanly(
+        prev.devices,
+        prev.wires,
+        activeSheetId,
+        prev.visualSettings.gridSize,
+        prev.sheets
+      ),
     }));
     appendLog('INFO', 'E3-CORE', 'Выполнена автотрассировка линий без наложений и пересечения блоков.');
   }, [activeSheetId, commitProject, appendLog]);
@@ -1499,34 +1856,57 @@ export default function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (anyModalOpen) return;
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) {
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && key === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
           handleRedo();
         } else {
           handleUndo();
         }
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
         e.preventDefault();
         handleRedo();
+      } else if ((e.ctrlKey || e.metaKey) && key === 'c') {
+        e.preventDefault();
+        handleCopySelected();
+      } else if ((e.ctrlKey || e.metaKey) && key === 'v') {
+        e.preventDefault();
+        handlePasteClipboard();
+      } else if ((e.ctrlKey || e.metaKey) && key === 'd') {
+        e.preventDefault();
+        handleDuplicateSelected();
+      } else if ((e.ctrlKey || e.metaKey) && key === 'a') {
+        e.preventDefault();
+        handleSelectAllOnSheet();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         handleDeleteSelected();
-      } else if (e.key.toLowerCase() === 'r') {
+      } else if (!e.ctrlKey && !e.metaKey && key === 'r') {
         handleRotateSelected();
-      } else if (e.key.toLowerCase() === 'v') {
+      } else if (!e.ctrlKey && !e.metaKey && key === 'v') {
         setTool('select');
-      } else if (e.key.toLowerCase() === 'w') {
+      } else if (!e.ctrlKey && !e.metaKey && key === 'w') {
         setTool('wire');
-      } else if (e.key.toLowerCase() === 'h') {
+      } else if (!e.ctrlKey && !e.metaKey && key === 'h') {
         setTool('pan');
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [anyModalOpen, handleUndo, handleRedo, handleDeleteSelected, handleRotateSelected]);
+  }, [
+    anyModalOpen,
+    handleUndo,
+    handleRedo,
+    handleCopySelected,
+    handlePasteClipboard,
+    handleDuplicateSelected,
+    handleSelectAllOnSheet,
+    handleDeleteSelected,
+    handleRotateSelected,
+  ]);
 
   // Export & Import handlers (.e3s OLE2 + XML + Flux Bridge)
   const handleExportE3sOle2 = async () => {
@@ -1695,6 +2075,19 @@ export default function App() {
       appendLog('SYNC', 'E3-CORE', `Применены и синхронизированы настройки визуализации «${nextSettings.presetName}».`);
     },
     [commitProject, appendLog]
+  );
+
+  const handlePatchVisualSettings = useCallback(
+    (patch: Partial<E3VisualSettings>) => {
+      const patchKey = Object.keys(patch).sort().join(',');
+      commitCoalesced(`visual:${patchKey}`, (prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        visualSettings: { ...prev.visualSettings, ...patch },
+      }));
+    },
+    [commitCoalesced]
   );
 
   const handleToggleLayerVisibility = useCallback(
@@ -1916,7 +2309,66 @@ export default function App() {
     return data;
   };
 
+  const handleUpdateFluxProjectKey = useCallback(
+    (nextKey: string) => {
+      const cleaned = nextKey.trim();
+      if (!cleaned) return;
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        fluxProjectKey: cleaned,
+      }));
+      appendLog('SYNC', 'FLUX-BRIDGE', `Обновлён ключ проекта Flux Studio: ${cleaned}.`);
+    },
+    [commitProject, appendLog]
+  );
+
+  const handlePushToFluxHost = useCallback(
+    async (overrideKey?: string): Promise<{ hosted: boolean; ok: boolean }> => {
+      const targetProj =
+        overrideKey && overrideKey.trim() && overrideKey.trim() !== project.fluxProjectKey
+          ? { ...project, fluxProjectKey: overrideKey.trim() }
+          : project;
+      const hosted = await pushProjectToFluxHost(targetProj);
+      let busOk = true;
+      try {
+        const res = await invokeFluxModule('flux-studio-host', 'e3.getBridgeBundle', {
+          projectId: targetProj.id,
+          fluxProjectKey: targetProj.fluxProjectKey,
+        });
+        busOk = res.ok;
+        setFluxBusMessages((prev) => [
+          createFluxBusLogEntry(
+            'outbound',
+            hosted ? 'window.flux' : res.via,
+            'e3.getBridgeBundle',
+            'e3promax-ecad',
+            'flux-studio-host',
+            `${targetProj.fluxProjectKey} · rev ${targetProj.revision}`
+          ),
+          ...prev.slice(0, 49),
+        ]);
+      } catch {
+        busOk = false;
+      }
+      appendLog(
+        'SYNC',
+        'FLUX-BRIDGE',
+        hosted
+          ? `Проект ${targetProj.projectCode} (${targetProj.fluxProjectKey}) передан в активный Flux Host.`
+          : `Проект ${targetProj.projectCode} (${targetProj.fluxProjectKey}) отправлен в шину Flux Studio.`
+      );
+      return { hosted, ok: hosted || busOk };
+    },
+    [project, appendLog]
+  );
+
   const ercErrorCount = erc.filter((i) => i.severity === 'error').length;
+
+  const isConsoleBottomSingle =
+    dockLayout.panels.console.dock === 'bottom' &&
+    getPanelsByDock(dockLayout, 'bottom').length === 1;
 
   const renderPanelContent = (panelId: PanelId) => {
     if (panelId === 'explorer') {
@@ -1970,6 +2422,14 @@ export default function App() {
           selectedDevice={selectedDevice}
           selectedWire={selectedWire}
           selectedAnnotation={selectedAnnotation}
+          selectedDeviceIds={selectedDeviceIds}
+          selectedWireIds={selectedWireIds}
+          selectedAnnotationIds={selectedAnnotationIds}
+          onAlignDevices={handleAlignSelectedDevices}
+          onRotateSelected={handleRotateSelected}
+          onDuplicateSelected={handleDuplicateSelected}
+          onDeleteSelected={handleDeleteSelected}
+          onClearSelection={() => applySelection({})}
           onUpdateDevice={handleUpdateDevice}
           onSaveDeviceToCatalog={handleSaveDeviceToCatalog}
           onUpdateWire={(wireId, patch) => {
@@ -1980,6 +2440,7 @@ export default function App() {
               wires: prev.wires.map((w) => (w.id === wireId ? { ...w, ...patch } : w)),
             }));
           }}
+          onRerouteWire={handleRerouteWire}
           onDeleteWire={(wireId) => {
             if (isLayerLocked(docStateRef.current.present.layers, 'wires')) return;
             commitProject((prev) => ({
@@ -1987,7 +2448,7 @@ export default function App() {
               revision: prev.revision + 1,
               wires: prev.wires.filter((w) => w.id !== wireId),
             }));
-            if (selectedWireId === wireId) setSelectedWireId(null);
+            setSelectedWireIds((prev) => prev.filter((id) => id !== wireId));
           }}
           onUpdateAnnotation={handleUpdateAnnotation}
           onDeleteAnnotation={handleDeleteAnnotation}
@@ -2027,14 +2488,29 @@ export default function App() {
         project={project}
         activeTab={consoleTab}
         collapsed={consoleCollapsed}
+        tabsPosition={isConsoleBottomSingle ? 'bottom' : 'top'}
+        requestedApiSubTab={requestedApiSubTab}
         bom={bom}
         cables={cables}
         terminals={terminals}
         erc={erc}
         logs={logs}
         fluxBusMessages={fluxBusMessages}
+        dockSide={dockLayout.panels.console.dock}
+        onStartPanelDrag={
+          isConsoleBottomSingle ? (e) => handleStartPanelDrag('console', e) : undefined
+        }
+        onMovePanelDock={
+          isConsoleBottomSingle
+            ? (side: DockSide) =>
+                setDockLayout((prev) =>
+                  movePanelDock(prev, 'console', side, undefined, window.innerWidth, window.innerHeight)
+                )
+            : undefined
+        }
         onFluxBusLog={(entry) => setFluxBusMessages((prev) => [entry, ...prev.slice(0, 49)])}
         onSetTab={setConsoleTab}
+        onExpandPanel={() => setConsoleCollapsed(false)}
         onToggleCollapse={() => setConsoleCollapsed((c) => !c)}
         onJumpToIssue={(issue) => {
           if (issue.sheetId) {
@@ -2053,6 +2529,32 @@ export default function App() {
             setSelectedAnnotationId(null);
           }
         }}
+        onSelectDeviceByDesignation={(designation) => {
+          const dev = project.devices.find((d) => d.designation === designation);
+          if (!dev) return;
+          setActiveSheetId(dev.sheetId);
+          setViewportSheetIds((prev) =>
+            prev.map((sId, idx) => (idx === activeViewportIdx ? dev.sheetId : sId))
+          );
+          setSelectedDeviceId(dev.id);
+          setSelectedWireId(null);
+          setSelectedAnnotationId(null);
+        }}
+        onDownloadBomCsv={() => {
+          downloadText(`${project.projectCode}-PE3.csv`, exportBomCsv(bom), 'text/csv;charset=utf-8');
+          appendLog('INFO', 'E3-CORE', `Выгружена спецификация ${project.projectCode}-PE3.csv.`);
+        }}
+        onDownloadCablesCsv={() => {
+          downloadText(
+            `${project.projectCode}-cables.csv`,
+            exportCableJournalCsv(cables),
+            'text/csv;charset=utf-8'
+          );
+          appendLog('INFO', 'E3-CORE', `Выгружен кабельный журнал ${project.projectCode}-cables.csv.`);
+        }}
+        onOpenReportModal={() => setReportOpen(true)}
+        onOpenFluxPublishModal={() => setFluxPublishOpen(true)}
+        onClearLogs={() => setLogs([])}
         onTestApiSyncPush={handleTestApiSyncPush}
       />
     );
@@ -2069,10 +2571,14 @@ export default function App() {
     const isHorizBand = edge === 'bottom' || edge === 'top';
     const allCollapsed = panels.every((p) => p.collapsed);
     const useSideRail = !isHorizBand && panels.length === 1;
+    const isBottomConsoleOnly =
+      edge === 'bottom' && panels.length === 1 && panels[0].id === 'console';
     const rawBandSize = dockLayout.sizes[edge];
     const targetBandSize = allCollapsed
       ? isHorizBand
-        ? COLLAPSED_HEADER_HEIGHT
+        ? isBottomConsoleOnly
+          ? COLLAPSED_BOTTOM_TABS_HEIGHT
+          : COLLAPSED_HEADER_HEIGHT
         : useSideRail
           ? COLLAPSED_SIDE_RAIL_WIDTH
           : 196
@@ -2085,7 +2591,9 @@ export default function App() {
         : edge === 'right'
           ? 'border-l border-[var(--flux-line)]'
           : edge === 'bottom'
-            ? 'border-t border-[var(--flux-line)]'
+            ? isBottomConsoleOnly
+              ? ''
+              : 'border-t border-[var(--flux-line)]'
             : 'border-b border-[var(--flux-line)]';
 
     const band = (
@@ -2107,6 +2615,7 @@ export default function App() {
             bandSize={rawBandSize}
             useSideRail={useSideRail}
             multiPanelInBand={panels.length > 1}
+            hideHeaderBar={isBottomConsoleOnly && p.id === 'console'}
             isResizing={isResizingThis}
             className="flex-1"
             onStartDrag={handleStartPanelDrag}
@@ -2183,10 +2692,12 @@ export default function App() {
         viewportLayout={viewportLayout}
         canUndo={history.length > 0}
         canRedo={future.length > 0}
-        hasSelection={Boolean(selectedDeviceId || selectedWireId || selectedAnnotationId)}
+        hasSelection={selectedDeviceIds.length > 0 || selectedWireIds.length > 0 || selectedAnnotationIds.length > 0}
+        hasClipboard={hasClipboard}
         ercErrorCount={ercErrorCount}
         isBusy={isBusy}
         e3BridgeHost={bridgeStatus.isWin32 ? 'Windows' : bridgeStatus.bridgeConnected ? bridgeStatus.bridgeHost : null}
+        fluxHosted={fluxHostStatus.hostedInFlux}
         onSetTool={setTool}
         onSetViewportLayout={handleSetViewportLayout}
         onResetDockLayout={() => {
@@ -2201,6 +2712,9 @@ export default function App() {
         }}
         onUndo={handleUndo}
         onRedo={handleRedo}
+        onCopySelected={handleCopySelected}
+        onPasteClipboard={handlePasteClipboard}
+        onDuplicateSelected={handleDuplicateSelected}
         onRotateSelected={handleRotateSelected}
         onDeleteSelected={handleDeleteSelected}
         onZoomChange={setZoom}
@@ -2249,6 +2763,7 @@ export default function App() {
         }
         onUpdateSheetFormat={handleUpdateSheetFormat}
         onUpdateFontFamily={handleUpdateFontFamily}
+        onUpdateVisualSettings={handlePatchVisualSettings}
         onDuplicateSheet={handleDuplicateSheet}
         onDeleteSheet={handleDeleteSheet}
         onRunErc={() => {
@@ -2296,6 +2811,15 @@ export default function App() {
         onDownloadFluxStudioZip={() => {
           window.location.assign(`/api/export/flux-studio?projectId=${encodeURIComponent(project.id)}`);
           appendLog('INFO', 'FLUX-BRIDGE', 'Сформирован архив подпрограммы Flux Studio (.zip).');
+        }}
+        onOpenFluxPublishModal={() => setFluxPublishOpen(true)}
+        onPushToFluxHost={() => {
+          void handlePushToFluxHost();
+        }}
+        onOpenFluxBusConsole={() => {
+          setConsoleTab('api');
+          setRequestedApiSubTab('flux-internal');
+          setConsoleCollapsed(false);
         }}
         onExportE3sOle2={handleExportE3sOle2}
         onExportE3sXml={handleExportE3sXml}
@@ -2393,6 +2917,9 @@ export default function App() {
                     selectedDeviceId={selectedDeviceId}
                     selectedWireId={selectedWireId}
                     selectedAnnotationId={selectedAnnotationId}
+                    selectedDeviceIds={selectedDeviceIds}
+                    selectedWireIds={selectedWireIds}
+                    selectedAnnotationIds={selectedAnnotationIds}
                     onFocusViewport={() => {
                       setActiveViewportIdx(idx);
                       setActiveSheetId(vpSheetId);
@@ -2452,25 +2979,52 @@ export default function App() {
                     onToggleLayerLock={handleToggleLayerLock}
                     onShowAllLayers={handleShowAllLayers}
                     onUnlockAllLayers={handleUnlockAllLayers}
-                    onSelectDevice={(id) => {
-                      setSelectedDeviceId(id);
-                      if (id) {
-                        setSelectedWireId(null);
-                        setSelectedAnnotationId(null);
+                    onSelectDevice={(id, opts) => {
+                      if (!id) {
+                        applySelection({});
+                        return;
+                      }
+                      if (opts?.toggle) {
+                        setSelectedDeviceIds((prev) => toggleIdInSelection(prev, id));
+                      } else {
+                        applySelection({ deviceIds: [id] });
                       }
                     }}
-                    onSelectWire={(id) => {
-                      setSelectedWireId(id);
-                      if (id) {
-                        setSelectedDeviceId(null);
-                        setSelectedAnnotationId(null);
+                    onSelectWire={(id, opts) => {
+                      if (!id) {
+                        applySelection({});
+                        return;
+                      }
+                      if (opts?.toggle) {
+                        setSelectedWireIds((prev) => toggleIdInSelection(prev, id));
+                      } else {
+                        applySelection({ wireIds: [id] });
                       }
                     }}
-                    onSelectAnnotation={(id) => {
-                      setSelectedAnnotationId(id);
-                      if (id) {
-                        setSelectedDeviceId(null);
-                        setSelectedWireId(null);
+                    onSelectAnnotation={(id, opts) => {
+                      if (!id) {
+                        applySelection({});
+                        return;
+                      }
+                      if (opts?.toggle) {
+                        setSelectedAnnotationIds((prev) => toggleIdInSelection(prev, id));
+                      } else {
+                        applySelection({ annotationIds: [id] });
+                      }
+                    }}
+                    onSetSelection={(next, additive) => {
+                      if (additive) {
+                        setSelectedDeviceIds((prev) =>
+                          Array.from(new Set([...prev, ...next.deviceIds]))
+                        );
+                        setSelectedWireIds((prev) =>
+                          Array.from(new Set([...prev, ...next.wireIds]))
+                        );
+                        setSelectedAnnotationIds((prev) =>
+                          Array.from(new Set([...prev, ...next.annotationIds]))
+                        );
+                      } else {
+                        applySelection(next);
                       }
                     }}
                     onBeginDrag={handleBeginDrag}
@@ -2624,6 +3178,21 @@ export default function App() {
         activeSheetId={activeSheetId}
         onClose={() => setPublishModalOpen(false)}
         onPublish={handleBatchPublish}
+      />
+
+      <FluxStudioPublishModal
+        open={fluxPublishOpen}
+        project={project}
+        onClose={() => setFluxPublishOpen(false)}
+        onUpdateFluxProjectKey={handleUpdateFluxProjectKey}
+        onPushToFluxHost={handlePushToFluxHost}
+        onDownloadFluxPackageSuccess={(filename, manifestId, version) => {
+          appendLog(
+            'SYNC',
+            'FLUX-BRIDGE',
+            `Опубликован пакет Flux Studio: ${filename} (${manifestId} v${version}).`
+          );
+        }}
       />
     </div>
     </MotionConfig>

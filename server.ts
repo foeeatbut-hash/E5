@@ -27,6 +27,11 @@ import {
 import { buildOle2E3sContainer, parseE3sInput } from './src/core/e3SFormat.ts';
 import { createSeedProject } from './src/core/e3Seed.ts';
 import type { E3Device, E3Project, E3TitleBlock, ExternalWebhookConfig } from './src/core/e3Types.ts';
+import {
+  buildFluxStudioLogicSource,
+  buildFluxStudioManifest,
+  type FluxStudioManifestOptions,
+} from './src/core/fluxStudioManifest.ts';
 import { exportProjectToPdfBytes } from './src/core/pdfExporter.ts';
 import { diagLogger } from './src/server/diagLogger.ts';
 import {
@@ -1152,66 +1157,111 @@ app.get('/api/v1/projects/:id/export/flux-bridge', (req, res) => {
 });
 
 // ----------------------------------------------------------------------------
-// Flux Studio Subprogram Package (.zip) & Full Codebase Export (.zip)
+// Flux Studio Subprogram Package (.zip) & Manifest Contract (/api/v1/flux/*)
 // ----------------------------------------------------------------------------
+interface FluxPackageIncludeAssets {
+  e3s?: boolean;
+  xml?: boolean;
+  bridge?: boolean;
+  vbs?: boolean;
+  connector?: boolean;
+}
+
+async function buildFluxStudioZipBuffer(
+  proj: E3Project,
+  manifestOptions: FluxStudioManifestOptions = {},
+  includeAssets: FluxPackageIncludeAssets = {}
+): Promise<{ buffer: Buffer; filename: string; manifest: ReturnType<typeof buildFluxStudioManifest> }> {
+  const zip = new JSZip();
+  const manifest = buildFluxStudioManifest(proj, manifestOptions);
+
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+  zip.file('logic/main.ts', buildFluxStudioLogicSource(manifest));
+
+  const distHtmlPath = path.resolve(process.cwd(), 'dist', 'index.html');
+  if (fs.existsSync(distHtmlPath)) {
+    const distDir = path.resolve(process.cwd(), 'dist');
+    const addDir = (dir: string, prefix: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) addDir(full, `${prefix}${entry.name}/`);
+        else zip.file(`${prefix}${entry.name}`, fs.readFileSync(full));
+      }
+    };
+    addDir(distDir, 'ui/');
+  } else {
+    zip.file(
+      'ui/index.html',
+      `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${manifest.name}</title><link rel="stylesheet" href="/_flux/flux-ui.v1.css"></head><body class="fx-body"><main class="fx-stack"><h1 class="fx-title">${manifest.name} — ${proj.name}</h1><p class="fx-muted">Ключ проекта Flux: ${manifest.projectBinding.fluxProjectKey}. Соберите SPA (npm run build) перед релизной публикацией в Flux Studio.</p><pre id="model" class="fx-card"></pre></main><script src="/_flux/flux.v1.js"></script><script src="/ui/app.js"></script></body></html>`
+    );
+    zip.file(
+      'ui/app.js',
+      `const model = ${JSON.stringify(exportToFluxBridge(proj), null, 2)};\ndocument.getElementById('model').textContent = JSON.stringify({ project: model.projectName, fluxProjectKey: model.fluxProjectKey, nodes: model.nodes.length, wires: model.wires.length }, null, 2);\n`
+    );
+  }
+
+  if (includeAssets.e3s !== false) {
+    zip.file('e3-seed-model.e3s', Buffer.from(buildOle2E3sContainer(proj)));
+  }
+  if (includeAssets.xml !== false) {
+    zip.file('e3-seed-model.xml', serializeE3Xml(proj));
+  }
+  if (includeAssets.bridge !== false) {
+    zip.file('e3-bridge.json', JSON.stringify(exportToFluxBridge(proj), null, 2));
+  }
+  if (includeAssets.vbs !== false) {
+    zip.file('e3-series-2022-sync.vbs', Buffer.from(encodeUtf16LeWithBom(generateE3ComScript(proj))));
+  }
+  if (includeAssets.connector !== false) {
+    zip.file('E3ProMax_Connector.cmd', generateWindowsBridgeCmd(`http://localhost:${PORT}`));
+  }
+
+  const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  const filename = `${manifest.id}-studio-v${manifest.version}.zip`;
+  return { buffer, filename, manifest };
+}
+
+app.get('/api/v1/flux/manifest', (req, res) => {
+  const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
+  const proj = getOrDefaultProject(projectId);
+  const distHtmlPath = path.resolve(process.cwd(), 'dist', 'index.html');
+  res.json({
+    ok: true,
+    distBuilt: fs.existsSync(distHtmlPath),
+    manifest: buildFluxStudioManifest(proj),
+  });
+});
+
 app.get('/api/export/flux-studio', async (req, res) => {
   try {
     const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
     const proj = getOrDefaultProject(projectId);
-    const zip = new JSZip();
-
-    const manifest = {
-      id: 'e3promax-ecad',
-      name: 'E3ProMax — САПР электросхем',
-      version: '1.0.0',
-      author: proj.author || 'Инженер КИП',
-      contractVersion: 2,
-      ui: 'page',
-      logic: 'logic/main.ts',
-      store: {
-        category: 'e3',
-        summary: 'Редактор электросхем, авто-спецификаций ПЭ3, кабельных журналов и двусторонней синхронизации E3.series.',
-        requires: { flux: '1.21.0' },
-      },
-    };
-
-    zip.file('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
-    zip.file(
-      'logic/main.ts',
-      `// Логика подпрограммы Flux Studio для синхронизации E3.series и расчёта спецификации ПЭ3\nexport function compute(input: any) {\n  return { state: input?.state || {}, calc: { out: { ready: true } } };\n}\n`
-    );
-
-    const distHtmlPath = path.resolve(process.cwd(), 'dist', 'index.html');
-    if (fs.existsSync(distHtmlPath)) {
-      const distDir = path.resolve(process.cwd(), 'dist');
-      const addDir = (dir: string, prefix: string) => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          const full = path.join(dir, entry.name);
-          if (entry.isDirectory()) addDir(full, `${prefix}${entry.name}/`);
-          else zip.file(`${prefix}${entry.name}`, fs.readFileSync(full));
-        }
-      };
-      addDir(distDir, 'ui/');
-    } else {
-      zip.file(
-        'ui/index.html',
-        `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>E3ProMax</title><link rel="stylesheet" href="/_flux/flux-ui.v1.css"></head><body class="fx-body"><main class="fx-stack"><h1 class="fx-title">E3ProMax — ${proj.name}</h1><p class="fx-muted">Соберите проект (npm run build) перед публикацией для включения полного SPA в ui/ или откройте приложенную модель.</p><pre id="model" class="fx-card"></pre></main><script src="/_flux/flux.v1.js"></script><script src="/ui/app.js"></script></body></html>`
-      );
-      zip.file(
-        'ui/app.js',
-        `const model = ${JSON.stringify(exportToFluxBridge(proj), null, 2)};\ndocument.getElementById('model').textContent = JSON.stringify({ project: model.projectName, nodes: model.nodes.length, wires: model.wires.length }, null, 2);\n`
-      );
-    }
-
-    zip.file('e3-seed-model.e3s', Buffer.from(buildOle2E3sContainer(proj)));
-    zip.file('e3-seed-model.xml', serializeE3Xml(proj));
-    zip.file('e3-bridge.json', JSON.stringify(exportToFluxBridge(proj), null, 2));
-    zip.file('e3-series-2022-sync.vbs', Buffer.from(encodeUtf16LeWithBom(generateE3ComScript(proj))));
-    zip.file('E3ProMax_Connector.cmd', generateWindowsBridgeCmd(`http://localhost:${PORT}`));
-
-    const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const { buffer, filename } = await buildFluxStudioZipBuffer(proj, {
+      ui: req.query.ui === 'widget' ? 'widget' : 'page',
+      id: typeof req.query.moduleId === 'string' ? req.query.moduleId : undefined,
+      version: typeof req.query.version === 'string' ? req.query.version : undefined,
+    });
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="e3promax-studio-module.zip"');
+    setDownloadDisposition(res, filename);
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Zip error' });
+  }
+});
+
+app.post('/api/export/flux-studio', async (req, res) => {
+  try {
+    const bodyProj = req.body?.project as E3Project | undefined;
+    const proj = bodyProj?.id && Array.isArray(bodyProj.devices)
+      ? bodyProj
+      : getOrDefaultProject(typeof req.body?.projectId === 'string' ? req.body.projectId : undefined);
+    const manifestOptions = (req.body?.manifestOptions || {}) as FluxStudioManifestOptions;
+    const includeAssets = (req.body?.includeAssets || {}) as FluxPackageIncludeAssets;
+    const { buffer, filename, manifest } = await buildFluxStudioZipBuffer(proj, manifestOptions, includeAssets);
+
+    diagLogger.log('SYNC', 'FLUX-BRIDGE', `Собран пакет публикации Flux Studio: ${filename} (ui=${manifest.ui}, key=${manifest.projectBinding.fluxProjectKey})`);
+    res.setHeader('Content-Type', 'application/zip');
+    setDownloadDisposition(res, filename);
     res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Zip error' });

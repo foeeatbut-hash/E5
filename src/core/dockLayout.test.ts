@@ -4,6 +4,7 @@ import {
   clampDockLayoutToViewport,
   clampDockSize,
   clampFloatingRect,
+  COLLAPSED_BOTTOM_TABS_HEIGHT,
   computeViewportSheets,
   createDefaultDockLayout,
   deleteSheetFromProject,
@@ -21,6 +22,8 @@ test('default dock layout places explorer left, inspector right, console bottom'
   assert.equal(layout.panels.explorer.dock, 'left');
   assert.equal(layout.panels.inspector.dock, 'right');
   assert.equal(layout.panels.console.dock, 'bottom');
+  assert.equal(layout.sizes.bottom, 240);
+  assert.equal(COLLAPSED_BOTTOM_TABS_HEIGHT, 32);
   assert.equal(getPanelsByDock(layout, 'left').length, 1);
   assert.equal(getPanelsByDock(layout, 'floating').length, 0);
 });

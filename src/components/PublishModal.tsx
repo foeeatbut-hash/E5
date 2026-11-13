@@ -298,7 +298,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
               data-testid="publish-submit-btn"
               disabled={busy}
               onClick={handleSubmit}
-              className="inline-flex items-center gap-1.5 h-8 px-4 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white text-[12px] font-medium disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 h-8 px-4 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium disabled:opacity-50"
             >
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               <span>
