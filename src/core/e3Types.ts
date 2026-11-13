@@ -158,6 +158,35 @@ export interface GostStampTemplate {
   cells: GostStampCellDef[];
 }
 
+export type SheetChangeArea =
+  | 'devices'
+  | 'wires'
+  | 'annotations'
+  | 'stamp'
+  | 'format'
+  | 'metadata';
+
+export interface E3SheetSnapshot {
+  name: string;
+  format: SheetFormat;
+  width: number;
+  height: number;
+  titleBlock: E3TitleBlock;
+  devices: E3Device[];
+  wires: E3Wire[];
+  annotations: E3Annotation[];
+}
+
+export interface E3SheetRevisionEntry {
+  revision: number;
+  projectRevision: number;
+  timestamp: string;
+  author: string;
+  summary: string;
+  changedAreas: SheetChangeArea[];
+  snapshot?: E3SheetSnapshot;
+}
+
 export interface E3Sheet {
   id: string;
   number: number;
@@ -166,6 +195,9 @@ export interface E3Sheet {
   width: number;
   height: number;
   titleBlock: E3TitleBlock;
+  revision?: number;
+  updatedAt?: string;
+  revisions?: E3SheetRevisionEntry[];
 }
 
 export type BatchPublishFormat = 'pdf' | 'dxf-single' | 'dxf-zip';

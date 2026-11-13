@@ -148,6 +148,12 @@ import {
   type StampFieldKey,
 } from './core/gostFrame';
 import { generateHvacDiagram, type HvacBuildOptions } from './core/hvacBuilder';
+import {
+  applySheetRevisionTracking,
+  getSheetRevisionNumber,
+  normalizeProjectSheetRevisions,
+  restoreSheetFromRevision,
+} from './core/sheetRevisions';
 import { findSmartCatalogSpot } from './core/smartSnap';
 import { ecadAsync } from './workers/ecadAsync';
 
@@ -537,9 +543,20 @@ export default function App() {
   }, []);
 
   const commitProject = useCallback(
-    (updater: (prev: E3Project) => E3Project, recordHistory = true) => {
+    (
+      updater: (prev: E3Project) => E3Project,
+      recordHistory = true,
+      opts?: { coalesceSheetRev?: boolean; sheetSummary?: string; skipSheetTracking?: boolean }
+    ) => {
       const cur = docStateRef.current.present;
-      const next = updater(cur);
+      const rawNext = updater(cur);
+      const next = opts?.skipSheetTracking
+        ? normalizeProjectSheetRevisions(rawNext)
+        : applySheetRevisionTracking(cur, rawNext, {
+            author: rawNext.author || cur.author,
+            coalesceLast: opts?.coalesceSheetRev,
+            summaryOverride: opts?.sheetSummary,
+          });
       setDocState((s) => ({
         past: recordHistory ? [...s.past.slice(-29), s.present] : s.past,
         present: next,
@@ -561,7 +578,7 @@ export default function App() {
       const prevEdit = lastCoalescedEditRef.current;
       const shouldRecord = !prevEdit || prevEdit.key !== editKey || now - prevEdit.at > 700;
       lastCoalescedEditRef.current = { key: editKey, at: now };
-      commitProject(updater, shouldRecord);
+      commitProject(updater, shouldRecord, { coalesceSheetRev: !shouldRecord });
     },
     [commitProject]
   );
@@ -664,13 +681,16 @@ export default function App() {
       }
 
       if (!moved && !didBreak) return;
-      const committed: E3Project = didBreak
+      const rawCommitted: E3Project = didBreak
         ? nextProject
         : {
             ...nextProject,
             revision: nextProject.revision + 1,
             updatedAt: new Date().toISOString(),
           };
+      const committed = applySheetRevisionTracking(snap, rawCommitted, {
+        author: rawCommitted.author || snap.author,
+      });
       setDocState((s) => ({
         past: [...s.past.slice(-29), snap],
         present: committed,
@@ -2028,6 +2048,126 @@ export default function App() {
     [commitProject, project.id, project.sheets.length, appendLog]
   );
 
+  const handleRestoreSheetRevision = useCallback(
+    (sheetId: string, targetRevision: number) => {
+      const cur = docStateRef.current.present;
+      const sheet = cur.sheets.find((s) => s.id === sheetId);
+      if (!sheet) return;
+      const restored = restoreSheetFromRevision(cur, sheetId, targetRevision, {
+        author: cur.author,
+      });
+      if (restored === cur) return;
+      commitProject(() => restored, true, { skipSheetTracking: true });
+      applySelection({});
+      const nextSheet = restored.sheets.find((s) => s.id === sheetId) || sheet;
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Лист «${sheet.name}» откачен к ревизии v${targetRevision} (новая ревизия v${getSheetRevisionNumber(nextSheet)}).`
+      );
+    },
+    [commitProject, applySelection, appendLog]
+  );
+
+  const handleCommitInPlaceDeviceDesignation = useCallback(
+    (deviceId: string, nextDesignation: string) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) return;
+      const clean = nextDesignation.trim();
+      if (!clean) return;
+      const curDev = docStateRef.current.present.devices.find((d) => d.id === deviceId);
+      if (!curDev || curDev.designation === clean) return;
+      commitProject(
+        (prev) => ({
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices: prev.devices.map((d) =>
+            d.id === deviceId ? { ...d, designation: clean } : d
+          ),
+        }),
+        true,
+        { sheetSummary: `ОУО (на холсте): ${curDev.designation} → ${clean}` }
+      );
+      appendLog('INFO', 'E3-CORE', `ОУО изменено на холсте: ${curDev.designation} → ${clean}.`);
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleCommitInPlaceWireNumber = useCallback(
+    (wireId: string, nextWireNumber: string) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'wires')) return;
+      const clean = nextWireNumber.trim();
+      if (!clean) return;
+      const curWire = docStateRef.current.present.wires.find((w) => w.id === wireId);
+      if (!curWire || curWire.wireNumber === clean) return;
+      commitProject(
+        (prev) => ({
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          wires: prev.wires.map((w) =>
+            w.id === wireId ? { ...w, wireNumber: clean } : w
+          ),
+        }),
+        true,
+        { sheetSummary: `Маркировка провода: ${curWire.wireNumber} → ${clean}` }
+      );
+      appendLog('INFO', 'E3-CORE', `Маркировка провода изменена на холсте: ${curWire.wireNumber} → ${clean}.`);
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleCommitInPlaceAnnotationText = useCallback(
+    (annId: string, nextText: string) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'annotations')) return;
+      const clean = nextText.replace(/\r\n/g, '\n').trim();
+      if (!clean) return;
+      const curAnn = (docStateRef.current.present.annotations || []).find((a) => a.id === annId);
+      if (!curAnn || curAnn.text === clean) return;
+      commitProject(
+        (prev) => ({
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          annotations: (prev.annotations || []).map((a) =>
+            a.id === annId ? { ...a, text: clean } : a
+          ),
+        }),
+        true,
+        { sheetSummary: `Текст аннотации: «${clean.slice(0, 28)}»` }
+      );
+      appendLog('INFO', 'E3-CORE', `Аннотация изменена на холсте: «${clean.slice(0, 40)}».`);
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleCommitInPlaceStampCell = useCallback(
+    (sheetId: string, fieldKey: StampFieldKey, nextValue: string) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'frame')) return;
+      const curSheet = docStateRef.current.present.sheets.find((s) => s.id === sheetId);
+      if (!curSheet) return;
+      const prevVal = String(curSheet.titleBlock[fieldKey] ?? '');
+      const clean = nextValue.trim();
+      if (prevVal === clean) return;
+      commitProject(
+        (prev) => ({
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          sheets: prev.sheets.map((s) =>
+            s.id === sheetId
+              ? { ...s, titleBlock: { ...s.titleBlock, [fieldKey]: clean } }
+              : s
+          ),
+        }),
+        true,
+        { sheetSummary: `Штамп (${fieldKey}): «${clean.slice(0, 28)}»` }
+      );
+      appendLog('INFO', 'E3-CORE', `Графа штампа «${fieldKey}» обновлена на холсте: «${clean}».`);
+    },
+    [commitProject, appendLog]
+  );
+
   const handleSaveCustomTemplate = useCallback(
     (template: GostStampTemplate) => {
       setCustomStampTemplates((prev) => {
@@ -2353,7 +2493,7 @@ export default function App() {
         durationMs = res.durationMs;
       }
 
-      commitProject(() => importedProj as E3Project);
+      commitProject(() => importedProj as E3Project, true, { skipSheetTracking: true });
       const sheetIds = importedProj.sheets.map((s) => s.id);
       if (sheetIds[0]) {
         setActiveSheetId(sheetIds[0]);
@@ -2397,7 +2537,7 @@ export default function App() {
     const trimmed = rawText.trim();
     if (trimmed.startsWith('<')) {
       const res = await ecadAsync.importXml(trimmed);
-      commitProject(() => res.project);
+      commitProject(() => res.project, true, { skipSheetTracking: true });
       const sheetIds = res.project.sheets.map((s) => s.id);
       if (sheetIds[0]) {
         setActiveSheetId(sheetIds[0]);
@@ -2857,6 +2997,7 @@ export default function App() {
           onCreateOffPageCounterpart={handleCreateOffPageCounterpart}
           onUpdateOffPageMeta={handleUpdateOffPageMeta}
           onHighlightPotential={(seed) => setHighlightedPotentialSeed(seed)}
+          onRestoreSheetRevision={handleRestoreSheetRevision}
         />
       );
     }
@@ -3459,6 +3600,10 @@ export default function App() {
                       if (isLayerLocked(docStateRef.current.present.layers, 'frame')) return;
                       setStampModalState({ open: true, sheetId, mode: 'values', field: fieldKey || null });
                     }}
+                    onCommitInPlaceDeviceDesignation={handleCommitInPlaceDeviceDesignation}
+                    onCommitInPlaceWireNumber={handleCommitInPlaceWireNumber}
+                    onCommitInPlaceAnnotationText={handleCommitInPlaceAnnotationText}
+                    onCommitInPlaceStampCell={handleCommitInPlaceStampCell}
                   />
                 </div>
               );

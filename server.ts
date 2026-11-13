@@ -34,6 +34,10 @@ import {
   type FluxStudioManifestOptions,
 } from './src/core/fluxStudioManifest.ts';
 import { exportProjectToPdfBytes } from './src/core/pdfExporter.ts';
+import {
+  applySheetRevisionTracking,
+  normalizeProjectSheetRevisions,
+} from './src/core/sheetRevisions.ts';
 import { diagLogger } from './src/server/diagLogger.ts';
 import {
   buildPortableDistribution,
@@ -73,7 +77,7 @@ function loadInitialProject(): E3Project {
           diagLogger.log('INFO', 'SERVER', `Загружен проект из файла: ${filePath}`, {
             details: `projectCode=${raw.projectCode}, revision=${raw.revision}, devices=${raw.devices.length}, wires=${raw.wires?.length || 0}`,
           });
-          return raw;
+          return normalizeProjectSheetRevisions(raw);
         }
       }
     } catch (err) {
@@ -343,7 +347,8 @@ app.put('/api/v1/projects/:id', (req, res) => {
 });
 
 app.post('/api/v1/projects/:id/devices', (req, res) => {
-  const proj = structuredClone(getOrDefaultProject(req.params.id));
+  const base = getOrDefaultProject(req.params.id);
+  const proj = structuredClone(base);
   const body = req.body || {};
   const cat = E3_CATALOG.find((c) => c.article === body.article) || E3_CATALOG[2];
   const sheetId = body.sheetId || proj.sheets[0]?.id || 'sheet-1';
@@ -371,10 +376,11 @@ app.post('/api/v1/projects/:id/devices', (req, res) => {
   proj.devices.push(newDevice);
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  projects.set(proj.id, proj);
-  activeProjectId = proj.id;
-  broadcastUpdate(proj, 'REST API POST /devices', 'api');
-  res.status(201).json({ ok: true, device: newDevice, project: proj });
+  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  projects.set(tracked.id, tracked);
+  activeProjectId = tracked.id;
+  broadcastUpdate(tracked, 'REST API POST /devices', 'api');
+  res.status(201).json({ ok: true, device: newDevice, project: tracked });
 });
 
 app.get('/api/v1/openapi.json', (req, res) => {
@@ -385,7 +391,8 @@ app.get('/api/v1/openapi.json', (req, res) => {
 });
 
 app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
-  const proj = structuredClone(getOrDefaultProject(req.params.id));
+  const base = getOrDefaultProject(req.params.id);
+  const proj = structuredClone(base);
   const applyToAll = Boolean(req.body?.applyToAll);
   const patch = (req.body?.patch || req.body || {}) as Partial<E3TitleBlock>;
   const safeKeys: Array<keyof E3TitleBlock> = [
@@ -444,24 +451,26 @@ app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
 
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  projects.set(proj.id, proj);
-  activeProjectId = proj.id;
+  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  projects.set(tracked.id, tracked);
+  activeProjectId = tracked.id;
   broadcastUpdate(
-    proj,
+    tracked,
     applyToAll ? 'REST API PATCH /stamp (все листы)' : `REST API PATCH /sheets/${req.params.sheetId}/stamp`,
     'api'
   );
   void dispatchExternalWebhooks('stamp.updated', {
-    projectId: proj.id,
+    projectId: tracked.id,
     sheetId: req.params.sheetId,
     applyToAll,
     updatedCount,
   });
-  res.json({ ok: true, updatedCount, project: proj });
+  res.json({ ok: true, updatedCount, project: tracked });
 });
 
 app.patch('/api/v1/projects/:id/devices/:devId', (req, res) => {
-  const proj = structuredClone(getOrDefaultProject(req.params.id));
+  const base = getOrDefaultProject(req.params.id);
+  const proj = structuredClone(base);
   const target = proj.devices.find((d) => d.id === req.params.devId);
   if (!target) {
     res.status(404).json({ error: 'Изделие не найдено' });
@@ -470,19 +479,22 @@ app.patch('/api/v1/projects/:id/devices/:devId', (req, res) => {
   Object.assign(target, req.body || {});
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  projects.set(proj.id, proj);
-  activeProjectId = proj.id;
-  broadcastUpdate(proj, `REST API PATCH /devices/${target.designation}`, 'api');
+  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  const updatedTarget = tracked.devices.find((d) => d.id === req.params.devId) || target;
+  projects.set(tracked.id, tracked);
+  activeProjectId = tracked.id;
+  broadcastUpdate(tracked, `REST API PATCH /devices/${updatedTarget.designation}`, 'api');
   void dispatchExternalWebhooks('device.changed', {
     action: 'updated',
-    deviceId: target.id,
-    designation: target.designation,
+    deviceId: updatedTarget.id,
+    designation: updatedTarget.designation,
   });
-  res.json({ ok: true, device: target, project: proj });
+  res.json({ ok: true, device: updatedTarget, project: tracked });
 });
 
 app.delete('/api/v1/projects/:id/devices/:devId', (req, res) => {
-  const proj = structuredClone(getOrDefaultProject(req.params.id));
+  const base = getOrDefaultProject(req.params.id);
+  const proj = structuredClone(base);
   const before = proj.devices.length;
   proj.devices = proj.devices.filter((d) => d.id !== req.params.devId);
   if (proj.devices.length === before) {
@@ -492,14 +504,16 @@ app.delete('/api/v1/projects/:id/devices/:devId', (req, res) => {
   proj.wires = proj.wires.filter((w) => w.fromDeviceId !== req.params.devId && w.toDeviceId !== req.params.devId);
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  projects.set(proj.id, proj);
-  activeProjectId = proj.id;
-  broadcastUpdate(proj, 'REST API DELETE /devices', 'api');
-  res.json({ ok: true, project: proj });
+  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  projects.set(tracked.id, tracked);
+  activeProjectId = tracked.id;
+  broadcastUpdate(tracked, 'REST API DELETE /devices', 'api');
+  res.json({ ok: true, project: tracked });
 });
 
 app.post('/api/v1/projects/:id/reroute', (req, res) => {
-  const proj = structuredClone(getOrDefaultProject(req.params.id));
+  const base = getOrDefaultProject(req.params.id);
+  const proj = structuredClone(base);
   const sheetId = req.body?.sheetId ? String(req.body.sheetId) : undefined;
   const targets = sheetId ? proj.sheets.filter((s) => s.id === sheetId) : proj.sheets;
   let nextWires = proj.wires;
@@ -509,10 +523,11 @@ app.post('/api/v1/projects/:id/reroute', (req, res) => {
   proj.wires = nextWires;
   proj.revision += 1;
   proj.updatedAt = new Date().toISOString();
-  projects.set(proj.id, proj);
-  activeProjectId = proj.id;
-  broadcastUpdate(proj, 'REST API POST /reroute', 'api');
-  res.json({ ok: true, project: proj });
+  const tracked = applySheetRevisionTracking(base, proj, { author: 'REST API' });
+  projects.set(tracked.id, tracked);
+  activeProjectId = tracked.id;
+  broadcastUpdate(tracked, 'REST API POST /reroute', 'api');
+  res.json({ ok: true, project: tracked });
 });
 
 app.patch('/api/v1/projects/:id/visual-settings', (req, res) => {

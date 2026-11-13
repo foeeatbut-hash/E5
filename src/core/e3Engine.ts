@@ -22,10 +22,12 @@ import type {
   NetWireLengthRow,
   PinDirection,
   SchematicFontFamily,
+  SheetChangeArea,
   SheetFormat,
   SignalType,
   TerminalPlanRow,
 } from './e3Types.ts';
+import { getSheetRevisionNumber, normalizeProjectSheetRevisions } from './sheetRevisions.ts';
 
 export function getAbsolutePinPos(device: E3Device, pin: E3Pin): { x: number; y: number; direction: PinDirection } {
   const cx = device.width / 2;
@@ -1488,8 +1490,10 @@ export function serializeE3Xml(project: E3Project): string {
   lines.push('  <Sheets>');
   for (const s of project.sheets) {
     const tb = s.titleBlock;
+    const sRev = getSheetRevisionNumber(s);
+    const sUpdatedAt = s.updatedAt || project.updatedAt;
     lines.push(
-      `    <Sheet id="${xmlEscape(s.id)}" number="${s.number}" name="${xmlEscape(s.name)}" format="${s.format}" width="${s.width}" height="${s.height}" stampForm="${xmlEscape(tb.stampForm || 'form1')}" customTemplateId="${xmlEscape(tb.customTemplateId || '')}" documentCode="${xmlEscape(tb.documentCode)}" projectTitle="${xmlEscape(tb.projectTitle || '')}" organization="${xmlEscape(tb.organization)}" designer="${xmlEscape(tb.designer)}" checker="${xmlEscape(tb.checker)}" techControl="${xmlEscape(tb.techControl || '')}" normControl="${xmlEscape(tb.normControl || '')}" approver="${xmlEscape(tb.approver || '')}" litera="${xmlEscape(tb.litera || '')}" mass="${xmlEscape(tb.mass || '')}" scale="${xmlEscape(tb.scale || '')}" date="${xmlEscape(tb.date || '')}" invOriginal="${xmlEscape(tb.invOriginal || '')}" invDuplicate="${xmlEscape(tb.invDuplicate || '')}" sheetTitle="${xmlEscape(tb.sheetTitle)}" />`
+      `    <Sheet id="${xmlEscape(s.id)}" number="${s.number}" name="${xmlEscape(s.name)}" format="${s.format}" width="${s.width}" height="${s.height}" revision="${sRev}" updatedAt="${xmlEscape(sUpdatedAt)}" stampForm="${xmlEscape(tb.stampForm || 'form1')}" customTemplateId="${xmlEscape(tb.customTemplateId || '')}" documentCode="${xmlEscape(tb.documentCode)}" projectTitle="${xmlEscape(tb.projectTitle || '')}" organization="${xmlEscape(tb.organization)}" designer="${xmlEscape(tb.designer)}" checker="${xmlEscape(tb.checker)}" techControl="${xmlEscape(tb.techControl || '')}" normControl="${xmlEscape(tb.normControl || '')}" approver="${xmlEscape(tb.approver || '')}" litera="${xmlEscape(tb.litera || '')}" mass="${xmlEscape(tb.mass || '')}" scale="${xmlEscape(tb.scale || '')}" date="${xmlEscape(tb.date || '')}" invOriginal="${xmlEscape(tb.invOriginal || '')}" invDuplicate="${xmlEscape(tb.invDuplicate || '')}" sheetTitle="${xmlEscape(tb.sheetTitle)}" />`
     );
   }
   lines.push('  </Sheets>');
@@ -1558,6 +1562,21 @@ export function serializeE3Xml(project: E3Project): string {
     lines.push(`    <Layer id="${layerId}" visible="${st.visible}" locked="${st.locked}" />`);
   }
   lines.push('  </Layers>');
+
+  // Per-sheet revision history
+  const hasAnyRevisions = project.sheets.some((s) => (s.revisions?.length || 0) > 0);
+  if (hasAnyRevisions) {
+    lines.push('  <SheetRevisions>');
+    for (const s of project.sheets) {
+      for (const entry of s.revisions || []) {
+        const snapAttr = entry.snapshot ? ` snapshot="${xmlEscape(JSON.stringify(entry.snapshot))}"` : '';
+        lines.push(
+          `    <SheetRevision sheetId="${xmlEscape(s.id)}" revision="${entry.revision}" projectRevision="${entry.projectRevision}" timestamp="${xmlEscape(entry.timestamp)}" author="${xmlEscape(entry.author)}" summary="${xmlEscape(entry.summary)}" changedAreas="${xmlEscape(entry.changedAreas.join(','))}"${snapAttr} />`
+        );
+      }
+    }
+    lines.push('  </SheetRevisions>');
+  }
 
   lines.push('</E3Project>');
   return lines.join('\n');
@@ -1636,6 +1655,8 @@ export function parseE3Xml(xml: string): E3Project {
       format: validFmt,
       width: Number(sa.width || 1400),
       height: Number(sa.height || 920),
+      revision: sa.revision ? Number(sa.revision) : undefined,
+      updatedAt: sa.updatedAt || undefined,
       titleBlock: {
         stampForm: sa.stampForm === 'form2a' ? 'form2a' : sa.stampForm === 'custom' ? 'custom' : 'form1',
         customTemplateId: sa.customTemplateId || undefined,
@@ -1824,7 +1845,43 @@ export function parseE3Xml(xml: string): E3Project {
   }
   const layers = resolveCadLayers(rawLayers, visualSettings.showGostFrame);
 
-  return {
+  // Sheet Revisions
+  const revBySheet = new Map<string, NonNullable<E3Sheet['revisions']>>();
+  const sRevRe = /<SheetRevision\s+([^>]+?)\s*\/?>/g;
+  let srm: RegExpExecArray | null;
+  while ((srm = sRevRe.exec(xml)) !== null) {
+    const sra = parseXmlAttrs(srm[1]);
+    if (!sra.sheetId) continue;
+    let parsedSnapshot = undefined;
+    if (sra.snapshot) {
+      try {
+        parsedSnapshot = JSON.parse(sra.snapshot);
+      } catch {
+        parsedSnapshot = undefined;
+      }
+    }
+    const areas = (sra.changedAreas || 'metadata')
+      .split(',')
+      .map((a) => a.trim())
+      .filter(Boolean) as SheetChangeArea[];
+    const list = revBySheet.get(sra.sheetId) || [];
+    list.push({
+      revision: Number(sra.revision || list.length + 1),
+      projectRevision: Number(sra.projectRevision || rootAttrs.revision || 1),
+      timestamp: sra.timestamp || rootAttrs.updatedAt || new Date().toISOString(),
+      author: sra.author || rootAttrs.author || 'Инженер',
+      summary: sra.summary || 'Изменение листа',
+      changedAreas: areas.length > 0 ? areas : ['metadata'],
+      snapshot: parsedSnapshot,
+    });
+    revBySheet.set(sra.sheetId, list);
+  }
+  const sheetsWithRevisions = sheets.map((s) => {
+    const revs = revBySheet.get(s.id);
+    return revs && revs.length > 0 ? { ...s, revisions: revs } : s;
+  });
+
+  return normalizeProjectSheetRevisions({
     schemaVersion: rootAttrs.schemaVersion || '1.0',
     id: rootAttrs.id || `proj-${Date.now()}`,
     name: rootAttrs.name || 'Импортированный проект E3',
@@ -1834,14 +1891,14 @@ export function parseE3Xml(xml: string): E3Project {
     revision: Number(rootAttrs.revision || 1),
     standard: rootAttrs.standard === 'IEC' ? 'IEC' : 'GOST',
     updatedAt: rootAttrs.updatedAt || new Date().toISOString(),
-    sheets,
+    sheets: sheetsWithRevisions,
     devices,
     wires,
     cables,
     annotations,
     layers,
     visualSettings,
-  };
+  });
 }
 
 // ============================================================================

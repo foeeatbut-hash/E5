@@ -18,6 +18,7 @@ interface SchematicSymbolProps {
   offPageHasTarget?: boolean;
   onOffPageNavigate?: (device: E3Device) => void;
   onSelectDevice: (e: React.MouseEvent, device: E3Device) => void;
+  onDoubleClickDesignation?: (e: React.MouseEvent, device: E3Device) => void;
   onPinClick: (e: React.MouseEvent, device: E3Device, pinId: string) => void;
   onPinHover?: (device: E3Device, pinId: string | null) => void;
 }
@@ -37,6 +38,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
   offPageHasTarget = false,
   onOffPageNavigate,
   onSelectDevice,
+  onDoubleClickDesignation,
   onPinClick,
   onPinHover,
 }) => {
@@ -857,6 +859,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
       {/* Designation & Cross-reference Labels */}
       {device.category !== 'airflow_arrow' && (
         <text
+          data-testid={`symbol-designation-${device.id}`}
           x={0}
           y={-8}
           fill={selected ? 'var(--flux-accent)' : 'var(--flux-text)'}
@@ -866,6 +869,12 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
           fontSize={12 * visual.fontScale}
           fontWeight={600}
           fontFamily={fontCss}
+          className={locked ? undefined : 'cursor-text'}
+          onDoubleClick={(e) => {
+            if (locked) return;
+            e.stopPropagation();
+            onDoubleClickDesignation?.(e, device);
+          }}
         >
           {device.designation}
         </text>

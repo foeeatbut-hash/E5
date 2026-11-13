@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   AlignCenterHorizontal,
@@ -15,10 +15,12 @@ import {
   Copy,
   CopyPlus,
   FileSpreadsheet,
+  History,
   LayoutTemplate,
   Lock,
   Navigation,
   Plus,
+  RotateCcw,
   RotateCw,
   Trash2,
   Type,
@@ -30,6 +32,7 @@ import { CAD_LAYER_DEFS, resolveCadLayers } from '../core/cadLayers';
 import type { DeviceAlignKind } from '../core/cadSelection';
 import { getOffPageMeta, resolveOffPageLinks } from '../core/crossSheetRefs';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
+import { getSheetRevisionNumber, SHEET_CHANGE_AREA_LABELS } from '../core/sheetRevisions';
 import type {
   AnnotationKind,
   AnnotationStrokeStyle,
@@ -81,6 +84,7 @@ interface RightInspectorProps {
   onCreateOffPageCounterpart?: (sourceDevice: E3Device, targetSheetId: string) => void;
   onUpdateOffPageMeta?: (deviceId: string, patch: Partial<OffPageRefMeta>) => void;
   onHighlightPotential?: (seed: { wireId?: string; netName?: string; deviceId?: string; pinId?: string }) => void;
+  onRestoreSheetRevision?: (sheetId: string, targetRevision: number) => void;
 }
 
 export const RightInspector: React.FC<RightInspectorProps> = ({
@@ -116,15 +120,28 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   onCreateOffPageCounterpart,
   onUpdateOffPageMeta,
   onHighlightPotential,
+  onRestoreSheetRevision,
 }) => {
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
   const [copiedElId, setCopiedElId] = useState(false);
   const [counterpartSheetId, setCounterpartSheetId] = useState<string>('');
+  const [pendingScrollToHistory, setPendingScrollToHistory] = useState(false);
+  const sheetHistoryRef = useRef<HTMLDivElement | null>(null);
 
   const totalSelectedCount =
     selectedDeviceIds.length + selectedWireIds.length + selectedAnnotationIds.length;
   const isMultiSelection = totalSelectedCount > 1;
+  const isSheetMode = !isMultiSelection && !selectedDevice && !selectedWire && !selectedAnnotation;
+
+  useEffect(() => {
+    if (!pendingScrollToHistory || !isSheetMode) return;
+    const raf = requestAnimationFrame(() => {
+      sheetHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setPendingScrollToHistory(false);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [pendingScrollToHistory, isSheetMode]);
 
   const layersMap = resolveCadLayers(project.layers, project.visualSettings.showGostFrame);
   const activeLayerId: CadLayerId = selectedDevice
@@ -174,7 +191,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
       data-testid="right-inspector"
       className="no-print w-full h-full flex-1 min-w-0 max-w-full bg-[var(--flux-bg)] flex flex-col min-h-0 overflow-x-hidden select-none"
     >
-      <div className="px-3 h-8 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between shrink-0">
+      <div className="px-3 h-8 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-1.5 shrink-0">
         <span className="text-[12px] font-semibold text-[var(--flux-text)] truncate">
           {isMultiSelection
             ? `Группа: ${totalSelectedCount} об.`
@@ -186,29 +203,53 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   ? `Аннотация (${selectedAnnotation.kind === 'rect' ? 'Зона' : selectedAnnotation.kind === 'callout' ? 'Выноска' : 'Текст'})`
                   : 'Параметры листа'}
         </span>
-        {selectedDevice && !isMultiSelection && (
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(selectedDevice.elementId);
-                setCopiedElId(true);
-                window.setTimeout(() => setCopiedElId(false), 1400);
-              } catch {
-                // ignore
-              }
-            }}
-            title="Копировать elementId"
-            className="inline-flex items-center gap-1 px-1.5 h-6 rounded hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
-          >
-            <span className="max-w-[96px] truncate">{selectedDevice.elementId}</span>
-            {copiedElId ? (
-              <Check className="w-3 h-3 text-emerald-500 shrink-0" />
-            ) : (
-              <Copy className="w-3 h-3 shrink-0" />
-            )}
-          </button>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {selectedDevice && !isMultiSelection && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(selectedDevice.elementId);
+                  setCopiedElId(true);
+                  window.setTimeout(() => setCopiedElId(false), 1400);
+                } catch {
+                  // ignore
+                }
+              }}
+              title="Копировать elementId"
+              className="inline-flex items-center gap-1 px-1.5 h-6 rounded hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+            >
+              <span className="max-w-[78px] truncate">{selectedDevice.elementId}</span>
+              {copiedElId ? (
+                <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+              ) : (
+                <Copy className="w-3 h-3 shrink-0" />
+              )}
+            </button>
+          )}
+          {activeSheet && (
+            <button
+              type="button"
+              data-testid="active-sheet-rev-btn"
+              onClick={() => {
+                setPendingScrollToHistory(true);
+                if (!isSheetMode) {
+                  onClearSelection?.();
+                } else {
+                  requestAnimationFrame(() => {
+                    sheetHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    setPendingScrollToHistory(false);
+                  });
+                }
+              }}
+              title={`Открыть историю версий листа «${activeSheet.name}»`}
+              className="inline-flex items-center gap-1 px-1.5 h-6 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+            >
+              <History className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+              <span>v{getSheetRevisionNumber(activeSheet)}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <motion.div
@@ -1581,6 +1622,123 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 </span>
               </div>
             </div>
+
+            {(() => {
+              const currentSheetRev = getSheetRevisionNumber(activeSheet);
+              const sheetHistory = activeSheet.revisions || [];
+              const reversedHistory = [...sheetHistory].reverse();
+              const fmtTime = (iso: string) => {
+                try {
+                  return new Date(iso).toLocaleString('ru-RU', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  });
+                } catch {
+                  return iso;
+                }
+              };
+              return (
+                <div
+                  ref={sheetHistoryRef}
+                  data-testid="sheet-history-panel"
+                  className="pt-3 border-t border-[var(--flux-line)] space-y-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--flux-text-muted)]">
+                      <History className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                      <span>История версий листа</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        data-testid="sheet-revision-badge"
+                        className="px-1.5 py-0.5 rounded bg-[var(--flux-sel)] text-[var(--flux-accent)] font-mono tabular-nums text-[11px] font-semibold"
+                      >
+                        v{currentSheetRev}
+                      </span>
+                      <span className="font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)]">
+                        ({sheetHistory.length})
+                      </span>
+                    </div>
+                  </div>
+                  <div
+                    data-testid="sheet-history-list"
+                    className="max-h-[260px] overflow-y-auto space-y-1.5 pr-0.5"
+                  >
+                    {reversedHistory.length === 0 ? (
+                      <div className="px-2.5 py-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text-muted)]">
+                        Базовая ревизия v{currentSheetRev}
+                      </div>
+                    ) : (
+                      reversedHistory.map((entry) => {
+                        const isCurrent = entry.revision === currentSheetRev;
+                        const canRestore = Boolean(entry.snapshot && !isCurrent && onRestoreSheetRevision);
+                        return (
+                          <div
+                            key={`${activeSheet.id}-rev-${entry.revision}`}
+                            data-testid={`sheet-rev-item-${entry.revision}`}
+                            className={`p-2 rounded border text-[11px] space-y-1 ${
+                              isCurrent
+                                ? 'border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)]'
+                                : 'border-[var(--flux-line)] bg-[var(--flux-surface)]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[10px] font-semibold shrink-0 ${
+                                    isCurrent
+                                      ? 'bg-[var(--flux-accent-solid)] text-white'
+                                      : 'bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text)]'
+                                  }`}
+                                >
+                                  v{entry.revision}
+                                </span>
+                                <span className="font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)] truncate">
+                                  {fmtTime(entry.timestamp)}
+                                </span>
+                              </div>
+                              {canRestore && (
+                                <button
+                                  type="button"
+                                  data-testid={`restore-sheet-rev-${entry.revision}`}
+                                  onClick={() => onRestoreSheetRevision?.(activeSheet.id, entry.revision)}
+                                  title={`Откатить лист к состоянию v${entry.revision}`}
+                                  className="inline-flex items-center gap-1 h-5 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[10px] font-medium text-[var(--flux-text)] shrink-0 transition-colors"
+                                >
+                                  <RotateCcw className="w-2.5 h-2.5" />
+                                  <span>Откатить</span>
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-[var(--flux-text)] leading-snug break-words">
+                              {entry.summary}
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between gap-1 pt-0.5">
+                              <div className="flex flex-wrap gap-1">
+                                {entry.changedAreas.map((area) => (
+                                  <span
+                                    key={area}
+                                    className="px-1 py-0 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[10px] text-[var(--flux-text-muted)]"
+                                  >
+                                    {SHEET_CHANGE_AREA_LABELS[area] || area}
+                                  </span>
+                                ))}
+                              </div>
+                              <span className="font-mono text-[10px] text-[var(--flux-text-muted)] truncate">
+                                {entry.author} · r{entry.projectRevision}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         ) : null}
       </motion.div>

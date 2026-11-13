@@ -12,6 +12,7 @@ import {
   type SelectionBox,
 } from '../core/cadSelection';
 import { resolveSchematicCssFont } from '../core/e3Catalog';
+import { getSheetRevisionNumber } from '../core/sheetRevisions';
 import {
   autoRouteOrthogonal,
   computeWireCrossingArcs,
@@ -59,6 +60,21 @@ import type {
 } from '../core/e3Types';
 import { LayerManagerPopover } from './LayerManagerPopover';
 import { SchematicSymbol } from './SchematicSymbol';
+
+interface InPlaceEditState {
+  kind: 'device' | 'wire' | 'annotation' | 'stamp';
+  id: string;
+  sheetId: string;
+  fieldKey?: StampFieldKey;
+  label: string;
+  worldX: number;
+  worldY: number;
+  worldW: number;
+  worldH: number;
+  multiline: boolean;
+  initialValue: string;
+  value: string;
+}
 
 interface SchematicCanvasProps {
   project: E3Project;
@@ -120,6 +136,10 @@ interface SchematicCanvasProps {
   ) => void;
   onDropCatalogItem: (item: CatalogItem, x: number, y: number, sheetId: string) => void;
   onOpenStampEditor?: (sheetId: string, fieldKey?: StampFieldKey) => void;
+  onCommitInPlaceDeviceDesignation?: (deviceId: string, nextDesignation: string) => void;
+  onCommitInPlaceWireNumber?: (wireId: string, nextWireNumber: string) => void;
+  onCommitInPlaceAnnotationText?: (annId: string, nextText: string) => void;
+  onCommitInPlaceStampCell?: (sheetId: string, fieldKey: StampFieldKey, nextValue: string) => void;
 }
 
 export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
@@ -173,6 +193,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   onCreateWire,
   onDropCatalogItem,
   onOpenStampEditor,
+  onCommitInPlaceDeviceDesignation,
+  onCommitInPlaceWireNumber,
+  onCommitInPlaceAnnotationText,
+  onCommitInPlaceStampCell,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [cursorPos, setCursorPos] = useState<{
@@ -250,6 +274,69 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   const [altHeld, setAltHeld] = useState(false);
   const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
+  const [inPlaceEdit, setInPlaceEdit] = useState<InPlaceEditState | null>(null);
+  const inPlaceEditRef = useRef<InPlaceEditState | null>(null);
+  inPlaceEditRef.current = inPlaceEdit;
+  const inPlaceCancelledRef = useRef<boolean>(false);
+  const inPlaceInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+
+  const openInPlaceEdit = useCallback((next: InPlaceEditState) => {
+    inPlaceCancelledRef.current = false;
+    inPlaceEditRef.current = next;
+    setInPlaceEdit(next);
+  }, []);
+
+  const commitInPlaceEdit = useCallback(() => {
+    const curr = inPlaceEditRef.current;
+    if (!curr) return;
+    inPlaceEditRef.current = null;
+    setInPlaceEdit(null);
+    if (inPlaceCancelledRef.current) {
+      inPlaceCancelledRef.current = false;
+      return;
+    }
+    if (curr.kind === 'device') {
+      onCommitInPlaceDeviceDesignation?.(curr.id, curr.value);
+    } else if (curr.kind === 'wire') {
+      onCommitInPlaceWireNumber?.(curr.id, curr.value);
+    } else if (curr.kind === 'annotation') {
+      onCommitInPlaceAnnotationText?.(curr.id, curr.value);
+    } else if (curr.kind === 'stamp' && curr.fieldKey) {
+      onCommitInPlaceStampCell?.(curr.sheetId, curr.fieldKey, curr.value);
+    }
+  }, [
+    onCommitInPlaceDeviceDesignation,
+    onCommitInPlaceWireNumber,
+    onCommitInPlaceAnnotationText,
+    onCommitInPlaceStampCell,
+  ]);
+
+  const cancelInPlaceEdit = useCallback(() => {
+    inPlaceCancelledRef.current = true;
+    inPlaceEditRef.current = null;
+    setInPlaceEdit(null);
+  }, []);
+
+  const inPlaceTargetKey = inPlaceEdit
+    ? `${inPlaceEdit.kind}:${inPlaceEdit.id}:${inPlaceEdit.fieldKey || ''}`
+    : '';
+  useEffect(() => {
+    if (!inPlaceTargetKey) return;
+    const raf = window.requestAnimationFrame(() => {
+      const el = inPlaceInputRef.current;
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [inPlaceTargetKey]);
+
+  useEffect(() => {
+    if (inPlaceEdit && inPlaceEdit.sheetId !== activeSheetId) {
+      cancelInPlaceEdit();
+    }
+  }, [activeSheetId, inPlaceEdit, cancelInPlaceEdit]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1025,7 +1112,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
             >
               {project.sheets.map((s) => (
                 <option key={s.id} value={s.id}>
-                  Лист {s.number}: {s.name} ({s.format})
+                  Лист {s.number}: {s.name} (v{getSheetRevisionNumber(s)} · {s.format})
                 </option>
               ))}
             </select>
@@ -1104,6 +1191,16 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   >
                     <span className="truncate">
                       Лист {s.number}: {s.name}
+                    </span>
+                    <span
+                      data-testid={`sheet-tab-rev-${s.id}`}
+                      className={`font-mono tabular-nums text-[10px] px-1 rounded shrink-0 ${
+                        active
+                          ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
+                          : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)]'
+                      }`}
+                    >
+                      v{getSheetRevisionNumber(s)}
                     </span>
                     {active && (
                       <motion.span
@@ -1483,14 +1580,27 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                               if (!isEditable) return;
                               e.stopPropagation();
                               onFocusViewport?.();
-                              onOpenStampEditor?.(sheet.id, cell.fieldKey);
                             }}
                             onDoubleClick={(e) => {
-                              if (!isEditable) return;
+                              if (!isEditable || !cell.fieldKey) return;
                               e.stopPropagation();
-                              onOpenStampEditor?.(sheet.id, cell.fieldKey);
+                              onFocusViewport?.();
+                              openInPlaceEdit({
+                                kind: 'stamp',
+                                id: cell.id,
+                                sheetId: sheet.id,
+                                fieldKey: cell.fieldKey,
+                                label: cell.label || cell.fieldKey,
+                                worldX: cell.x,
+                                worldY: cell.y,
+                                worldW: Math.max(110, cell.width),
+                                worldH: Math.max(26, cell.height),
+                                multiline: cell.height >= 28,
+                                initialValue: cell.text,
+                                value: cell.text,
+                              });
                             }}
-                            className={isEditable ? 'cursor-pointer group' : undefined}
+                            className={isEditable ? 'cursor-text group' : undefined}
                           >
                             <defs>
                               <clipPath id={clipId}>
@@ -1511,7 +1621,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                               fillOpacity={0}
                               className={isEditable ? 'hover:fill-opacity-10 transition-opacity' : undefined}
                             />
-                            {isEditable && cell.label && <title>{`${cell.label} — кликните для редактирования`}</title>}
+                            {isEditable && cell.label && <title>{`${cell.label} — двойной клик для правки`}</title>}
                             {hasField && frameLocked && cell.label && (
                               <title>{`${cell.label} (слой «Рамка и штамп ГОСТ» заблокирован)`}</title>
                             )}
@@ -1600,12 +1710,49 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   const maxLineLen = Math.max(4, ...lines.map((l) => l.length));
                   const annCls = annotationsLocked ? 'cursor-default' : 'cursor-move';
 
+                  const openAnnInPlace = (e: React.MouseEvent) => {
+                    if (annotationsLocked) return;
+                    e.stopPropagation();
+                    onFocusViewport?.();
+                    const worldX =
+                      ann.kind === 'rect'
+                        ? ann.x + 8
+                        : ann.kind === 'callout'
+                          ? ann.x + 28
+                          : ann.x - 4;
+                    const worldY =
+                      ann.kind === 'rect'
+                        ? ann.y - 12
+                        : ann.kind === 'callout'
+                          ? ann.y - 2
+                          : ann.y - fs - 4;
+                    openInPlaceEdit({
+                      kind: 'annotation',
+                      id: ann.id,
+                      sheetId: ann.sheetId,
+                      label:
+                        ann.kind === 'rect'
+                          ? 'Заголовок зоны'
+                          : ann.kind === 'callout'
+                            ? 'Текст выноски'
+                            : 'Текст аннотации',
+                      worldX,
+                      worldY,
+                      worldW: Math.max(160, ann.kind === 'rect' ? ann.width * 0.65 : ann.width + 24),
+                      worldH: 52,
+                      multiline: true,
+                      initialValue: ann.text,
+                      value: ann.text,
+                    });
+                  };
+
                   if (ann.kind === 'rect') {
                     return (
                       <g
                         key={ann.id}
                         data-testid={`annotation-${ann.id}`}
                         onMouseDown={(e) => handleAnnotationDown(e, ann)}
+                        onDoubleClick={openAnnInPlace}
                         className={annCls}
                       >
                         <rect
@@ -1656,6 +1803,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                         key={ann.id}
                         data-testid={`annotation-${ann.id}`}
                         onMouseDown={(e) => handleAnnotationDown(e, ann)}
+                        onDoubleClick={openAnnInPlace}
                         className={annCls}
                       >
                         <circle
@@ -1705,6 +1853,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       key={ann.id}
                       data-testid={`annotation-${ann.id}`}
                       onMouseDown={(e) => handleAnnotationDown(e, ann)}
+                      onDoubleClick={openAnnInPlace}
                       className={annCls}
                     >
                       <rect
@@ -1762,6 +1911,25 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                         }
                       : wire.waypoints[0]);
                   const wireArcs = crossingArcs.filter((a) => a.wireId === wire.id);
+                  const openWireInPlace = (e: React.MouseEvent) => {
+                    if (wiresLocked || !midPt) return;
+                    e.stopPropagation();
+                    onFocusViewport?.();
+                    const bw = Math.max(24, wire.wireNumber.length * 6.2 + 8);
+                    openInPlaceEdit({
+                      kind: 'wire',
+                      id: wire.id,
+                      sheetId: wire.sheetId,
+                      label: `Жила · ${wire.netName}`,
+                      worldX: midPt.x - Math.max(48, bw / 2 + 12),
+                      worldY: midPt.y - 22,
+                      worldW: Math.max(96, bw + 28),
+                      worldH: 24,
+                      multiline: false,
+                      initialValue: wire.wireNumber,
+                      value: wire.wireNumber,
+                    });
+                  };
                   return (
                     <g
                       key={wire.id}
@@ -1770,6 +1938,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       style={{ opacity: isDimmed ? 0.32 : 1 }}
                       onMouseEnter={() => setHoveredWireId(wire.id)}
                       onMouseLeave={() => setHoveredWireId((prev) => (prev === wire.id ? null : prev))}
+                      onMouseDown={(e) => {
+                        if (e.button === 0 && tool !== 'pan') {
+                          e.stopPropagation();
+                          onFocusViewport?.();
+                        }
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
                         onSelectWire(wire.id, { toggle: e.shiftKey });
@@ -1777,6 +1951,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                           onHighlightPotential?.({ wireId: wire.id });
                         }
                       }}
+                      onDoubleClick={openWireInPlace}
                       className="cursor-pointer"
                     >
                       <polyline points={pts} fill="none" stroke="transparent" strokeWidth={11} />
@@ -1825,33 +2000,6 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                           />
                         </g>
                       ))}
-                      {vs.showWireNumbers && midPt && (() => {
-                        const boxW = Math.max(24, wire.wireNumber.length * 6.2 + 8);
-                        return (
-                          <g transform={`translate(${midPt.x - boxW / 2}, ${midPt.y - 6})`}>
-                            <rect
-                              x={0}
-                              y={-10}
-                              width={boxW}
-                              height={13}
-                              rx={2}
-                              fill="var(--flux-surface)"
-                              opacity={0.92}
-                            />
-                            <text
-                              x={boxW / 2}
-                              y={0}
-                              textAnchor="middle"
-                              fill={color}
-                              fontSize={9.5 * vs.fontScale}
-                              fontFamily={fontCss}
-                              fontWeight={500}
-                            >
-                              {wire.wireNumber}
-                            </text>
-                          </g>
-                        );
-                      })()}
                     </g>
                   );
                 })}
@@ -1877,6 +2025,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   const handles = extractWireSegmentHandles(selWire.waypoints, 8);
                   const inv = 1 / Math.max(0.25, zoom);
                   const gripHalf = Math.max(3.5, Math.min(8, 4.5 * inv));
+                  const selMidPt =
+                    wireLabelMap.get(selWire.id) ||
+                    (selWire.waypoints.length >= 2
+                      ? {
+                          x: Math.round((selWire.waypoints[0].x + selWire.waypoints[1].x) / 2),
+                          y: Math.round((selWire.waypoints[0].y + selWire.waypoints[1].y) / 2),
+                        }
+                      : selWire.waypoints[0]);
                   return (
                     <g data-testid="wire-segment-grips">
                       {handles.map((h) => (
@@ -1899,6 +2055,25 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                             };
                           }}
                           onClick={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => {
+                            if (wiresLocked || !selMidPt) return;
+                            e.stopPropagation();
+                            onFocusViewport?.();
+                            const bw = Math.max(24, selWire.wireNumber.length * 6.2 + 8);
+                            openInPlaceEdit({
+                              kind: 'wire',
+                              id: selWire.id,
+                              sheetId: selWire.sheetId,
+                              label: `Жила · ${selWire.netName}`,
+                              worldX: selMidPt.x - Math.max(48, bw / 2 + 12),
+                              worldY: selMidPt.y - 22,
+                              worldW: Math.max(96, bw + 28),
+                              worldH: 24,
+                              multiline: false,
+                              initialValue: selWire.wireNumber,
+                              value: selWire.wireNumber,
+                            });
+                          }}
                         >
                           <rect
                             x={h.midX - gripHalf * 1.8}
@@ -1922,6 +2097,96 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                     </g>
                   );
                 })()}
+
+                {/* Wire Core Labels rendered above grips so double-click is never occluded */}
+                {vs.showWireNumbers && (
+                  <g data-testid="layer-group-wire-labels">
+                    {sheetWires.map((wire: E3Wire) => {
+                      const midPt =
+                        wireLabelMap.get(wire.id) ||
+                        (wire.waypoints.length >= 2
+                          ? {
+                              x: Math.round((wire.waypoints[0].x + wire.waypoints[1].x) / 2),
+                              y: Math.round((wire.waypoints[0].y + wire.waypoints[1].y) / 2),
+                            }
+                          : wire.waypoints[0]);
+                      if (!midPt) return null;
+                      const selected = selectedWireIdSet.has(wire.id);
+                      const isTraced = tracedWireIdSet.has(wire.id);
+                      const isDimmed = Boolean(activeTrace) && !isTraced && !selected;
+                      const netSigColor = vs.netColors[wire.signalType] || 'var(--flux-text)';
+                      const color = selected
+                        ? wiresLocked
+                          ? '#d97706'
+                          : 'var(--flux-accent)'
+                        : netSigColor;
+                      const boxW = Math.max(24, wire.wireNumber.length * 6.2 + 8);
+                      return (
+                        <g
+                          key={`wlabel-${wire.id}`}
+                          data-testid={`wire-label-${wire.id}`}
+                          style={{ opacity: isDimmed ? 0.32 : 1 }}
+                          transform={`translate(${midPt.x - boxW / 2}, ${midPt.y - 6})`}
+                          onMouseEnter={() => setHoveredWireId(wire.id)}
+                          onMouseLeave={() => setHoveredWireId((prev) => (prev === wire.id ? null : prev))}
+                          onMouseDown={(e) => {
+                            if (e.button === 0 && tool !== 'pan') {
+                              e.stopPropagation();
+                              onFocusViewport?.();
+                            }
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectWire(wire.id, { toggle: e.shiftKey });
+                            if (!e.shiftKey || e.altKey) {
+                              onHighlightPotential?.({ wireId: wire.id });
+                            }
+                          }}
+                          onDoubleClick={(e) => {
+                            if (wiresLocked) return;
+                            e.stopPropagation();
+                            onFocusViewport?.();
+                            openInPlaceEdit({
+                              kind: 'wire',
+                              id: wire.id,
+                              sheetId: wire.sheetId,
+                              label: `Жила · ${wire.netName}`,
+                              worldX: midPt.x - Math.max(48, boxW / 2 + 12),
+                              worldY: midPt.y - 22,
+                              worldW: Math.max(96, boxW + 28),
+                              worldH: 24,
+                              multiline: false,
+                              initialValue: wire.wireNumber,
+                              value: wire.wireNumber,
+                            });
+                          }}
+                          className={wiresLocked ? 'cursor-default' : 'cursor-text'}
+                        >
+                          <rect
+                            x={0}
+                            y={-10}
+                            width={boxW}
+                            height={13}
+                            rx={2}
+                            fill="var(--flux-surface)"
+                            opacity={0.92}
+                          />
+                          <text
+                            x={boxW / 2}
+                            y={0}
+                            textAnchor="middle"
+                            fill={color}
+                            fontSize={9.5 * vs.fontScale}
+                            fontFamily={fontCss}
+                            fontWeight={500}
+                          >
+                            {wire.wireNumber}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </g>
+                )}
 
                 {/* Live Rubber-band Wire Preview + Step-by-Step Waypoint Anchors */}
                 {wireStart && previewWirePoints && (
@@ -2034,6 +2299,23 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                       offPageHasTarget={Boolean(link?.primaryCounterpart)}
                       onOffPageNavigate={onNavigateOffPage}
                       onSelectDevice={handleSelectDeviceDown}
+                      onDoubleClickDesignation={(_e, dev) => {
+                        if (devicesLocked) return;
+                        onFocusViewport?.();
+                        openInPlaceEdit({
+                          kind: 'device',
+                          id: dev.id,
+                          sheetId: dev.sheetId,
+                          label: `ОУО · ${dev.designation}`,
+                          worldX: dev.x - 4,
+                          worldY: dev.y - 26,
+                          worldW: Math.max(96, dev.designation.length * 9 + 28),
+                          worldH: 26,
+                          multiline: false,
+                          initialValue: dev.designation,
+                          value: dev.designation,
+                        });
+                      }}
                       onPinClick={handlePinClick}
                       onPinHover={handlePinHover}
                     />
@@ -2410,6 +2692,88 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
             )}
           </div>
         )}
+
+        {/* Stage 4.2 In-Place Canvas Text Editor Overlay */}
+        {inPlaceEdit && (() => {
+          const cw = containerRef.current?.clientWidth || 800;
+          const ch = containerRef.current?.clientHeight || 600;
+          const boxW = Math.max(
+            inPlaceEdit.multiline ? 252 : 176,
+            Math.min(380, Math.round(inPlaceEdit.worldW * Math.max(zoom, 0.8)))
+          );
+          const boxH = inPlaceEdit.multiline
+            ? Math.max(58, Math.min(140, Math.round(inPlaceEdit.worldH * Math.max(zoom, 0.85))))
+            : Math.max(28, Math.round(inPlaceEdit.worldH * Math.max(zoom, 0.9)));
+          const rawLeft = pan.x + inPlaceEdit.worldX * zoom;
+          const rawTop = pan.y + inPlaceEdit.worldY * zoom;
+          const left = Math.max(8, Math.min(cw - boxW - 8, rawLeft));
+          const top = Math.max(22, Math.min(ch - boxH - 8, rawTop));
+          const handleEditorKeyDown = (
+            e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>
+          ) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              cancelInPlaceEdit();
+              return;
+            }
+            if (e.key === 'Enter' && (!inPlaceEdit.multiline || !e.shiftKey)) {
+              e.preventDefault();
+              commitInPlaceEdit();
+            }
+          };
+          return (
+            <div
+              data-testid="inplace-text-editor"
+              data-kind={inPlaceEdit.kind}
+              style={{ left, top, width: boxW }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
+              className="no-print absolute z-30 flex flex-col gap-0"
+            >
+              <div className="inline-flex items-center justify-between gap-2 px-1.5 py-0.5 rounded-t border border-b-0 border-[var(--flux-accent)] bg-[var(--flux-surface)] text-[10px] font-medium text-[var(--flux-accent)] shadow-xs">
+                <span className="truncate">{inPlaceEdit.label}</span>
+                <span className="font-mono text-[9px] text-[var(--flux-text-muted)] shrink-0">
+                  {inPlaceEdit.multiline ? 'Enter · Shift+↵ · Esc' : 'Enter · Esc'}
+                </span>
+              </div>
+              {inPlaceEdit.multiline ? (
+                <textarea
+                  ref={(el) => {
+                    inPlaceInputRef.current = el;
+                  }}
+                  data-testid="inplace-text-input"
+                  value={inPlaceEdit.value}
+                  onChange={(e) =>
+                    setInPlaceEdit((prev) => (prev ? { ...prev, value: e.target.value } : null))
+                  }
+                  onKeyDown={handleEditorKeyDown}
+                  onBlur={commitInPlaceEdit}
+                  style={{ minHeight: boxH }}
+                  className="w-full px-2 py-1 rounded-b border border-[var(--flux-accent)] bg-[var(--flux-surface)] text-[12px] font-mono text-[var(--flux-text)] shadow-md focus:outline-none resize-y"
+                />
+              ) : (
+                <input
+                  ref={(el) => {
+                    inPlaceInputRef.current = el;
+                  }}
+                  type="text"
+                  data-testid="inplace-text-input"
+                  value={inPlaceEdit.value}
+                  onChange={(e) =>
+                    setInPlaceEdit((prev) => (prev ? { ...prev, value: e.target.value } : null))
+                  }
+                  onKeyDown={handleEditorKeyDown}
+                  onBlur={commitInPlaceEdit}
+                  style={{ height: boxH }}
+                  className="w-full px-2 rounded-b border border-[var(--flux-accent)] bg-[var(--flux-surface)] text-[12px] font-mono font-semibold text-[var(--flux-text)] shadow-md focus:outline-none"
+                />
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Compact CAD Canvas Footer Strip */}

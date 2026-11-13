@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { mapDxfLayerFlags } from './cadLayers.ts';
-import { buildBom, getAbsolutePinPos } from './e3Engine.ts';
-import type { CadLayerStateMap, E3Device, E3Project, E3Sheet } from './e3Types.ts';
+import { buildBom, computeWireJunctionDots, getAbsolutePinPos } from './e3Engine.ts';
+import type { AnnotationStrokeStyle, CadLayerStateMap, E3Device, E3Project, E3Sheet } from './e3Types.ts';
 import { buildGostSheetGeometry } from './gostFrame.ts';
 
 export interface DxfExportOptions {
@@ -9,6 +9,47 @@ export interface DxfExportOptions {
   includeBom?: boolean;
   includeGostFrame?: boolean;
   editableBlocks?: boolean;
+}
+
+type DxfLineType = 'CONTINUOUS' | 'DASHED' | 'DOT';
+
+const DXF_LINEWEIGHT_TABLE = [13, 15, 18, 20, 25, 30, 35, 40, 50, 60, 70, 80, 90, 100];
+
+export function toDxfLineweight(pxWidth: number | undefined, fallback = 25): number {
+  if (typeof pxWidth !== 'number' || !Number.isFinite(pxWidth) || pxWidth <= 0) {
+    return fallback;
+  }
+  const scaled = pxWidth * 18;
+  let best = DXF_LINEWEIGHT_TABLE[0];
+  let bestDiff = Math.abs(scaled - best);
+  for (const lw of DXF_LINEWEIGHT_TABLE) {
+    const diff = Math.abs(scaled - lw);
+    if (diff < bestDiff) {
+      best = lw;
+      bestDiff = diff;
+    }
+  }
+  return best;
+}
+
+function toDxfLtype(style?: AnnotationStrokeStyle): DxfLineType {
+  if (style === 'dashed') return 'DASHED';
+  if (style === 'dotted') return 'DOT';
+  return 'CONTINUOUS';
+}
+
+export function extractDeviceRating(dev: E3Device): string {
+  const priorityAttr = dev.attributes.find(
+    (a) =>
+      !a.service &&
+      a.value &&
+      /номинал|ток|мощн|напряж|диапазон|катушк|питани|уставка|rating|current|power|voltage/i.test(
+        a.name
+      )
+  );
+  if (priorityAttr?.value) return priorityAttr.value;
+  const fallback = dev.attributes.find((a) => !a.service && a.value && a.value !== dev.article);
+  return fallback?.value || '—';
 }
 
 function sanitizeBlockName(raw: string): string {
@@ -26,13 +67,44 @@ function dxfTextEscape(text: string): string {
     .replace(/[\x00-\x1f]/g, ' ');
 }
 
+interface EntityStyleOpts {
+  color?: number;
+  ltype?: DxfLineType;
+  lineweight?: number;
+}
+
 interface DxfWriter {
   lines: string[];
   add: (code: number | string, value: string | number) => void;
-  line: (x1: number, y1: number, x2: number, y2: number, layer: string, color?: number) => void;
-  rect: (x: number, y: number, w: number, h: number, layer: string, color?: number) => void;
-  circle: (cx: number, cy: number, r: number, layer: string, color?: number) => void;
-  polyline: (pts: Array<{ x: number; y: number }>, layer: string, color?: number, closed?: boolean) => void;
+  line: (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    layer: string,
+    colorOrOpts?: number | EntityStyleOpts
+  ) => void;
+  rect: (
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    layer: string,
+    colorOrOpts?: number | EntityStyleOpts
+  ) => void;
+  circle: (
+    cx: number,
+    cy: number,
+    r: number,
+    layer: string,
+    colorOrOpts?: number | EntityStyleOpts
+  ) => void;
+  polyline: (
+    pts: Array<{ x: number; y: number }>,
+    layer: string,
+    colorOrOpts?: number | EntityStyleOpts,
+    closed?: boolean
+  ) => void;
   text: (
     x: number,
     y: number,
@@ -41,7 +113,8 @@ interface DxfWriter {
     layer: string,
     color?: number,
     hAlign?: 0 | 1 | 2,
-    vAlign?: 0 | 1 | 2 | 3
+    vAlign?: 0 | 1 | 2 | 3,
+    lineweight?: number
   ) => void;
   attdef: (
     x: number,
@@ -52,15 +125,34 @@ interface DxfWriter {
     height: number,
     layer: string,
     color?: number,
-    hAlign?: 0 | 1 | 2
+    hAlign?: 0 | 1 | 2,
+    lineweight?: number
   ) => void;
   insertWithAttribs: (
     blockName: string,
     x: number,
     y: number,
     layer: string,
-    attribs: Array<{ tag: string; value: string; x: number; y: number; height: number; color?: number; hAlign?: 0 | 1 | 2 }>
+    attribs: Array<{
+      tag: string;
+      value: string;
+      x: number;
+      y: number;
+      height: number;
+      layer?: string;
+      color?: number;
+      hAlign?: 0 | 1 | 2;
+      lineweight?: number;
+    }>,
+    rotationDeg?: number
   ) => void;
+}
+
+function resolveStyle(colorOrOpts?: number | EntityStyleOpts): EntityStyleOpts {
+  if (typeof colorOrOpts === 'number') {
+    return { color: colorOrOpts };
+  }
+  return colorOrOpts || {};
 }
 
 function createDxfWriter(): DxfWriter {
@@ -69,13 +161,19 @@ function createDxfWriter(): DxfWriter {
     lines.push(String(code), String(value));
   };
 
+  const emitStyle = (opts: EntityStyleOpts) => {
+    if (opts.ltype && opts.ltype !== 'CONTINUOUS') add(6, opts.ltype);
+    if (opts.color !== undefined && opts.color !== 256) add(62, opts.color);
+    if (opts.lineweight !== undefined) add(370, opts.lineweight);
+  };
+
   const w: DxfWriter = {
     lines,
     add,
-    line(x1, y1, x2, y2, layer, color = 256) {
+    line(x1, y1, x2, y2, layer, colorOrOpts = 256) {
       add(0, 'LINE');
       add(8, layer);
-      if (color !== 256) add(62, color);
+      emitStyle(resolveStyle(colorOrOpts));
       add(10, x1.toFixed(2));
       add(20, y1.toFixed(2));
       add(30, '0.0');
@@ -83,7 +181,7 @@ function createDxfWriter(): DxfWriter {
       add(21, y2.toFixed(2));
       add(31, '0.0');
     },
-    rect(x, y, rw, rh, layer, color = 256) {
+    rect(x, y, rw, rh, layer, colorOrOpts = 256) {
       w.polyline(
         [
           { x, y },
@@ -92,24 +190,24 @@ function createDxfWriter(): DxfWriter {
           { x, y: y - rh },
         ],
         layer,
-        color,
+        colorOrOpts,
         true
       );
     },
-    circle(cx, cy, r, layer, color = 256) {
+    circle(cx, cy, r, layer, colorOrOpts = 256) {
       add(0, 'CIRCLE');
       add(8, layer);
-      if (color !== 256) add(62, color);
+      emitStyle(resolveStyle(colorOrOpts));
       add(10, cx.toFixed(2));
       add(20, cy.toFixed(2));
       add(30, '0.0');
       add(40, Math.max(0.5, r).toFixed(2));
     },
-    polyline(pts, layer, color = 256, closed = false) {
+    polyline(pts, layer, colorOrOpts = 256, closed = false) {
       if (pts.length < 2) return;
       add(0, 'LWPOLYLINE');
       add(8, layer);
-      if (color !== 256) add(62, color);
+      emitStyle(resolveStyle(colorOrOpts));
       add(90, pts.length);
       add(70, closed ? 1 : 0);
       for (const pt of pts) {
@@ -117,12 +215,13 @@ function createDxfWriter(): DxfWriter {
         add(20, pt.y.toFixed(2));
       }
     },
-    text(x, y, value, height, layer, color = 256, hAlign = 0, vAlign = 0) {
+    text(x, y, value, height, layer, color = 256, hAlign = 0, vAlign = 0, lineweight) {
       const clean = dxfTextEscape(value);
       add(0, 'TEXT');
       add(8, layer);
       add(7, 'GOST_STYLE');
       if (color !== 256) add(62, color);
+      if (lineweight !== undefined) add(370, lineweight);
       add(10, x.toFixed(2));
       add(20, y.toFixed(2));
       add(30, '0.0');
@@ -136,11 +235,12 @@ function createDxfWriter(): DxfWriter {
         add(31, '0.0');
       }
     },
-    attdef(x, y, tag, prompt, defVal, height, layer, color = 7, hAlign = 0) {
+    attdef(x, y, tag, prompt, defVal, height, layer, color = 7, hAlign = 0, lineweight) {
       add(0, 'ATTDEF');
       add(8, layer);
       add(7, 'GOST_STYLE');
       add(62, color);
+      if (lineweight !== undefined) add(370, lineweight);
       add(10, x.toFixed(2));
       add(20, y.toFixed(2));
       add(30, '0.0');
@@ -157,7 +257,7 @@ function createDxfWriter(): DxfWriter {
         add(31, '0.0');
       }
     },
-    insertWithAttribs(blockName, x, y, layer, attribs) {
+    insertWithAttribs(blockName, x, y, layer, attribs, rotationDeg = 0) {
       add(0, 'INSERT');
       add(8, layer);
       if (attribs.length > 0) add(66, 1);
@@ -168,11 +268,15 @@ function createDxfWriter(): DxfWriter {
       add(41, '1.0');
       add(42, '1.0');
       add(43, '1.0');
+      if (rotationDeg !== 0) {
+        add(50, rotationDeg.toFixed(2));
+      }
       for (const att of attribs) {
         add(0, 'ATTRIB');
-        add(8, layer);
+        add(8, att.layer || layer);
         add(7, 'GOST_STYLE');
         add(62, att.color ?? 7);
+        if (att.lineweight !== undefined) add(370, att.lineweight);
         add(10, att.x.toFixed(2));
         add(20, att.y.toFixed(2));
         add(30, '0.0');
@@ -207,56 +311,114 @@ function signalTypeToAci(sig: string): number {
   return 7; // Default White/Black
 }
 
-function drawDeviceSymbolInBlock(w: DxfWriter, dev: E3Device, ox: number, oy: number) {
-  // Local DXF block coordinates relative to top-left of device rotated into DXF (+Y up):
-  // x in [0, dev.width], y in [0, -dev.height]
+function computeDxfBlockInsertTransform(dev: E3Device, toX: (x: number) => number, toY: (y: number) => number) {
+  const cx = toX(dev.x + dev.width / 2);
+  const cy = toY(dev.y + dev.height / 2);
+  const hw = dev.width / 2;
+  const hh = dev.height / 2;
+  const rot = ((dev.rotation % 360) + 360) % 360;
+  if (rot === 90) {
+    return { x: cx + hh, y: cy + hw, dxfAngle: 270 };
+  }
+  if (rot === 180) {
+    return { x: cx + hw, y: cy - hh, dxfAngle: 180 };
+  }
+  if (rot === 270) {
+    return { x: cx - hh, y: cy - hw, dxfAngle: 90 };
+  }
+  return { x: cx - hw, y: cy + hh, dxfAngle: 0 };
+}
+
+function drawDeviceSymbolInBlock(
+  w: DxfWriter,
+  dev: E3Device,
+  ox: number,
+  oy: number,
+  deviceLw: number,
+  textLw: number
+) {
   const rw = dev.width;
   const rh = dev.height;
-  w.rect(ox, oy, rw, rh, 'E3_DEVICES', 3);
+  w.rect(ox, oy, rw, rh, 'DEVICES', { color: 3, ltype: 'CONTINUOUS', lineweight: deviceLw });
 
   // Category-specific GOST internal geometry vectors
   if (dev.category === 'motor' || dev.category === 'fan' || dev.category === 'pump') {
-    w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.36, 'E3_DEVICES', 3);
-    w.text(ox + rw / 2, oy - rh / 2, dev.category === 'motor' ? 'M3~' : 'M', 11, 'E3_DEVICES', 7, 1, 2);
+    w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.36, 'DEVICES', {
+      color: 3,
+      lineweight: deviceLw,
+    });
+    const mark = dev.category === 'motor' ? 'M3~' : dev.category === 'pump' ? 'Н' : 'M';
+    w.text(ox + rw / 2, oy - rh / 2, mark, 11, 'TEXT', 7, 1, 2, textLw);
   } else if (dev.category === 'breaker') {
     const poles = dev.pins.filter((p) => p.direction === 'top').length || 1;
     const step = rw / (poles + 1);
     for (let i = 1; i <= poles; i++) {
       const px = ox + i * step;
-      w.line(px, oy - 10, px, oy - 34, 'E3_DEVICES', 7);
-      w.line(px, oy - 34, px - 10, oy - 64, 'E3_DEVICES', 7);
-      w.line(px, oy - 66, px, oy - rh + 10, 'E3_DEVICES', 7);
+      w.line(px, oy - 10, px, oy - 34, 'DEVICES', { color: 7, lineweight: deviceLw });
+      w.line(px, oy - 34, px - 10, oy - 64, 'DEVICES', { color: 7, lineweight: deviceLw });
+      w.line(px, oy - 66, px, oy - rh + 10, 'DEVICES', { color: 7, lineweight: deviceLw });
     }
-    w.line(ox + step * 0.5, oy - 48, ox + rw - step * 0.5, oy - 48, 'E3_DEVICES', 8);
+    w.line(ox + step * 0.5, oy - 48, ox + rw - step * 0.5, oy - 48, 'DEVICES', {
+      color: 8,
+      ltype: 'DASHED',
+      lineweight: Math.max(13, deviceLw - 5),
+    });
   } else if (dev.category === 'contactor' || dev.category === 'relay') {
-    w.rect(ox + 12, oy - rh * 0.3, 28, rh * 0.4, 'E3_DEVICES', 7);
-    w.line(ox + 48, oy - rh * 0.25, ox + 48, oy - rh * 0.75, 'E3_DEVICES', 7);
+    w.rect(ox + 12, oy - rh * 0.3, 28, rh * 0.4, 'DEVICES', { color: 7, lineweight: deviceLw });
+    w.line(ox + 48, oy - rh * 0.25, ox + 48, oy - rh * 0.75, 'DEVICES', {
+      color: 7,
+      lineweight: deviceLw,
+    });
+  } else if (dev.category === 'terminal') {
+    w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.28, 'DEVICES', {
+      color: 7,
+      lineweight: deviceLw,
+    });
+    w.line(ox + rw / 2, oy, ox + rw / 2, oy - rh, 'DEVICES', { color: 7, lineweight: deviceLw });
+  } else if (dev.category === 'sensor' || dev.category === 'kip_circle') {
+    w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.34, 'DEVICES', {
+      color: 4,
+      lineweight: deviceLw,
+    });
+    w.text(ox + rw / 2, oy - rh / 2, dev.designation.replace(/^-/, ''), 8.5, 'TEXT', 7, 1, 2, textLw);
   } else if (dev.category === 'lamp') {
     const r = Math.min(rw, rh) * 0.34;
     const cx = ox + rw / 2;
     const cy = oy - rh / 2;
-    w.circle(cx, cy, r, 'E3_DEVICES', 2);
+    w.circle(cx, cy, r, 'DEVICES', { color: 2, lineweight: deviceLw });
     const d = r * 0.707;
-    w.line(cx - d, cy - d, cx + d, cy + d, 'E3_DEVICES', 2);
-    w.line(cx - d, cy + d, cx + d, cy - d, 'E3_DEVICES', 2);
+    w.line(cx - d, cy - d, cx + d, cy + d, 'DEVICES', { color: 2, lineweight: deviceLw });
+    w.line(cx - d, cy + d, cx + d, cy - d, 'DEVICES', { color: 2, lineweight: deviceLw });
   } else if (dev.category === 'drive' || dev.category === 'plc' || dev.category === 'psu') {
-    w.line(ox + 10, oy - 24, ox + rw - 10, oy - 24, 'E3_DEVICES', 8);
-    w.text(ox + rw / 2, oy - 13, dev.category.toUpperCase(), 9, 'E3_DEVICES', 7, 1, 2);
+    w.line(ox + 10, oy - 24, ox + rw - 10, oy - 24, 'DEVICES', { color: 8, lineweight: deviceLw });
+    w.text(ox + rw / 2, oy - 13, dev.category.toUpperCase(), 9, 'TEXT', 7, 1, 2, textLw);
   } else if (dev.category === 'offpage_ref') {
     const pot = dev.offPageRef?.potentialName || dev.designation;
-    w.text(ox + rw / 2, oy - rh / 2 + 2, pot, 8.5, 'E3_LABELS', 2, 1, 2);
+    w.text(ox + rw / 2, oy - rh / 2 + 2, pot, 8.5, 'TEXT', 2, 1, 2, textLw);
   }
 
   // Pins stubs and pin numbers
   for (const pin of dev.pins) {
     const px = ox + pin.dx;
     const py = oy - pin.dy;
-    w.circle(px, py, 2.2, 'E3_PINS', 2);
-    w.text(px + 3, py + (pin.direction === 'top' ? 5 : -8), pin.name, 7, 'E3_PINS', 8);
+    w.circle(px, py, 2.2, 'DEVICES', { color: 2, lineweight: 18 });
+    w.text(px + 3, py + (pin.direction === 'top' ? 5 : -8), pin.name, 7, 'TEXT', 8, 0, 0, textLw);
   }
 }
 
-function writeHeaderAndTables(w: DxfWriter, cadLayers?: CadLayerStateMap) {
+function writeHeaderAndTables(
+  w: DxfWriter,
+  project: E3Project,
+  cadLayers?: CadLayerStateMap
+) {
+  const vs = project.visualSettings;
+  const frameLw = toDxfLineweight(vs.frameStrokeWidth ?? 1.6, 30);
+  const stampLw = toDxfLineweight((vs.frameStrokeWidth ?? 1.6) * 0.85, 25);
+  const deviceLw = toDxfLineweight(vs.symbolStrokeWidth ?? 1.75, 30);
+  const wireLw = toDxfLineweight(vs.wireWidth ?? 2, 35);
+  const annLw = toDxfLineweight(vs.annotationStrokeWidth ?? 1.4, 25);
+  const textLw = 18;
+
   // HEADER Section - AC1021 supports native UTF-8 Cyrillic in AutoCAD / BricsCAD / nanoCAD / LibreCAD
   w.add(0, 'SECTION');
   w.add(2, 'HEADER');
@@ -266,16 +428,18 @@ function writeHeaderAndTables(w: DxfWriter, cadLayers?: CadLayerStateMap) {
   w.add(3, 'ANSI_1251');
   w.add(9, '$INSUNITS');
   w.add(70, 4); // Millimeters
+  w.add(9, '$LWDISPLAY');
+  w.add(290, 1); // Display lineweights in AutoCAD
   w.add(0, 'ENDSEC');
 
   // TABLES Section
   w.add(0, 'SECTION');
   w.add(2, 'TABLES');
 
-  // LTYPE
+  // LTYPE (CONTINUOUS, DASHED, DOT)
   w.add(0, 'TABLE');
   w.add(2, 'LTYPE');
-  w.add(70, 2);
+  w.add(70, 3);
   w.add(0, 'LTYPE');
   w.add(2, 'CONTINUOUS');
   w.add(70, 0);
@@ -292,31 +456,45 @@ function writeHeaderAndTables(w: DxfWriter, cadLayers?: CadLayerStateMap) {
   w.add(40, 12.0);
   w.add(49, 8.0);
   w.add(49, -4.0);
+  w.add(0, 'LTYPE');
+  w.add(2, 'DOT');
+  w.add(70, 0);
+  w.add(3, 'Dotted . . . .');
+  w.add(72, 65);
+  w.add(73, 2);
+  w.add(40, 4.0);
+  w.add(49, 0.0);
+  w.add(49, -4.0);
   w.add(0, 'ENDTAB');
 
-  // LAYER
-  const layers: Array<[string, number, string]> = [
-    ['0', 7, 'CONTINUOUS'],
-    ['GOST_FRAME', 7, 'CONTINUOUS'],
-    ['GOST_STAMP', 7, 'CONTINUOUS'],
-    ['E3_DEVICES', 3, 'CONTINUOUS'],
-    ['E3_PINS', 2, 'CONTINUOUS'],
-    ['E3_LABELS', 7, 'CONTINUOUS'],
-    ['E3_WIRES', 1, 'CONTINUOUS'],
-    ['E3_NETS', 5, 'CONTINUOUS'],
-    ['E3_ANNOTATIONS', 4, 'DASHED'],
-    ['E3_BOM', 7, 'CONTINUOUS'],
+  // LAYER (Canonical Stage 4.1 layers + E3_* compatibility layers)
+  const layers: Array<[string, number, DxfLineType, number]> = [
+    ['0', 7, 'CONTINUOUS', 25],
+    ['GOST_FRAME', 7, 'CONTINUOUS', frameLw],
+    ['GOST_STAMP', 7, 'CONTINUOUS', stampLw],
+    ['DEVICES', 3, 'CONTINUOUS', deviceLw],
+    ['WIRES', 1, 'CONTINUOUS', wireLw],
+    ['ANNOTATIONS', 4, 'DASHED', annLw],
+    ['TEXT', 7, 'CONTINUOUS', textLw],
+    ['E3_DEVICES', 3, 'CONTINUOUS', deviceLw],
+    ['E3_PINS', 2, 'CONTINUOUS', 18],
+    ['E3_LABELS', 7, 'CONTINUOUS', textLw],
+    ['E3_WIRES', 1, 'CONTINUOUS', wireLw],
+    ['E3_NETS', 5, 'CONTINUOUS', textLw],
+    ['E3_ANNOTATIONS', 4, 'DASHED', annLw],
+    ['E3_BOM', 7, 'CONTINUOUS', 20],
   ];
   w.add(0, 'TABLE');
   w.add(2, 'LAYER');
   w.add(70, layers.length);
-  for (const [name, color, ltype] of layers) {
+  for (const [name, color, ltype, lw] of layers) {
     const mapped = mapDxfLayerFlags(name, cadLayers, color);
     w.add(0, 'LAYER');
     w.add(2, name);
     w.add(70, mapped.flags70);
     w.add(62, mapped.color62);
     w.add(6, ltype);
+    w.add(370, lw);
   }
   w.add(0, 'ENDTAB');
 
@@ -354,11 +532,17 @@ function writeBlocksSection(
   editableBlocks: boolean,
   includeGostFrame: boolean
 ) {
+  const vs = project.visualSettings;
+  const stampLw = toDxfLineweight((vs.frameStrokeWidth ?? 1.6) * 0.85, 25);
+  const stampThinLw = Math.max(13, toDxfLineweight((vs.frameStrokeWidth ?? 1.6) * 0.45, 15));
+  const deviceLw = toDxfLineweight(vs.symbolStrokeWidth ?? 1.75, 30);
+  const textLw = 18;
+
   w.add(0, 'SECTION');
   w.add(2, 'BLOCKS');
 
   if (editableBlocks) {
-    // 1. Stamp block per sheet (contains fixed GOST grid + ATTDEF editable fields for AutoCAD)
+    // 1. Stamp block per sheet (GOST_STAMP lines + TEXT/ATTDEF on TEXT)
     if (includeGostFrame) {
       sheets.forEach((sheet, idx) => {
         const blockName = buildSheetStampBlockName(sheet, idx);
@@ -374,10 +558,12 @@ function writeBlocksSection(
         w.add(20, '0.0');
         w.add(30, '0.0');
 
-        // Local coords relative to (sx, bottomOfStamp = -syTop - height): simpler: relative to sheet origin offset (0,0) = bottom-left of stamp!
         const localY = (absCanvasY: number) => geom.stamp.height - (absCanvasY - syTop);
 
-        w.rect(0, geom.stamp.height, geom.stamp.width, geom.stamp.height, 'GOST_STAMP', 7);
+        w.rect(0, geom.stamp.height, geom.stamp.width, geom.stamp.height, 'GOST_STAMP', {
+          color: 7,
+          lineweight: stampLw,
+        });
         for (const ln of geom.stamp.lines) {
           w.line(
             ln.x1 - sx,
@@ -385,7 +571,7 @@ function writeBlocksSection(
             ln.x2 - sx,
             localY(ln.y2),
             'GOST_STAMP',
-            ln.thick ? 7 : 8
+            { color: ln.thick ? 7 : 8, lineweight: ln.thick ? stampLw : stampThinLw }
           );
         }
         for (const cell of geom.stamp.cells) {
@@ -403,12 +589,13 @@ function writeBlocksSection(
               cell.label || cell.fieldKey,
               cell.text,
               fh,
-              'GOST_STAMP',
+              'TEXT',
               7,
-              cell.align === 'center' ? 1 : 0
+              cell.align === 'center' ? 1 : 0,
+              textLw
             );
           } else if (cell.text) {
-            w.text(cx, cy, cell.text, fh, 'GOST_STAMP', 8, cell.align === 'center' ? 1 : 0, 2);
+            w.text(cx, cy, cell.text, fh, 'TEXT', 8, cell.align === 'center' ? 1 : 0, 2, textLw);
           }
         }
 
@@ -416,23 +603,25 @@ function writeBlocksSection(
       });
     }
 
-    // 2. Device blocks with ATTDEF for DESIGNATION & ARTICLE
+    // 2. Device blocks with ATTDEF for DESIGNATION, NAME, ARTICLE, RATING
     const sheetSet = new Set(sheets.map((s) => s.id));
     for (const dev of project.devices) {
       if (!sheetSet.has(dev.sheetId)) continue;
       const bName = buildDeviceBlockName(dev);
+      const rating = extractDeviceRating(dev);
       w.add(0, 'BLOCK');
-      w.add(8, 'E3_DEVICES');
+      w.add(8, 'DEVICES');
       w.add(2, bName);
       w.add(70, 2);
       w.add(10, '0.0');
       w.add(20, '0.0');
       w.add(30, '0.0');
 
-      drawDeviceSymbolInBlock(w, dev, 0, 0);
-      w.attdef(0, 12, 'DESIGNATION', 'Обозначение (УГО)', dev.designation, 10, 'E3_LABELS', 7, 0);
-      w.attdef(dev.width + 6, -12, 'ARTICLE', 'Артикул', dev.article, 7.5, 'E3_LABELS', 8, 0);
-      w.attdef(dev.width + 6, -24, 'NAME', 'Наименование', dev.componentName, 7, 'E3_LABELS', 8, 0);
+      drawDeviceSymbolInBlock(w, dev, 0, 0, deviceLw, textLw);
+      w.attdef(0, 12, 'DESIGNATION', 'Обозначение (УГО)', dev.designation, 10, 'TEXT', 7, 0, textLw);
+      w.attdef(dev.width + 6, -12, 'NAME', 'Наименование', dev.componentName, 7, 'TEXT', 8, 0, textLw);
+      w.attdef(dev.width + 6, -24, 'ARTICLE', 'Артикул', dev.article, 7.5, 'TEXT', 8, 0, textLw);
+      w.attdef(dev.width + 6, -36, 'RATING', 'Номинал', rating, 7, 'TEXT', 8, 0, textLw);
 
       w.add(0, 'ENDBLK');
     }
@@ -455,43 +644,78 @@ function drawSheetIntoEntities(
   const toX = (x: number) => offsetX + x;
   const toY = (y: number) => offsetY + (h - y);
 
+  const vs = project.visualSettings;
+  const frameLw = toDxfLineweight(vs.frameStrokeWidth ?? 1.6, 30);
+  const frameThinLw = Math.max(13, toDxfLineweight((vs.frameStrokeWidth ?? 1.6) * 0.45, 15));
+  const stampLw = toDxfLineweight((vs.frameStrokeWidth ?? 1.6) * 0.85, 25);
+  const deviceLw = toDxfLineweight(vs.symbolStrokeWidth ?? 1.75, 30);
+  const wireLw = toDxfLineweight(vs.wireWidth ?? 2, 35);
+  const defaultAnnLw = toDxfLineweight(vs.annotationStrokeWidth ?? 1.4, 25);
+  const textLw = 18;
+
   // Outer sheet boundary
-  w.rect(toX(0), toY(0), sheet.width, sheet.height, 'GOST_FRAME', 8);
+  w.rect(toX(0), toY(0), sheet.width, sheet.height, 'GOST_FRAME', { color: 8, lineweight: frameThinLw });
 
   if (includeGostFrame) {
     const geom = buildGostSheetGeometry(sheet, project);
     const { frame, archivalBox, stamp } = geom;
 
     // Inner & outer GOST 2.104 borders
-    w.rect(toX(frame.left), toY(frame.top), frame.width, frame.height, 'GOST_FRAME', 7);
-    w.rect(toX(4), toY(4), sheet.width - 8, sheet.height - 8, 'GOST_FRAME', 8);
+    w.rect(toX(frame.left), toY(frame.top), frame.width, frame.height, 'GOST_FRAME', {
+      color: 7,
+      lineweight: frameLw,
+    });
+    w.rect(toX(4), toY(4), sheet.width - 8, sheet.height - 8, 'GOST_FRAME', {
+      color: 8,
+      lineweight: frameThinLw,
+    });
 
     // Zone ticks (1..6 top, А..Д left)
     const cols = ['1', '2', '3', '4', '5', '6'];
     const spanW = frame.width / cols.length;
     cols.forEach((lbl, i) => {
       const zx = frame.left + i * spanW;
-      if (i > 0) w.line(toX(zx), toY(4), toX(zx), toY(frame.top), 'GOST_FRAME', 8);
-      w.text(toX(zx + spanW / 2), toY(11), lbl, 8, 'GOST_FRAME', 8, 1, 2);
+      if (i > 0) {
+        w.line(toX(zx), toY(4), toX(zx), toY(frame.top), 'GOST_FRAME', {
+          color: 8,
+          lineweight: frameThinLw,
+        });
+      }
+      w.text(toX(zx + spanW / 2), toY(11), lbl, 8, 'TEXT', 8, 1, 2, textLw);
     });
 
     const rows = ['А', 'Б', 'В', 'Г', 'Д'];
     const spanH = frame.height / rows.length;
     rows.forEach((lbl, i) => {
       const zy = frame.top + i * spanH;
-      if (i > 0) w.line(toX(4), toY(zy), toX(frame.left), toY(zy), 'GOST_FRAME', 8);
-      w.text(toX(11), toY(zy + spanH / 2), lbl, 8, 'GOST_FRAME', 8, 1, 2);
+      if (i > 0) {
+        w.line(toX(4), toY(zy), toX(frame.left), toY(zy), 'GOST_FRAME', {
+          color: 8,
+          lineweight: frameThinLw,
+        });
+      }
+      w.text(toX(11), toY(zy + spanH / 2), lbl, 8, 'TEXT', 8, 1, 2, textLw);
     });
 
     // Archival strip along left margin
     if (archivalBox.visible) {
-      w.rect(toX(archivalBox.x), toY(archivalBox.y), archivalBox.width, archivalBox.height, 'GOST_STAMP', 7);
+      w.rect(toX(archivalBox.x), toY(archivalBox.y), archivalBox.width, archivalBox.height, 'GOST_FRAME', {
+        color: 7,
+        lineweight: stampLw,
+      });
       let curY = archivalBox.y;
       for (const r of archivalBox.rows) {
-        w.line(toX(archivalBox.x), toY(curY + r.h), toX(archivalBox.x + archivalBox.width), toY(curY + r.h), 'GOST_STAMP', 7);
-        w.text(toX(archivalBox.x + 4), toY(curY + r.h * 0.4), r.label, 6, 'GOST_STAMP', 8);
+        w.line(
+          toX(archivalBox.x),
+          toY(curY + r.h),
+          toX(archivalBox.x + archivalBox.width),
+          toY(curY + r.h),
+          'GOST_FRAME',
+          { color: 7, lineweight: frameThinLw }
+        );
+        w.text(toX(archivalBox.x + 4), toY(curY + r.h * 0.4), r.label, 6, 'TEXT', 8, 0, 0, textLw);
         if (r.value) {
-          w.text(toX(archivalBox.x + 4), toY(curY + r.h * 0.78), r.value, 6.5, 'GOST_STAMP', 7);
+          w.text(toX(archivalBox.x + 4), toY(curY + r.h * 0.78), r.value, 6.5, 'TEXT', 7, 0, 0, textLw);
         }
         curY += r.h;
       }
@@ -510,14 +734,22 @@ function drawSheetIntoEntities(
           x: toX(c.align === 'center' ? c.x + c.width / 2 : c.x + 5),
           y: toY(c.y + c.height / 2),
           height: (c.fontSize || 9) * 0.92,
+          layer: 'TEXT',
           color: 7,
           hAlign: (c.align === 'center' ? 1 : 0) as 0 | 1 | 2,
+          lineweight: textLw,
         }));
-      w.insertWithAttribs(blockName, stampBaseX, stampBaseY, 'GOST_STAMP', attribs);
+      w.insertWithAttribs(blockName, stampBaseX, stampBaseY, 'GOST_FRAME', attribs);
     } else {
-      w.rect(toX(stamp.x), toY(stamp.y), stamp.width, stamp.height, 'GOST_STAMP', 7);
+      w.rect(toX(stamp.x), toY(stamp.y), stamp.width, stamp.height, 'GOST_FRAME', {
+        color: 7,
+        lineweight: stampLw,
+      });
       for (const ln of stamp.lines) {
-        w.line(toX(ln.x1), toY(ln.y1), toX(ln.x2), toY(ln.y2), 'GOST_STAMP', ln.thick ? 7 : 8);
+        w.line(toX(ln.x1), toY(ln.y1), toX(ln.x2), toY(ln.y2), 'GOST_FRAME', {
+          color: ln.thick ? 7 : 8,
+          lineweight: ln.thick ? stampLw : frameThinLw,
+        });
       }
       for (const c of stamp.cells) {
         if (!c.text) continue;
@@ -526,58 +758,94 @@ function drawSheetIntoEntities(
           toY(c.y + c.height / 2),
           c.text,
           (c.fontSize || 9) * 0.92,
-          'GOST_STAMP',
+          'TEXT',
           c.editable ? 7 : 8,
           c.align === 'center' ? 1 : 0,
-          2
+          2,
+          textLw
         );
       }
     }
   }
 
-  // Devices on sheet
+  // Devices on sheet (BLOCK + INSERT + ATTRIB with DESIGNATION, NAME, ARTICLE, RATING)
   const sheetDevices = project.devices.filter((d) => d.sheetId === sheet.id);
   for (const dev of sheetDevices) {
+    const rating = extractDeviceRating(dev);
     if (editableBlocks) {
       const bName = buildDeviceBlockName(dev);
-      w.insertWithAttribs(bName, toX(dev.x), toY(dev.y), 'E3_DEVICES', [
-        {
-          tag: 'DESIGNATION',
-          value: dev.designation,
-          x: toX(dev.x),
-          y: toY(dev.y - 12),
-          height: 10,
-          color: 7,
-        },
-        {
-          tag: 'ARTICLE',
-          value: dev.article,
-          x: toX(dev.x + dev.width + 6),
-          y: toY(dev.y + 12),
-          height: 7.5,
-          color: 8,
-        },
-        {
-          tag: 'NAME',
-          value: dev.componentName,
-          x: toX(dev.x + dev.width + 6),
-          y: toY(dev.y + 24),
-          height: 7,
-          color: 8,
-        },
-      ]);
+      const ins = computeDxfBlockInsertTransform(dev, toX, toY);
+      w.insertWithAttribs(
+        bName,
+        ins.x,
+        ins.y,
+        'DEVICES',
+        [
+          {
+            tag: 'DESIGNATION',
+            value: dev.designation,
+            x: toX(dev.x),
+            y: toY(dev.y - 12),
+            height: 10,
+            layer: 'TEXT',
+            color: 7,
+            lineweight: textLw,
+          },
+          {
+            tag: 'NAME',
+            value: dev.componentName,
+            x: toX(dev.x + dev.width + 6),
+            y: toY(dev.y + 12),
+            height: 7,
+            layer: 'TEXT',
+            color: 8,
+            lineweight: textLw,
+          },
+          {
+            tag: 'ARTICLE',
+            value: dev.article,
+            x: toX(dev.x + dev.width + 6),
+            y: toY(dev.y + 24),
+            height: 7.5,
+            layer: 'TEXT',
+            color: 8,
+            lineweight: textLw,
+          },
+          {
+            tag: 'RATING',
+            value: rating,
+            x: toX(dev.x + dev.width + 6),
+            y: toY(dev.y + 36),
+            height: 7,
+            layer: 'TEXT',
+            color: 8,
+            lineweight: textLw,
+          },
+        ],
+        ins.dxfAngle
+      );
     } else {
-      drawDeviceSymbolInBlock(w, dev, toX(dev.x), toY(dev.y));
-      w.text(toX(dev.x), toY(dev.y - 10), `${dev.designation} (${dev.article})`, 9.5, 'E3_LABELS', 7);
+      drawDeviceSymbolInBlock(w, dev, toX(dev.x), toY(dev.y), deviceLw, textLw);
+      w.text(
+        toX(dev.x),
+        toY(dev.y - 10),
+        `${dev.designation} (${dev.article}, ${rating})`,
+        9.5,
+        'TEXT',
+        7,
+        0,
+        0,
+        textLw
+      );
     }
   }
 
-  // Wires as editable LWPOLYLINEs
+  // Wires as editable LWPOLYLINEs on WIRES + junction dots + wire markings on TEXT
   const sheetWires = project.wires.filter((wr) => wr.sheetId === sheet.id);
   for (const wire of sheetWires) {
     const color = signalTypeToAci(wire.signalType);
     const pts = wire.waypoints.map((pt) => ({ x: toX(pt.x), y: toY(pt.y) }));
-    w.polyline(pts, 'E3_WIRES', color, false);
+    w.polyline(pts, 'WIRES', { color, ltype: 'CONTINUOUS', lineweight: wireLw }, false);
     if (wire.waypoints.length >= 2) {
       let mid = wire.waypoints[0];
       let bestLen = -1;
@@ -590,19 +858,34 @@ function drawSheetIntoEntities(
           mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         }
       }
-      w.text(toX(mid.x + 4), toY(mid.y - 6), wire.wireNumber, 7.5, 'E3_NETS', color);
+      w.text(toX(mid.x + 4), toY(mid.y - 6), wire.wireNumber, 7.5, 'TEXT', color, 0, 0, textLw);
     }
   }
 
-  // Cross-checks for pin coords if needed (kept consistent with engine)
+  const junctionDots = computeWireJunctionDots(sheetWires);
+  for (const dot of junctionDots) {
+    w.circle(toX(dot.x), toY(dot.y), 2.8, 'WIRES', {
+      color: signalTypeToAci(dot.signalType),
+      lineweight: wireLw,
+    });
+  }
+
   void getAbsolutePinPos;
 
-  // Annotations
+  // Annotations on ANNOTATIONS (geometry with CONTINUOUS / DASHED / DOT & LINEWEIGHT) + TEXT (text content)
   const sheetAnns = (project.annotations || []).filter((a) => a.sheetId === sheet.id);
   for (const ann of sheetAnns) {
+    const annStyle = ann.strokeStyle ?? (ann.kind === 'rect' ? 'dashed' : 'solid');
+    const ltype = toDxfLtype(annStyle);
+    const annLw = ann.strokeWidth ? toDxfLineweight(ann.strokeWidth, defaultAnnLw) : defaultAnnLw;
+
     if (ann.kind === 'rect') {
-      w.rect(toX(ann.x), toY(ann.y), ann.width, ann.height, 'E3_ANNOTATIONS', 4);
-      w.text(toX(ann.x + 8), toY(ann.y + 14), ann.text, ann.fontSize || 11, 'E3_ANNOTATIONS', 4);
+      w.rect(toX(ann.x), toY(ann.y), ann.width, ann.height, 'ANNOTATIONS', {
+        color: 4,
+        ltype,
+        lineweight: annLw,
+      });
+      w.text(toX(ann.x + 8), toY(ann.y + 14), ann.text, ann.fontSize || 11, 'TEXT', 4, 0, 0, textLw);
     } else if (ann.kind === 'callout') {
       w.polyline(
         [
@@ -610,13 +893,20 @@ function drawSheetIntoEntities(
           { x: toX(ann.x + 26), y: toY(ann.y + 18) },
           { x: toX(ann.x + 26 + ann.width), y: toY(ann.y + 18) },
         ],
-        'E3_ANNOTATIONS',
-        2,
+        'ANNOTATIONS',
+        { color: 2, ltype, lineweight: annLw },
         false
       );
-      w.text(toX(ann.x + 30), toY(ann.y + 12), ann.text, ann.fontSize || 10, 'E3_ANNOTATIONS', 7);
+      w.text(toX(ann.x + 30), toY(ann.y + 12), ann.text, ann.fontSize || 10, 'TEXT', 7, 0, 0, textLw);
     } else {
-      w.text(toX(ann.x), toY(ann.y), ann.text, ann.fontSize || 11, 'E3_ANNOTATIONS', 7);
+      if (ann.strokeStyle && ann.strokeStyle !== 'solid') {
+        w.rect(toX(ann.x - 4), toY(ann.y - (ann.fontSize || 11) - 2), ann.width, ann.height, 'ANNOTATIONS', {
+          color: 7,
+          ltype,
+          lineweight: annLw,
+        });
+      }
+      w.text(toX(ann.x), toY(ann.y), ann.text, ann.fontSize || 11, 'TEXT', 7, 0, 0, textLw);
     }
   }
 }
@@ -628,19 +918,21 @@ function drawBomTableInDxf(w: DxfWriter, project: E3Project, originX: number, or
   const totalW = cols.reduce((a, b) => a + b, 0);
   const rowH = 22;
 
-  w.text(originX, originYTop + 14, `Перечень элементов ПЭ3 — ${project.projectCode}`, 13, 'E3_BOM', 7);
+  w.text(originX, originYTop + 14, `Перечень элементов ПЭ3 — ${project.projectCode}`, 13, 'TEXT', 7, 0, 0, 25);
   let curY = originYTop;
-  w.rect(originX, curY, totalW, rowH, 'E3_BOM', 7);
+  w.rect(originX, curY, totalW, rowH, 'E3_BOM', { color: 7, lineweight: 25 });
   let cx = originX;
   headers.forEach((h, i) => {
-    w.text(cx + 6, curY - rowH / 2, h, 8.5, 'E3_BOM', 7, 0, 2);
+    w.text(cx + 6, curY - rowH / 2, h, 8.5, 'TEXT', 7, 0, 2, 18);
     cx += cols[i];
-    if (i < cols.length - 1) w.line(cx, curY, cx, curY - rowH * (bom.length + 1), 'E3_BOM', 8);
+    if (i < cols.length - 1) {
+      w.line(cx, curY, cx, curY - rowH * (bom.length + 1), 'E3_BOM', { color: 8, lineweight: 18 });
+    }
   });
   curY -= rowH;
 
   for (const row of bom) {
-    w.rect(originX, curY, totalW, rowH, 'E3_BOM', 8);
+    w.rect(originX, curY, totalW, rowH, 'E3_BOM', { color: 8, lineweight: 18 });
     const vals = [
       String(row.pos),
       row.designationText,
@@ -651,7 +943,7 @@ function drawBomTableInDxf(w: DxfWriter, project: E3Project, originX: number, or
     ];
     let rx = originX;
     vals.forEach((v, i) => {
-      w.text(rx + 6, curY - rowH / 2, v, 8, 'E3_BOM', 7, 0, 2);
+      w.text(rx + 6, curY - rowH / 2, v, 8, 'TEXT', 7, 0, 2, 18);
       rx += cols[i];
     });
     curY -= rowH;
@@ -670,7 +962,7 @@ export function exportSheetsToDxf(project: E3Project, options: DxfExportOptions 
   const editableBlocks = options.editableBlocks !== false;
 
   const w = createDxfWriter();
-  writeHeaderAndTables(w, project.layers);
+  writeHeaderAndTables(w, project, project.layers);
   writeBlocksSection(w, project, sheets, editableBlocks, includeGostFrame);
 
   w.add(0, 'SECTION');
@@ -722,8 +1014,9 @@ export async function exportProjectToDxfZip(
       `Пакетная публикация AutoCAD DXF (AC1021 UTF-8)`,
       `Проект: ${project.name} (${project.projectCode}, rev ${project.revision})`,
       `Листов в пакете: ${targetSheets.length}`,
-      `Слои: GOST_FRAME, GOST_STAMP, E3_DEVICES, E3_PINS, E3_LABELS, E3_WIRES, E3_NETS, E3_ANNOTATIONS, E3_BOM`,
-      `Блоки и атрибуты: Штампы ГОСТ (Форма 1/2а) и УГО устройств экспортированы как INSERT с редактируемыми ATTRIB.`,
+      `Основные слои: GOST_FRAME, DEVICES, WIRES, ANNOTATIONS, TEXT (и совместимые E3_*)`,
+      `Типы линий и веса: CONTINUOUS, DASHED, DOT; LINEWEIGHT (370) + $LWDISPLAY=1`,
+      `Блоки и атрибуты: Штампы ГОСТ и УГО устройств экспортированы как BLOCK + INSERT с ATTRIB (DESIGNATION, NAME, ARTICLE, RATING).`,
     ].join('\r\n')
   );
 

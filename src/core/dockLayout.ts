@@ -1,4 +1,5 @@
 import type { E3Project, E3Sheet } from './e3Types.ts';
+import { normalizeProjectSheetRevisions } from './sheetRevisions.ts';
 
 export type PanelId = 'explorer' | 'inspector' | 'console';
 export type DockEdge = 'left' | 'right' | 'bottom' | 'top';
@@ -349,12 +350,16 @@ export function duplicateSheetInProject(
   }
 
   const nextNum = project.sheets.length + 1;
+  const nowIso = new Date().toISOString();
   const newSheetId = `sheet-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
   const newSheet: E3Sheet = {
     ...structuredClone(srcSheet),
     id: newSheetId,
     number: nextNum,
     name: `${srcSheet.name} (копия)`,
+    revision: 1,
+    updatedAt: nowIso,
+    revisions: undefined,
     titleBlock: {
       ...srcSheet.titleBlock,
       sheetTitle: `${srcSheet.titleBlock.sheetTitle} (копия)`,
@@ -413,15 +418,15 @@ export function duplicateSheetInProject(
 
   return {
     newSheetId,
-    nextProject: {
+    nextProject: normalizeProjectSheetRevisions({
       ...project,
       revision: project.revision + 1,
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
       sheets: [...project.sheets, newSheet],
       devices: [...project.devices, ...clonedDevices],
       wires: [...project.wires, ...clonedWires],
       annotations: [...(project.annotations || []), ...clonedAnnotations],
-    },
+    }),
   };
 }
 

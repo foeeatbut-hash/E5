@@ -112,8 +112,23 @@ test('GOST 2.104 geometry generates Form 1 on sheet 1 and Form 2a on sheet 2 wit
   assert.ok(g2.stamp.cells.some((c) => c.fieldKey === 'sheetTitle' && c.editable));
 });
 
-test('Batch DXF exporter produces AC1021 AutoCAD with BLOCKS, ATTRIB, LWPOLYLINE, and multi-sheet ZIP', async () => {
+test('Batch DXF exporter produces AC1021 AutoCAD with BLOCKS, ATTRIB (incl. RATING), named layers, LINEWEIGHT, linetypes, and multi-sheet ZIP', async () => {
   const proj = createSeedProject();
+  proj.annotations = [
+    ...(proj.annotations || []),
+    {
+      id: 'ann-dxf-dot',
+      sheetId: 'sheet-1',
+      kind: 'rect',
+      x: 120,
+      y: 120,
+      width: 180,
+      height: 80,
+      text: 'Пунктирная зона DXF',
+      strokeWidth: 2.2,
+      strokeStyle: 'dotted',
+    },
+  ];
   const dxf = exportSheetsToDxf(proj, {
     sheetIds: proj.sheets.map((s) => s.id),
     editableBlocks: true,
@@ -121,11 +136,25 @@ test('Batch DXF exporter produces AC1021 AutoCAD with BLOCKS, ATTRIB, LWPOLYLINE
     includeBom: true,
   });
   assert.ok(dxf.includes('AC1021'));
+  assert.ok(dxf.includes('$LWDISPLAY'));
   assert.ok(dxf.includes('BLOCKS'));
   assert.ok(dxf.includes('ATTDEF'));
   assert.ok(dxf.includes('INSERT'));
   assert.ok(dxf.includes('ATTRIB'));
+  assert.ok(dxf.includes('\nDESIGNATION\n'));
+  assert.ok(dxf.includes('\nNAME\n'));
+  assert.ok(dxf.includes('\nARTICLE\n'));
+  assert.ok(dxf.includes('\nRATING\n'));
   assert.ok(dxf.includes('LWPOLYLINE'));
+  assert.ok(dxf.includes('GOST_FRAME'));
+  assert.ok(dxf.includes('\nDEVICES\n'));
+  assert.ok(dxf.includes('\nWIRES\n'));
+  assert.ok(dxf.includes('\nANNOTATIONS\n'));
+  assert.ok(dxf.includes('\nTEXT\n'));
+  assert.ok(dxf.includes('\nCONTINUOUS\n'));
+  assert.ok(dxf.includes('\nDASHED\n'));
+  assert.ok(dxf.includes('\nDOT\n'));
+  assert.ok(dxf.includes('\n370\n'));
   assert.ok(dxf.includes('GOST_STAMP_form1_L1_0'));
   assert.ok(dxf.includes(proj.sheets[0].titleBlock.organization));
 

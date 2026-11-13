@@ -1,4 +1,5 @@
 import type { E3Project, E3VisualSettings } from './e3Types.ts';
+import { normalizeProjectSheetRevisions } from './sheetRevisions.ts';
 
 export const DEFAULT_VISUAL_SETTINGS: E3VisualSettings = {
   schemaVersion: 1,
@@ -32,7 +33,7 @@ export const DEFAULT_VISUAL_SETTINGS: E3VisualSettings = {
 };
 
 export function createSeedProject(): E3Project {
-  return {
+  const project: E3Project = {
     schemaVersion: '1.0',
     id: 'proj-pv1-2026',
     name: 'Щит управления приточно-вытяжной установкой ЩУ-ПВ1',
@@ -872,4 +873,5 @@ export function createSeedProject(): E3Project {
       },
     ],
   };
+  return normalizeProjectSheetRevisions(project);
 }
