@@ -1,6 +1,7 @@
 import { buildBom, buildCableJournal, buildNetWireLengths } from './e3Engine.ts';
 import type { E3Device, E3Project, E3Sheet } from './e3Types.ts';
 import { buildGostSheetGeometry } from './gostFrame.ts';
+import { buildGostTableRenderModel } from './gostTables.ts';
 
 export interface PdfExportOptions {
   sheetIds?: string[];
@@ -260,36 +261,67 @@ function drawPdfDevice(
   const pdfSw = Math.max(0.35, symbolStrokeWidth * 0.52).toFixed(2);
   const pdfThinSw = Math.max(0.3, symbolStrokeWidth * 0.42).toFixed(2);
 
-  ops.push(`0.12 0.16 0.24 RG 0.98 0.99 1 rg ${pdfSw} w`);
-  ops.push(`${x.toFixed(2)} ${yBot.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re B`);
-
-  // Category detail symbol
-  if (dev.category === 'motor' || dev.category === 'fan' || dev.category === 'pump') {
-    const cx = x + w / 2;
-    const cy = yBot + h / 2;
-    const r = Math.min(w, h) * 0.35;
-    const k = r * 0.5523;
-    ops.push(`0.12 0.16 0.24 RG ${pdfThinSw} w`);
-    ops.push(
-      `${(cx + r).toFixed(2)} ${cy.toFixed(2)} m ` +
-        `${(cx + r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx + k).toFixed(2)} ${(cy + r).toFixed(2)} ${cx.toFixed(2)} ${(cy + r).toFixed(2)} c ` +
-        `${(cx - k).toFixed(2)} ${(cy + r).toFixed(2)} ${(cx - r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx - r).toFixed(2)} ${cy.toFixed(2)} c ` +
-        `${(cx - r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx - k).toFixed(2)} ${(cy - r).toFixed(2)} ${cx.toFixed(2)} ${(cy - r).toFixed(2)} c ` +
-        `${(cx + k).toFixed(2)} ${(cy - r).toFixed(2)} ${(cx + r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx + r).toFixed(2)} ${cy.toFixed(2)} c S`
-    );
-    drawText(cx, cy - 3 * s, dev.category === 'motor' ? 'M3~' : 'M', Math.max(7, 10 * s), true, 'center');
-  } else if (dev.category === 'breaker') {
-    const poles = dev.pins.filter((p) => p.direction === 'top').length || 1;
-    const step = w / (poles + 1);
-    ops.push(`0.12 0.16 0.24 RG ${pdfSw} w`);
-    for (let i = 1; i <= poles; i++) {
-      const px = x + i * step;
-      ops.push(`${px.toFixed(2)} ${(yTop - 8 * s).toFixed(2)} m ${px.toFixed(2)} ${(yTop - 32 * s).toFixed(2)} l ${(px - 8 * s).toFixed(2)} ${(yTop - 60 * s).toFixed(2)} l S`);
-      ops.push(`${px.toFixed(2)} ${(yTop - 64 * s).toFixed(2)} m ${px.toFixed(2)} ${(yBot + 8 * s).toFixed(2)} l S`);
+  if (dev.customSymbol && dev.customSymbol.shapes.length > 0) {
+    for (const sh of dev.customSymbol.shapes) {
+      if (sh.kind === 'line') {
+        ops.push(`0.12 0.16 0.24 RG ${pdfSw} w`);
+        if (sh.dashed) ops.push('[4 2] 0 d');
+        ops.push(`${toX(dev.x + sh.x1).toFixed(2)} ${toY(dev.y + sh.y1).toFixed(2)} m ${toX(dev.x + sh.x2).toFixed(2)} ${toY(dev.y + sh.y2).toFixed(2)} l S`);
+        if (sh.dashed) ops.push('[] 0 d');
+      } else if (sh.kind === 'rect') {
+        ops.push(`0.12 0.16 0.24 RG 0.98 0.99 1 rg ${pdfSw} w`);
+        if (sh.dashed) ops.push('[4 2] 0 d');
+        ops.push(`${toX(dev.x + sh.x).toFixed(2)} ${toY(dev.y + sh.y + sh.height).toFixed(2)} ${(sh.width * s).toFixed(2)} ${(sh.height * s).toFixed(2)} re ${sh.filled ? 'B' : 'S'}`);
+        if (sh.dashed) ops.push('[] 0 d');
+      } else if (sh.kind === 'circle') {
+        const ccx = toX(dev.x + sh.cx);
+        const ccy = toY(dev.y + sh.cy);
+        const rr = Math.max(1, sh.r * s);
+        const kk = rr * 0.5523;
+        ops.push(`0.12 0.16 0.24 RG 0.98 0.99 1 rg ${pdfSw} w`);
+        ops.push(
+          `${(ccx + rr).toFixed(2)} ${ccy.toFixed(2)} m ` +
+            `${(ccx + rr).toFixed(2)} ${(ccy + kk).toFixed(2)} ${(ccx + kk).toFixed(2)} ${(ccy + rr).toFixed(2)} ${ccx.toFixed(2)} ${(ccy + rr).toFixed(2)} c ` +
+            `${(ccx - kk).toFixed(2)} ${(ccy + rr).toFixed(2)} ${(ccx - rr).toFixed(2)} ${(ccy + kk).toFixed(2)} ${(ccx - rr).toFixed(2)} ${ccy.toFixed(2)} c ` +
+            `${(ccx - rr).toFixed(2)} ${(ccy - kk).toFixed(2)} ${(ccx - kk).toFixed(2)} ${(ccy - rr).toFixed(2)} ${ccx.toFixed(2)} ${(ccy - rr).toFixed(2)} c ` +
+            `${(ccx + kk).toFixed(2)} ${(ccy - rr).toFixed(2)} ${(ccx + rr).toFixed(2)} ${(ccy - kk).toFixed(2)} ${(ccx + rr).toFixed(2)} ${ccy.toFixed(2)} c ${sh.filled ? 'B' : 'S'}`
+        );
+      } else if (sh.kind === 'text') {
+        drawText(toX(dev.x + sh.x), toY(dev.y + sh.y), sh.text, Math.max(5.5, (sh.fontSize || 10) * s), Boolean(sh.bold), 'center');
+      }
     }
-  } else if (dev.category === 'offpage_ref') {
-    const pot = dev.offPageRef?.potentialName || dev.designation;
-    drawText(x + w / 2, yBot + h / 2 - 2 * s, pot, Math.max(6, 8.5 * s), true, 'center');
+  } else {
+    ops.push(`0.12 0.16 0.24 RG 0.98 0.99 1 rg ${pdfSw} w`);
+    ops.push(`${x.toFixed(2)} ${yBot.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re B`);
+
+    // Category detail symbol
+    if (dev.category === 'motor' || dev.category === 'fan' || dev.category === 'pump') {
+      const cx = x + w / 2;
+      const cy = yBot + h / 2;
+      const r = Math.min(w, h) * 0.35;
+      const k = r * 0.5523;
+      ops.push(`0.12 0.16 0.24 RG ${pdfThinSw} w`);
+      ops.push(
+        `${(cx + r).toFixed(2)} ${cy.toFixed(2)} m ` +
+          `${(cx + r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx + k).toFixed(2)} ${(cy + r).toFixed(2)} ${cx.toFixed(2)} ${(cy + r).toFixed(2)} c ` +
+          `${(cx - k).toFixed(2)} ${(cy + r).toFixed(2)} ${(cx - r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx - r).toFixed(2)} ${cy.toFixed(2)} c ` +
+          `${(cx - r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx - k).toFixed(2)} ${(cy - r).toFixed(2)} ${cx.toFixed(2)} ${(cy - r).toFixed(2)} c ` +
+          `${(cx + k).toFixed(2)} ${(cy - r).toFixed(2)} ${(cx + r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx + r).toFixed(2)} ${cy.toFixed(2)} c S`
+      );
+      drawText(cx, cy - 3 * s, dev.category === 'motor' ? 'M3~' : 'M', Math.max(7, 10 * s), true, 'center');
+    } else if (dev.category === 'breaker') {
+      const poles = dev.pins.filter((p) => p.direction === 'top').length || 1;
+      const step = w / (poles + 1);
+      ops.push(`0.12 0.16 0.24 RG ${pdfSw} w`);
+      for (let i = 1; i <= poles; i++) {
+        const px = x + i * step;
+        ops.push(`${px.toFixed(2)} ${(yTop - 8 * s).toFixed(2)} m ${px.toFixed(2)} ${(yTop - 32 * s).toFixed(2)} l ${(px - 8 * s).toFixed(2)} ${(yTop - 60 * s).toFixed(2)} l S`);
+        ops.push(`${px.toFixed(2)} ${(yTop - 64 * s).toFixed(2)} m ${px.toFixed(2)} ${(yBot + 8 * s).toFixed(2)} l S`);
+      }
+    } else if (dev.category === 'offpage_ref') {
+      const pot = dev.offPageRef?.potentialName || dev.designation;
+      drawText(x + w / 2, yBot + h / 2 - 2 * s, pot, Math.max(6, 8.5 * s), true, 'center');
+    }
   }
 
   // Label above device
@@ -446,7 +478,39 @@ function renderSheetPageContent(
     const annSw = Math.max(0.35, (ann.strokeWidth ?? project.visualSettings.annotationStrokeWidth ?? 1.4) * 0.62);
     const style = ann.strokeStyle ?? (ann.kind === 'rect' ? 'dashed' : 'solid');
     const dashOp = style === 'dashed' ? '[5 2.5] 0 d' : style === 'dotted' ? '[1.5 2] 0 d' : '[] 0 d';
-    if (ann.kind === 'rect') {
+    if (ann.kind === 'bom_table' || ann.kind === 'cable_table') {
+      const tbl = buildGostTableRenderModel(ann, project);
+      const tx = toX(ann.x);
+      const tw = tbl.width * scale;
+      const th = tbl.height * scale;
+      ops.push(`1 1 1 rg 0.12 0.16 0.24 RG ${(annSw * 1.1).toFixed(2)} w`);
+      ops.push(`${tx.toFixed(2)} ${toY(ann.y + tbl.height).toFixed(2)} ${tw.toFixed(2)} ${th.toFixed(2)} re B`);
+      drawText(toX(ann.x + 8), toY(ann.y + tbl.titleHeight * 0.65), tbl.title, Math.max(5.5, 9 * scale), true, 'left', [0.06, 0.09, 0.15], (tbl.width - 16) * scale);
+      let curY = ann.y + tbl.titleHeight;
+      ops.push(`0.94 0.96 0.98 rg 0.15 0.2 0.28 RG ${(annSw * 0.8).toFixed(2)} w`);
+      ops.push(`${tx.toFixed(2)} ${toY(curY + tbl.headerHeight).toFixed(2)} ${tw.toFixed(2)} ${(tbl.headerHeight * scale).toFixed(2)} re B`);
+      let cx = ann.x;
+      for (const col of tbl.columns) {
+        const colCenter = col.align === 'center' ? toX(cx + col.width / 2) : toX(cx + 5);
+        drawText(colCenter, toY(curY + tbl.headerHeight * 0.68), col.label, Math.max(5, 8 * scale), true, col.align === 'center' ? 'center' : 'left', [0.08, 0.1, 0.14], (col.width - 8) * scale);
+        cx += col.width;
+        if (cx < ann.x + tbl.width - 1) {
+          ops.push(`0.45 0.5 0.58 RG ${(annSw * 0.5).toFixed(2)} w ${toX(cx).toFixed(2)} ${toY(ann.y + tbl.titleHeight).toFixed(2)} m ${toX(cx).toFixed(2)} ${toY(ann.y + tbl.height).toFixed(2)} l S`);
+        }
+      }
+      curY += tbl.headerHeight;
+      for (const row of tbl.rows) {
+        ops.push(`0.45 0.5 0.58 RG ${(annSw * 0.5).toFixed(2)} w ${tx.toFixed(2)} ${toY(curY + tbl.rowHeight).toFixed(2)} ${tw.toFixed(2)} ${(tbl.rowHeight * scale).toFixed(2)} re S`);
+        let rx = ann.x;
+        row.forEach((val, ci) => {
+          const col = tbl.columns[ci];
+          const px = col.align === 'center' ? toX(rx + col.width / 2) : toX(rx + 5);
+          drawText(px, toY(curY + tbl.rowHeight * 0.68), val, Math.max(4.8, 7.6 * scale), false, col.align === 'center' ? 'center' : 'left', [0.1, 0.12, 0.16], (col.width - 8) * scale);
+          rx += col.width;
+        });
+        curY += tbl.rowHeight;
+      }
+    } else if (ann.kind === 'rect') {
       ops.push(`${r.toFixed(2)} ${g.toFixed(2)} ${b.toFixed(2)} RG ${dashOp} ${annSw.toFixed(2)} w`);
       ops.push(`${toX(ann.x).toFixed(2)} ${toY(ann.y + ann.height).toFixed(2)} ${(ann.width * scale).toFixed(2)} ${(ann.height * scale).toFixed(2)} re S`);
       ops.push('[] 0 d');

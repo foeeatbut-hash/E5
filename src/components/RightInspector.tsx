@@ -32,6 +32,7 @@ import { CAD_LAYER_DEFS, resolveCadLayers } from '../core/cadLayers';
 import type { DeviceAlignKind } from '../core/cadSelection';
 import { getOffPageMeta, resolveOffPageLinks } from '../core/crossSheetRefs';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
+import { buildGostTableRenderModel } from '../core/gostTables';
 import {
   getReleasedSheetRevisions,
   getSheetRevisionLabel,
@@ -1154,25 +1155,117 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 <option value="text">Текстовая надпись</option>
                 <option value="callout">Выноска со стрелкой</option>
                 <option value="rect">Рамка / Зона шкафа</option>
+                <option value="bom_table">Таблица ПЭ3 (ГОСТ 2.701)</option>
+                <option value="cable_table">Кабельный журнал (таблица)</option>
               </select>
             </div>
-            <div>
-              <label
-                htmlFor="ann-text"
-                className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
-              >
-                Текст аннотации
-              </label>
-              <textarea
-                id="ann-text"
-                rows={3}
-                value={selectedAnnotation.text}
-                onChange={(e) =>
-                  onUpdateAnnotation(selectedAnnotation.id, { text: e.target.value })
-                }
-                className="w-full p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
-              />
-            </div>
+            {(selectedAnnotation.kind === 'bom_table' || selectedAnnotation.kind === 'cable_table') ? (
+              (() => {
+                const tableModel = buildGostTableRenderModel(selectedAnnotation, project);
+                const cfg = selectedAnnotation.tableConfig || {};
+                const updateCfg = (patch: Partial<NonNullable<typeof selectedAnnotation.tableConfig>>) =>
+                  onUpdateAnnotation(selectedAnnotation.id, {
+                    tableConfig: { ...cfg, ...patch },
+                  });
+                return (
+                  <div
+                    data-testid="inspector-gost-table-panel"
+                    className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-[var(--flux-text)]">
+                        Автообновляемая таблица ГОСТ
+                      </span>
+                      <span className="font-mono text-[10.5px] text-[var(--flux-accent)]">
+                        {tableModel.totalRows} стр. · {tableModel.width}×{tableModel.height}
+                      </span>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+                        Заголовок таблицы
+                      </label>
+                      <input
+                        type="text"
+                        data-testid="inspector-table-title-input"
+                        value={cfg.title ?? selectedAnnotation.text ?? ''}
+                        onChange={(e) => {
+                          onUpdateAnnotation(selectedAnnotation.id, {
+                            text: e.target.value,
+                            tableConfig: { ...cfg, title: e.target.value },
+                          });
+                        }}
+                        className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[12px] text-[var(--flux-text)]"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-1">
+                          Макс. строк (0 = все)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={200}
+                          data-testid="inspector-table-maxrows-input"
+                          value={cfg.maxRows ?? 0}
+                          onChange={(e) =>
+                            updateCfg({ maxRows: Math.max(0, Number(e.target.value) || 0) })
+                          }
+                          className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11.5px] text-[var(--flux-text)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-1">
+                          Высота строки (мм)
+                        </label>
+                        <input
+                          type="number"
+                          min={18}
+                          max={36}
+                          value={cfg.rowHeight ?? 22}
+                          onChange={(e) =>
+                            updateCfg({
+                              rowHeight: Math.max(18, Math.min(36, Number(e.target.value) || 22)),
+                            })
+                          }
+                          className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11.5px] text-[var(--flux-text)]"
+                        />
+                      </div>
+                    </div>
+                    {selectedAnnotation.kind === 'bom_table' && (
+                      <label className="flex items-center gap-2 text-[11.5px] text-[var(--flux-text)] cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          data-testid="inspector-table-sheetonly-checkbox"
+                          checked={Boolean(cfg.sheetOnly)}
+                          onChange={(e) => updateCfg({ sheetOnly: e.target.checked })}
+                          className="rounded border-[var(--flux-line-strong)] accent-[var(--flux-accent)]"
+                        />
+                        <span>Только аппараты текущего листа</span>
+                      </label>
+                    )}
+                  </div>
+                );
+              })()
+            ) : (
+              <div>
+                <label
+                  htmlFor="ann-text"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Текст аннотации
+                </label>
+                <textarea
+                  id="ann-text"
+                  rows={3}
+                  value={selectedAnnotation.text}
+                  onChange={(e) =>
+                    onUpdateAnnotation(selectedAnnotation.id, { text: e.target.value })
+                  }
+                  className="w-full p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label

@@ -3,6 +3,7 @@ import { mapDxfLayerFlags } from './cadLayers.ts';
 import { buildBom, computeWireJunctionDots, getAbsolutePinPos } from './e3Engine.ts';
 import type { AnnotationStrokeStyle, CadLayerStateMap, E3Device, E3Project, E3Sheet } from './e3Types.ts';
 import { buildGostSheetGeometry } from './gostFrame.ts';
+import { buildGostTableRenderModel } from './gostTables.ts';
 
 export interface DxfExportOptions {
   sheetIds?: string[];
@@ -339,62 +340,89 @@ function drawDeviceSymbolInBlock(
 ) {
   const rw = dev.width;
   const rh = dev.height;
-  w.rect(ox, oy, rw, rh, 'DEVICES', { color: 3, ltype: 'CONTINUOUS', lineweight: deviceLw });
 
-  // Category-specific GOST internal geometry vectors
-  if (dev.category === 'motor' || dev.category === 'fan' || dev.category === 'pump') {
-    w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.36, 'DEVICES', {
-      color: 3,
-      lineweight: deviceLw,
-    });
-    const mark = dev.category === 'motor' ? 'M3~' : dev.category === 'pump' ? 'Н' : 'M';
-    w.text(ox + rw / 2, oy - rh / 2, mark, 11, 'TEXT', 7, 1, 2, textLw);
-  } else if (dev.category === 'breaker') {
-    const poles = dev.pins.filter((p) => p.direction === 'top').length || 1;
-    const step = rw / (poles + 1);
-    for (let i = 1; i <= poles; i++) {
-      const px = ox + i * step;
-      w.line(px, oy - 10, px, oy - 34, 'DEVICES', { color: 7, lineweight: deviceLw });
-      w.line(px, oy - 34, px - 10, oy - 64, 'DEVICES', { color: 7, lineweight: deviceLw });
-      w.line(px, oy - 66, px, oy - rh + 10, 'DEVICES', { color: 7, lineweight: deviceLw });
+  if (dev.customSymbol && dev.customSymbol.shapes.length > 0) {
+    for (const sh of dev.customSymbol.shapes) {
+      if (sh.kind === 'line') {
+        w.line(ox + sh.x1, oy - sh.y1, ox + sh.x2, oy - sh.y2, 'DEVICES', {
+          color: 7,
+          ltype: sh.dashed ? 'DASHED' : 'CONTINUOUS',
+          lineweight: deviceLw,
+        });
+      } else if (sh.kind === 'rect') {
+        w.rect(ox + sh.x, oy - sh.y, sh.width, sh.height, 'DEVICES', {
+          color: 3,
+          ltype: sh.dashed ? 'DASHED' : 'CONTINUOUS',
+          lineweight: deviceLw,
+        });
+      } else if (sh.kind === 'circle') {
+        w.circle(ox + sh.cx, oy - sh.cy, sh.r, 'DEVICES', {
+          color: 3,
+          ltype: sh.dashed ? 'DASHED' : 'CONTINUOUS',
+          lineweight: deviceLw,
+        });
+      } else if (sh.kind === 'text') {
+        w.text(ox + sh.x, oy - sh.y, sh.text, sh.fontSize || 10, 'TEXT', 7, 1, 2, textLw);
+      }
     }
-    w.line(ox + step * 0.5, oy - 48, ox + rw - step * 0.5, oy - 48, 'DEVICES', {
-      color: 8,
-      ltype: 'DASHED',
-      lineweight: Math.max(13, deviceLw - 5),
-    });
-  } else if (dev.category === 'contactor' || dev.category === 'relay') {
-    w.rect(ox + 12, oy - rh * 0.3, 28, rh * 0.4, 'DEVICES', { color: 7, lineweight: deviceLw });
-    w.line(ox + 48, oy - rh * 0.25, ox + 48, oy - rh * 0.75, 'DEVICES', {
-      color: 7,
-      lineweight: deviceLw,
-    });
-  } else if (dev.category === 'terminal') {
-    w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.28, 'DEVICES', {
-      color: 7,
-      lineweight: deviceLw,
-    });
-    w.line(ox + rw / 2, oy, ox + rw / 2, oy - rh, 'DEVICES', { color: 7, lineweight: deviceLw });
-  } else if (dev.category === 'sensor' || dev.category === 'kip_circle') {
-    w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.34, 'DEVICES', {
-      color: 4,
-      lineweight: deviceLw,
-    });
-    w.text(ox + rw / 2, oy - rh / 2, dev.designation.replace(/^-/, ''), 8.5, 'TEXT', 7, 1, 2, textLw);
-  } else if (dev.category === 'lamp') {
-    const r = Math.min(rw, rh) * 0.34;
-    const cx = ox + rw / 2;
-    const cy = oy - rh / 2;
-    w.circle(cx, cy, r, 'DEVICES', { color: 2, lineweight: deviceLw });
-    const d = r * 0.707;
-    w.line(cx - d, cy - d, cx + d, cy + d, 'DEVICES', { color: 2, lineweight: deviceLw });
-    w.line(cx - d, cy + d, cx + d, cy - d, 'DEVICES', { color: 2, lineweight: deviceLw });
-  } else if (dev.category === 'drive' || dev.category === 'plc' || dev.category === 'psu') {
-    w.line(ox + 10, oy - 24, ox + rw - 10, oy - 24, 'DEVICES', { color: 8, lineweight: deviceLw });
-    w.text(ox + rw / 2, oy - 13, dev.category.toUpperCase(), 9, 'TEXT', 7, 1, 2, textLw);
-  } else if (dev.category === 'offpage_ref') {
-    const pot = dev.offPageRef?.potentialName || dev.designation;
-    w.text(ox + rw / 2, oy - rh / 2 + 2, pot, 8.5, 'TEXT', 2, 1, 2, textLw);
+  } else {
+    w.rect(ox, oy, rw, rh, 'DEVICES', { color: 3, ltype: 'CONTINUOUS', lineweight: deviceLw });
+
+    // Category-specific GOST internal geometry vectors
+    if (dev.category === 'motor' || dev.category === 'fan' || dev.category === 'pump') {
+      w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.36, 'DEVICES', {
+        color: 3,
+        lineweight: deviceLw,
+      });
+      const mark = dev.category === 'motor' ? 'M3~' : dev.category === 'pump' ? 'Н' : 'M';
+      w.text(ox + rw / 2, oy - rh / 2, mark, 11, 'TEXT', 7, 1, 2, textLw);
+    } else if (dev.category === 'breaker') {
+      const poles = dev.pins.filter((p) => p.direction === 'top').length || 1;
+      const step = rw / (poles + 1);
+      for (let i = 1; i <= poles; i++) {
+        const px = ox + i * step;
+        w.line(px, oy - 10, px, oy - 34, 'DEVICES', { color: 7, lineweight: deviceLw });
+        w.line(px, oy - 34, px - 10, oy - 64, 'DEVICES', { color: 7, lineweight: deviceLw });
+        w.line(px, oy - 66, px, oy - rh + 10, 'DEVICES', { color: 7, lineweight: deviceLw });
+      }
+      w.line(ox + step * 0.5, oy - 48, ox + rw - step * 0.5, oy - 48, 'DEVICES', {
+        color: 8,
+        ltype: 'DASHED',
+        lineweight: Math.max(13, deviceLw - 5),
+      });
+    } else if (dev.category === 'contactor' || dev.category === 'relay') {
+      w.rect(ox + 12, oy - rh * 0.3, 28, rh * 0.4, 'DEVICES', { color: 7, lineweight: deviceLw });
+      w.line(ox + 48, oy - rh * 0.25, ox + 48, oy - rh * 0.75, 'DEVICES', {
+        color: 7,
+        lineweight: deviceLw,
+      });
+    } else if (dev.category === 'terminal') {
+      w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.28, 'DEVICES', {
+        color: 7,
+        lineweight: deviceLw,
+      });
+      w.line(ox + rw / 2, oy, ox + rw / 2, oy - rh, 'DEVICES', { color: 7, lineweight: deviceLw });
+    } else if (dev.category === 'sensor' || dev.category === 'kip_circle') {
+      w.circle(ox + rw / 2, oy - rh / 2, Math.min(rw, rh) * 0.34, 'DEVICES', {
+        color: 4,
+        lineweight: deviceLw,
+      });
+      w.text(ox + rw / 2, oy - rh / 2, dev.designation.replace(/^-/, ''), 8.5, 'TEXT', 7, 1, 2, textLw);
+    } else if (dev.category === 'lamp') {
+      const r = Math.min(rw, rh) * 0.34;
+      const cx = ox + rw / 2;
+      const cy = oy - rh / 2;
+      w.circle(cx, cy, r, 'DEVICES', { color: 2, lineweight: deviceLw });
+      const d = r * 0.707;
+      w.line(cx - d, cy - d, cx + d, cy + d, 'DEVICES', { color: 2, lineweight: deviceLw });
+      w.line(cx - d, cy + d, cx + d, cy - d, 'DEVICES', { color: 2, lineweight: deviceLw });
+    } else if (dev.category === 'drive' || dev.category === 'plc' || dev.category === 'psu') {
+      w.line(ox + 10, oy - 24, ox + rw - 10, oy - 24, 'DEVICES', { color: 8, lineweight: deviceLw });
+      w.text(ox + rw / 2, oy - 13, dev.category.toUpperCase(), 9, 'TEXT', 7, 1, 2, textLw);
+    } else if (dev.category === 'offpage_ref') {
+      const pot = dev.offPageRef?.potentialName || dev.designation;
+      w.text(ox + rw / 2, oy - rh / 2 + 2, pot, 8.5, 'TEXT', 2, 1, 2, textLw);
+    }
   }
 
   // Pins stubs and pin numbers
@@ -879,7 +907,64 @@ function drawSheetIntoEntities(
     const ltype = toDxfLtype(annStyle);
     const annLw = ann.strokeWidth ? toDxfLineweight(ann.strokeWidth, defaultAnnLw) : defaultAnnLw;
 
-    if (ann.kind === 'rect') {
+    if (ann.kind === 'bom_table' || ann.kind === 'cable_table') {
+      const tbl = buildGostTableRenderModel(ann, project);
+      w.rect(toX(ann.x), toY(ann.y), tbl.width, tbl.height, 'ANNOTATIONS', {
+        color: 7,
+        lineweight: 25,
+      });
+      w.text(toX(ann.x + 8), toY(ann.y + tbl.titleHeight / 2), tbl.title, 9.5, 'TEXT', 7, 0, 2, textLw);
+      let curY = ann.y + tbl.titleHeight;
+      w.rect(toX(ann.x), toY(curY), tbl.width, tbl.headerHeight, 'ANNOTATIONS', {
+        color: 7,
+        lineweight: 20,
+      });
+      let cx = ann.x;
+      for (const col of tbl.columns) {
+        w.text(
+          toX(col.align === 'center' ? cx + col.width / 2 : cx + 5),
+          toY(curY + tbl.headerHeight / 2),
+          col.label,
+          8,
+          'TEXT',
+          7,
+          col.align === 'center' ? 1 : 0,
+          2,
+          textLw
+        );
+        cx += col.width;
+        if (cx < ann.x + tbl.width - 1) {
+          w.line(toX(cx), toY(ann.y + tbl.titleHeight), toX(cx), toY(ann.y + tbl.height), 'ANNOTATIONS', {
+            color: 8,
+            lineweight: 15,
+          });
+        }
+      }
+      curY += tbl.headerHeight;
+      for (const row of tbl.rows) {
+        w.rect(toX(ann.x), toY(curY), tbl.width, tbl.rowHeight, 'ANNOTATIONS', {
+          color: 8,
+          lineweight: 15,
+        });
+        let rx = ann.x;
+        row.forEach((val, ci) => {
+          const col = tbl.columns[ci];
+          w.text(
+            toX(col.align === 'center' ? rx + col.width / 2 : rx + 5),
+            toY(curY + tbl.rowHeight / 2),
+            val,
+            7.5,
+            'TEXT',
+            7,
+            col.align === 'center' ? 1 : 0,
+            2,
+            textLw
+          );
+          rx += col.width;
+        });
+        curY += tbl.rowHeight;
+      }
+    } else if (ann.kind === 'rect') {
       w.rect(toX(ann.x), toY(ann.y), ann.width, ann.height, 'ANNOTATIONS', {
         color: 4,
         ltype,

@@ -7,6 +7,7 @@ import {
   Database,
   FileText,
   FolderTree,
+  PenTool,
   Pencil,
   Plus,
   Search,
@@ -31,6 +32,7 @@ interface LeftExplorerProps {
   onEditCatalogItem: (item: CatalogItem) => void;
   onDeleteCustomCatalogItem: (itemId: string) => void;
   onOpenHvacWizard: () => void;
+  onOpenSymbolDesigner?: () => void;
 }
 
 const TREE_TRANSITION = { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const };
@@ -49,6 +51,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
   onEditCatalogItem,
   onDeleteCustomCatalogItem,
   onOpenHvacWizard,
+  onOpenSymbolDesigner,
 }) => {
   const [internalTab, setInternalTab] = useState<'project' | 'library'>('project');
   const tab = activeTab ?? internalTab;
@@ -391,23 +394,36 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
         ) : (
           /* Component Catalog Library */
           <div className="space-y-1.5">
-            <div className="grid grid-cols-2 gap-1.5 px-0.5 pb-1">
-              <button
-                type="button"
-                onClick={onOpenAddCatalogItem}
-                className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
-                <span>Новое изделие</span>
-              </button>
-              <button
-                type="button"
-                onClick={onOpenHvacWizard}
-                className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Схема ПВ</span>
-              </button>
+            <div className="space-y-1 px-0.5 pb-1">
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={onOpenAddCatalogItem}
+                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
+                  <span>Новое изделие</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenHvacWizard}
+                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Схема ПВ</span>
+                </button>
+              </div>
+              {onOpenSymbolDesigner && (
+                <button
+                  type="button"
+                  data-testid="explorer-symbol-designer-btn"
+                  onClick={onOpenSymbolDesigner}
+                  className="w-full inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/60 text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+                >
+                  <PenTool className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                  <span>Редактор графики УГО…</span>
+                </button>
+              )}
             </div>
             <div
               role="group"
@@ -514,8 +530,63 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
                         </button>
                       </div>
                     </div>
-                    <div className="text-[12px] text-[var(--flux-text)] leading-snug">
-                      {item.componentName}
+                    <div className="flex items-center gap-1.5">
+                      {item.customSymbol && item.customSymbol.shapes.length > 0 && (
+                        <svg
+                          width="24"
+                          height="24"
+                          viewBox={`0 0 ${item.width} ${item.height}`}
+                          className="shrink-0 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] p-0.5"
+                          aria-hidden="true"
+                        >
+                          {item.customSymbol.shapes.map((sh) => {
+                            if (sh.kind === 'line') {
+                              return (
+                                <line
+                                  key={sh.id}
+                                  x1={sh.x1}
+                                  y1={sh.y1}
+                                  x2={sh.x2}
+                                  y2={sh.y2}
+                                  stroke="var(--flux-text)"
+                                  strokeWidth={Math.max(2, sh.strokeWidth || 2)}
+                                />
+                              );
+                            }
+                            if (sh.kind === 'rect') {
+                              return (
+                                <rect
+                                  key={sh.id}
+                                  x={sh.x}
+                                  y={sh.y}
+                                  width={sh.width}
+                                  height={sh.height}
+                                  fill="none"
+                                  stroke="var(--flux-text)"
+                                  strokeWidth={Math.max(2, sh.strokeWidth || 2)}
+                                />
+                              );
+                            }
+                            if (sh.kind === 'circle') {
+                              return (
+                                <circle
+                                  key={sh.id}
+                                  cx={sh.cx}
+                                  cy={sh.cy}
+                                  r={sh.r}
+                                  fill="none"
+                                  stroke="var(--flux-text)"
+                                  strokeWidth={Math.max(2, sh.strokeWidth || 2)}
+                                />
+                              );
+                            }
+                            return null;
+                          })}
+                        </svg>
+                      )}
+                      <div className="text-[12px] text-[var(--flux-text)] leading-snug truncate">
+                        {item.componentName}
+                      </div>
                     </div>
                     <div className="text-[11px] text-[var(--flux-text-muted)] flex items-center gap-1.5">
                       <span className="truncate">{item.manufacturer}</span>
@@ -523,6 +594,12 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
                       <span className="font-mono tabular-nums shrink-0">{item.defaultAttributes.length} атр.</span>
                       <span aria-hidden="true">·</span>
                       <span className="font-mono tabular-nums shrink-0">{item.pins.length} выв.</span>
+                      {item.customSymbol && item.customSymbol.shapes.length > 0 && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-mono text-[10px] text-[var(--flux-accent)] shrink-0">УГО</span>
+                        </>
+                      )}
                       {item.ioProfile && (
                         <>
                           <span aria-hidden="true">·</span>

@@ -819,6 +819,7 @@ export function deviceToCatalogItem(dev: E3Device, existingId?: string): Catalog
         ? attrs
         : [{ name: 'Наименование', value: dev.componentName || dev.designation, owner: '', conflict: 'flux' }],
     isCustom: true,
+    customSymbol: dev.customSymbol ? structuredClone(dev.customSymbol) : undefined,
   };
 }
 

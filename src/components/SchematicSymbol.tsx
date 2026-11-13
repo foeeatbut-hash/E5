@@ -56,6 +56,76 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
   const renderBody = () => {
     const w = device.width;
     const h = device.height;
+    if (device.customSymbol && device.customSymbol.shapes.length > 0) {
+      return (
+        <g data-testid={`custom-symbol-${device.id}`}>
+          {device.customSymbol.shapes.map((sh) => {
+            if (sh.kind === 'line') {
+              return (
+                <line
+                  key={sh.id}
+                  x1={sh.x1}
+                  y1={sh.y1}
+                  x2={sh.x2}
+                  y2={sh.y2}
+                  stroke={stroke}
+                  strokeWidth={sh.strokeWidth || sw}
+                  strokeDasharray={sh.dashed ? '5 3' : undefined}
+                  strokeLinecap="round"
+                />
+              );
+            }
+            if (sh.kind === 'rect') {
+              return (
+                <rect
+                  key={sh.id}
+                  x={sh.x}
+                  y={sh.y}
+                  width={sh.width}
+                  height={sh.height}
+                  rx={2}
+                  fill={sh.filled ? 'var(--flux-surface)' : 'none'}
+                  fillOpacity={sh.filled ? 0.92 : 0}
+                  stroke={stroke}
+                  strokeWidth={sh.strokeWidth || sw}
+                  strokeDasharray={sh.dashed ? '5 3' : undefined}
+                />
+              );
+            }
+            if (sh.kind === 'circle') {
+              return (
+                <circle
+                  key={sh.id}
+                  cx={sh.cx}
+                  cy={sh.cy}
+                  r={sh.r}
+                  fill={sh.filled ? 'var(--flux-surface)' : 'none'}
+                  fillOpacity={sh.filled ? 0.92 : 0}
+                  stroke={stroke}
+                  strokeWidth={sh.strokeWidth || sw}
+                  strokeDasharray={sh.dashed ? '5 3' : undefined}
+                />
+              );
+            }
+            return (
+              <text
+                key={sh.id}
+                x={sh.x}
+                y={sh.y}
+                textAnchor="middle"
+                fill={stroke}
+                fontSize={(sh.fontSize || 11) * visual.fontScale}
+                fontWeight={sh.bold ? 700 : 500}
+                fontFamily={fontCss}
+              >
+                {sh.text}
+              </text>
+            );
+          })}
+        </g>
+      );
+    }
+
     switch (device.category) {
       case 'airflow_arrow': {
         const isOut = device.e3BlockName.includes('OUT');

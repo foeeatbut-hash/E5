@@ -59,6 +59,61 @@ export interface OffPageRefMeta {
   targetDeviceId?: string;
 }
 
+export interface CustomSymbolShapeLine {
+  id: string;
+  kind: 'line';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  strokeWidth?: number;
+  dashed?: boolean;
+}
+
+export interface CustomSymbolShapeRect {
+  id: string;
+  kind: 'rect';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  filled?: boolean;
+  strokeWidth?: number;
+  dashed?: boolean;
+}
+
+export interface CustomSymbolShapeCircle {
+  id: string;
+  kind: 'circle';
+  cx: number;
+  cy: number;
+  r: number;
+  filled?: boolean;
+  strokeWidth?: number;
+  dashed?: boolean;
+}
+
+export interface CustomSymbolShapeText {
+  id: string;
+  kind: 'text';
+  x: number;
+  y: number;
+  text: string;
+  fontSize?: number;
+  bold?: boolean;
+}
+
+export type CustomSymbolShape =
+  | CustomSymbolShapeLine
+  | CustomSymbolShapeRect
+  | CustomSymbolShapeCircle
+  | CustomSymbolShapeText;
+
+export interface CustomSymbolSpec {
+  shapes: CustomSymbolShape[];
+  showBodyBorder?: boolean;
+}
+
 export interface E3Device {
   id: string;
   elementId: string; // Persistent Flux ID (never recycled)
@@ -78,6 +133,7 @@ export interface E3Device {
   pins: E3Pin[];
   attributes: E3Attribute[];
   offPageRef?: OffPageRefMeta;
+  customSymbol?: CustomSymbolSpec;
 }
 
 export interface E3Wire {
@@ -266,8 +322,15 @@ export interface E3VisualSettings {
 
 export type CadTool = 'select' | 'wire' | 'pan' | 'text' | 'rect' | 'callout' | 'offpage';
 
-export type AnnotationKind = 'text' | 'rect' | 'callout';
+export type AnnotationKind = 'text' | 'rect' | 'callout' | 'bom_table' | 'cable_table';
 export type AnnotationStrokeStyle = 'solid' | 'dashed' | 'dotted';
+
+export interface GostTableConfig {
+  title?: string;
+  maxRows?: number;
+  sheetOnly?: boolean;
+  rowHeight?: number;
+}
 
 export interface E3Annotation {
   id: string;
@@ -282,6 +345,7 @@ export interface E3Annotation {
   fontSize?: number;
   strokeWidth?: number;
   strokeStyle?: AnnotationStrokeStyle;
+  tableConfig?: GostTableConfig;
 }
 
 export type CadLayerId = 'devices' | 'wires' | 'annotations' | 'frame';
@@ -351,6 +415,7 @@ export interface CatalogItem {
     signalKind?: string;
   };
   defaultCable?: string;
+  customSymbol?: CustomSymbolSpec;
 }
 
 export interface BomRow {

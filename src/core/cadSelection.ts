@@ -1,12 +1,13 @@
-import { resolveCadLayers } from './cadLayers';
-import { getDeviceBounds, getSheetDrawableBounds, nextUniqueDesignation } from './e3Engine';
+import { resolveCadLayers } from './cadLayers.ts';
+import { getDeviceBounds, getSheetDrawableBounds, nextUniqueDesignation } from './e3Engine.ts';
+import { estimateGostTableBounds } from './gostTables.ts';
 import type {
   CadLayerStateMap,
   E3Annotation,
   E3Device,
   E3Project,
   E3Wire,
-} from './e3Types';
+} from './e3Types.ts';
 
 export type BoxSelectionMode = 'window' | 'crossing';
 
@@ -87,6 +88,15 @@ export function getAnnotationBounds(ann: E3Annotation): RectBox {
       y: ann.y,
       width,
       height,
+    };
+  }
+  if (ann.kind === 'bom_table' || ann.kind === 'cable_table') {
+    const est = estimateGostTableBounds(ann);
+    return {
+      x: ann.x,
+      y: ann.y,
+      width: est.width,
+      height: est.height,
     };
   }
   return {

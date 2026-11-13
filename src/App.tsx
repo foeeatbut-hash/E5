@@ -31,6 +31,7 @@ import { StampEditorModal, type StampModalMode } from './components/StampEditorM
 import { TerminalStripModal } from './components/TerminalStripModal';
 import { AutoNumberingModal } from './components/AutoNumberingModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { SymbolDesignerModal } from './components/SymbolDesignerModal';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
 import {
   clampDockLayoutToViewport,
@@ -160,7 +161,24 @@ import {
 } from './core/sheetRevisions';
 import { findSmartCatalogSpot } from './core/smartSnap';
 import { generateOrUpdateTerminalStripSheet } from './core/terminalStrip';
-import { buildCommandPaletteItems, type CommandPaletteItem } from './core/commandPalette';
+import {
+  buildCommandPaletteItems,
+  type CommandLineResolution,
+  type CommandPaletteItem,
+  resolveCommandLineInput,
+} from './core/commandPalette';
+import {
+  BOM_TABLE_TOTAL_WIDTH,
+  CABLE_TABLE_TOTAL_WIDTH,
+  buildGostTableRenderModel,
+} from './core/gostTables';
+import {
+  loadActiveSession,
+  loadRecentProjects,
+  type RecentProjectEntry,
+  removeRecentProject,
+  saveActiveSession,
+} from './core/sessionStorage';
 import { ecadAsync } from './workers/ecadAsync';
 
 function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
@@ -186,18 +204,34 @@ function downloadBytes(filename: string, bytes: Uint8Array, mime = 'application/
 }
 
 export default function App() {
+  const initialSessionRef = useRef<ReturnType<typeof loadActiveSession> | undefined>(undefined);
+  if (initialSessionRef.current === undefined) {
+    initialSessionRef.current = loadActiveSession();
+  }
   const [docState, setDocState] = useState<{
     past: E3Project[];
     present: E3Project;
     future: E3Project[];
-  }>(() => ({ past: [], present: createSeedProject(), future: [] }));
+  }>(() => ({
+    past: [],
+    present: initialSessionRef.current?.project || createSeedProject(),
+    future: [],
+  }));
   const docStateRef = useRef(docState);
   docStateRef.current = docState;
   const project = docState.present;
   const history = docState.past;
   const future = docState.future;
 
-  const [activeSheetId, setActiveSheetId] = useState<string>('sheet-1');
+  const [activeSheetId, setActiveSheetId] = useState<string>(
+    () => initialSessionRef.current?.activeSheetId || 'sheet-1'
+  );
+  const activeSheetIdRef = useRef(activeSheetId);
+  activeSheetIdRef.current = activeSheetId;
+  const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>(() => loadRecentProjects());
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(
+    () => initialSessionRef.current?.savedAt || null
+  );
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>(['dev-qf1']);
   const [selectedWireIds, setSelectedWireIds] = useState<string[]>([]);
   const [selectedAnnotationIds, setSelectedAnnotationIds] = useState<string[]>([]);
@@ -332,7 +366,9 @@ export default function App() {
   const [fluxPublishOpen, setFluxPublishOpen] = useState(false);
   const [terminalEditorOpen, setTerminalEditorOpen] = useState(false);
   const [autoNumberModalOpen, setAutoNumberModalOpen] = useState(false);
+  const [symbolDesignerOpen, setSymbolDesignerOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandPaletteInitialQuery, setCommandPaletteInitialQuery] = useState('');
   const fluxHostStatus = useMemo(() => detectFluxHost(), []);
   const [stampModalState, setStampModalState] = useState<{
     open: boolean;
@@ -400,6 +436,24 @@ export default function App() {
       root.classList.remove('dark');
     }
   }, [project.visualSettings.theme]);
+
+  // Stage 7.3: Debounced autosave + immediate flush on unload
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const res = saveActiveSession(project, activeSheetId);
+      setLastSavedAt(res.savedAt);
+      setRecentProjects(res.recent);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [project, activeSheetId]);
+
+  useEffect(() => {
+    const flushSession = () => {
+      saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+    };
+    window.addEventListener('beforeunload', flushSession);
+    return () => window.removeEventListener('beforeunload', flushSession);
+  }, []);
 
   // Detect Flux Host environment once
   useEffect(() => {
@@ -1062,6 +1116,7 @@ export default function App() {
         e3BlockName: item.e3BlockName,
         bindingState: 'PLACED',
         pins: item.pins.map((p, idx) => ({ ...p, id: `${id}-p${idx + 1}` })),
+        customSymbol: item.customSymbol ? structuredClone(item.customSymbol) : undefined,
         attributes: structuredClone(item.defaultAttributes),
         offPageRef:
           item.category === 'offpage_ref'
@@ -2445,6 +2500,7 @@ export default function App() {
     publishModalOpen ||
     terminalEditorOpen ||
     autoNumberModalOpen ||
+    symbolDesignerOpen ||
     fluxPublishOpen ||
     stampModalState.open;
 
@@ -2617,6 +2673,193 @@ export default function App() {
     [commitProject, appendLog]
   );
 
+  const handleInsertGostTable = useCallback(
+    (tableKind: 'bom' | 'cables') => {
+      const cur = docStateRef.current.present;
+      if (isLayerLocked(cur.layers, 'annotations')) {
+        appendLog('WARN', 'E3-CORE', 'Вставка таблицы отклонена: слой «Аннотации и зоны» заблокирован.');
+        return;
+      }
+      const targetSheet = cur.sheets.find((s) => s.id === activeSheetId) || cur.sheets[0];
+      if (!targetSheet) return;
+      const annKind: AnnotationKind = tableKind === 'cables' ? 'cable_table' : 'bom_table';
+      const drawable = getSheetDrawableBounds(targetSheet);
+      const existingTables = (cur.annotations || []).filter(
+        (a) =>
+          a.sheetId === targetSheet.id &&
+          (a.kind === 'bom_table' || a.kind === 'cable_table')
+      );
+      const baseTitle =
+        tableKind === 'cables'
+          ? `Кабельный журнал — ${cur.projectCode}`
+          : `Перечень элементов ПЭ3 (ГОСТ 2.701) — ${cur.projectCode}`;
+      const model = buildGostTableRenderModel(
+        {
+          kind: annKind,
+          sheetId: targetSheet.id,
+          text: baseTitle,
+          tableConfig: { title: baseTitle, maxRows: 0, sheetOnly: false, rowHeight: 22 },
+        },
+        cur
+      );
+      const tblW =
+        tableKind === 'cables'
+          ? Math.max(CABLE_TABLE_TOTAL_WIDTH, model.width)
+          : Math.max(BOM_TABLE_TOTAL_WIDTH, model.width);
+      const tblH = model.height;
+      const minX = drawable?.minX ?? 40;
+      const minY = drawable?.minY ?? 40;
+      const maxX = drawable?.maxX ?? targetSheet.width - 20;
+      const maxY = drawable?.maxY ?? targetSheet.height - 20;
+      const offset = existingTables.length * 28;
+      const candidates = [
+        { x: Math.round(Math.max(minX + 16, maxX - tblW - 20)), y: Math.round(minY + 20 + offset) },
+        { x: Math.round(minX + 20 + offset), y: Math.round(Math.max(minY + 20, maxY - tblH - 20)) },
+        { x: Math.round(minX + 20 + offset), y: Math.round(minY + 20 + offset) },
+      ];
+      const obstacleBoxes = [
+        ...cur.devices
+          .filter((d) => d.sheetId === targetSheet.id && d.bindingState !== 'REMOVED_IN_FLUX')
+          .map((d) => {
+            const b = getDeviceBounds(d);
+            return { x: b.x, y: b.y, w: b.width, h: b.height };
+          }),
+        ...existingTables.map((t) => ({ x: t.x, y: t.y, w: t.width || tblW, h: t.height || tblH })),
+        { x: maxX - 540, y: maxY - 190, w: 540, h: 190 }, // GOST stamp area
+      ];
+      const scoreOverlap = (cx: number, cy: number) =>
+        obstacleBoxes.reduce((acc, ob) => {
+          const ix = Math.max(0, Math.min(cx + tblW, ob.x + ob.w) - Math.max(cx, ob.x));
+          const iy = Math.max(0, Math.min(cy + tblH, ob.y + ob.h) - Math.max(cy, ob.y));
+          return acc + ix * iy;
+        }, 0);
+      let best = candidates[0];
+      let bestScore = scoreOverlap(best.x, best.y);
+      for (const c of candidates.slice(1)) {
+        const s = scoreOverlap(c.x, c.y);
+        if (s < bestScore) {
+          bestScore = s;
+          best = c;
+        }
+      }
+      const x = best.x;
+      const y = best.y;
+      const newAnn: E3Annotation = {
+        id: `ann-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        sheetId: targetSheet.id,
+        kind: annKind,
+        x,
+        y,
+        width:
+          tableKind === 'cables'
+            ? Math.max(CABLE_TABLE_TOTAL_WIDTH, model.width)
+            : Math.max(BOM_TABLE_TOTAL_WIDTH, model.width),
+        height: model.height,
+        text: baseTitle,
+        fontSize: 12,
+        tableConfig: {
+          title: baseTitle,
+          maxRows: 0,
+          sheetOnly: false,
+          rowHeight: 22,
+        },
+      };
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        annotations: [...(prev.annotations || []), newAnn],
+      }));
+      applySelection({ annotationIds: [newAnn.id] });
+      setTool('select');
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `На лист «${targetSheet.name}» вставлена живая таблица: ${baseTitle} (${model.totalRows} поз.).`
+      );
+    },
+    [activeSheetId, commitProject, applySelection, appendLog]
+  );
+
+  const handleSaveSessionNow = useCallback(() => {
+    const res = saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+    setLastSavedAt(res.savedAt);
+    setRecentProjects(res.recent);
+    appendLog(
+      'SYNC',
+      'E3-CORE',
+      `Сессия проекта «${docStateRef.current.present.name}» сохранена локально.`
+    );
+  }, [appendLog]);
+
+  const handleCreateNewProject = useCallback(() => {
+    saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+    const seed = createSeedProject();
+    const suffix = Date.now().toString(36).slice(-4).toUpperCase();
+    const fresh: E3Project = {
+      ...seed,
+      id: `proj-${Date.now().toString(36)}`,
+      name: `Новый проект (${suffix})`,
+      projectCode: `ПДХ-${suffix}`,
+      revision: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const nextSheetId = fresh.sheets[0]?.id || 'sheet-1';
+    setDocState({ past: [], present: fresh, future: [] });
+    setActiveSheetId(nextSheetId);
+    setViewportSheetIds(fresh.sheets.map((s) => s.id));
+    applySelection({ deviceIds: fresh.devices[0] ? [fresh.devices[0].id] : [] });
+    const res = saveActiveSession(fresh, nextSheetId);
+    setLastSavedAt(res.savedAt);
+    setRecentProjects(res.recent);
+    pushSync(fresh);
+    if (fresh.sheets[0]) {
+      window.requestAnimationFrame(() => fitSheetToViewport(fresh.sheets[0], activeViewportIdx));
+    }
+    appendLog('INFO', 'E3-CORE', `Создан новый проект ${fresh.name} (${fresh.projectCode}).`);
+  }, [applySelection, pushSync, fitSheetToViewport, activeViewportIdx, appendLog]);
+
+  const handleOpenRecentProject = useCallback(
+    (projectId: string) => {
+      const latest = loadRecentProjects();
+      const target =
+        recentProjects.find((r) => r.id === projectId) ||
+        latest.find((r) => r.id === projectId);
+      if (!target) return;
+      saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+      const restoredProj = normalizeProjectSheetRevisions(structuredClone(target.project));
+      const nextSheetId = restoredProj.sheets.some((s) => s.id === target.activeSheetId)
+        ? target.activeSheetId
+        : restoredProj.sheets[0]?.id || 'sheet-1';
+      setDocState({ past: [], present: restoredProj, future: [] });
+      setActiveSheetId(nextSheetId);
+      setViewportSheetIds(restoredProj.sheets.map((s) => s.id));
+      applySelection({});
+      const res = saveActiveSession(restoredProj, nextSheetId);
+      setLastSavedAt(res.savedAt);
+      setRecentProjects(res.recent);
+      pushSync(restoredProj);
+      const sh = restoredProj.sheets.find((s) => s.id === nextSheetId) || restoredProj.sheets[0];
+      if (sh) {
+        window.requestAnimationFrame(() => fitSheetToViewport(sh, activeViewportIdx));
+      }
+      appendLog(
+        'SYNC',
+        'E3-CORE',
+        `Загружен недавний проект «${restoredProj.name}» (${restoredProj.projectCode}, Rev ${restoredProj.revision}).`
+      );
+    },
+    [recentProjects, applySelection, pushSync, fitSheetToViewport, activeViewportIdx, appendLog]
+  );
+
+  const handleRemoveRecentProject = useCallback(
+    (projectId: string) => {
+      setRecentProjects(removeRecentProject(projectId));
+      appendLog('INFO', 'E3-CORE', 'Проект удалён из списка недавних.');
+    },
+    [appendLog]
+  );
+
   const commandPaletteItems = useMemo(
     () =>
       buildCommandPaletteItems(project, {
@@ -2624,18 +2867,21 @@ export default function App() {
           selectedDeviceIds.length > 0 ||
           selectedWireIds.length > 0 ||
           selectedAnnotationIds.length > 0,
+        hasClipboard,
         selectedDeviceCount: selectedDeviceIds.length,
         canUndo: history.length > 0,
         canRedo: future.length > 0,
         snapToGrid: project.visualSettings.snapToGrid,
         smartGuides: project.visualSettings.smartGuides !== false,
         showGrid: project.visualSettings.showGrid,
+        showCrosshair: project.visualSettings.showCrosshair !== false,
       }),
     [
       project,
       selectedDeviceIds.length,
       selectedWireIds.length,
       selectedAnnotationIds.length,
+      hasClipboard,
       history.length,
       future.length,
     ]
@@ -2648,6 +2894,18 @@ export default function App() {
         case 'set-tool':
           setTool(act.tool);
           break;
+        case 'copy-selected':
+          handleCopySelected();
+          break;
+        case 'paste-clipboard':
+          handlePasteClipboard();
+          break;
+        case 'duplicate-selected':
+          handleDuplicateSelected();
+          break;
+        case 'delete-selected':
+          handleDeleteSelected();
+          break;
         case 'rotate-selected':
           handleRotateSelected();
           break;
@@ -2659,6 +2917,9 @@ export default function App() {
           break;
         case 'zoom-delta':
           setZoom(Math.min(2.5, Math.max(0.18, Math.round((zoom + act.delta) * 100) / 100)));
+          break;
+        case 'zoom-percent':
+          setZoom(Math.min(2.5, Math.max(0.16, Math.round(act.percent) / 100)));
           break;
         case 'toggle-snap':
           handleApplyVisualSettings({
@@ -2688,6 +2949,15 @@ export default function App() {
             `Координатная сетка (F9): ${!project.visualSettings.showGrid ? 'показана' : 'скрыта'}.`
           );
           break;
+        case 'toggle-crosshair': {
+          const nextCh = !(project.visualSettings.showCrosshair !== false);
+          handleApplyVisualSettings({
+            ...project.visualSettings,
+            showCrosshair: nextCh,
+          });
+          appendLog('INFO', 'E3-CORE', `Перекрестие курсора: ${nextCh ? 'включено' : 'выключено'}.`);
+          break;
+        }
         case 'autoroute':
           handleAutoRouteActiveSheetWires();
           break;
@@ -2705,8 +2975,39 @@ export default function App() {
         case 'open-autonum':
           setAutoNumberModalOpen(true);
           break;
+        case 'open-catalog':
+          setLeftTab('library');
+          setDockLayout((prev) =>
+            prev.panels.explorer.collapsed ? togglePanelCollapse(prev, 'explorer') : prev
+          );
+          break;
+        case 'open-hvac-wizard':
+          setHvacWizardOpen(true);
+          break;
+        case 'open-symbol-designer':
+          setSymbolDesignerOpen(true);
+          break;
+        case 'insert-sheet-table':
+          handleInsertGostTable(act.tableKind);
+          break;
+        case 'save-session':
+          handleSaveSessionNow();
+          break;
+        case 'add-sheet':
+          handleAddSheet();
+          break;
         case 'export-dxf':
           void handleExportDxf();
+          break;
+        case 'export-pdf':
+          void handleBatchPublish({
+            format: 'pdf',
+            sheetIds: project.sheets.map((s) => s.id),
+            includeBom: true,
+            includeCables: true,
+            includeGostFrame: true,
+            editableBlocks: true,
+          });
           break;
         case 'open-publish':
           setPublishModalOpen(true);
@@ -2724,6 +3025,10 @@ export default function App() {
           break;
         case 'redo':
           handleRedo();
+          break;
+        case 'open-find':
+          setCommandPaletteInitialQuery(act.initialQuery || '');
+          setCommandPaletteOpen(true);
           break;
         case 'jump-sheet': {
           const sh = project.sheets.find((s) => s.id === act.sheetId);
@@ -2747,9 +3052,39 @@ export default function App() {
           }
           break;
         }
+        case 'jump-wire': {
+          const wire = project.wires.find((w) => w.id === act.wireId);
+          if (wire) {
+            applySelection({ wireIds: [wire.id] });
+            setHighlightedPotentialSeed({ wireId: wire.id });
+            const mid =
+              wire.waypoints[Math.floor(wire.waypoints.length / 2)] || { x: 400, y: 300 };
+            centerCameraOnCoords(wire.sheetId, mid.x, mid.y, activeViewportIdx);
+            appendLog('INFO', 'E3-CORE', `Переход к цепи ${wire.wireNumber} (${wire.netName}).`);
+          }
+          break;
+        }
+        case 'jump-annotation': {
+          const ann = (project.annotations || []).find((a) => a.id === act.annotationId);
+          if (ann) {
+            applySelection({ annotationIds: [ann.id] });
+            centerCameraOnCoords(
+              ann.sheetId,
+              ann.x + ann.width / 2,
+              ann.y + ann.height / 2,
+              activeViewportIdx
+            );
+            appendLog('INFO', 'E3-CORE', `Переход к надписи/таблице на схеме.`);
+          }
+          break;
+        }
       }
     },
     [
+      handleCopySelected,
+      handlePasteClipboard,
+      handleDuplicateSelected,
+      handleDeleteSelected,
       handleRotateSelected,
       handleAlignSelectedDevices,
       fitSheetToViewport,
@@ -2760,16 +3095,42 @@ export default function App() {
       project.visualSettings,
       project.sheets,
       project.devices,
+      project.wires,
+      project.annotations,
       appendLog,
       handleAutoRouteActiveSheetWires,
       setConsoleCollapsed,
+      handleInsertGostTable,
+      handleSaveSessionNow,
+      handleAddSheet,
       handleExportDxf,
+      handleBatchPublish,
       activeSheet?.id,
       handleUndo,
       handleRedo,
       applySelection,
       centerCameraOnCoords,
     ]
+  );
+
+  const handleExecuteCommandLine = useCallback(
+    (rawCommand: string): CommandLineResolution => {
+      const res = resolveCommandLineInput(rawCommand, commandPaletteItems, docStateRef.current.present);
+      if (res.status === 'ok' && res.action) {
+        handleExecuteCommandPaletteItem({
+          id: 'cli-exec',
+          title: res.message,
+          subtitle: '',
+          category: 'action',
+          keywords: [],
+          action: res.action,
+        });
+      } else {
+        appendLog('WARN', 'E3-CORE', `Командная строка: ${res.message}`);
+      }
+      return res;
+    },
+    [commandPaletteItems, handleExecuteCommandPaletteItem, appendLog]
   );
 
   // Keyboard shortcuts
@@ -3026,7 +3387,8 @@ export default function App() {
       .then((srvProj: E3Project | null) => {
         if (srvProj && srvProj.id && Array.isArray(srvProj.devices)) {
           setProjectRemote((curr) => {
-            if (srvProj.revision > curr.revision || srvProj.id !== curr.id) {
+            const hasSavedLocal = Boolean(initialSessionRef.current);
+            if ((!hasSavedLocal || srvProj.id === curr.id) && srvProj.revision > curr.revision) {
               suppressSyncPushRef.current = true;
               if (srvProj.sheets[0]) setActiveSheetId(srvProj.sheets[0].id);
               return srvProj;
@@ -3199,6 +3561,7 @@ export default function App() {
           }}
           onDeleteCustomCatalogItem={handleDeleteCustomCatalogItem}
           onOpenHvacWizard={() => setHvacWizardOpen(true)}
+          onOpenSymbolDesigner={() => setSymbolDesignerOpen(true)}
         />
       );
     }
@@ -3695,7 +4058,18 @@ export default function App() {
         onToggleLayerLock={handleToggleLayerLock}
         onShowAllLayers={handleShowAllLayers}
         onUnlockAllLayers={handleUnlockAllLayers}
-        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        onOpenCommandPalette={() => {
+          setCommandPaletteInitialQuery('');
+          setCommandPaletteOpen(true);
+        }}
+        onOpenSymbolDesigner={() => setSymbolDesignerOpen(true)}
+        onInsertGostTable={handleInsertGostTable}
+        recentProjects={recentProjects}
+        lastSavedAt={lastSavedAt}
+        onSaveSessionNow={handleSaveSessionNow}
+        onCreateNewProject={handleCreateNewProject}
+        onOpenRecentProject={handleOpenRecentProject}
+        onRemoveRecentProject={handleRemoveRecentProject}
       />
 
       {/* Dockable Workspace Shell */}
@@ -3869,6 +4243,8 @@ export default function App() {
                     onCommitInPlaceWireNumber={handleCommitInPlaceWireNumber}
                     onCommitInPlaceAnnotationText={handleCommitInPlaceAnnotationText}
                     onCommitInPlaceStampCell={handleCommitInPlaceStampCell}
+                    commandPaletteItems={commandPaletteItems}
+                    onExecuteCommandLine={handleExecuteCommandLine}
                   />
                 </div>
               );
@@ -4082,8 +4458,25 @@ export default function App() {
       <CommandPaletteModal
         open={commandPaletteOpen}
         items={commandPaletteItems}
-        onClose={() => setCommandPaletteOpen(false)}
+        initialQuery={commandPaletteInitialQuery}
+        onClose={() => {
+          setCommandPaletteOpen(false);
+          setCommandPaletteInitialQuery('');
+        }}
         onExecute={handleExecuteCommandPaletteItem}
+      />
+
+      <SymbolDesignerModal
+        open={symbolDesignerOpen}
+        mode="catalog"
+        onClose={() => setSymbolDesignerOpen(false)}
+        onSaveCatalogItem={(item) => {
+          handleSaveCustomCatalogItem(item);
+          setLeftTab('library');
+          setDockLayout((prev) =>
+            prev.panels.explorer.collapsed ? togglePanelCollapse(prev, 'explorer') : prev
+          );
+        }}
       />
     </div>
     </MotionConfig>

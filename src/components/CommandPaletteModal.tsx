@@ -19,6 +19,7 @@ import {
 interface CommandPaletteModalProps {
   open: boolean;
   items: CommandPaletteItem[];
+  initialQuery?: string;
   onClose: () => void;
   onExecute: (item: CommandPaletteItem) => void;
 }
@@ -41,6 +42,7 @@ const CategoryIcon: React.FC<{ category: CommandPaletteItem['category'] }> = ({ 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   open,
   items,
+  initialQuery = '',
   onClose,
   onExecute,
 }) => {
@@ -53,13 +55,13 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
   useEffect(() => {
     if (!open) return;
-    setQuery('');
+    setQuery(initialQuery);
     setSelectedIdx(0);
     const timer = window.setTimeout(() => {
       inputRef.current?.focus();
     }, 10);
     return () => window.clearTimeout(timer);
-  }, [open]);
+  }, [open, initialQuery]);
 
   useEffect(() => {
     setSelectedIdx(0);

@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ChevronUp,
   ClipboardPaste,
+  Clock,
   Columns2,
   Copy,
   CopyPlus,
@@ -38,12 +39,14 @@ import {
   Palette,
   PanelLeft,
   PanelsTopLeft,
+  PenTool,
   Plus,
   Printer,
   Redo2,
   RefreshCw,
   RotateCcw,
   RotateCw,
+  Save,
   Search,
   Send,
   Settings,
@@ -51,6 +54,7 @@ import {
   Spline,
   Square,
   Sun,
+  Table2,
   Tag,
   Terminal,
   Trash2,
@@ -69,6 +73,7 @@ import {
 } from '../core/cadLayers';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type { ViewportLayoutMode } from '../core/dockLayout';
+import type { RecentProjectEntry } from '../core/sessionStorage';
 import type {
   CadLayerId,
   CadTool,
@@ -160,6 +165,14 @@ interface TopToolbarProps {
   onShowAllLayers?: () => void;
   onUnlockAllLayers?: () => void;
   onOpenCommandPalette?: () => void;
+  onOpenSymbolDesigner?: () => void;
+  onInsertGostTable?: (tableKind: 'bom' | 'cables') => void;
+  recentProjects?: RecentProjectEntry[];
+  lastSavedAt?: string | null;
+  onSaveSessionNow?: () => void;
+  onCreateNewProject?: () => void;
+  onOpenRecentProject?: (projectId: string) => void;
+  onRemoveRecentProject?: (projectId: string) => void;
 }
 
 const RIBBON_TABS: Array<{ id: RibbonSectionId; label: string }> = [
@@ -453,6 +466,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onShowAllLayers,
   onUnlockAllLayers,
   onOpenCommandPalette,
+  onOpenSymbolDesigner,
+  onInsertGostTable,
+  recentProjects = [],
+  lastSavedAt = null,
+  onSaveSessionNow,
+  onCreateNewProject,
+  onOpenRecentProject,
+  onRemoveRecentProject,
 }) => {
   const isDark = project.visualSettings.theme === 'dark';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -759,6 +780,28 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
               <div className="sm:col-span-8 p-2 overflow-y-auto divide-y divide-[var(--flux-line)]">
                 {menuCategory === 'file' && (
                   <div className="space-y-0.5 pb-1">
+                    {onSaveSessionNow && (
+                      <AppMenuActionRow
+                        icon={<Save className="w-4 h-4" />}
+                        title="Сохранить сессию проекта"
+                        subtitle={
+                          lastSavedAt
+                            ? `Автосохранение активно · ${new Date(lastSavedAt).toLocaleTimeString('ru-RU')}`
+                            : 'Зафиксировать проект в браузере и списке недавних'
+                        }
+                        testId="menu-save-session"
+                        onClick={() => runMenuAction(onSaveSessionNow)}
+                      />
+                    )}
+                    {onCreateNewProject && (
+                      <AppMenuActionRow
+                        icon={<FilePlus2 className="w-4 h-4" />}
+                        title="Новый проект (чистый шаблон ЩУ-ПВ1)"
+                        subtitle="Создать новый проект с сохранением текущего в недавних"
+                        testId="menu-new-project"
+                        onClick={() => runMenuAction(onCreateNewProject)}
+                      />
+                    )}
                     <AppMenuActionRow
                       icon={<Upload className="w-4 h-4" />}
                       title="Открыть проект E3 (.e3s / .e3d / XML / JSON)"
@@ -803,6 +846,69 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                       disabled={!activeSheet || project.sheets.length <= 1}
                       onClick={() => activeSheet && runMenuAction(() => onDeleteSheet(activeSheet.id))}
                     />
+
+                    {recentProjects.length > 0 && (
+                      <>
+                        <div className="my-1.5 border-t border-[var(--flux-line)]" />
+                        <div className="px-3 pt-1 pb-0.5 flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-wider text-[var(--flux-text-muted)]">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Clock className="w-3 h-3" />
+                            <span>Недавние проекты</span>
+                          </span>
+                          <span className="font-mono tabular-nums">{recentProjects.length}</span>
+                        </div>
+                        <div data-testid="recent-projects-list" className="space-y-0.5 px-1">
+                          {recentProjects.map((rp) => {
+                            const isCurrent = rp.id === project.id;
+                            return (
+                              <div
+                                key={rp.id}
+                                className={`group flex items-center justify-between gap-2 px-2 py-1.5 rounded text-[11.5px] transition-colors ${
+                                  isCurrent ? 'bg-[var(--flux-sel)]' : 'hover:bg-[var(--flux-hover)]'
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  data-testid={`recent-project-${rp.id}`}
+                                  onClick={() =>
+                                    runMenuAction(() => onOpenRecentProject?.(rp.id))
+                                  }
+                                  className="min-w-0 flex-1 text-left"
+                                >
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className="font-medium text-[var(--flux-text)] truncate">
+                                      {rp.name}
+                                    </span>
+                                    {isCurrent && (
+                                      <span className="text-[9.5px] px-1 rounded bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] font-mono shrink-0">
+                                        акт.
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10.5px] font-mono text-[var(--flux-text-muted)] truncate">
+                                    {rp.projectCode} · Rev {rp.revision} · {rp.sheetCount} л. · {rp.deviceCount} изд.
+                                  </div>
+                                </button>
+                                {onRemoveRecentProject && (
+                                  <button
+                                    type="button"
+                                    data-testid={`remove-recent-${rp.id}`}
+                                    aria-label={`Удалить ${rp.name} из недавних`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onRemoveRecentProject(rp.id);
+                                    }}
+                                    className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 hover:bg-[var(--flux-surface)] opacity-70 group-hover:opacity-100 shrink-0"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -1307,6 +1413,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                           testId="tool-offpage-btn"
                           onClick={() => onSetTool('offpage')}
                         />
+                        {onOpenSymbolDesigner && (
+                          <LargeRibbonBtn
+                            icon={<PenTool className="w-[17px] h-[17px]" />}
+                            label="Редактор УГО"
+                            title="Создать и нарисовать пользовательское УГО по сетке"
+                            accent
+                            testId="open-symbol-designer-btn"
+                            onClick={onOpenSymbolDesigner}
+                          />
+                        )}
                       </RibbonPanel>
 
                       <RibbonPanel title="Сетка и Шаг">
@@ -1400,6 +1516,25 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                           onClick={() => onSetTool('rect')}
                         />
                       </RibbonPanel>
+
+                      {onInsertGostTable && (
+                        <RibbonPanel title="Таблицы ГОСТ на лист">
+                          <LargeRibbonBtn
+                            icon={<Table2 className="w-[17px] h-[17px]" />}
+                            label="Таблица ПЭ3"
+                            title="Вставить автообновляемый перечень элементов ПЭ3 прямо на чертёж"
+                            testId="insert-bom-table-btn"
+                            onClick={() => onInsertGostTable('bom')}
+                          />
+                          <LargeRibbonBtn
+                            icon={<FileSpreadsheet className="w-[17px] h-[17px]" />}
+                            label="Каб. журнал"
+                            title="Вставить автообновляемую таблицу кабельного журнала на лист"
+                            testId="insert-cable-table-btn"
+                            onClick={() => onInsertGostTable('cables')}
+                          />
+                        </RibbonPanel>
+                      )}
 
                       <RibbonPanel title="Обозначения ГОСТ">
                         <RibbonStack>

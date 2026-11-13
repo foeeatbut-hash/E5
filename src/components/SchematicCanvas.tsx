@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Crosshair, Grid3X3, Layers, Lock, Magnet, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react';
+import { Crosshair, Grid3X3, Layers, Lock, Magnet, Maximize2, Minus, Plus, Ruler, Terminal, X } from 'lucide-react';
 import {
   countSheetLayerEntities,
   resolveCadLayers,
@@ -11,7 +11,15 @@ import {
   selectEntitiesInBox,
   type SelectionBox,
 } from '../core/cadSelection';
+import {
+  type CommandLineResolution,
+  type CommandPaletteItem,
+  filterCommandPaletteItems,
+  pushCommandHistory,
+  stepCommandHistory,
+} from '../core/commandPalette';
 import { resolveSchematicCssFont } from '../core/e3Catalog';
+import { buildGostTableRenderModel } from '../core/gostTables';
 import { getSheetRevisionLabel, hasSheetUncommittedChanges } from '../core/sheetRevisions';
 import {
   autoRouteOrthogonal,
@@ -140,6 +148,22 @@ interface SchematicCanvasProps {
   onCommitInPlaceWireNumber?: (wireId: string, nextWireNumber: string) => void;
   onCommitInPlaceAnnotationText?: (annId: string, nextText: string) => void;
   onCommitInPlaceStampCell?: (sheetId: string, fieldKey: StampFieldKey, nextValue: string) => void;
+  commandPaletteItems?: CommandPaletteItem[];
+  onExecuteCommandLine?: (rawCommand: string) => CommandLineResolution;
+}
+
+const CMD_HISTORY_STORAGE_KEY = 'e3promax_cmd_history_v1';
+
+function loadSavedCommandHistory(): string[] {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(CMD_HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
@@ -197,8 +221,135 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   onCommitInPlaceWireNumber,
   onCommitInPlaceAnnotationText,
   onCommitInPlaceStampCell,
+  commandPaletteItems = [],
+  onExecuteCommandLine,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [cmdValue, setCmdValue] = useState('');
+  const [cmdHistory, setCmdHistory] = useState<string[]>(() => loadSavedCommandHistory());
+  const [cmdHistIdx, setCmdHistIdx] = useState<number>(-1);
+  const [cmdSavedDraft, setCmdSavedDraft] = useState<string>('');
+  const [cmdFocused, setCmdFocused] = useState<boolean>(false);
+  const [cmdFeedback, setCmdFeedback] = useState<{
+    status: CommandLineResolution['status'];
+    text: string;
+  } | null>(null);
+  const cmdInputRef = useRef<HTMLInputElement | null>(null);
+  const cmdFeedbackTimerRef = useRef<number | null>(null);
+
+  const matchingCmdHints = useMemo(() => {
+    if (!cmdFocused || !cmdValue.trim() || commandPaletteItems.length === 0) return [];
+    return filterCommandPaletteItems(commandPaletteItems, cmdValue).slice(0, 5);
+  }, [cmdFocused, cmdValue, commandPaletteItems]);
+
+  const showCmdFeedback = useCallback(
+    (status: CommandLineResolution['status'], text: string) => {
+      if (cmdFeedbackTimerRef.current) {
+        window.clearTimeout(cmdFeedbackTimerRef.current);
+      }
+      setCmdFeedback({ status, text });
+      cmdFeedbackTimerRef.current = window.setTimeout(() => {
+        setCmdFeedback(null);
+      }, 3600);
+    },
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      if (cmdFeedbackTimerRef.current) window.clearTimeout(cmdFeedbackTimerRef.current);
+    };
+  }, []);
+
+  const executeCanvasCommand = useCallback(
+    (raw: string) => {
+      const trimmed = raw.trim();
+      if (!trimmed) return;
+      const nextHist = pushCommandHistory(cmdHistory, trimmed);
+      setCmdHistory(nextHist);
+      try {
+        window.localStorage?.setItem(CMD_HISTORY_STORAGE_KEY, JSON.stringify(nextHist));
+      } catch {
+        // Ignore storage failure
+      }
+      setCmdHistIdx(-1);
+      setCmdSavedDraft('');
+      setCmdValue('');
+      const res = onExecuteCommandLine?.(trimmed);
+      if (res) {
+        showCmdFeedback(res.status, res.message);
+      }
+    },
+    [cmdHistory, onExecuteCommandLine, showCmdFeedback]
+  );
+
+  const handleCmdKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (cmdValue.trim()) {
+          executeCanvasCommand(cmdValue);
+        }
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        const el = e.currentTarget;
+        const len = el.value.length;
+        const atEnd =
+          (el.selectionStart ?? len) === len && (el.selectionEnd ?? len) === len;
+        if (atEnd) {
+          e.preventDefault();
+          const step = stepCommandHistory(
+            cmdHistory,
+            cmdHistIdx,
+            'up',
+            cmdValue,
+            cmdSavedDraft
+          );
+          setCmdHistIdx(step.nextIndex);
+          setCmdValue(step.nextValue);
+          setCmdSavedDraft(step.nextSavedDraft);
+          window.requestAnimationFrame(() => {
+            el.setSelectionRange(step.nextValue.length, step.nextValue.length);
+          });
+        }
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        const el = e.currentTarget;
+        const len = el.value.length;
+        const atEnd =
+          (el.selectionStart ?? len) === len && (el.selectionEnd ?? len) === len;
+        if (atEnd && cmdHistIdx !== -1) {
+          e.preventDefault();
+          const step = stepCommandHistory(
+            cmdHistory,
+            cmdHistIdx,
+            'down',
+            cmdValue,
+            cmdSavedDraft
+          );
+          setCmdHistIdx(step.nextIndex);
+          setCmdValue(step.nextValue);
+          setCmdSavedDraft(step.nextSavedDraft);
+          window.requestAnimationFrame(() => {
+            el.setSelectionRange(step.nextValue.length, step.nextValue.length);
+          });
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setCmdValue('');
+        setCmdHistIdx(-1);
+        setCmdSavedDraft('');
+        setCmdFeedback(null);
+        e.currentTarget.blur();
+      }
+    },
+    [cmdHistory, cmdHistIdx, cmdSavedDraft, cmdValue, executeCanvasCommand]
+  );
   const [cursorPos, setCursorPos] = useState<{
     world: { x: number; y: number };
     screen: { x: number; y: number };
@@ -1748,6 +1899,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                     });
                   };
 
+                  if (ann.kind === 'bom_table' || ann.kind === 'cable_table') {
+                    return null;
+                  }
+
                   if (ann.kind === 'rect') {
                     return (
                       <g
@@ -2326,6 +2481,175 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               </g>
             )}
 
+            {/* Live GOST Tables (BOM / Cable Journal) rendered over wires & devices with opaque backing */}
+            {annotationsVisible && (
+              <g data-testid="layer-group-gost-tables">
+                {sheetAnnotations
+                  .filter((ann) => ann.kind === 'bom_table' || ann.kind === 'cable_table')
+                  .map((ann) => {
+                    const selected = selectedAnnotationIdSet.has(ann.id);
+                    const borderColor = selected
+                      ? annotationsLocked
+                        ? '#d97706'
+                        : 'var(--flux-accent)'
+                      : ann.color || 'var(--flux-text)';
+                    const inkColor = ann.color || 'var(--flux-text)';
+                    const annSw = Math.max(0.5, ann.strokeWidth ?? vs.annotationStrokeWidth ?? 1.4);
+                    const activeSw = selected ? Math.max(annSw + 0.8, 2.2) : annSw;
+                    const annCls = annotationsLocked ? 'cursor-default' : 'cursor-move';
+                    const table = buildGostTableRenderModel(ann, project);
+                    const cellFontSize = Math.max(8, ann.fontSize ? ann.fontSize * 0.8 : 9.5) * vs.fontScale;
+                    const gridStroke = Math.max(0.6, Number((annSw * 0.68).toFixed(2)));
+                    const bodyStartY = ann.y + table.titleHeight + table.headerHeight;
+                    const rowsToRender =
+                      table.rows.length > 0
+                        ? table.rows
+                        : [table.columns.map((_, ci) => (ci === 2 ? 'Нет позиций для отображения' : ''))];
+                    let colXAcc = ann.x;
+                    const colPositions = table.columns.map((c) => {
+                      const xStart = colXAcc;
+                      colXAcc += c.width;
+                      return { ...c, xStart };
+                    });
+                    return (
+                      <g
+                        key={ann.id}
+                        data-testid={`annotation-${ann.id}`}
+                        data-table-kind={table.kind}
+                        onMouseDown={(e) => handleAnnotationDown(e, ann)}
+                        className={annCls}
+                      >
+                        <rect
+                          x={ann.x}
+                          y={ann.y}
+                          width={table.width}
+                          height={table.height}
+                          fill="var(--flux-surface)"
+                          fillOpacity={0.98}
+                          stroke={borderColor}
+                          strokeWidth={activeSw}
+                        />
+                        <rect
+                          x={ann.x}
+                          y={ann.y}
+                          width={table.width}
+                          height={table.titleHeight}
+                          fill="var(--flux-bg)"
+                          stroke={inkColor}
+                          strokeWidth={gridStroke}
+                        />
+                        <text
+                          x={ann.x + table.width / 2}
+                          y={ann.y + table.titleHeight * 0.68}
+                          textAnchor="middle"
+                          fill={inkColor}
+                          fontSize={cellFontSize + 1}
+                          fontWeight={700}
+                          fontFamily={fontCss}
+                        >
+                          {table.title}
+                        </text>
+                        <rect
+                          x={ann.x}
+                          y={ann.y + table.titleHeight}
+                          width={table.width}
+                          height={table.headerHeight}
+                          fill="var(--flux-bg)"
+                          fillOpacity={0.7}
+                          stroke={inkColor}
+                          strokeWidth={gridStroke}
+                        />
+                        {colPositions.map((col, ci) => (
+                          <g key={col.key}>
+                            {ci > 0 && (
+                              <line
+                                x1={col.xStart}
+                                y1={ann.y + table.titleHeight}
+                                x2={col.xStart}
+                                y2={ann.y + table.height - (table.truncatedCount > 0 ? table.rowHeight : 0)}
+                                stroke={inkColor}
+                                strokeWidth={gridStroke}
+                              />
+                            )}
+                            <text
+                              x={col.xStart + col.width / 2}
+                              y={ann.y + table.titleHeight + table.headerHeight * 0.67}
+                              textAnchor="middle"
+                              fill={inkColor}
+                              fontSize={cellFontSize}
+                              fontWeight={600}
+                              fontFamily={fontCss}
+                            >
+                              {col.label}
+                            </text>
+                          </g>
+                        ))}
+                        {rowsToRender.map((row, rIdx) => {
+                          const ry = bodyStartY + rIdx * table.rowHeight;
+                          return (
+                            <g key={`row-${rIdx}`}>
+                              <line
+                                x1={ann.x}
+                                y1={ry + table.rowHeight}
+                                x2={ann.x + table.width}
+                                y2={ry + table.rowHeight}
+                                stroke={inkColor}
+                                strokeWidth={gridStroke}
+                              />
+                              {colPositions.map((col, ci) => {
+                                const rawVal = row[ci] || '';
+                                const maxChars = Math.max(3, Math.floor((col.width - 8) / (cellFontSize * 0.56)));
+                                const displayVal =
+                                  rawVal.length > maxChars
+                                    ? `${rawVal.slice(0, maxChars - 1)}…`
+                                    : rawVal;
+                                const tx =
+                                  col.align === 'center'
+                                    ? col.xStart + col.width / 2
+                                    : col.align === 'right'
+                                      ? col.xStart + col.width - 5
+                                      : col.xStart + 5;
+                                const anchor =
+                                  col.align === 'center'
+                                    ? 'middle'
+                                    : col.align === 'right'
+                                      ? 'end'
+                                      : 'start';
+                                return (
+                                  <text
+                                    key={`${rIdx}-${ci}`}
+                                    x={tx}
+                                    y={ry + table.rowHeight * 0.68}
+                                    textAnchor={anchor}
+                                    fill={inkColor}
+                                    fontSize={cellFontSize}
+                                    fontFamily={fontCss}
+                                  >
+                                    {displayVal}
+                                  </text>
+                                );
+                              })}
+                            </g>
+                          );
+                        })}
+                        {table.truncatedCount > 0 && (
+                          <text
+                            x={ann.x + 8}
+                            y={bodyStartY + rowsToRender.length * table.rowHeight + table.rowHeight * 0.66}
+                            fill="var(--flux-text-muted)"
+                            fontSize={cellFontSize}
+                            fontStyle="italic"
+                            fontFamily={fontCss}
+                          >
+                            {`… ещё строк: ${table.truncatedCount} (см. полную таблицу или измените лимит)`}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+              </g>
+            )}
+
             {/* AutoCAD Window (blue solid) / Crossing (green dashed) Marquee Selection */}
             {selectionBox && (
               <rect
@@ -2779,16 +3103,98 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       </div>
 
       {/* Compact CAD Canvas Footer Strip */}
-      <div className="no-print h-7 px-2 border-t border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-hidden select-none text-[11px]">
-        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden whitespace-nowrap font-mono tabular-nums text-[var(--flux-text-muted)]">
+      <div className="no-print relative h-7 px-2 border-t border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-visible select-none text-[11px]">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 font-mono tabular-nums text-[var(--flux-text-muted)]">
           <span data-testid="canvas-coords" className="shrink-0">
             X:{cursorWorld.x} Y:{cursorWorld.y}{isMultiViewport ? '' : ' мм'}
           </span>
           {sheet && !isMultiViewport && (
-            <span className="hidden lg:inline truncate">
+            <span className="hidden xl:inline shrink-0">
               · {sheet.format} ({sheet.width}×{sheet.height})
             </span>
           )}
+
+          {/* AutoCAD-style Command Line directly next to sheet format & before Grid/Snap/Guides/Crosshair */}
+          {(!isMultiViewport || viewportIndex === 0) && (
+            <div
+              data-testid="cad-command-bar"
+              onMouseDown={(e) => e.stopPropagation()}
+              className="relative flex items-center gap-1 flex-1 min-w-[160px] max-w-[360px] h-[22px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] focus-within:border-[var(--flux-accent)] transition-colors"
+            >
+              <button
+                type="button"
+                data-testid="cad-command-icon-btn"
+                title="Командная строка САПР (Enter — выполнить, ↑ в конце строки — история команд)"
+                aria-label="Фокус на командную строку"
+                onClick={() => cmdInputRef.current?.focus()}
+                className="inline-flex items-center justify-center text-[var(--flux-accent)] hover:text-[var(--flux-text)] shrink-0"
+              >
+                <Terminal className="w-3 h-3" />
+              </button>
+              <input
+                ref={cmdInputRef}
+                type="text"
+                data-testid={viewportIndex === 0 ? 'cad-command-input' : `cad-command-input-${viewportIndex}`}
+                value={cmdValue}
+                onChange={(e) => {
+                  setCmdValue(e.target.value);
+                  if (cmdHistIdx !== -1) setCmdHistIdx(-1);
+                }}
+                onFocus={() => setCmdFocused(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setCmdFocused(false), 120);
+                }}
+                onKeyDown={handleCmdKeyDown}
+                placeholder="Команда: НАЙТИ, ПРОВОД, СЕТКА…"
+                aria-label="Командная строка САПР"
+                className="w-full min-w-0 bg-transparent text-[11px] font-mono text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)]/70 focus:outline-none select-text"
+              />
+
+              {/* Command Feedback Echo Toast */}
+              {cmdFeedback && !matchingCmdHints.length && (
+                <div
+                  data-testid="cad-command-feedback"
+                  className={`absolute left-0 bottom-full mb-1 z-40 px-2 py-1 rounded border shadow-md text-[11px] font-sans whitespace-nowrap max-w-[380px] truncate ${
+                    cmdFeedback.status === 'ok'
+                      ? 'bg-[var(--flux-surface)] border-[var(--flux-accent)]/60 text-[var(--flux-text)]'
+                      : cmdFeedback.status === 'disabled'
+                        ? 'bg-[var(--flux-surface)] border-amber-500/60 text-amber-700 dark:text-amber-300'
+                        : 'bg-[var(--flux-surface)] border-rose-500/60 text-rose-700 dark:text-rose-300'
+                  }`}
+                >
+                  {cmdFeedback.text}
+                </div>
+              )}
+
+              {/* Autocomplete Hints Popover */}
+              {matchingCmdHints.length > 0 && (
+                <div
+                  data-testid="cad-command-suggestions"
+                  className="absolute left-0 bottom-full mb-1 z-40 w-[340px] max-w-[90vw] rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-lg overflow-hidden divide-y divide-[var(--flux-line)]/60 font-sans"
+                >
+                  {matchingCmdHints.map((hint) => (
+                    <button
+                      key={hint.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        executeCanvasCommand(hint.keywords[0] || hint.title);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between gap-2 text-[11px]"
+                    >
+                      <span className="text-[var(--flux-text)] truncate">{hint.title}</span>
+                      {hint.shortcut && (
+                        <kbd className="font-mono text-[9.5px] px-1 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text-muted)] shrink-0">
+                          {hint.shortcut}
+                        </kbd>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {totalSelectedCount > 1 && (
             <span
               data-testid="canvas-selection-count"

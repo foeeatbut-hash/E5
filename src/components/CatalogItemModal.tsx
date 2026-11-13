@@ -1,8 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Plus, Trash2, X } from 'lucide-react';
-import type { CatalogItem, DeviceCategory, E3Attribute, E3Pin, HvacStageRole } from '../core/e3Types';
+import { PenTool, Plus, RotateCcw, Trash2, X } from 'lucide-react';
+import type {
+  CatalogItem,
+  CustomSymbolSpec,
+  DeviceCategory,
+  E3Attribute,
+  E3Pin,
+  HvacStageRole,
+} from '../core/e3Types';
 import { HVAC_ROLE_LABELS } from '../core/hvacBuilder';
+import { SymbolDesignerModal, type SymbolGeometryResult } from './SymbolDesignerModal';
 
 interface CatalogItemModalProps {
   open: boolean;
@@ -79,6 +87,11 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
   const [attributes, setAttributes] = useState<E3Attribute[]>([]);
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
+  const [symWidth, setSymWidth] = useState(120);
+  const [symHeight, setSymHeight] = useState(160);
+  const [pins, setPins] = useState<Omit<E3Pin, 'id'>[]>(() => buildDefaultPins('fan'));
+  const [customSymbol, setCustomSymbol] = useState<CustomSymbolSpec | undefined>(undefined);
+  const [symbolEditorOpen, setSymbolEditorOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -99,6 +112,10 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
       setVoltage(editingItem.fluxMatch?.voltage || '380V');
       setExZone(editingItem.fluxMatch?.exZone || 'non-Ex');
       setAttributes(structuredClone(editingItem.defaultAttributes));
+      setSymWidth(editingItem.width);
+      setSymHeight(editingItem.height);
+      setPins(structuredClone(editingItem.pins));
+      setCustomSymbol(editingItem.customSymbol ? structuredClone(editingItem.customSymbol) : undefined);
     } else {
       setCategory('fan');
       setStageRole('supply_fan');
@@ -119,26 +136,30 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
         { name: 'Функция контроллера', value: 'Сигнализация, Управление', owner: '', conflict: 'flux' },
         { name: 'Степень защиты', value: 'IP54', owner: '', conflict: 'flux' },
       ]);
+      setSymWidth(120);
+      setSymHeight(160);
+      setPins(buildDefaultPins('fan'));
+      setCustomSymbol(undefined);
     }
     setNewAttrName('');
     setNewAttrValue('');
+    setSymbolEditorOpen(false);
   }, [open, editingItem]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || symbolEditorOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, symbolEditorOpen, onClose]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!componentName.trim()) return;
-    const isHvac = ['damper', 'filter', 'heater', 'cooler', 'fan'].includes(category);
-    const width = editingItem?.width || (category === 'kip_circle' ? 90 : isHvac ? 120 : 120);
-    const height = editingItem?.height || (category === 'kip_circle' ? 110 : isHvac ? 160 : 100);
+    const width = symWidth || 120;
+    const height = symHeight || 100;
     const pKw = Number(powerKw.replace(',', '.'));
     const nextAttrs = [...attributes];
     if (powerKw.trim()) {
@@ -156,8 +177,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
       nextAttrs.push({ name: 'Исполнение', value: exZone, owner: '', conflict: 'flux' });
     }
 
-    const pins =
-      editingItem && editingItem.category === category ? editingItem.pins : buildDefaultPins(category);
+    const finalPins = pins.length > 0 ? pins : buildDefaultPins(category);
 
     const item: CatalogItem = {
       id: editingItem?.id || `custom-${Date.now().toString(36)}`,
@@ -170,7 +190,8 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
       e3BlockName: e3BlockName.trim() || `FSA_${(defaultPrefix || 'DEV').toUpperCase()}`,
       width,
       height,
-      pins,
+      pins: finalPins,
+      customSymbol,
       defaultAttributes: nextAttrs,
       isCustom: true,
       ioProfile: { di, do: doCnt, ai, ao },
@@ -249,7 +270,16 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               <select
                 id="cat-type"
                 value={category}
-                onChange={(e) => setCategory(e.target.value as DeviceCategory)}
+                onChange={(e) => {
+                  const nextCat = e.target.value as DeviceCategory;
+                  setCategory(nextCat);
+                  if (!customSymbol && (!editingItem || editingItem.category !== nextCat)) {
+                    const isHvac = ['damper', 'filter', 'heater', 'cooler', 'fan'].includes(nextCat);
+                    setSymWidth(nextCat === 'kip_circle' ? 90 : 120);
+                    setSymHeight(nextCat === 'kip_circle' ? 110 : isHvac ? 160 : 100);
+                    setPins(buildDefaultPins(nextCat));
+                  }
+                }}
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[var(--flux-text)]"
               >
                 {CATEGORY_OPTIONS.map((opt) => (
@@ -258,6 +288,40 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                   </option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          <div className="px-3 py-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] flex flex-wrap items-center justify-between gap-2">
+            <div className="space-y-0.5 text-[11px]">
+              <div className="font-medium text-[var(--flux-text)]">
+                {customSymbol
+                  ? `Собственная векторная графика УГО (${customSymbol.shapes.length} прим.)`
+                  : 'Используется стандартное УГО выбранной категории'}
+              </div>
+              <div className="font-mono text-[10.5px] text-[var(--flux-text-muted)]">
+                Размер {symWidth}×{symHeight} мм · Выводов: {pins.length}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {customSymbol && (
+                <button
+                  type="button"
+                  onClick={() => setCustomSymbol(undefined)}
+                  className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-line)] text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Сбросить</span>
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="catalog-edit-symbol-btn"
+                onClick={() => setSymbolEditorOpen(true)}
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[11px] font-medium text-[var(--flux-text)] transition-colors"
+              >
+                <PenTool className="w-3 h-3" />
+                <span>Нарисовать УГО и выводы…</span>
+              </button>
             </div>
           </div>
 
@@ -494,6 +558,23 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
           </div>
             </form>
           </motion.div>
+          <SymbolDesignerModal
+            open={symbolEditorOpen}
+            mode="geometry"
+            initialGeometry={{
+              width: symWidth,
+              height: symHeight,
+              customSymbol,
+              pins,
+            }}
+            onClose={() => setSymbolEditorOpen(false)}
+            onApplyGeometry={(res: SymbolGeometryResult) => {
+              setSymWidth(res.width);
+              setSymHeight(res.height);
+              setCustomSymbol(res.customSymbol);
+              setPins(res.pins);
+            }}
+          />
         </motion.div>
       )}
     </AnimatePresence>
