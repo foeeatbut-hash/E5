@@ -1,9 +1,12 @@
+import { CAD_LAYER_ORDER, resolveCadLayers } from './cadLayers.ts';
+import { exportSheetsToDxf } from './dxfExporter.ts';
 import { E3_CATALOG } from './e3Catalog.ts';
 import { DEFAULT_VISUAL_SETTINGS } from './e3Seed.ts';
 import type {
   AnnotationKind,
   BomRow,
   CableJournalRow,
+  CadLayerId,
   E3Annotation,
   E3Attribute,
   E3Cable,
@@ -61,6 +64,13 @@ export interface RoutingRect {
   height: number;
 }
 
+export interface WireSegment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
 function segmentIntersectsRect(
   a: { x: number; y: number },
   b: { x: number; y: number },
@@ -80,13 +90,14 @@ function segmentIntersectsRect(
 
 function pathHitsAnyObstacle(
   pts: Array<{ x: number; y: number }>,
-  obstacles: RoutingRect[]
+  obstacles: RoutingRect[],
+  pad = 6
 ): RoutingRect | undefined {
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i];
     const b = pts[i + 1];
     for (const obs of obstacles) {
-      if (segmentIntersectsRect(a, b, obs, 6)) {
+      if (segmentIntersectsRect(a, b, obs, pad)) {
         return obs;
       }
     }
@@ -94,25 +105,146 @@ function pathHitsAnyObstacle(
   return undefined;
 }
 
+export function extractWireSegments(waypoints: Array<{ x: number; y: number }>): WireSegment[] {
+  const segs: WireSegment[] = [];
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = waypoints[i];
+    const b = waypoints[i + 1];
+    if (a.x !== b.x || a.y !== b.y) {
+      segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+    }
+  }
+  return segs;
+}
+
+/** Computes collinear overlap length and perpendicular crossings against existing wires. */
+function measureWireConflicts(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  occupied: WireSegment[]
+): { overlapLen: number; crossings: number } {
+  let overlapLen = 0;
+  let crossings = 0;
+  const isHoriz = Math.abs(a.y - b.y) < 0.5;
+  const minX = Math.min(a.x, b.x);
+  const maxX = Math.max(a.x, b.x);
+  const minY = Math.min(a.y, b.y);
+  const maxY = Math.max(a.y, b.y);
+
+  for (const s of occupied) {
+    const sHoriz = Math.abs(s.y1 - s.y2) < 0.5;
+    const sMinX = Math.min(s.x1, s.x2);
+    const sMaxX = Math.max(s.x1, s.x2);
+    const sMinY = Math.min(s.y1, s.y2);
+    const sMaxY = Math.max(s.y1, s.y2);
+
+    if (isHoriz && sHoriz) {
+      if (Math.abs(a.y - s.y1) < 5) {
+        const ov = Math.min(maxX, sMaxX) - Math.max(minX, sMinX);
+        if (ov > 0) overlapLen += ov;
+      }
+    } else if (!isHoriz && !sHoriz) {
+      if (Math.abs(a.x - s.x1) < 5) {
+        const ov = Math.min(maxY, sMaxY) - Math.max(minY, sMinY);
+        if (ov > 0) overlapLen += ov;
+      }
+    } else if (isHoriz && !sHoriz) {
+      if (s.x1 > minX + 1 && s.x1 < maxX - 1 && a.y > sMinY + 1 && a.y < sMaxY - 1) {
+        crossings += 1;
+      }
+    } else if (!isHoriz && sHoriz) {
+      if (a.x > sMinX + 1 && a.x < sMaxX - 1 && s.y1 > minY + 1 && s.y1 < maxY - 1) {
+        crossings += 1;
+      }
+    }
+  }
+
+  return { overlapLen, crossings };
+}
+
+class MinHeap<T extends { f: number }> {
+  private data: T[] = [];
+  get size(): number {
+    return this.data.length;
+  }
+  push(item: T): void {
+    const arr = this.data;
+    arr.push(item);
+    let idx = arr.length - 1;
+    while (idx > 0) {
+      const parent = (idx - 1) >> 1;
+      if (arr[parent].f <= arr[idx].f) break;
+      const tmp = arr[parent];
+      arr[parent] = arr[idx];
+      arr[idx] = tmp;
+      idx = parent;
+    }
+  }
+  pop(): T | undefined {
+    const arr = this.data;
+    if (arr.length === 0) return undefined;
+    const top = arr[0];
+    const last = arr.pop()!;
+    if (arr.length > 0) {
+      arr[0] = last;
+      let idx = 0;
+      const n = arr.length;
+      while (true) {
+        const left = (idx << 1) + 1;
+        const right = left + 1;
+        let smallest = idx;
+        if (left < n && arr[left].f < arr[smallest].f) smallest = left;
+        if (right < n && arr[right].f < arr[smallest].f) smallest = right;
+        if (smallest === idx) break;
+        const tmp = arr[idx];
+        arr[idx] = arr[smallest];
+        arr[smallest] = tmp;
+        idx = smallest;
+      }
+    }
+    return top;
+  }
+}
+
+export interface AutoRouteEndpoint {
+  x: number;
+  y: number;
+  direction: PinDirection;
+  deviceId?: string;
+}
+
 export function autoRouteOrthogonal(
-  p1: { x: number; y: number; direction: PinDirection },
-  p2: { x: number; y: number; direction: PinDirection },
+  p1: AutoRouteEndpoint,
+  p2: AutoRouteEndpoint,
   stub = 20,
   obstacles: RoutingRect[] = [],
-  laneOffset = 0
+  laneOffset = 0,
+  occupiedSegments: WireSegment[] = []
 ): Array<{ x: number; y: number }> {
   const step = Math.max(12, stub);
-  const isHoriz1 = p1.direction === 'left' || p1.direction === 'right';
-  const isHoriz2 = p2.direction === 'left' || p2.direction === 'right';
 
-  // 1. Direct straight line when facing pins are colinear (no useless zigzags)
+  // Separate interior check for endpoint devices (allowed only to touch at pin exit/entry) vs external obstacles
+  const externalObstacles = obstacles.filter(
+    (o) => !o.id || (o.id !== p1.deviceId && o.id !== p2.deviceId)
+  );
+  const endpointObstacles = obstacles.filter(
+    (o) => o.id && (o.id === p1.deviceId || o.id === p2.deviceId)
+  );
+
+  // 1. Direct straight colinear line if completely clear of obstacles AND wire overlaps
   if (
     ((p1.direction === 'right' && p2.direction === 'left' && p2.x >= p1.x) ||
       (p1.direction === 'left' && p2.direction === 'right' && p2.x <= p1.x)) &&
     Math.abs(p1.y - p2.y) <= 2
   ) {
     const direct = [{ x: p1.x, y: p1.y }, { x: p2.x, y: p1.y }];
-    if (!pathHitsAnyObstacle(direct, obstacles)) return deduplicatePoints(direct);
+    if (
+      !pathHitsAnyObstacle(direct, externalObstacles, 6) &&
+      !pathHitsAnyObstacle(direct, endpointObstacles, -2) &&
+      measureWireConflicts(direct[0], direct[1], occupiedSegments).overlapLen === 0
+    ) {
+      return deduplicatePoints(direct);
+    }
   }
   if (
     ((p1.direction === 'bottom' && p2.direction === 'top' && p2.y >= p1.y) ||
@@ -120,93 +252,249 @@ export function autoRouteOrthogonal(
     Math.abs(p1.x - p2.x) <= 2
   ) {
     const direct = [{ x: p1.x, y: p1.y }, { x: p1.x, y: p2.y }];
-    if (!pathHitsAnyObstacle(direct, obstacles)) return deduplicatePoints(direct);
-  }
-
-  // 2. Clean 1-bend L-route for perpendicular facing pins in forward quadrant
-  if (isHoriz1 && !isHoriz2) {
-    const forwardX = p1.direction === 'right' ? p2.x >= p1.x + 8 : p2.x <= p1.x - 8;
-    const forwardY = p2.direction === 'top' ? p1.y <= p2.y - 8 : p1.y >= p2.y + 8;
-    if (forwardX && forwardY) {
-      const lRoute = [{ x: p1.x, y: p1.y }, { x: p2.x, y: p1.y }, { x: p2.x, y: p2.y }];
-      if (!pathHitsAnyObstacle(lRoute, obstacles)) return deduplicatePoints(lRoute);
-    }
-  } else if (!isHoriz1 && isHoriz2) {
-    const forwardY = p1.direction === 'bottom' ? p2.y >= p1.y + 8 : p2.y <= p1.y - 8;
-    const forwardX = p2.direction === 'left' ? p1.x <= p2.x - 8 : p1.x >= p2.x + 8;
-    if (forwardX && forwardY) {
-      const lRoute = [{ x: p1.x, y: p1.y }, { x: p1.x, y: p2.y }, { x: p2.x, y: p2.y }];
-      if (!pathHitsAnyObstacle(lRoute, obstacles)) return deduplicatePoints(lRoute);
+    if (
+      !pathHitsAnyObstacle(direct, externalObstacles, 6) &&
+      !pathHitsAnyObstacle(direct, endpointObstacles, -2) &&
+      measureWireConflicts(direct[0], direct[1], occupiedSegments).overlapLen === 0
+    ) {
+      return deduplicatePoints(direct);
     }
   }
 
-  const offset = (p: { x: number; y: number; direction: PinDirection }) => {
-    if (p.direction === 'top') return { x: p.x, y: p.y - step };
-    if (p.direction === 'bottom') return { x: p.x, y: p.y + step };
-    if (p.direction === 'left') return { x: p.x - step, y: p.y };
-    return { x: p.x + step, y: p.y };
-  };
+  // Filter nearby obstacles if sheet is very crowded so A* remains sub-millisecond
+  const margin = 420;
+  const minBoxX = Math.min(p1.x, p2.x) - margin;
+  const maxBoxX = Math.max(p1.x, p2.x) + margin;
+  const minBoxY = Math.min(p1.y, p2.y) - margin;
+  const maxBoxY = Math.max(p1.y, p2.y) + margin;
+  const localObstacles =
+    obstacles.length > 35
+      ? obstacles.filter(
+          (o) =>
+            o.x + o.width >= minBoxX &&
+            o.x <= maxBoxX &&
+            o.y + o.height >= minBoxY &&
+            o.y <= maxBoxY
+        )
+      : obstacles;
 
-  const s1 = offset(p1);
-  const s2 = offset(p2);
-  let midX = Math.round((s1.x + s2.x) / 2) + laneOffset;
-  let midY = Math.round((s1.y + s2.y) / 2) + laneOffset;
+  // Build visibility grid coordinates with parallel bus channel tracks (every 14px)
+  const rawXs: number[] = [p1.x, p2.x];
+  const rawYs: number[] = [p1.y, p2.y];
 
-  const buildStandard = (mx: number, my: number): Array<{ x: number; y: number }> => {
-    const pts: Array<{ x: number; y: number }> = [{ x: p1.x, y: p1.y }, s1];
-    if (isHoriz1 && isHoriz2) {
-      pts.push({ x: mx, y: s1.y }, { x: mx, y: s2.y });
-    } else if (!isHoriz1 && !isHoriz2) {
-      pts.push({ x: s1.x, y: my }, { x: s2.x, y: my });
-    } else if (isHoriz1) {
-      pts.push({ x: s2.x, y: s1.y });
-    } else {
-      pts.push({ x: s1.x, y: s2.y });
+  const pushExitTracks = (pt: AutoRouteEndpoint) => {
+    const offsets = [step, step + 14, step + 28, step + 42, step + 56];
+    for (const d of offsets) {
+      if (pt.direction === 'left') rawXs.push(pt.x - d);
+      else if (pt.direction === 'right') rawXs.push(pt.x + d);
+      else if (pt.direction === 'top') rawYs.push(pt.y - d);
+      else rawYs.push(pt.y + d);
     }
-    pts.push(s2, { x: p2.x, y: p2.y });
-    return deduplicatePoints(pts);
+  };
+  pushExitTracks(p1);
+  pushExitTracks(p2);
+
+  const midX = Math.round((p1.x + p2.x) / 2) + laneOffset;
+  const midY = Math.round((p1.y + p2.y) / 2) + laneOffset;
+  rawXs.push(midX, midX - 14, midX + 14, midX - 28, midX + 28);
+  rawYs.push(midY, midY - 14, midY + 14, midY - 28, midY + 28);
+
+  const channelOffsets = [14, 28, 42, 56];
+  for (const obs of localObstacles) {
+    for (const c of channelOffsets) {
+      rawXs.push(obs.x - c, obs.x + obs.width + c);
+      rawYs.push(obs.y - c, obs.y + obs.height + c);
+    }
+  }
+
+  const dedupCoordList = (vals: number[], anchors: number[]): number[] => {
+    const sorted = Array.from(new Set(vals.map((v) => Math.round(v)))).sort((a, b) => a - b);
+    const out: number[] = [];
+    for (const v of sorted) {
+      const isAnchor = anchors.some((a) => Math.abs(v - Math.round(a)) <= 1);
+      const prev = out[out.length - 1];
+      if (prev === undefined || isAnchor || v - prev >= 6) {
+        out.push(v);
+      }
+    }
+    return out;
   };
 
-  let candidate = buildStandard(midX, midY);
-  const hit = pathHitsAnyObstacle(candidate, obstacles);
-  if (hit) {
-    if (isHoriz1 && isHoriz2) {
-      // Try routing above or below the blocking device
-      const topLane = hit.y - 24 - Math.abs(laneOffset);
-      const botLane = hit.y + hit.height + 24 + Math.abs(laneOffset);
-      const laneY = Math.abs(s1.y - topLane) <= Math.abs(s1.y - botLane) ? topLane : botLane;
-      candidate = deduplicatePoints([
-        { x: p1.x, y: p1.y },
-        s1,
-        { x: s1.x, y: laneY },
-        { x: s2.x, y: laneY },
-        s2,
-        { x: p2.x, y: p2.y },
-      ]);
-    } else {
-      // Shift vertical/horizontal trunk outside obstacle bounds
-      const leftLane = hit.x - 24 - Math.abs(laneOffset);
-      const rightLane = hit.x + hit.width + 24 + Math.abs(laneOffset);
-      const altX = Math.abs(s1.x - leftLane) <= Math.abs(s1.x - rightLane) ? leftLane : rightLane;
-      const topLane = hit.y - 24 - Math.abs(laneOffset);
-      const botLane = hit.y + hit.height + 24 + Math.abs(laneOffset);
-      const altY = Math.abs(s1.y - topLane) <= Math.abs(s1.y - botLane) ? topLane : botLane;
-      if (!isHoriz1 && !isHoriz2) {
-        candidate = deduplicatePoints([
-          { x: p1.x, y: p1.y },
-          s1,
-          { x: altX, y: s1.y },
-          { x: altX, y: s2.y },
-          s2,
-          { x: p2.x, y: p2.y },
-        ]);
-      } else {
-        candidate = buildStandard(altX, altY);
+  const xs = dedupCoordList(rawXs, [p1.x, p2.x]);
+  const ys = dedupCoordList(rawYs, [p1.y, p2.y]);
+
+  const startXi = xs.findIndex((x) => Math.abs(x - Math.round(p1.x)) <= 1);
+  const startYi = ys.findIndex((y) => Math.abs(y - Math.round(p1.y)) <= 1);
+  const endXi = xs.findIndex((x) => Math.abs(x - Math.round(p2.x)) <= 1);
+  const endYi = ys.findIndex((y) => Math.abs(y - Math.round(p2.y)) <= 1);
+
+  if (startXi < 0 || startYi < 0 || endXi < 0 || endYi < 0) {
+    return deduplicatePoints([{ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }]);
+  }
+
+  // Allowed pin-exit direction check: leaving p1 or entering p2 must move cleanly along pin axis
+  const isWrongExitFromPin = (pt: AutoRouteEndpoint, nx: number, ny: number): boolean => {
+    if (pt.direction === 'left') return nx >= pt.x || Math.abs(ny - pt.y) > 1;
+    if (pt.direction === 'right') return nx <= pt.x || Math.abs(ny - pt.y) > 1;
+    if (pt.direction === 'top') return ny >= pt.y || Math.abs(nx - pt.x) > 1;
+    if (pt.direction === 'bottom') return ny <= pt.y || Math.abs(nx - pt.x) > 1;
+    return false;
+  };
+
+  const W = xs.length;
+  const H = ys.length;
+  // State index = (yi * W + xi) * 3 + dir (0 = horiz, 1 = vert, 2 = start)
+  const totalStates = W * H * 3;
+  const gScore = new Float64Array(totalStates);
+  gScore.fill(Infinity);
+  const parent = new Int32Array(totalStates);
+  parent.fill(-1);
+
+  const startState = (startYi * W + startXi) * 3 + 2;
+  gScore[startState] = 0;
+
+  const heap = new MinHeap<{ s: number; f: number }>();
+  heap.push({
+    s: startState,
+    f: Math.abs(xs[endXi] - xs[startXi]) + Math.abs(ys[endYi] - ys[startYi]),
+  });
+
+  const dirs: Array<[number, number, number]> = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 1],
+    [0, -1, 1],
+  ];
+
+  let bestGoalState = -1;
+  let bestGoalCost = Infinity;
+  let expanded = 0;
+  const maxExpand = 18000;
+
+  while (heap.size > 0 && expanded < maxExpand) {
+    const cur = heap.pop()!;
+    const curG = gScore[cur.s];
+    if (cur.f > bestGoalCost + 1) break;
+    expanded += 1;
+
+    const lastDir = cur.s % 3;
+    const cellIdx = (cur.s - lastDir) / 3;
+    const xi = cellIdx % W;
+    const yi = (cellIdx - xi) / W;
+
+    if (xi === endXi && yi === endYi) {
+      if (curG < bestGoalCost) {
+        bestGoalCost = curG;
+        bestGoalState = cur.s;
+      }
+      continue;
+    }
+
+    const ax = xs[xi];
+    const ay = ys[yi];
+    const atStartPin = xi === startXi && yi === startYi;
+
+    for (const [dx, dy, nextDir] of dirs) {
+      const nxi = xi + dx;
+      const nyi = yi + dy;
+      if (nxi < 0 || nxi >= W || nyi < 0 || nyi >= H) continue;
+      // Don't reverse 180 deg directly along same axis
+      if (lastDir !== 2 && lastDir === nextDir && !atStartPin) {
+        const prevState = parent[cur.s];
+        if (prevState >= 0) {
+          const pCell = Math.floor(prevState / 3);
+          const pxi = pCell % W;
+          const pyi = (pCell - pxi) / W;
+          if (pxi === nxi && pyi === nyi) continue;
+        }
+      }
+
+      const bx = xs[nxi];
+      const by = ys[nyi];
+      const touchesStart = atStartPin;
+      const touchesEnd = nxi === endXi && nyi === endYi;
+
+      // Enforce pin direction orientation on exit/entry so wires exit cleanly out of pins
+      if (touchesStart && isWrongExitFromPin(p1, bx, by)) continue;
+      if (touchesEnd && isWrongExitFromPin(p2, ax, ay)) continue;
+
+      // Obstacle intersection penalty / block
+      let obsPenalty = 0;
+      const segA = { x: ax, y: ay };
+      const segB = { x: bx, y: by };
+
+      for (const obs of localObstacles) {
+        const isStartDev = obs.id && obs.id === p1.deviceId && touchesStart;
+        const isEndDev = obs.id && obs.id === p2.deviceId && touchesEnd;
+        const pad = isStartDev || isEndDev ? -2 : 7;
+        if (segmentIntersectsRect(segA, segB, obs, pad)) {
+          obsPenalty += 60000;
+        }
+      }
+
+      // Wire-to-wire separation penalty (anti-merging)
+      const { overlapLen, crossings } =
+        occupiedSegments.length > 0
+          ? measureWireConflicts(segA, segB, occupiedSegments)
+          : { overlapLen: 0, crossings: 0 };
+
+      const segLen = Math.abs(bx - ax) + Math.abs(by - ay);
+      const bendPenalty = lastDir !== 2 && lastDir !== nextDir ? 24 : 0;
+      const wirePenalty = overlapLen > 0 ? 9000 + overlapLen * 120 : 0;
+      const crossPenalty = crossings * 55;
+
+      const nextG = curG + segLen + bendPenalty + wirePenalty + crossPenalty + obsPenalty;
+      const nextState = (nyi * W + nxi) * 3 + nextDir;
+      if (nextG < gScore[nextState]) {
+        gScore[nextState] = nextG;
+        parent[nextState] = cur.s;
+        const h = Math.abs(xs[endXi] - bx) + Math.abs(ys[endYi] - by);
+        heap.push({ s: nextState, f: nextG + h });
       }
     }
   }
 
-  return simplifyColinearPoints(candidate);
+  if (bestGoalState >= 0) {
+    const rawPts: Array<{ x: number; y: number }> = [];
+    let s = bestGoalState;
+    while (s >= 0) {
+      const dir = s % 3;
+      const cell = (s - dir) / 3;
+      const xi = cell % W;
+      const yi = (cell - xi) / W;
+      rawPts.push({ x: xs[xi], y: ys[yi] });
+      s = parent[s];
+    }
+    rawPts.reverse();
+    // Snap exact endpoints in case rounding shifted by 1px
+    rawPts[0] = { x: p1.x, y: p1.y };
+    rawPts[rawPts.length - 1] = { x: p2.x, y: p2.y };
+    return simplifyColinearPoints(deduplicatePoints(rawPts));
+  }
+
+  // Fallback orthogonal route if graph search couldn't finish
+  const offsetPt = (pt: AutoRouteEndpoint) => {
+    if (pt.direction === 'top') return { x: pt.x, y: pt.y - step };
+    if (pt.direction === 'bottom') return { x: pt.x, y: pt.y + step };
+    if (pt.direction === 'left') return { x: pt.x - step, y: pt.y };
+    return { x: pt.x + step, y: pt.y };
+  };
+  const s1 = offsetPt(p1);
+  const s2 = offsetPt(p2);
+  const pts: Array<{ x: number; y: number }> = [{ x: p1.x, y: p1.y }, s1];
+  const isH1 = p1.direction === 'left' || p1.direction === 'right';
+  const isH2 = p2.direction === 'left' || p2.direction === 'right';
+  if (isH1 && isH2) {
+    pts.push({ x: midX, y: s1.y }, { x: midX, y: s2.y });
+  } else if (!isH1 && !isH2) {
+    pts.push({ x: s1.x, y: midY }, { x: s2.x, y: midY });
+  } else if (isH1) {
+    pts.push({ x: s2.x, y: s1.y });
+  } else {
+    pts.push({ x: s1.x, y: s2.y });
+  }
+  pts.push(s2, { x: p2.x, y: p2.y });
+  return simplifyColinearPoints(deduplicatePoints(pts));
 }
 
 function simplifyColinearPoints(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
@@ -226,7 +514,72 @@ function simplifyColinearPoints(points: Array<{ x: number; y: number }>): Array<
   return out;
 }
 
-/** Re-routes all wires on a sheet with device collision avoidance and non-overlapping trunk lanes. */
+/** Re-routes all wires attached to one or more moved/updated devices, preserving stationary wire separation. */
+export function rerouteAttachedWires(
+  movedDeviceIds: string | string[],
+  allDevices: E3Device[],
+  allWires: E3Wire[],
+  stub = 20
+): E3Wire[] {
+  const movedSet = new Set(Array.isArray(movedDeviceIds) ? movedDeviceIds : [movedDeviceIds]);
+  const devMap = new Map(allDevices.map((d) => [d.id, d]));
+
+  // Seed occupied segments from stationary wires on affected sheets
+  const affectedSheets = new Set<string>();
+  for (const w of allWires) {
+    if (movedSet.has(w.fromDeviceId) || movedSet.has(w.toDeviceId)) {
+      affectedSheets.add(w.sheetId);
+    }
+  }
+  if (affectedSheets.size === 0) return allWires;
+
+  const occupiedBySheet = new Map<string, WireSegment[]>();
+  const obstaclesBySheet = new Map<string, RoutingRect[]>();
+  for (const shId of affectedSheets) {
+    const sheetObs = allDevices
+      .filter((d) => d.sheetId === shId && d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
+      .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
+    obstaclesBySheet.set(shId, sheetObs);
+
+    const occ: WireSegment[] = [];
+    for (const w of allWires) {
+      if (w.sheetId !== shId) continue;
+      if (movedSet.has(w.fromDeviceId) || movedSet.has(w.toDeviceId)) continue;
+      occ.push(...extractWireSegments(w.waypoints));
+    }
+    occupiedBySheet.set(shId, occ);
+  }
+
+  // Determine deterministic routing order for attached wires so parallel phase bundles stay crisp
+  const attachedWires = allWires
+    .filter((w) => movedSet.has(w.fromDeviceId) || movedSet.has(w.toDeviceId))
+    .sort((a, b) => a.id.localeCompare(b.id, 'ru', { numeric: true }));
+
+  const routedById = new Map<string, Array<{ x: number; y: number }>>();
+  for (const w of attachedWires) {
+    const d1 = devMap.get(w.fromDeviceId);
+    const d2 = devMap.get(w.toDeviceId);
+    const p1 = d1?.pins.find((p) => p.id === w.fromPinId);
+    const p2 = d2?.pins.find((p) => p.id === w.toPinId);
+    if (!d1 || !d2 || !p1 || !p2) continue;
+
+    const abs1: AutoRouteEndpoint = { ...getAbsolutePinPos(d1, p1), deviceId: d1.id };
+    const abs2: AutoRouteEndpoint = { ...getAbsolutePinPos(d2, p2), deviceId: d2.id };
+    const occ = occupiedBySheet.get(w.sheetId) || [];
+    const obs = obstaclesBySheet.get(w.sheetId) || [];
+    const pts = autoRouteOrthogonal(abs1, abs2, stub, obs, 0, occ);
+    routedById.set(w.id, pts);
+    occ.push(...extractWireSegments(pts));
+    occupiedBySheet.set(w.sheetId, occ);
+  }
+
+  return allWires.map((w) => {
+    const nextPts = routedById.get(w.id);
+    return nextPts ? { ...w, waypoints: nextPts } : w;
+  });
+}
+
+/** Re-routes all wires on a sheet sequentially with full device avoidance & non-overlapping channels. */
 export function routeSheetWiresCleanly(
   devices: E3Device[],
   wires: E3Wire[],
@@ -237,10 +590,17 @@ export function routeSheetWiresCleanly(
     (d) => d.sheetId === targetSheetId && d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix'
   );
   const devMap = new Map(sheetDevices.map((d) => [d.id, d]));
-  const laneStep = Math.max(8, Math.round(gridSize * 0.6));
-  const usedMidKeys = new Map<string, number>();
+  const obstacles: RoutingRect[] = sheetDevices.map((d) => ({
+    id: d.id,
+    x: d.x,
+    y: d.y,
+    width: d.width,
+    height: d.height,
+  }));
+  const occupied: WireSegment[] = [];
+  const laneStep = Math.max(12, Math.round(gridSize * 0.7));
 
-  return wires.map((w) => {
+  return wires.map((w, idx) => {
     if (w.sheetId !== targetSheetId) return w;
     const d1 = devMap.get(w.fromDeviceId);
     const d2 = devMap.get(w.toDeviceId);
@@ -248,20 +608,15 @@ export function routeSheetWiresCleanly(
     const p2 = d2?.pins.find((p) => p.id === w.toPinId);
     if (!d1 || !d2 || !p1 || !p2) return w;
 
-    const abs1 = getAbsolutePinPos(d1, p1);
-    const abs2 = getAbsolutePinPos(d2, p2);
-    const bucketKey = `${Math.round((abs1.x + abs2.x) / 80)}:${Math.round((abs1.y + abs2.y) / 80)}:${abs1.direction}:${abs2.direction}`;
-    const idxInBucket = usedMidKeys.get(bucketKey) || 0;
-    usedMidKeys.set(bucketKey, idxInBucket + 1);
-    const laneOffset = idxInBucket === 0 ? 0 : (idxInBucket % 2 === 1 ? 1 : -1) * Math.ceil(idxInBucket / 2) * laneStep;
-
-    const obstacles: RoutingRect[] = sheetDevices
-      .filter((d) => d.id !== d1.id && d.id !== d2.id)
-      .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
+    const abs1: AutoRouteEndpoint = { ...getAbsolutePinPos(d1, p1), deviceId: d1.id };
+    const abs2: AutoRouteEndpoint = { ...getAbsolutePinPos(d2, p2), deviceId: d2.id };
+    const laneOffset = ((idx % 5) - 2) * laneStep;
+    const pts = autoRouteOrthogonal(abs1, abs2, 20, obstacles, laneOffset, occupied);
+    occupied.push(...extractWireSegments(pts));
 
     return {
       ...w,
-      waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles, laneOffset),
+      waypoints: pts,
     };
   });
 }
@@ -575,8 +930,9 @@ export function serializeE3Xml(project: E3Project): string {
   // Sheets
   lines.push('  <Sheets>');
   for (const s of project.sheets) {
+    const tb = s.titleBlock;
     lines.push(
-      `    <Sheet id="${xmlEscape(s.id)}" number="${s.number}" name="${xmlEscape(s.name)}" format="${s.format}" width="${s.width}" height="${s.height}" documentCode="${xmlEscape(s.titleBlock.documentCode)}" organization="${xmlEscape(s.titleBlock.organization)}" designer="${xmlEscape(s.titleBlock.designer)}" checker="${xmlEscape(s.titleBlock.checker)}" sheetTitle="${xmlEscape(s.titleBlock.sheetTitle)}" />`
+      `    <Sheet id="${xmlEscape(s.id)}" number="${s.number}" name="${xmlEscape(s.name)}" format="${s.format}" width="${s.width}" height="${s.height}" stampForm="${xmlEscape(tb.stampForm || 'form1')}" customTemplateId="${xmlEscape(tb.customTemplateId || '')}" documentCode="${xmlEscape(tb.documentCode)}" projectTitle="${xmlEscape(tb.projectTitle || '')}" organization="${xmlEscape(tb.organization)}" designer="${xmlEscape(tb.designer)}" checker="${xmlEscape(tb.checker)}" techControl="${xmlEscape(tb.techControl || '')}" normControl="${xmlEscape(tb.normControl || '')}" approver="${xmlEscape(tb.approver || '')}" litera="${xmlEscape(tb.litera || '')}" mass="${xmlEscape(tb.mass || '')}" scale="${xmlEscape(tb.scale || '')}" date="${xmlEscape(tb.date || '')}" invOriginal="${xmlEscape(tb.invOriginal || '')}" invDuplicate="${xmlEscape(tb.invDuplicate || '')}" sheetTitle="${xmlEscape(tb.sheetTitle)}" />`
     );
   }
   lines.push('  </Sheets>');
@@ -633,6 +989,14 @@ export function serializeE3Xml(project: E3Project): string {
     }
     lines.push('  </Annotations>');
   }
+
+  const resolvedLayers = resolveCadLayers(project.layers, vs.showGostFrame);
+  lines.push('  <Layers>');
+  for (const layerId of CAD_LAYER_ORDER) {
+    const st = resolvedLayers[layerId];
+    lines.push(`    <Layer id="${layerId}" visible="${st.visible}" locked="${st.locked}" />`);
+  }
+  lines.push('  </Layers>');
 
   lines.push('</E3Project>');
   return lines.join('\n');
@@ -705,10 +1069,22 @@ export function parseE3Xml(xml: string): E3Project {
       width: Number(sa.width || 1400),
       height: Number(sa.height || 920),
       titleBlock: {
+        stampForm: sa.stampForm === 'form2a' ? 'form2a' : sa.stampForm === 'custom' ? 'custom' : 'form1',
+        customTemplateId: sa.customTemplateId || undefined,
         documentCode: sa.documentCode || '',
+        projectTitle: sa.projectTitle || '',
         organization: sa.organization || '',
         designer: sa.designer || '',
         checker: sa.checker || '',
+        techControl: sa.techControl || '',
+        normControl: sa.normControl || '',
+        approver: sa.approver || '',
+        litera: sa.litera || '',
+        mass: sa.mass || '',
+        scale: sa.scale || '',
+        date: sa.date || '',
+        invOriginal: sa.invOriginal || '',
+        invDuplicate: sa.invDuplicate || '',
         sheetTitle: sa.sheetTitle || '',
       },
     });
@@ -843,6 +1219,26 @@ export function parseE3Xml(xml: string): E3Project {
     });
   }
 
+  // Layers
+  const rawLayers: Partial<Record<CadLayerId, { visible: boolean; locked: boolean }>> = {};
+  const layerRe = /<Layer\s+([^>]+?)\s*\/?>/g;
+  let lm: RegExpExecArray | null;
+  while ((lm = layerRe.exec(xml)) !== null) {
+    const la = parseXmlAttrs(lm[1]);
+    if (
+      la.id === 'devices' ||
+      la.id === 'wires' ||
+      la.id === 'annotations' ||
+      la.id === 'frame'
+    ) {
+      rawLayers[la.id] = {
+        visible: la.visible !== 'false',
+        locked: la.locked === 'true',
+      };
+    }
+  }
+  const layers = resolveCadLayers(rawLayers, visualSettings.showGostFrame);
+
   return {
     schemaVersion: rootAttrs.schemaVersion || '1.0',
     id: rootAttrs.id || `proj-${Date.now()}`,
@@ -858,6 +1254,7 @@ export function parseE3Xml(xml: string): E3Project {
     wires,
     cables,
     annotations,
+    layers,
     visualSettings,
   };
 }
@@ -1046,126 +1443,11 @@ export function parseVisualSettings(rawJson: string): E3VisualSettings {
 export function exportToDxf(project: E3Project, sheetId?: string): string {
   const targetSheet = project.sheets.find((s) => s.id === sheetId) || project.sheets[0];
   if (!targetSheet) return '';
-
-  const h = targetSheet.height;
-  const flipY = (y: number) => h - y; // DXF Y-axis points up
-
-  const out: string[] = [
-    '0',
-    'SECTION',
-    '2',
-    'HEADER',
-    '9',
-    '$ACADVER',
-    '1',
-    'AC1015',
-    '0',
-    'ENDSEC',
-    '0',
-    'SECTION',
-    '2',
-    'ENTITIES',
-  ];
-
-  const addLine = (x1: number, y1: number, x2: number, y2: number, layer: string, color = 7) => {
-    out.push(
-      '0',
-      'LINE',
-      '8',
-      layer,
-      '62',
-      String(color),
-      '10',
-      String(x1),
-      '20',
-      String(flipY(y1)),
-      '30',
-      '0',
-      '11',
-      String(x2),
-      '21',
-      String(flipY(y2)),
-      '31',
-      '0'
-    );
-  };
-
-  const addText = (x: number, y: number, text: string, height: number, layer: string, color = 7) => {
-    out.push(
-      '0',
-      'TEXT',
-      '8',
-      layer,
-      '62',
-      String(color),
-      '10',
-      String(x),
-      '20',
-      String(flipY(y)),
-      '30',
-      '0',
-      '40',
-      String(height),
-      '1',
-      text
-    );
-  };
-
-  // Sheet border
-  addLine(20, 20, targetSheet.width - 20, 20, 'GOST_FRAME', 7);
-  addLine(targetSheet.width - 20, 20, targetSheet.width - 20, h - 20, 'GOST_FRAME', 7);
-  addLine(targetSheet.width - 20, h - 20, 20, h - 20, 'GOST_FRAME', 7);
-  addLine(20, h - 20, 20, 20, 'GOST_FRAME', 7);
-  addText(40, h - 35, `${targetSheet.titleBlock.documentCode} - ${targetSheet.name}`, 12, 'GOST_FRAME', 7);
-
-  // Devices
-  const sheetDevices = project.devices.filter((d) => d.sheetId === targetSheet.id);
-  for (const dev of sheetDevices) {
-    const x1 = dev.x;
-    const y1 = dev.y;
-    const x2 = dev.x + dev.width;
-    const y2 = dev.y + dev.height;
-    addLine(x1, y1, x2, y1, 'E3_DEVICES', 3);
-    addLine(x2, y1, x2, y2, 'E3_DEVICES', 3);
-    addLine(x2, y2, x1, y2, 'E3_DEVICES', 3);
-    addLine(x1, y2, x1, y1, 'E3_DEVICES', 3);
-    addText(x1, y1 - 8, `${dev.designation} (${dev.article})`, 10, 'E3_LABELS', 7);
-  }
-
-  // Wires
-  const sheetWires = project.wires.filter((w) => w.sheetId === targetSheet.id);
-  for (const wire of sheetWires) {
-    for (let i = 0; i < wire.waypoints.length - 1; i++) {
-      const p1 = wire.waypoints[i];
-      const p2 = wire.waypoints[i + 1];
-      addLine(p1.x, p1.y, p2.x, p2.y, 'E3_WIRES', 1);
-    }
-    if (wire.waypoints.length >= 2) {
-      const mid = wire.waypoints[Math.floor(wire.waypoints.length / 2)];
-      addText(mid.x + 4, mid.y - 4, wire.wireNumber, 8, 'E3_NETS', 5);
-    }
-  }
-
-  // Drafting Annotations
-  const sheetAnnotations = (project.annotations || []).filter((a) => a.sheetId === targetSheet.id);
-  for (const ann of sheetAnnotations) {
-    if (ann.kind === 'rect') {
-      addLine(ann.x, ann.y, ann.x + ann.width, ann.y, 'E3_ANNOTATIONS', 4);
-      addLine(ann.x + ann.width, ann.y, ann.x + ann.width, ann.y + ann.height, 'E3_ANNOTATIONS', 4);
-      addLine(ann.x + ann.width, ann.y + ann.height, ann.x, ann.y + ann.height, 'E3_ANNOTATIONS', 4);
-      addLine(ann.x, ann.y + ann.height, ann.x, ann.y, 'E3_ANNOTATIONS', 4);
-      addText(ann.x + 8, ann.y + 16, ann.text, ann.fontSize || 11, 'E3_ANNOTATIONS', 4);
-    } else if (ann.kind === 'callout') {
-      addLine(ann.x, ann.y + ann.height, ann.x + 24, ann.y + 18, 'E3_ANNOTATIONS', 2);
-      addLine(ann.x + 24, ann.y + 18, ann.x + 24 + ann.width, ann.y + 18, 'E3_ANNOTATIONS', 2);
-      addText(ann.x + 28, ann.y + 12, ann.text, ann.fontSize || 11, 'E3_ANNOTATIONS', 7);
-    } else {
-      addText(ann.x, ann.y, ann.text, ann.fontSize || 12, 'E3_ANNOTATIONS', 7);
-    }
-  }
-
-  out.push('0', 'ENDSEC', '0', 'EOF');
-  return out.join('\n');
+  return exportSheetsToDxf(project, {
+    sheetIds: [targetSheet.id],
+    includeGostFrame: true,
+    editableBlocks: true,
+  });
 }
 
 // ============================================================================

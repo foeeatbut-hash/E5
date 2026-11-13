@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import JSZip from 'jszip';
+import { buildOpenApiSpec, isAllowedExternalUrl } from './src/core/apiEcosystem.ts';
+import { exportProjectToDxfZip, exportSheetsToDxf } from './src/core/dxfExporter.ts';
 import { E3_CATALOG } from './src/core/e3Catalog.ts';
 import {
   buildBom,
@@ -11,7 +13,6 @@ import {
   buildTerminalPlan,
   encodeUtf16LeWithBom,
   exportBomCsv,
-  exportToDxf,
   exportToFluxBridge,
   generateE3ComScript,
   generateWindowsBridgeCmd,
@@ -19,12 +20,14 @@ import {
   nextUniqueDesignation,
   parseE3Xml,
   parseVisualSettings,
+  routeSheetWiresCleanly,
   runErc,
   serializeE3Xml,
 } from './src/core/e3Engine.ts';
 import { buildOle2E3sContainer, parseE3sInput } from './src/core/e3SFormat.ts';
 import { createSeedProject } from './src/core/e3Seed.ts';
-import type { E3Device, E3Project } from './src/core/e3Types.ts';
+import type { E3Device, E3Project, E3TitleBlock, ExternalWebhookConfig } from './src/core/e3Types.ts';
+import { exportProjectToPdfBytes } from './src/core/pdfExporter.ts';
 import { diagLogger } from './src/server/diagLogger.ts';
 import {
   buildPortableDistribution,
@@ -120,6 +123,98 @@ function broadcastUpdate(project: E3Project, source: string, sender = 'server') 
     revision: project.revision,
     project,
   });
+  void dispatchExternalWebhooks('project.updated', {
+    projectId: project.id,
+    projectCode: project.projectCode,
+    revision: project.revision,
+    source,
+  });
+}
+
+let cachedPdfFonts: { regular?: Uint8Array; bold?: Uint8Array } | null = null;
+function loadServerPdfFonts(): { regular?: Uint8Array; bold?: Uint8Array } {
+  if (cachedPdfFonts) return cachedPdfFonts;
+  const regCandidates = [
+    path.resolve(process.cwd(), 'public', 'fonts', 'LiberationSans-Regular.ttf'),
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+  ];
+  const boldCandidates = [
+    path.resolve(process.cwd(), 'public', 'fonts', 'LiberationSans-Bold.ttf'),
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+  ];
+  let regular: Uint8Array | undefined;
+  let bold: Uint8Array | undefined;
+  for (const p of regCandidates) {
+    if (fs.existsSync(p)) {
+      regular = new Uint8Array(fs.readFileSync(p));
+      break;
+    }
+  }
+  for (const p of boldCandidates) {
+    if (fs.existsSync(p)) {
+      bold = new Uint8Array(fs.readFileSync(p));
+      break;
+    }
+  }
+  cachedPdfFonts = { regular, bold };
+  return cachedPdfFonts;
+}
+
+const externalWebhooks = new Map<string, ExternalWebhookConfig>();
+const mockExternalReceipts: Array<{ receivedAt: string; event: string; payload: unknown }> = [];
+
+async function deliverWebhook(
+  wh: ExternalWebhookConfig,
+  eventName: string,
+  payload: Record<string, unknown>
+): Promise<{ ok: boolean; status: number | null; error?: string }> {
+  const check = isAllowedExternalUrl(wh.url);
+  if (!check.ok) {
+    wh.lastStatus = null;
+    wh.lastError = check.reason;
+    return { ok: false, status: null, error: check.reason };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const resp = await fetch(wh.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-E3-Event': eventName,
+        ...(wh.secret ? { 'X-E3-Secret': wh.secret } : {}),
+      },
+      body: JSON.stringify({
+        event: eventName,
+        sentAt: new Date().toISOString(),
+        data: payload,
+      }),
+      signal: controller.signal,
+    });
+    wh.lastStatus = resp.status;
+    wh.lastDeliveredAt = new Date().toISOString();
+    wh.lastError = resp.ok ? undefined : `HTTP ${resp.status}`;
+    return { ok: resp.ok, status: resp.status, error: wh.lastError };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    wh.lastStatus = null;
+    wh.lastError = msg;
+    return { ok: false, status: null, error: msg };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function dispatchExternalWebhooks(
+  eventName: ExternalWebhookConfig['events'][number],
+  payload: Record<string, unknown>
+) {
+  for (const wh of externalWebhooks.values()) {
+    if (!wh.enabled || !wh.events.includes(eventName)) continue;
+    await deliverWebhook(wh, eventName, payload);
+  }
 }
 
 // Embedded E3.series Windows Bridge queue (for local Win32 execution or outbound Windows connector)
@@ -274,6 +369,144 @@ app.post('/api/v1/projects/:id/devices', (req, res) => {
   activeProjectId = proj.id;
   broadcastUpdate(proj, 'REST API POST /devices', 'api');
   res.status(201).json({ ok: true, device: newDevice, project: proj });
+});
+
+app.get('/api/v1/openapi.json', (req, res) => {
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`);
+  const proj = getOrDefaultProject();
+  res.json(buildOpenApiSpec(proj, `${proto}://${host}`));
+});
+
+app.patch('/api/v1/projects/:id/sheets/:sheetId/stamp', (req, res) => {
+  const proj = structuredClone(getOrDefaultProject(req.params.id));
+  const applyToAll = Boolean(req.body?.applyToAll);
+  const patch = (req.body?.patch || req.body || {}) as Partial<E3TitleBlock>;
+  const safeKeys: Array<keyof E3TitleBlock> = [
+    'stampForm',
+    'customTemplateId',
+    'documentCode',
+    'projectTitle',
+    'organization',
+    'designer',
+    'checker',
+    'techControl',
+    'normControl',
+    'approver',
+    'litera',
+    'mass',
+    'scale',
+    'date',
+    'invOriginal',
+    'invDuplicate',
+    'sheetTitle',
+  ];
+  const cleanPatch: Partial<E3TitleBlock> = {};
+  for (const k of safeKeys) {
+    if (patch[k] !== undefined) {
+      (cleanPatch as Record<string, unknown>)[k] = patch[k];
+    }
+  }
+
+  let updatedCount = 0;
+  const applyFormToAll = Boolean(req.body?.applyFormToAll) || cleanPatch.stampForm === 'custom';
+  proj.sheets = proj.sheets.map((s) => {
+    if (!applyToAll && s.id !== req.params.sheetId) return s;
+    updatedCount += 1;
+    let nextPatch: Partial<E3TitleBlock> = cleanPatch;
+    if (applyToAll && s.id !== req.params.sheetId) {
+      const { stampForm: _ignoredForm, customTemplateId: _ignoredTpl, sheetTitle: _ignoredTitle, ...rest } = cleanPatch;
+      nextPatch = {
+        ...rest,
+        ...(applyFormToAll && _ignoredForm ? { stampForm: _ignoredForm, customTemplateId: _ignoredTpl } : {}),
+        ...(req.body?.includeSheetTitle === true && _ignoredTitle !== undefined ? { sheetTitle: _ignoredTitle } : {}),
+      };
+    }
+    return {
+      ...s,
+      titleBlock: {
+        ...s.titleBlock,
+        ...nextPatch,
+      },
+    };
+  });
+
+  if (updatedCount === 0) {
+    res.status(404).json({ error: 'Лист не найден' });
+    return;
+  }
+
+  proj.revision += 1;
+  proj.updatedAt = new Date().toISOString();
+  projects.set(proj.id, proj);
+  activeProjectId = proj.id;
+  broadcastUpdate(
+    proj,
+    applyToAll ? 'REST API PATCH /stamp (все листы)' : `REST API PATCH /sheets/${req.params.sheetId}/stamp`,
+    'api'
+  );
+  void dispatchExternalWebhooks('stamp.updated', {
+    projectId: proj.id,
+    sheetId: req.params.sheetId,
+    applyToAll,
+    updatedCount,
+  });
+  res.json({ ok: true, updatedCount, project: proj });
+});
+
+app.patch('/api/v1/projects/:id/devices/:devId', (req, res) => {
+  const proj = structuredClone(getOrDefaultProject(req.params.id));
+  const target = proj.devices.find((d) => d.id === req.params.devId);
+  if (!target) {
+    res.status(404).json({ error: 'Изделие не найдено' });
+    return;
+  }
+  Object.assign(target, req.body || {});
+  proj.revision += 1;
+  proj.updatedAt = new Date().toISOString();
+  projects.set(proj.id, proj);
+  activeProjectId = proj.id;
+  broadcastUpdate(proj, `REST API PATCH /devices/${target.designation}`, 'api');
+  void dispatchExternalWebhooks('device.changed', {
+    action: 'updated',
+    deviceId: target.id,
+    designation: target.designation,
+  });
+  res.json({ ok: true, device: target, project: proj });
+});
+
+app.delete('/api/v1/projects/:id/devices/:devId', (req, res) => {
+  const proj = structuredClone(getOrDefaultProject(req.params.id));
+  const before = proj.devices.length;
+  proj.devices = proj.devices.filter((d) => d.id !== req.params.devId);
+  if (proj.devices.length === before) {
+    res.status(404).json({ error: 'Изделие не найдено' });
+    return;
+  }
+  proj.wires = proj.wires.filter((w) => w.fromDeviceId !== req.params.devId && w.toDeviceId !== req.params.devId);
+  proj.revision += 1;
+  proj.updatedAt = new Date().toISOString();
+  projects.set(proj.id, proj);
+  activeProjectId = proj.id;
+  broadcastUpdate(proj, 'REST API DELETE /devices', 'api');
+  res.json({ ok: true, project: proj });
+});
+
+app.post('/api/v1/projects/:id/reroute', (req, res) => {
+  const proj = structuredClone(getOrDefaultProject(req.params.id));
+  const sheetId = req.body?.sheetId ? String(req.body.sheetId) : undefined;
+  const targets = sheetId ? proj.sheets.filter((s) => s.id === sheetId) : proj.sheets;
+  let nextWires = proj.wires;
+  for (const sh of targets) {
+    nextWires = routeSheetWiresCleanly(proj.devices, nextWires, sh.id, proj.visualSettings.gridSize);
+  }
+  proj.wires = nextWires;
+  proj.revision += 1;
+  proj.updatedAt = new Date().toISOString();
+  projects.set(proj.id, proj);
+  activeProjectId = proj.id;
+  broadcastUpdate(proj, 'REST API POST /reroute', 'api');
+  res.json({ ok: true, project: proj });
 });
 
 app.patch('/api/v1/projects/:id/visual-settings', (req, res) => {
@@ -680,7 +913,237 @@ app.get('/api/v1/projects/:id/export/dxf', (req, res) => {
   const sheetId = typeof req.query.sheetId === 'string' ? req.query.sheetId : undefined;
   res.setHeader('Content-Type', 'application/dxf; charset=utf-8');
   setDownloadDisposition(res, `${proj.projectCode}.dxf`);
-  res.send(exportToDxf(proj, sheetId));
+  res.send(
+    exportSheetsToDxf(proj, {
+      sheetIds: sheetId ? [sheetId] : undefined,
+      includeGostFrame: true,
+      editableBlocks: true,
+    })
+  );
+});
+
+app.post('/api/v1/projects/:id/publish/dxf', async (req, res) => {
+  try {
+    const bodyProj = req.body?.project as E3Project | undefined;
+    const proj = bodyProj?.sheets?.length ? bodyProj : getOrDefaultProject(req.params.id);
+    const sheetIds = Array.isArray(req.body?.sheetIds) ? (req.body.sheetIds as string[]) : undefined;
+    const includeBom = Boolean(req.body?.includeBom);
+    const includeGostFrame = req.body?.includeGostFrame !== false;
+    const editableBlocks = req.body?.editableBlocks !== false;
+    const format = req.body?.format === 'dxf-zip' ? 'dxf-zip' : 'dxf-single';
+
+    if (format === 'dxf-zip') {
+      const zipBytes = await exportProjectToDxfZip(proj, {
+        sheetIds,
+        includeBom,
+        includeGostFrame,
+        editableBlocks,
+      });
+      res.setHeader('Content-Type', 'application/zip');
+      setDownloadDisposition(res, `${proj.projectCode}_AutoCAD_DXF.zip`);
+      res.send(Buffer.from(zipBytes));
+    } else {
+      const dxf = exportSheetsToDxf(proj, {
+        sheetIds,
+        includeBom,
+        includeGostFrame,
+        editableBlocks,
+      });
+      res.setHeader('Content-Type', 'application/dxf; charset=utf-8');
+      setDownloadDisposition(res, `${proj.projectCode}_ALL_AutoCAD.dxf`);
+      res.send(dxf);
+    }
+    void dispatchExternalWebhooks('publish.completed', {
+      projectId: proj.id,
+      projectCode: proj.projectCode,
+      format,
+      sheetsCount: sheetIds?.length || proj.sheets.length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'DXF batch export error' });
+  }
+});
+
+app.get('/api/v1/projects/:id/publish/pdf', (req, res) => {
+  try {
+    const proj = getOrDefaultProject(req.params.id);
+    const fonts = loadServerPdfFonts();
+    const pdf = exportProjectToPdfBytes(proj, {
+      includeBom: req.query.bom !== '0',
+      includeCables: req.query.cables !== '0',
+      includeGostFrame: req.query.frame !== '0',
+      regularFontBytes: fonts.regular,
+      boldFontBytes: fonts.bold,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    setDownloadDisposition(res, `${proj.projectCode}_GOST.pdf`);
+    res.send(Buffer.from(pdf));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'PDF export error' });
+  }
+});
+
+app.post('/api/v1/projects/:id/publish/pdf', (req, res) => {
+  try {
+    const bodyProj = req.body?.project as E3Project | undefined;
+    const proj = bodyProj?.sheets?.length ? bodyProj : getOrDefaultProject(req.params.id);
+    const sheetIds = Array.isArray(req.body?.sheetIds) ? (req.body.sheetIds as string[]) : undefined;
+    const includeBom = req.body?.includeBom !== false;
+    const includeCables = Boolean(req.body?.includeCables);
+    const includeGostFrame = req.body?.includeGostFrame !== false;
+    const fonts = loadServerPdfFonts();
+    const pdf = exportProjectToPdfBytes(proj, {
+      sheetIds,
+      includeBom,
+      includeCables,
+      includeGostFrame,
+      regularFontBytes: fonts.regular,
+      boldFontBytes: fonts.bold,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    setDownloadDisposition(res, `${proj.projectCode}_GOST.pdf`);
+    res.send(Buffer.from(pdf));
+    void dispatchExternalWebhooks('publish.completed', {
+      projectId: proj.id,
+      projectCode: proj.projectCode,
+      format: 'pdf',
+      sheetsCount: sheetIds?.length || proj.sheets.length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'PDF batch export error' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// Internal Flux Apps Bus & External Non-Flux Programs API (Webhooks & Relay)
+// ----------------------------------------------------------------------------
+app.post('/api/v1/integrations/flux-bus', (req, res) => {
+  const { sourceApp = 'flux-module', targetApp = 'e3promax-ecad', action = 'e3.getBom', payload = {} } = req.body || {};
+  const proj = getOrDefaultProject(typeof payload?.projectId === 'string' ? payload.projectId : undefined);
+  let result: unknown = { received: true };
+
+  if (action === 'e3.getBom') {
+    result = { projectCode: proj.projectCode, revision: proj.revision, bom: buildBom(proj) };
+  } else if (action === 'e3.runErc') {
+    result = { issues: runErc(proj) };
+  } else if (action === 'e3.getBridgeBundle') {
+    result = exportToFluxBridge(proj);
+  } else if (action === 'e3.getProject') {
+    result = { id: proj.id, name: proj.name, revision: proj.revision, sheets: proj.sheets.length };
+  }
+
+  diagLogger.log('SYNC', 'FLUX-BRIDGE', `Шина Flux: ${sourceApp} -> ${targetApp} (${action})`);
+  broadcastSseEvent({
+    type: 'flux-bus-event',
+    sourceApp,
+    targetApp,
+    action,
+    payload,
+    timestamp: new Date().toISOString(),
+  });
+  res.json({ ok: true, sourceApp, targetApp, action, result });
+});
+
+app.get('/api/v1/integrations/webhooks', (_req, res) => {
+  res.json({
+    webhooks: Array.from(externalWebhooks.values()),
+    recentMockReceipts: mockExternalReceipts.slice(-15),
+  });
+});
+
+app.post('/api/v1/integrations/webhooks', (req, res) => {
+  const { name, url, events, enabled = true, secret } = req.body || {};
+  if (!name || !url) {
+    res.status(400).json({ error: 'Укажите название и URL внешнего обработчика' });
+    return;
+  }
+  const check = isAllowedExternalUrl(String(url));
+  if (!check.ok) {
+    res.status(400).json({ error: check.reason });
+    return;
+  }
+  const id = `wh-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+  const wh: ExternalWebhookConfig = {
+    id,
+    name: String(name).trim(),
+    url: String(url).trim(),
+    events: Array.isArray(events) && events.length > 0 ? events : ['project.updated', 'stamp.updated', 'publish.completed'],
+    enabled: Boolean(enabled),
+    secret: secret ? String(secret) : undefined,
+    lastStatus: null,
+  };
+  externalWebhooks.set(id, wh);
+  diagLogger.log('INFO', 'SYNC-API', `Зарегистрирован внешний Webhook "${wh.name}" (${wh.url})`);
+  res.status(201).json({ ok: true, webhook: wh });
+});
+
+app.delete('/api/v1/integrations/webhooks/:whId', (req, res) => {
+  externalWebhooks.delete(req.params.whId);
+  res.json({ ok: true });
+});
+
+app.post('/api/v1/integrations/webhooks/:whId/test', async (req, res) => {
+  const wh = externalWebhooks.get(req.params.whId);
+  if (!wh) {
+    res.status(404).json({ error: 'Webhook не найден' });
+    return;
+  }
+  const proj = getOrDefaultProject();
+  const result = await deliverWebhook(wh, 'project.updated', {
+    test: true,
+    projectId: proj.id,
+    projectCode: proj.projectCode,
+    revision: proj.revision,
+  });
+  res.json({ ok: result.ok, status: result.status, error: result.error, webhook: wh });
+});
+
+app.post('/api/v1/integrations/mock-external-receiver', (req, res) => {
+  const evt = String(req.headers['x-e3-event'] || req.body?.event || 'webhook');
+  mockExternalReceipts.push({
+    receivedAt: new Date().toISOString(),
+    event: evt,
+    payload: req.body,
+  });
+  if (mockExternalReceipts.length > 50) mockExternalReceipts.shift();
+  res.json({ ok: true, accepted: true, event: evt, totalReceipts: mockExternalReceipts.length });
+});
+
+app.post('/api/v1/integrations/external-call', async (req, res) => {
+  const { method = 'GET', url, headers = {}, body } = req.body || {};
+  const check = isAllowedExternalUrl(String(url || ''));
+  if (!check.ok) {
+    res.status(400).json({ error: check.reason });
+    return;
+  }
+  const m = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method).toUpperCase())
+    ? String(method).toUpperCase()
+    : 'GET';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7000);
+  try {
+    const resp = await fetch(String(url), {
+      method: m,
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: m !== 'GET' && body !== undefined ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
+      signal: controller.signal,
+    });
+    const text = await resp.text();
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // plain text
+    }
+    res.json({ ok: resp.ok, status: resp.status, data: parsed });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err instanceof Error ? err.message : 'External call error' });
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 app.get('/api/v1/projects/:id/export/flux-bridge', (req, res) => {

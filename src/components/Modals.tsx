@@ -587,6 +587,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
             {(
               [
                 ['snapToGrid', 'Привязка к сетке'],
+                ['smartGuides', 'Магнитные направляющие'],
                 ['showPinNumbers', 'Номера выводов'],
                 ['showWireNumbers', 'Маркировка проводов'],
                 ['showCrossRefs', 'Перекрёстные ссылки E3'],
@@ -595,7 +596,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               <label key={key} className="flex items-center gap-2 text-[var(--flux-text)] cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={draft[key]}
+                  checked={key === 'smartGuides' ? draft.smartGuides !== false : Boolean(draft[key])}
                   onChange={(e) => setDraft({ ...draft, [key]: e.target.checked })}
                   className="accent-[var(--flux-accent)]"
                 />

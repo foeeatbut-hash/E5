@@ -464,5 +464,34 @@ test('nextUniqueDesignation skips deleted gaps and avoids collisions', () => {
   assert.equal(nextUniqueDesignation(devices, '-K'), '-K1');
 });
 
+test('GOST 2.104 stamp fields round-trip cleanly through E3 XML serialization', () => {
+  const seed = createSeedProject();
+  seed.sheets[0].titleBlock = {
+    stampForm: 'form1',
+    documentCode: 'ВЕЗА-ПВ1-Э3.001',
+    projectTitle: 'Щит управления ПВ1',
+    organization: 'ООО «ПромВентАвтоматика»',
+    designer: 'Иванов А.С.',
+    checker: 'Петров В.И.',
+    techControl: 'Сидоров К.М.',
+    normControl: 'Смирнова Е.Н.',
+    approver: 'Кузнецов Д.А.',
+    litera: 'Р',
+    mass: '18 кг',
+    scale: '1:1',
+    date: '11.2026',
+    invOriginal: 'ПВА-2026-01',
+    invDuplicate: 'ДУБЛ-01',
+    sheetTitle: 'Схема электрическая принципиальная',
+  };
+  seed.sheets[1].titleBlock.stampForm = 'form2a';
 
-
+  const xml = serializeE3Xml(seed);
+  const parsed = parseE3Xml(xml);
+  assert.equal(parsed.sheets[0].titleBlock.stampForm, 'form1');
+  assert.equal(parsed.sheets[0].titleBlock.techControl, 'Сидоров К.М.');
+  assert.equal(parsed.sheets[0].titleBlock.normControl, 'Смирнова Е.Н.');
+  assert.equal(parsed.sheets[0].titleBlock.approver, 'Кузнецов Д.А.');
+  assert.equal(parsed.sheets[0].titleBlock.invOriginal, 'ПВА-2026-01');
+  assert.equal(parsed.sheets[1].titleBlock.stampForm, 'form2a');
+});

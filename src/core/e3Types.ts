@@ -98,12 +98,53 @@ export interface E3Cable {
   shielded: boolean;
 }
 
+export type GostStampForm = 'form1' | 'form2a' | 'custom';
+
 export interface E3TitleBlock {
+  stampForm?: GostStampForm;
+  customTemplateId?: string;
   documentCode: string;
+  projectTitle?: string;
   organization: string;
   designer: string;
   checker: string;
+  techControl?: string;
+  normControl?: string;
+  approver?: string;
+  litera?: string;
+  mass?: string;
+  scale?: string;
+  date?: string;
+  invOriginal?: string;
+  invDuplicate?: string;
   sheetTitle: string;
+}
+
+export type StampTextFieldKey = Exclude<keyof E3TitleBlock, 'stampForm' | 'customTemplateId'>;
+
+export interface GostStampCellDef {
+  id: string;
+  xPct: number;
+  yPct: number;
+  wPct: number;
+  hPct: number;
+  label?: string;
+  fieldKey?: StampTextFieldKey;
+  staticText?: string;
+  align?: 'left' | 'center';
+  fontSize?: number;
+  bold?: boolean;
+}
+
+export interface GostStampTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  width: number;
+  height: number;
+  showArchivalStrip: boolean;
+  isPreset?: boolean;
+  cells: GostStampCellDef[];
 }
 
 export interface E3Sheet {
@@ -116,12 +157,47 @@ export interface E3Sheet {
   titleBlock: E3TitleBlock;
 }
 
+export type BatchPublishFormat = 'pdf' | 'dxf-single' | 'dxf-zip';
+
+export interface BatchPublishOptions {
+  format: BatchPublishFormat;
+  sheetIds: string[];
+  includeBom: boolean;
+  includeCables: boolean;
+  includeGostFrame: boolean;
+  editableBlocks: boolean;
+}
+
+export interface ExternalWebhookConfig {
+  id: string;
+  name: string;
+  url: string;
+  events: Array<'project.updated' | 'stamp.updated' | 'device.changed' | 'publish.completed'>;
+  enabled: boolean;
+  secret?: string;
+  lastStatus?: number | null;
+  lastDeliveredAt?: string;
+  lastError?: string;
+}
+
+export interface FluxBusMessage {
+  id: string;
+  timestamp: string;
+  direction: 'inbound' | 'outbound';
+  channel: string;
+  action: string;
+  sourceApp: string;
+  targetApp: string;
+  payloadSummary: string;
+}
+
 export interface E3VisualSettings {
   schemaVersion: number;
   presetName: string;
   theme: 'light' | 'dark';
   gridSize: number;
   snapToGrid: boolean;
+  smartGuides?: boolean;
   showGrid: boolean;
   showGostFrame: boolean;
   showPinNumbers: boolean;
@@ -151,6 +227,15 @@ export interface E3Annotation {
   fontSize?: number;
 }
 
+export type CadLayerId = 'devices' | 'wires' | 'annotations' | 'frame';
+
+export interface CadLayerState {
+  visible: boolean;
+  locked: boolean;
+}
+
+export type CadLayerStateMap = Record<CadLayerId, CadLayerState>;
+
 export interface E3Project {
   schemaVersion: string;
   id: string;
@@ -166,6 +251,8 @@ export interface E3Project {
   wires: E3Wire[];
   cables: E3Cable[];
   annotations?: E3Annotation[];
+  layers?: CadLayerStateMap;
+  customStampTemplates?: GostStampTemplate[];
   visualSettings: E3VisualSettings;
 }
 

@@ -6,6 +6,8 @@ import type { FsaMatrixData } from '../core/hvacBuilder';
 interface SchematicSymbolProps {
   device: E3Device;
   selected: boolean;
+  locked?: boolean;
+  wiresLocked?: boolean;
   visual: E3VisualSettings;
   wireStartPinKey: string | null;
   connectedPinKeys: Set<string>;
@@ -16,6 +18,8 @@ interface SchematicSymbolProps {
 export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
   device,
   selected,
+  locked = false,
+  wiresLocked = false,
   visual,
   wireStartPinKey,
   connectedPinKeys,
@@ -611,8 +615,9 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
   return (
     <g
       data-testid={`symbol-${device.id}`}
+      data-locked={locked ? 'true' : 'false'}
       transform={`translate(${device.x}, ${device.y})`}
-      className="cursor-pointer select-none"
+      className={`${locked ? 'cursor-default' : 'cursor-pointer'} select-none`}
       onMouseDown={(e) => onSelectDevice(e, device)}
       style={{ opacity: isRemoved ? 0.55 : 1 }}
     >
@@ -625,9 +630,9 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
           height={device.height + 12}
           rx={6}
           fill="none"
-          stroke="var(--flux-accent)"
+          stroke={locked ? '#d97706' : 'var(--flux-accent)'}
           strokeWidth={1.5}
-          strokeDasharray="5 3"
+          strokeDasharray={locked ? '3 3' : '5 3'}
         />
       )}
 
@@ -670,7 +675,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                 e.stopPropagation();
                 onPinClick(e, device, pin.id);
               }}
-              className="group/pin cursor-crosshair"
+              className={`group/pin ${wiresLocked ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
             >
               <circle cx={pin.dx} cy={pin.dy} r={9} fill="transparent" />
               <circle

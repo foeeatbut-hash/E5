@@ -12,7 +12,6 @@ import {
   Search,
   Trash2,
   Wand2,
-  Zap,
 } from 'lucide-react';
 import type { CatalogItem, E3Device, E3Project } from '../core/e3Types';
 
@@ -30,7 +29,6 @@ interface LeftExplorerProps {
   onEditCatalogItem: (item: CatalogItem) => void;
   onDeleteCustomCatalogItem: (itemId: string) => void;
   onOpenHvacWizard: () => void;
-  onRunStressBatch: (count: number) => void;
 }
 
 export const LeftExplorer: React.FC<LeftExplorerProps> = ({
@@ -47,7 +45,6 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
   onEditCatalogItem,
   onDeleteCustomCatalogItem,
   onOpenHvacWizard,
-  onRunStressBatch,
 }) => {
   const [internalTab, setInternalTab] = useState<'project' | 'library'>('project');
   const tab = activeTab ?? internalTab;
@@ -387,89 +384,75 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
                 )}
               </div>
             ) : (
-              filteredCatalog.map((item) => (
-                <div
-                  key={item.id}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('application/x-flux-catalog-id', item.id);
-                    e.dataTransfer.effectAllowed = 'copy';
-                  }}
-                  className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] transition-colors flex flex-col gap-1"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span className="font-mono text-[11px] font-medium text-[var(--flux-text)] truncate">
-                      -{item.defaultPrefix}? · {item.article}
-                    </span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => onEditCatalogItem(item)}
-                        title="Редактировать изделие и его атрибуты"
-                        aria-label={`Редактировать ${item.componentName}`}
-                        className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-bg)]"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                      {item.isCustom && (
+              <div className="border border-[var(--flux-line)] rounded bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] mx-0.5 overflow-hidden">
+                {filteredCatalog.map((item) => (
+                  <div
+                    key={item.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/x-flux-catalog-id', item.id);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    className="px-2.5 py-2 hover:bg-[var(--flux-hover)] transition-colors flex flex-col gap-1"
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="font-mono text-[11px] font-medium text-[var(--flux-text)] truncate">
+                        -{item.defaultPrefix}? · {item.article}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
-                          onClick={() => onDeleteCustomCatalogItem(item.id)}
-                          aria-label={`Удалить ${item.componentName}`}
-                          className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 hover:bg-[var(--flux-bg)]"
+                          onClick={() => onEditCatalogItem(item)}
+                          title="Редактировать изделие и его атрибуты"
+                          aria-label={`Редактировать ${item.componentName}`}
+                          className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-bg)]"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Pencil className="w-3 h-3" />
                         </button>
+                        {item.isCustom && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteCustomCatalogItem(item.id)}
+                            aria-label={`Удалить ${item.componentName}`}
+                            className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 hover:bg-[var(--flux-bg)]"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onPlaceCatalogItem(item)}
+                          className="inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium text-white bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] transition-colors whitespace-nowrap shrink-0"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>На лист</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-[12px] text-[var(--flux-text)] leading-snug">
+                      {item.componentName}
+                    </div>
+                    <div className="text-[11px] text-[var(--flux-text-muted)] flex items-center gap-1.5">
+                      <span className="truncate">{item.manufacturer}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono tabular-nums shrink-0">{item.defaultAttributes.length} атр.</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono tabular-nums shrink-0">{item.pins.length} выв.</span>
+                      {item.ioProfile && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-mono tabular-nums shrink-0">
+                            {item.ioProfile.di}DI/{item.ioProfile.do}DO
+                          </span>
+                        </>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => onPlaceCatalogItem(item)}
-                        className="inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium text-white bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] transition-colors whitespace-nowrap shrink-0"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>На лист</span>
-                      </button>
                     </div>
                   </div>
-                  <div className="text-[12px] text-[var(--flux-text)] leading-snug">
-                    {item.componentName}
-                  </div>
-                  <div className="text-[11px] text-[var(--flux-text-muted)] flex items-center gap-1.5">
-                    <span className="truncate">{item.manufacturer}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="font-mono shrink-0">{item.defaultAttributes.length} атр.</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="font-mono shrink-0">{item.pins.length} выв.</span>
-                    {item.ioProfile && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="font-mono shrink-0">
-                          {item.ioProfile.di}DI/{item.ioProfile.do}DO
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
         )}
-      </div>
-
-      {/* Footer action: Async Large Dataset Benchmark */}
-      <div className="p-2 border-t border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2">
-        <span className="text-[11px] text-[var(--flux-text-muted)] truncate">
-          Тест нагрузки (Worker)
-        </span>
-        <button
-          type="button"
-          onClick={() => onRunStressBatch(500)}
-          className="inline-flex items-center gap-1 h-6 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0"
-          title="Добавить 500 связанных элементов на схему и обработать в фоновом потоке Web Worker"
-        >
-          <Zap className="w-3 h-3 text-[var(--flux-accent)]" />
-          <span>+500 эл.</span>
-        </button>
       </div>
     </aside>
   );

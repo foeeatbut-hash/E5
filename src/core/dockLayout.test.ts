@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  clampDockLayoutToViewport,
   clampDockSize,
   clampFloatingRect,
   computeViewportSheets,
@@ -102,4 +103,24 @@ test('duplicateSheetInProject and deleteSheetFromProject manage sheets safely', 
 test('clampDockSize enforces minimum width and height', () => {
   assert.equal(clampDockSize('right', 50, 1440, 900), 210);
   assert.equal(clampDockSize('top', 40, 1440, 900), 120);
+});
+
+test('clampDockLayoutToViewport guarantees right & left panels never clip off narrow viewports', () => {
+  const base = createDefaultDockLayout();
+  base.sizes.left = 420;
+  base.sizes.right = 420;
+  base.sizes.bottom = 420;
+
+  for (const [vw, vh] of [
+    [1024, 768],
+    [1180, 760],
+    [1440, 900],
+  ] as const) {
+    const clamped = clampDockLayoutToViewport(base, vw, vh);
+    assert.ok(
+      clamped.sizes.left + clamped.sizes.right <= vw - 280,
+      `Expected center >= 280px at ${vw}x${vh}, got left=${clamped.sizes.left}, right=${clamped.sizes.right}`
+    );
+    assert.ok(clamped.sizes.bottom <= vh - 320);
+  }
 });

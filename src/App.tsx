@@ -1,8 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { BottomConsole, type ConsoleTab } from './components/BottomConsole';
 import { CatalogItemModal } from './components/CatalogItemModal';
 import {
   type ActivePanelDrag,
+  CAD_PANEL_TRANSITION,
+  COLLAPSED_HEADER_HEIGHT,
+  COLLAPSED_SIDE_RAIL_WIDTH,
   DockDropOverlay,
   DockResizeHandle,
   DockablePanelFrame,
@@ -18,10 +22,13 @@ import {
   VisualSettingsModal,
 } from './components/Modals';
 import { PortableBuildModal } from './components/PortableBuildModal';
+import { PublishModal } from './components/PublishModal';
 import { RightInspector } from './components/RightInspector';
 import { SchematicCanvas } from './components/SchematicCanvas';
+import { StampEditorModal, type StampModalMode } from './components/StampEditorModal';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
 import {
+  clampDockLayoutToViewport,
   type DockEdge,
   type DockLayoutState,
   type DockSide,
@@ -42,6 +49,15 @@ import {
   viewportCountForMode,
 } from './core/dockLayout';
 import {
+  CAD_LAYER_DEFS,
+  isLayerLocked,
+  resolveCadLayers,
+  setAllLayersLocked,
+  setAllLayersVisible,
+  toggleLayerLock,
+  toggleLayerVisibility,
+} from './core/cadLayers';
+import {
   deviceToCatalogItem,
   loadCustomCatalog,
   mergeCatalogItems,
@@ -55,34 +71,54 @@ import {
   buildTerminalPlan,
   exportBomCsv,
   exportCableJournalCsv,
+  extractWireSegments,
   generateStressBatch,
   getAbsolutePinPos,
   importFromFluxBridge,
   nextUniqueDesignation,
+  rerouteAttachedWires,
   routeSheetWiresCleanly,
   runErc,
 } from './core/e3Engine';
 import { createSeedProject } from './core/e3Seed';
 import type {
   AnnotationKind,
+  BatchPublishOptions,
   BomRow,
   CableJournalRow,
+  CadLayerId,
   CatalogItem,
   E3Annotation,
   E3Device,
   E3Project,
   E3Sheet,
+  E3TitleBlock,
   E3VisualSettings,
   E3Wire,
   ErcIssue,
   FluxBridgeBundle,
+  FluxBusMessage,
+  GostStampTemplate,
   ProcessLogEntry,
   SchematicFontFamily,
   SheetFormat,
   TerminalPlanRow,
 } from './core/e3Types';
-import { detectFluxHost, pushProjectToFluxHost } from './core/fluxHostBridge';
+import {
+  createFluxBusLogEntry,
+  detectFluxHost,
+  executeFluxInboundCommand,
+  type FluxCommandRequest,
+  pushProjectToFluxHost,
+} from './core/fluxHostBridge';
+import {
+  loadCustomStampTemplates,
+  mergeStampTemplates,
+  saveCustomStampTemplates,
+  type StampFieldKey,
+} from './core/gostFrame';
 import { generateHvacDiagram, type HvacBuildOptions } from './core/hvacBuilder';
+import { findSmartCatalogSpot } from './core/smartSnap';
 import { ecadAsync } from './workers/ecadAsync';
 
 function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
@@ -138,14 +174,30 @@ export default function App() {
     3: { zoom: 0.36, pan: { x: 20, y: 12 } },
   });
 
-  // Dockable & resizable panel layout
-  const [dockLayout, setDockLayout] = useState<DockLayoutState>(() => loadDockLayout());
+  // Dockable & resizable panel layout (clamped to real viewport on mount & resize)
+  const [dockLayout, setDockLayout] = useState<DockLayoutState>(() => {
+    const loaded = loadDockLayout();
+    if (typeof window !== 'undefined') {
+      return clampDockLayoutToViewport(loaded, window.innerWidth, window.innerHeight);
+    }
+    return loaded;
+  });
   const [panelDrag, setPanelDrag] = useState<ActivePanelDrag | null>(null);
+  const [resizingDockEdge, setResizingDockEdge] = useState<DockEdge | 'floating' | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     saveDockLayout(dockLayout);
   }, [dockLayout]);
+
+  useEffect(() => {
+    const onResize = () => {
+      setDockLayout((prev) => clampDockLayoutToViewport(prev, window.innerWidth, window.innerHeight));
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const activeVpTransform = viewportTransforms[activeViewportIdx] || { zoom: 0.56, pan: { x: 46, y: 12 } };
   const zoom = activeVpTransform.zoom;
@@ -178,9 +230,7 @@ export default function App() {
   const [cables, setCables] = useState<CableJournalRow[]>(() => buildCableJournal(project));
   const [terminals, setTerminals] = useState<TerminalPlanRow[]>(() => buildTerminalPlan(project));
   const [erc, setErc] = useState<ErcIssue[]>(() => runErc(project));
-  const [lastWorkerMs, setLastWorkerMs] = useState<number>(1.2);
   const [isBusy, setIsBusy] = useState<boolean>(false);
-  const [isSyncConnected, setIsSyncConnected] = useState<boolean>(false);
 
   const [leftTab, setLeftTab] = useState<'project' | 'library'>('project');
   const [exchangeOpen, setExchangeOpen] = useState(false);
@@ -189,6 +239,21 @@ export default function App() {
   const [portableOpen, setPortableOpen] = useState(false);
   const [hvacWizardOpen, setHvacWizardOpen] = useState(false);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [stampModalState, setStampModalState] = useState<{
+    open: boolean;
+    sheetId: string;
+    mode: StampModalMode;
+    field: StampFieldKey | null;
+  }>({ open: false, sheetId: 'sheet-1', mode: 'values', field: null });
+  const [customStampTemplates, setCustomStampTemplates] = useState<GostStampTemplate[]>(() =>
+    loadCustomStampTemplates()
+  );
+  const mergedStampTemplates = useMemo(
+    () => mergeStampTemplates(project, customStampTemplates),
+    [project, customStampTemplates]
+  );
+  const [fluxBusMessages, setFluxBusMessages] = useState<FluxBusMessage[]>([]);
   const [editingCatalogItem, setEditingCatalogItem] = useState<CatalogItem | null>(null);
   const [customCatalog, setCustomCatalog] = useState<CatalogItem[]>(() => loadCustomCatalog());
   const mergedCatalog = useMemo(() => mergeCatalogItems(customCatalog), [customCatalog]);
@@ -266,7 +331,6 @@ export default function App() {
         setCables(res.cables);
         setTerminals(res.terminals);
         setErc(res.erc);
-        setLastWorkerMs(res.durationMs);
         appendLog(
           'INFO',
           'WORKER',
@@ -314,7 +378,6 @@ export default function App() {
     try {
       es = new EventSource('/api/sync/stream');
       es.onopen = () => {
-        setIsSyncConnected(true);
         appendLog('SYNC', 'SYNC-API', 'Подключён поток синхронизации в реальном времени (SSE).');
       };
       es.onmessage = (ev) => {
@@ -347,16 +410,28 @@ export default function App() {
               if (prev.some((p) => p.id === srvEntry.id)) return prev;
               return [srvEntry, ...prev.slice(0, 399)];
             });
+          } else if (payload.type === 'flux-bus-event') {
+            setFluxBusMessages((prev) => [
+              createFluxBusLogEntry(
+                'inbound',
+                'sse/flux-bus',
+                String(payload.action || 'event'),
+                String(payload.sourceApp || 'flux-module'),
+                String(payload.targetApp || 'e3promax-ecad'),
+                JSON.stringify(payload.payload || {}).slice(0, 80)
+              ),
+              ...prev.slice(0, 49),
+            ]);
           }
         } catch {
           // ignore heartbeat
         }
       };
       es.onerror = () => {
-        setIsSyncConnected(false);
+        // Offline / static fallback
       };
     } catch {
-      setIsSyncConnected(false);
+      // EventSource unavailable
     }
 
     return () => {
@@ -396,6 +471,19 @@ export default function App() {
       suppressSyncPushRef.current = false;
     },
     [pushSync]
+  );
+
+  // Coalesce rapid text typing into a single undo snapshot every ~700ms per field
+  const lastCoalescedEditRef = useRef<{ key: string; at: number } | null>(null);
+  const commitCoalesced = useCallback(
+    (editKey: string, updater: (prev: E3Project) => E3Project) => {
+      const now = Date.now();
+      const prevEdit = lastCoalescedEditRef.current;
+      const shouldRecord = !prevEdit || prevEdit.key !== editKey || now - prevEdit.at > 700;
+      lastCoalescedEditRef.current = { key: editKey, at: now };
+      commitProject(updater, shouldRecord);
+    },
+    [commitProject]
   );
 
   const handleUndo = useCallback(() => {
@@ -444,25 +532,9 @@ export default function App() {
     [project.annotations, selectedAnnotationId]
   );
 
-  // Reroute attached wires whenever a device moves or rotates (with obstacle avoidance)
-  const rerouteDeviceWires = (dev: E3Device, allDevices: E3Device[], wires: E3Wire[]): E3Wire[] => {
-    const devMap = new Map(allDevices.map((d) => [d.id, d]));
-    return wires.map((w) => {
-      if (w.fromDeviceId !== dev.id && w.toDeviceId !== dev.id) return w;
-      const d1 = devMap.get(w.fromDeviceId);
-      const d2 = devMap.get(w.toDeviceId);
-      const p1 = d1?.pins.find((p) => p.id === w.fromPinId);
-      const p2 = d2?.pins.find((p) => p.id === w.toPinId);
-      if (!d1 || !d2 || !p1 || !p2) return w;
-      const obstacles = allDevices
-        .filter((d) => d.sheetId === w.sheetId && d.id !== d1.id && d.id !== d2.id && d.category !== 'io_matrix')
-        .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
-      return {
-        ...w,
-        waypoints: autoRouteOrthogonal(getAbsolutePinPos(d1, p1), getAbsolutePinPos(d2, p2), 20, obstacles),
-      };
-    });
-  };
+  // Reroute attached wires whenever a device moves or rotates (with obstacle & wire-overlap avoidance)
+  const rerouteDeviceWires = (dev: E3Device, allDevices: E3Device[], wires: E3Wire[]): E3Wire[] =>
+    rerouteAttachedWires(dev.id, allDevices, wires, 20);
 
   const dragSnapshotRef = useRef<E3Project | null>(null);
 
@@ -495,6 +567,7 @@ export default function App() {
     (deviceId: string, x: number, y: number) => {
       setDocState((s) => {
         const prev = s.present;
+        if (isLayerLocked(prev.layers, 'devices')) return s;
         const devices = prev.devices.map((d) => (d.id === deviceId ? { ...d, x, y } : d));
         const moved = devices.find((d) => d.id === deviceId);
         const wires = moved ? rerouteDeviceWires(moved, devices, prev.wires) : prev.wires;
@@ -509,7 +582,13 @@ export default function App() {
 
   const handleUpdateDevice = useCallback(
     (deviceId: string, patch: Partial<E3Device>) => {
-      commitProject((prev) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const patchKeys = Object.keys(patch).sort().join(',');
+      const isDiscrete = 'rotation' in patch || 'bindingState' in patch || 'sheetId' in patch;
+      const apply = (prev: E3Project): E3Project => {
         const devices = prev.devices.map((d) => (d.id === deviceId ? { ...d, ...patch } : d));
         const updated = devices.find((d) => d.id === deviceId);
         const wires = updated ? rerouteDeviceWires(updated, devices, prev.wires) : prev.wires;
@@ -520,20 +599,34 @@ export default function App() {
           devices,
           wires,
         };
-      });
+      };
+      if (isDiscrete) {
+        commitProject(apply);
+      } else {
+        commitCoalesced(`dev:${deviceId}:${patchKeys}`, apply);
+      }
     },
-    [commitProject]
+    [commitProject, commitCoalesced, appendLog]
   );
 
   const handleRotateSelected = useCallback(() => {
     if (!selectedDevice) return;
+    if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+      appendLog('WARN', 'E3-CORE', 'Нельзя повернуть: слой «Изделия и аппараты» заблокирован.');
+      return;
+    }
     const nextRot = ((selectedDevice.rotation + 90) % 360) as 0 | 90 | 180 | 270;
     handleUpdateDevice(selectedDevice.id, { rotation: nextRot });
     appendLog('INFO', 'E3-CORE', `Элемент ${selectedDevice.designation} повёрнут на ${nextRot}°.`);
   }, [selectedDevice, handleUpdateDevice, appendLog]);
 
   const handleDeleteSelected = useCallback(() => {
+    const curLayers = docStateRef.current.present.layers;
     if (selectedDeviceId) {
+      if (isLayerLocked(curLayers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Удаление отклонено: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
       const target = project.devices.find((d) => d.id === selectedDeviceId);
       commitProject((prev) => ({
         ...prev,
@@ -547,6 +640,10 @@ export default function App() {
       setSelectedDeviceId(null);
       if (target) appendLog('WARN', 'E3-CORE', `Удалён элемент ${target.designation} и связанные цепи.`);
     } else if (selectedWireId) {
+      if (isLayerLocked(curLayers, 'wires')) {
+        appendLog('WARN', 'E3-CORE', 'Удаление отклонено: слой «Цепи и провода» заблокирован.');
+        return;
+      }
       commitProject((prev) => ({
         ...prev,
         revision: prev.revision + 1,
@@ -556,6 +653,10 @@ export default function App() {
       setSelectedWireId(null);
       appendLog('WARN', 'E3-CORE', 'Удалено соединение со схемы.');
     } else if (selectedAnnotationId) {
+      if (isLayerLocked(curLayers, 'annotations')) {
+        appendLog('WARN', 'E3-CORE', 'Удаление отклонено: слой «Аннотации и зоны» заблокирован.');
+        return;
+      }
       commitProject((prev) => ({
         ...prev,
         revision: prev.revision + 1,
@@ -569,13 +670,26 @@ export default function App() {
 
   const handlePlaceCatalogItem = useCallback(
     (item: CatalogItem, x?: number, y?: number, targetSheetId?: string) => {
-      const existingWithPrefix = project.devices.filter((d) =>
-        d.designation.startsWith(`-${item.defaultPrefix}`)
-      ).length;
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Размещение невозможно: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const sheetId = targetSheetId || activeSheet?.id || project.sheets[0].id;
+      const targetSheet = project.sheets.find((s) => s.id === sheetId) || project.sheets[0];
+      const sheetDevices = project.devices.filter((d) => d.sheetId === sheetId);
       const des = nextUniqueDesignation(project.devices, item.defaultPrefix);
       const id = `dev-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
-      const posX = x ?? 180 + (existingWithPrefix % 5) * 160;
-      const posY = y ?? 180 + Math.floor(existingWithPrefix / 5) * 150;
+      const smartPos =
+        x === undefined || y === undefined
+          ? findSmartCatalogSpot(
+              { width: item.width, height: item.height },
+              sheetDevices,
+              targetSheet,
+              project.visualSettings.gridSize
+            )
+          : { x, y };
+      const posX = smartPos.x;
+      const posY = smartPos.y;
 
       const newDev: E3Device = {
         id,
@@ -585,7 +699,7 @@ export default function App() {
         article: item.article,
         manufacturer: item.manufacturer,
         category: item.category,
-        sheetId: targetSheetId || activeSheet?.id || project.sheets[0].id,
+        sheetId,
         x: posX,
         y: posY,
         rotation: 0,
@@ -608,11 +722,15 @@ export default function App() {
       setSelectedAnnotationId(null);
       appendLog('INFO', 'E3-CORE', `Размещён компонент ${newDev.designation} (${newDev.article}).`);
     },
-    [project.devices, project.sheets, activeSheet?.id, commitProject, appendLog]
+    [project.devices, project.sheets, project.visualSettings.gridSize, activeSheet?.id, commitProject, appendLog]
   );
 
   const handleCreateAnnotation = useCallback(
     (sheetId: string, kind: AnnotationKind, x: number, y: number) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'annotations')) {
+        appendLog('WARN', 'E3-CORE', 'Создание отклонено: слой «Аннотации и зоны» заблокирован.');
+        return;
+      }
       const newAnn: E3Annotation = {
         id: `ann-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
         sheetId,
@@ -645,30 +763,38 @@ export default function App() {
   );
 
   const handleMoveAnnotation = useCallback((annId: string, x: number, y: number) => {
-    setDocState((s) => ({
-      ...s,
-      present: {
-        ...s.present,
-        updatedAt: new Date().toISOString(),
-        annotations: (s.present.annotations || []).map((a) => (a.id === annId ? { ...a, x, y } : a)),
-      },
-    }));
+    setDocState((s) => {
+      if (isLayerLocked(s.present.layers, 'annotations')) return s;
+      return {
+        ...s,
+        present: {
+          ...s.present,
+          updatedAt: new Date().toISOString(),
+          annotations: (s.present.annotations || []).map((a) => (a.id === annId ? { ...a, x, y } : a)),
+        },
+      };
+    });
   }, []);
 
   const handleUpdateAnnotation = useCallback(
     (annId: string, patch: Partial<E3Annotation>) => {
-      commitProject((prev) => ({
+      if (isLayerLocked(docStateRef.current.present.layers, 'annotations')) return;
+      commitCoalesced(`ann:${annId}:${Object.keys(patch).join(',')}`, (prev) => ({
         ...prev,
         revision: prev.revision + 1,
         updatedAt: new Date().toISOString(),
         annotations: (prev.annotations || []).map((a) => (a.id === annId ? { ...a, ...patch } : a)),
       }));
     },
-    [commitProject]
+    [commitCoalesced]
   );
 
   const handleDeleteAnnotation = useCallback(
     (annId: string) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'annotations')) {
+        appendLog('WARN', 'E3-CORE', 'Слой «Аннотации и зоны» заблокирован.');
+        return;
+      }
       commitProject((prev) => ({
         ...prev,
         revision: prev.revision + 1,
@@ -677,22 +803,29 @@ export default function App() {
       }));
       if (selectedAnnotationId === annId) setSelectedAnnotationId(null);
     },
-    [commitProject, selectedAnnotationId]
+    [commitProject, selectedAnnotationId, appendLog]
   );
 
   const handleCreateWire = useCallback(
     (fromDeviceId: string, fromPinId: string, toDeviceId: string, toPinId: string) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'wires')) {
+        appendLog('WARN', 'E3-CORE', 'Трассировка отклонена: слой «Цепи и провода» заблокирован.');
+        return;
+      }
       const d1 = project.devices.find((d) => d.id === fromDeviceId);
       const d2 = project.devices.find((d) => d.id === toDeviceId);
       const p1 = d1?.pins.find((p) => p.id === fromPinId);
       const p2 = d2?.pins.find((p) => p.id === toPinId);
       if (!d1 || !d2 || !p1 || !p2) return;
 
-      const abs1 = getAbsolutePinPos(d1, p1);
-      const abs2 = getAbsolutePinPos(d2, p2);
+      const abs1 = { ...getAbsolutePinPos(d1, p1), deviceId: d1.id };
+      const abs2 = { ...getAbsolutePinPos(d2, p2), deviceId: d2.id };
       const obstacles = project.devices
-        .filter((d) => d.sheetId === d1.sheetId && d.id !== d1.id && d.id !== d2.id && d.category !== 'io_matrix')
+        .filter((d) => d.sheetId === d1.sheetId && d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
         .map((d) => ({ id: d.id, x: d.x, y: d.y, width: d.width, height: d.height }));
+      const occupied = project.wires
+        .filter((w) => w.sheetId === d1.sheetId)
+        .flatMap((w) => extractWireSegments(w.waypoints));
       let wireIdx = project.wires.length + 1;
       while (project.wires.some((w) => w.netName === `NET_${wireIdx}`)) {
         wireIdx += 1;
@@ -706,7 +839,7 @@ export default function App() {
         fromPinId,
         toDeviceId,
         toPinId,
-        waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles),
+        waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles, 0, occupied),
         crossSection: p1.signalType === 'power' ? '2.5 мм²' : '0.75 мм²',
         wireNumber: String(100 + wireIdx),
       };
@@ -725,11 +858,12 @@ export default function App() {
         `Создана цепь ${newWire.netName}: ${d1.designation}:${p1.name} → ${d2.designation}:${p2.name}.`
       );
     },
-    [project.devices, project.wires.length, commitProject, appendLog]
+    [project.devices, project.wires, commitProject, appendLog]
   );
 
   const handleAddSheet = useCallback(() => {
     const num = project.sheets.length + 1;
+    const firstStamp = project.sheets[0]?.titleBlock;
     const newSheet: E3Sheet = {
       id: `sheet-${Date.now()}`,
       number: num,
@@ -738,10 +872,21 @@ export default function App() {
       width: 1400,
       height: 920,
       titleBlock: {
-        documentCode: project.projectCode,
-        organization: project.sheets[0]?.titleBlock.organization || 'Проектный отдел',
-        designer: project.author,
-        checker: project.sheets[0]?.titleBlock.checker || '',
+        stampForm: 'form2a',
+        documentCode: firstStamp?.documentCode || project.projectCode,
+        projectTitle: firstStamp?.projectTitle || project.name,
+        organization: firstStamp?.organization || 'ООО «ПромВентАвтоматика»',
+        designer: firstStamp?.designer || project.author,
+        checker: firstStamp?.checker || '',
+        techControl: firstStamp?.techControl || '',
+        normControl: firstStamp?.normControl || '',
+        approver: firstStamp?.approver || '',
+        litera: firstStamp?.litera || 'Р',
+        mass: '—',
+        scale: 'б/м',
+        date: firstStamp?.date || '',
+        invOriginal: firstStamp?.invOriginal || '',
+        invDuplicate: firstStamp?.invDuplicate || '',
         sheetTitle: `Лист ${num}. Принципиальная схема`,
       },
     };
@@ -817,6 +962,17 @@ export default function App() {
     },
     [project.sheets, activeSheetId, activeViewportIdx]
   );
+
+  const didInitialFitRef = useRef(false);
+  useEffect(() => {
+    if (didInitialFitRef.current) return;
+    didInitialFitRef.current = true;
+    const raf = window.requestAnimationFrame(() => {
+      const firstSheet = project.sheets[0];
+      if (firstSheet) fitSheetToViewport(firstSheet, 0);
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [fitSheetToViewport, project.sheets]);
 
   const handleSetViewportLayout = useCallback(
     (mode: ViewportLayoutMode) => {
@@ -959,6 +1115,7 @@ export default function App() {
       const startX = e.clientX;
       const startY = e.clientY;
       const startSize = dockLayout.sizes[edge];
+      setResizingDockEdge(edge);
 
       const onMove = (ev: PointerEvent) => {
         let next = startSize;
@@ -973,6 +1130,7 @@ export default function App() {
       };
 
       const onUp = () => {
+        setResizingDockEdge(null);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
       };
@@ -990,6 +1148,7 @@ export default function App() {
       const startX = e.clientX;
       const startY = e.clientY;
       const orig = dockLayout.panels[panelId].floating;
+      setResizingDockEdge('floating');
 
       const onMove = (ev: PointerEvent) => {
         setDockLayout((prev) =>
@@ -1007,6 +1166,7 @@ export default function App() {
       };
 
       const onUp = () => {
+        setResizingDockEdge(null);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
       };
@@ -1081,13 +1241,258 @@ export default function App() {
     [commitProject, appendLog]
   );
 
+  const handleApplyStamp = useCallback(
+    (
+      sheetId: string,
+      patch: Partial<E3TitleBlock>,
+      applyToAll: boolean,
+      includeSheetTitleOnAll = false,
+      applyFormToAll = false
+    ) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'frame')) {
+        appendLog('WARN', 'E3-CORE', 'Штамп не изменён: слой «Рамка и штамп ГОСТ» заблокирован.');
+        return;
+      }
+      const shouldCopyForm = applyFormToAll || patch.stampForm === 'custom';
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        sheets: prev.sheets.map((s) => {
+          if (s.id === sheetId) {
+            return { ...s, titleBlock: { ...s.titleBlock, ...patch } };
+          }
+          if (applyToAll) {
+            const sharedPatch: Partial<E3TitleBlock> = { ...patch };
+            if (!shouldCopyForm) {
+              // Preserve standard Form 1 / Form 2a split across sheets unless applying custom template or explicit form change
+              delete sharedPatch.stampForm;
+              delete sharedPatch.customTemplateId;
+            }
+            if (!includeSheetTitleOnAll) {
+              delete sharedPatch.sheetTitle;
+            }
+            return { ...s, titleBlock: { ...s.titleBlock, ...sharedPatch } };
+          }
+          return s;
+        }),
+      }));
+
+      fetch(`/api/v1/projects/${encodeURIComponent(project.id)}/sheets/${encodeURIComponent(sheetId)}/stamp`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-Flux-Client': clientIdRef.current },
+        body: JSON.stringify({
+          patch,
+          applyToAll,
+          includeSheetTitle: includeSheetTitleOnAll,
+          applyFormToAll: shouldCopyForm,
+        }),
+      }).catch(() => {});
+
+      appendLog(
+        'SYNC',
+        'E3-CORE',
+        applyToAll
+          ? `Обновлён штамп ГОСТ 2.104 на всех листах (${project.sheets.length}).`
+          : 'Обновлён штамп ГОСТ 2.104 на выбранном листе.'
+      );
+    },
+    [commitProject, project.id, project.sheets.length, appendLog]
+  );
+
+  const handleSaveCustomTemplate = useCallback(
+    (template: GostStampTemplate) => {
+      setCustomStampTemplates((prev) => {
+        const idx = prev.findIndex((t) => t.id === template.id);
+        const next = idx >= 0 ? prev.map((t) => (t.id === template.id ? template : t)) : [...prev, template];
+        saveCustomStampTemplates(next);
+        return next;
+      });
+      commitProject((prev) => {
+        const existing = prev.customStampTemplates || [];
+        const idx = existing.findIndex((t) => t.id === template.id);
+        const nextTemplates =
+          idx >= 0 ? existing.map((t) => (t.id === template.id ? template : t)) : [...existing, template];
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          customStampTemplates: nextTemplates,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Сохранён шаблон штампа «${template.name}» (${template.cells.length} граф).`);
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleDeleteCustomTemplate = useCallback(
+    (templateId: string) => {
+      setCustomStampTemplates((prev) => {
+        const next = prev.filter((t) => t.id !== templateId);
+        saveCustomStampTemplates(next);
+        return next;
+      });
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        customStampTemplates: (prev.customStampTemplates || []).filter((t) => t.id !== templateId),
+        sheets: prev.sheets.map((s) =>
+          s.titleBlock.stampForm === 'custom' && s.titleBlock.customTemplateId === templateId
+            ? {
+                ...s,
+                titleBlock: {
+                  ...s.titleBlock,
+                  stampForm: s.number > 1 ? 'form2a' : 'form1',
+                  customTemplateId: undefined,
+                },
+              }
+            : s
+        ),
+      }));
+      appendLog('WARN', 'E3-CORE', 'Пользовательский шаблон штампа удалён.');
+    },
+    [commitProject, appendLog]
+  );
+
+  // Inbound Flux Studio Host / Sibling Apps API listener
+  useEffect(() => {
+    const dispatchCmd = (cmd: FluxCommandRequest, replyFn?: (resp: unknown) => void) => {
+      const resp = executeFluxInboundCommand(cmd, docStateRef.current.present, {
+        onUpdateStamp: (sheetId, patch, applyToAll) =>
+          handleApplyStamp(sheetId, patch as Partial<E3TitleBlock>, applyToAll, false),
+        onAddDevice: (payload) => {
+          const des = String(payload.designation || nextUniqueDesignation(docStateRef.current.present.devices, 'K'));
+          const cat = mergedCatalog[0];
+          if (cat) handlePlaceCatalogItem({ ...cat, componentName: String(payload.componentName || cat.componentName) }, Number(payload.x) || 260, Number(payload.y) || 240);
+          return { designation: des };
+        },
+        onRerouteWires: () => handleAutoRouteActiveSheetWires(),
+      });
+      setFluxBusMessages((prev) => [
+        createFluxBusLogEntry(
+          'inbound',
+          'flux-studio',
+          cmd.action,
+          cmd.sourceApp || 'flux-host',
+          'e3promax-ecad',
+          resp.ok ? 'OK' : resp.error || 'ERR'
+        ),
+        ...prev.slice(0, 49),
+      ]);
+      replyFn?.(resp);
+    };
+
+    const onWindowMessage = (ev: MessageEvent) => {
+      const d = ev.data;
+      if (d && d.flux === 'module-rpc' && d.action && (!d.targetApp || d.targetApp === 'e3promax-ecad')) {
+        dispatchCmd(
+          {
+            requestId: String(d.requestId || Date.now()),
+            sourceApp: String(d.sourceApp || 'flux-parent'),
+            action: d.action,
+            payload: d.payload,
+          },
+          (resp) => {
+            (ev.source as Window | null)?.postMessage({ flux: 'module-rpc-reply', ...((resp as object) || {}) }, '*');
+          }
+        );
+      }
+    };
+
+    window.addEventListener('message', onWindowMessage);
+    let busCh: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        busCh = new BroadcastChannel('flux-studio-bus');
+        busCh.onmessage = (ev) => {
+          const d = ev.data;
+          if (d && d.flux === 'module-rpc' && d.action && (!d.targetApp || d.targetApp === 'e3promax-ecad')) {
+            dispatchCmd(
+              {
+                requestId: String(d.requestId || Date.now()),
+                sourceApp: String(d.sourceApp || 'flux-sibling'),
+                action: d.action,
+                payload: d.payload,
+              },
+              (resp) => busCh?.postMessage({ flux: 'module-rpc-reply', ...((resp as object) || {}) })
+            );
+          }
+        };
+      } catch {
+        // ignore
+      }
+    }
+
+    const offFluxOn = window.flux?.on?.('e3.command', (payload) => {
+      const p = (payload as Record<string, unknown>) || {};
+      if (typeof p.action === 'string') {
+        dispatchCmd({
+          requestId: String(p.requestId || Date.now()),
+          sourceApp: String(p.sourceApp || 'window.flux'),
+          action: p.action as FluxCommandRequest['action'],
+          payload: (p.payload as Record<string, unknown>) || {},
+        });
+      }
+    });
+
+    return () => {
+      window.removeEventListener('message', onWindowMessage);
+      busCh?.close();
+      offFluxOn?.();
+    };
+  }, [handleApplyStamp, handlePlaceCatalogItem, handleAutoRouteActiveSheetWires, mergedCatalog]);
+
+  const handleBatchPublish = useCallback(
+    async (options: BatchPublishOptions) => {
+      const t0 = performance.now();
+      const endpoint =
+        options.format === 'pdf'
+          ? `/api/v1/projects/${encodeURIComponent(project.id)}/publish/pdf`
+          : `/api/v1/projects/${encodeURIComponent(project.id)}/publish/dxf`;
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...options, project }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => `HTTP ${res.status}`);
+        throw new Error(`Ошибка публикации (${res.status}): ${errText}`);
+      }
+
+      const buf = new Uint8Array(await res.arrayBuffer());
+      const ext =
+        options.format === 'pdf' ? 'pdf' : options.format === 'dxf-zip' ? 'zip' : 'dxf';
+      const mime =
+        options.format === 'pdf'
+          ? 'application/pdf'
+          : options.format === 'dxf-zip'
+            ? 'application/zip'
+            : 'application/dxf';
+      const filename = `${project.projectCode}-package.${ext}`;
+      downloadBytes(filename, buf, mime);
+      const dt = Math.round((performance.now() - t0) * 100) / 100;
+      appendLog(
+        'INFO',
+        'CAD-DXF',
+        `Выполнена пакетная публикация ${filename} (${options.sheetIds.length} л., ${Math.round(buf.length / 1024)} КБ).`,
+        dt
+      );
+    },
+    [project, appendLog]
+  );
+
   const anyModalOpen =
     exchangeOpen ||
     visualOpen ||
     reportOpen ||
     portableOpen ||
     hvacWizardOpen ||
-    catalogModalOpen;
+    catalogModalOpen ||
+    publishModalOpen ||
+    stampModalState.open;
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1268,15 +1673,112 @@ export default function App() {
     throw new Error('Ожидается файл E3 XML (<E3Project>) или Flux Bridge JSON (flux-e3-bridge/v1).');
   };
 
-  const handleApplyVisualSettings = (nextSettings: E3VisualSettings) => {
-    commitProject((prev) => ({
-      ...prev,
-      revision: prev.revision + 1,
-      updatedAt: new Date().toISOString(),
-      visualSettings: nextSettings,
-    }));
-    appendLog('SYNC', 'E3-CORE', `Применены и синхронизированы настройки визуализации «${nextSettings.presetName}».`);
-  };
+  const handleApplyVisualSettings = useCallback(
+    (nextSettings: E3VisualSettings) => {
+      commitProject((prev) => {
+        const curLayers = resolveCadLayers(prev.layers, prev.visualSettings.showGostFrame);
+        const syncedLayers =
+          curLayers.frame.visible !== nextSettings.showGostFrame
+            ? {
+                ...curLayers,
+                frame: { ...curLayers.frame, visible: nextSettings.showGostFrame },
+              }
+            : curLayers;
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          layers: syncedLayers,
+          visualSettings: nextSettings,
+        };
+      });
+      appendLog('SYNC', 'E3-CORE', `Применены и синхронизированы настройки визуализации «${nextSettings.presetName}».`);
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleToggleLayerVisibility = useCallback(
+    (layerId: CadLayerId) => {
+      const curLayers = resolveCadLayers(
+        docStateRef.current.present.layers,
+        docStateRef.current.present.visualSettings.showGostFrame
+      );
+      const nextLayers = toggleLayerVisibility(curLayers, layerId);
+      const nextVis = nextLayers[layerId].visible;
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        layers: nextLayers,
+        visualSettings:
+          layerId === 'frame'
+            ? { ...prev.visualSettings, showGostFrame: nextVis }
+            : prev.visualSettings,
+      }));
+      if (!nextVis) {
+        if (layerId === 'devices') setSelectedDeviceId(null);
+        else if (layerId === 'wires') setSelectedWireId(null);
+        else if (layerId === 'annotations') setSelectedAnnotationId(null);
+      }
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Слой «${CAD_LAYER_DEFS[layerId].name}»: ${nextVis ? 'показан' : 'скрыт'}.`
+      );
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleToggleLayerLock = useCallback(
+    (layerId: CadLayerId) => {
+      const curLayers = resolveCadLayers(
+        docStateRef.current.present.layers,
+        docStateRef.current.present.visualSettings.showGostFrame
+      );
+      const nextLayers = toggleLayerLock(curLayers, layerId);
+      const nextLocked = nextLayers[layerId].locked;
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        layers: nextLayers,
+      }));
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Слой «${CAD_LAYER_DEFS[layerId].name}»: ${nextLocked ? 'заблокирован' : 'разблокирован'}.`
+      );
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleShowAllLayers = useCallback(() => {
+    commitProject((prev) => {
+      const curLayers = resolveCadLayers(prev.layers, prev.visualSettings.showGostFrame);
+      const nextLayers = setAllLayersVisible(curLayers, true);
+      return {
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        layers: nextLayers,
+        visualSettings: { ...prev.visualSettings, showGostFrame: true },
+      };
+    });
+    appendLog('INFO', 'E3-CORE', 'Все слои чертежа отображены.');
+  }, [commitProject, appendLog]);
+
+  const handleUnlockAllLayers = useCallback(() => {
+    commitProject((prev) => {
+      const curLayers = resolveCadLayers(prev.layers, prev.visualSettings.showGostFrame);
+      return {
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        layers: setAllLayersLocked(curLayers, false),
+      };
+    });
+    appendLog('INFO', 'E3-CORE', 'Все слои чертежа разблокированы.');
+  }, [commitProject, appendLog]);
 
   const handleRunStressBatch = (count: number) => {
     const t0 = performance.now();
@@ -1455,7 +1957,6 @@ export default function App() {
           }}
           onDeleteCustomCatalogItem={handleDeleteCustomCatalogItem}
           onOpenHvacWizard={() => setHvacWizardOpen(true)}
-          onRunStressBatch={handleRunStressBatch}
         />
       );
     }
@@ -1465,19 +1966,22 @@ export default function App() {
         <RightInspector
           project={project}
           activeSheet={activeSheet}
+          customTemplates={mergedStampTemplates}
           selectedDevice={selectedDevice}
           selectedWire={selectedWire}
           selectedAnnotation={selectedAnnotation}
           onUpdateDevice={handleUpdateDevice}
           onSaveDeviceToCatalog={handleSaveDeviceToCatalog}
           onUpdateWire={(wireId, patch) => {
-            commitProject((prev) => ({
+            if (isLayerLocked(docStateRef.current.present.layers, 'wires')) return;
+            commitCoalesced(`wire:${wireId}:${Object.keys(patch).join(',')}`, (prev) => ({
               ...prev,
               revision: prev.revision + 1,
               wires: prev.wires.map((w) => (w.id === wireId ? { ...w, ...patch } : w)),
             }));
           }}
           onDeleteWire={(wireId) => {
+            if (isLayerLocked(docStateRef.current.present.layers, 'wires')) return;
             commitProject((prev) => ({
               ...prev,
               revision: prev.revision + 1,
@@ -1488,16 +1992,32 @@ export default function App() {
           onUpdateAnnotation={handleUpdateAnnotation}
           onDeleteAnnotation={handleDeleteAnnotation}
           onUpdateSheetTitle={(sheetId, patch) => {
-            commitProject((prev) => ({
+            if (isLayerLocked(docStateRef.current.present.layers, 'frame')) return;
+            const isForm = 'stampForm' in patch || 'customTemplateId' in patch;
+            const apply = (prev: E3Project): E3Project => ({
               ...prev,
               revision: prev.revision + 1,
               sheets: prev.sheets.map((s) =>
                 s.id === sheetId ? { ...s, titleBlock: { ...s.titleBlock, ...patch } } : s
               ),
-            }));
+            });
+            if (isForm) commitProject(apply);
+            else commitCoalesced(`sheet:${sheetId}:${Object.keys(patch).join(',')}`, apply);
           }}
           onUpdateSheetFormat={handleUpdateSheetFormat}
           onUpdateFontFamily={handleUpdateFontFamily}
+          onOpenStampEditor={(sheetId, field) => {
+            if (isLayerLocked(docStateRef.current.present.layers, 'frame')) return;
+            setStampModalState({ open: true, sheetId, mode: 'values', field: field || null });
+          }}
+          onOpenStampDesigner={(sheetId) =>
+            setStampModalState({ open: true, sheetId, mode: 'designer', field: null })
+          }
+          onOpenBomPanel={() => {
+            setConsoleTab('bom');
+            setConsoleCollapsed(false);
+          }}
+          onToggleLayerLock={handleToggleLayerLock}
         />
       );
     }
@@ -1512,7 +2032,8 @@ export default function App() {
         terminals={terminals}
         erc={erc}
         logs={logs}
-        lastWorkerMs={lastWorkerMs}
+        fluxBusMessages={fluxBusMessages}
+        onFluxBusLog={(entry) => setFluxBusMessages((prev) => [entry, ...prev.slice(0, 49)])}
         onSetTab={setConsoleTab}
         onToggleCollapse={() => setConsoleCollapsed((c) => !c)}
         onJumpToIssue={(issue) => {
@@ -1532,27 +2053,6 @@ export default function App() {
             setSelectedAnnotationId(null);
           }
         }}
-        onDownloadBomCsv={() => {
-          downloadText(`${project.projectCode}-PE3.csv`, exportBomCsv(bom), 'text/csv;charset=utf-8');
-          appendLog('INFO', 'E3-CORE', `Выгружена спецификация ${project.projectCode}-PE3.csv.`);
-        }}
-        onDownloadCablesCsv={() => {
-          downloadText(
-            `${project.projectCode}-cables.csv`,
-            exportCableJournalCsv(cables),
-            'text/csv;charset=utf-8'
-          );
-          appendLog('INFO', 'E3-CORE', `Выгружен кабельный журнал ${project.projectCode}-cables.csv.`);
-        }}
-        onDownloadDxf={handleExportDxf}
-        onDownloadE3Xml={handleExportE3sOle2}
-        onDownloadLogs={() => {
-          downloadText(
-            `e3promax-logs-${Date.now()}.json`,
-            JSON.stringify(logs, null, 2),
-            'application/json;charset=utf-8'
-          );
-        }}
         onTestApiSyncPush={handleTestApiSyncPush}
       />
     );
@@ -1568,7 +2068,16 @@ export default function App() {
     if (panels.length === 0) return null;
     const isHorizBand = edge === 'bottom' || edge === 'top';
     const allCollapsed = panels.every((p) => p.collapsed);
-    const bandSize = allCollapsed ? 28 : dockLayout.sizes[edge];
+    const useSideRail = !isHorizBand && panels.length === 1;
+    const rawBandSize = dockLayout.sizes[edge];
+    const targetBandSize = allCollapsed
+      ? isHorizBand
+        ? COLLAPSED_HEADER_HEIGHT
+        : useSideRail
+          ? COLLAPSED_SIDE_RAIL_WIDTH
+          : 196
+      : rawBandSize;
+    const isResizingThis = resizingDockEdge === edge;
 
     const dividerClass =
       edge === 'left'
@@ -1579,14 +2088,13 @@ export default function App() {
             ? 'border-t border-[var(--flux-line)]'
             : 'border-b border-[var(--flux-line)]';
 
-    const bandStyle: React.CSSProperties = isHorizBand
-      ? { height: bandSize }
-      : { width: allCollapsed ? 180 : bandSize };
-
     const band = (
-      <div
+      <motion.div
         data-testid={`dock-zone-${edge}`}
-        style={bandStyle}
+        data-collapsed={allCollapsed ? 'true' : 'false'}
+        initial={false}
+        animate={isHorizBand ? { height: targetBandSize } : { width: targetBandSize }}
+        transition={isResizingThis ? { duration: 0 } : CAD_PANEL_TRANSITION}
         className={`no-print shrink-0 flex ${
           isHorizBand ? 'flex-row divide-x' : 'flex-col divide-y'
         } divide-[var(--flux-line)] min-w-0 min-h-0 overflow-hidden ${dividerClass}`}
@@ -1595,6 +2103,11 @@ export default function App() {
           <DockablePanelFrame
             key={p.id}
             panel={p}
+            edge={edge}
+            bandSize={rawBandSize}
+            useSideRail={useSideRail}
+            multiPanelInBand={panels.length > 1}
+            isResizing={isResizingThis}
             className="flex-1"
             onStartDrag={handleStartPanelDrag}
             onMoveDock={(id, side: DockSide) =>
@@ -1607,21 +2120,33 @@ export default function App() {
             {renderPanelContent(p.id)}
           </DockablePanelFrame>
         ))}
-      </div>
+      </motion.div>
+    );
+
+    const resizer = (
+      <AnimatePresence initial={false}>
+        {!allCollapsed && (
+          <DockResizeHandle
+            key={`resizer-${edge}`}
+            edge={edge}
+            onResizeStart={handleResizeDockEdgeStart}
+          />
+        )}
+      </AnimatePresence>
     );
 
     if (edge === 'left' || edge === 'top') {
       return (
         <>
           {band}
-          {!allCollapsed && <DockResizeHandle edge={edge} onResizeStart={handleResizeDockEdgeStart} />}
+          {resizer}
         </>
       );
     }
 
     return (
       <>
-        {!allCollapsed && <DockResizeHandle edge={edge} onResizeStart={handleResizeDockEdgeStart} />}
+        {resizer}
         {band}
       </>
     );
@@ -1645,7 +2170,11 @@ export default function App() {
   const workspaceBoundsRect = workspaceRef.current?.getBoundingClientRect();
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[var(--flux-bg)] text-[var(--flux-text)]">
+    <MotionConfig reducedMotion="user">
+    <div
+      data-testid="app-shell"
+      className="h-screen w-full max-w-full overflow-hidden flex flex-col bg-[var(--flux-bg)] text-[var(--flux-text)]"
+    >
       <TopToolbar
         project={project}
         activeSheet={activeSheet}
@@ -1656,13 +2185,18 @@ export default function App() {
         canRedo={future.length > 0}
         hasSelection={Boolean(selectedDeviceId || selectedWireId || selectedAnnotationId)}
         ercErrorCount={ercErrorCount}
-        isSyncConnected={isSyncConnected}
         isBusy={isBusy}
         e3BridgeHost={bridgeStatus.isWin32 ? 'Windows' : bridgeStatus.bridgeConnected ? bridgeStatus.bridgeHost : null}
         onSetTool={setTool}
         onSetViewportLayout={handleSetViewportLayout}
         onResetDockLayout={() => {
-          setDockLayout(createDefaultDockLayout());
+          setDockLayout(
+            clampDockLayoutToViewport(
+              createDefaultDockLayout(),
+              typeof window !== 'undefined' ? window.innerWidth : 1440,
+              typeof window !== 'undefined' ? window.innerHeight : 900
+            )
+          );
           appendLog('INFO', 'E3-CORE', 'Расположение окон и панелей сброшено к стандартному.');
         }}
         onUndo={handleUndo}
@@ -1724,7 +2258,7 @@ export default function App() {
         onGenerateBom={() => {
           setConsoleTab('bom');
           setConsoleCollapsed(false);
-          appendLog('INFO', 'E3-CORE', `Сформирована спецификация ПЭ3 (${bom.length} позиций).`);
+          appendLog('INFO', 'E3-CORE', `Открыта спецификация ПЭ3 (${bom.length} позиций).`);
         }}
         onDirectOpenE3={async () => {
           const res = await handleDirectOpenE3('build');
@@ -1759,6 +2293,33 @@ export default function App() {
         onDownloadCodebase={() => {
           window.location.assign('/api/export/codebase');
         }}
+        onDownloadFluxStudioZip={() => {
+          window.location.assign(`/api/export/flux-studio?projectId=${encodeURIComponent(project.id)}`);
+          appendLog('INFO', 'FLUX-BRIDGE', 'Сформирован архив подпрограммы Flux Studio (.zip).');
+        }}
+        onExportE3sOle2={handleExportE3sOle2}
+        onExportE3sXml={handleExportE3sXml}
+        onExportFluxBridge={handleExportFluxBridge}
+        onDownloadBomCsv={() => {
+          downloadText(`${project.projectCode}-PE3.csv`, exportBomCsv(bom), 'text/csv;charset=utf-8');
+          appendLog('INFO', 'E3-CORE', `Выгружена спецификация ${project.projectCode}-PE3.csv.`);
+        }}
+        onDownloadCablesCsv={() => {
+          downloadText(
+            `${project.projectCode}-cables.csv`,
+            exportCableJournalCsv(cables),
+            'text/csv;charset=utf-8'
+          );
+          appendLog('INFO', 'E3-CORE', `Выгружен кабельный журнал ${project.projectCode}-cables.csv.`);
+        }}
+        onDownloadLogsJson={() => {
+          downloadText(
+            `e3promax-logs-${Date.now()}.json`,
+            JSON.stringify(logs, null, 2),
+            'application/json;charset=utf-8'
+          );
+        }}
+        onRunStressBatch={handleRunStressBatch}
         onOpenAddCatalogItem={() => {
           setEditingCatalogItem(null);
           setCatalogModalOpen(true);
@@ -1771,6 +2332,31 @@ export default function App() {
         }}
         onAddSheet={handleAddSheet}
         onExportDxf={handleExportDxf}
+        onOpenStampEditor={() => {
+          if (isLayerLocked(docStateRef.current.present.layers, 'frame')) {
+            appendLog('WARN', 'E3-CORE', 'Слой «Рамка и штамп ГОСТ» заблокирован.');
+            return;
+          }
+          setStampModalState({
+            open: true,
+            sheetId: activeSheet?.id || project.sheets[0]?.id || 'sheet-1',
+            mode: 'values',
+            field: null,
+          });
+        }}
+        onOpenStampDesigner={() =>
+          setStampModalState({
+            open: true,
+            sheetId: activeSheet?.id || project.sheets[0]?.id || 'sheet-1',
+            mode: 'designer',
+            field: null,
+          })
+        }
+        onOpenPublishModal={() => setPublishModalOpen(true)}
+        onToggleLayerVisibility={handleToggleLayerVisibility}
+        onToggleLayerLock={handleToggleLayerLock}
+        onShowAllLayers={handleShowAllLayers}
+        onUnlockAllLayers={handleUnlockAllLayers}
       />
 
       {/* Dockable Workspace Shell */}
@@ -1785,7 +2371,12 @@ export default function App() {
             {Array.from({ length: vpCount }, (_, idx) => {
               const vpSheetId = effectiveViewportSheets[idx] || activeSheetId;
               const vpTr = viewportTransforms[idx] || { zoom: 0.42, pan: { x: 20, y: 12 } };
-              const spanClass = viewportLayout === 'three' && idx === 0 ? 'row-span-2 flex min-h-0 min-w-0' : 'flex min-h-0 min-w-0';
+              const spanClass =
+                viewportLayout === 'single'
+                  ? 'flex-1 w-full h-full flex min-h-0 min-w-0'
+                  : viewportLayout === 'three' && idx === 0
+                    ? 'row-span-2 w-full h-full flex min-h-0 min-w-0'
+                    : 'w-full h-full flex min-h-0 min-w-0';
               return (
                 <div key={idx} className={spanClass}>
                   <SchematicCanvas
@@ -1798,6 +2389,7 @@ export default function App() {
                     tool={tool}
                     zoom={vpTr.zoom}
                     pan={vpTr.pan}
+                    layers={project.layers}
                     selectedDeviceId={selectedDeviceId}
                     selectedWireId={selectedWireId}
                     selectedAnnotationId={selectedAnnotationId}
@@ -1850,6 +2442,16 @@ export default function App() {
                         snapToGrid: !project.visualSettings.snapToGrid,
                       })
                     }
+                    onToggleSmartGuides={() =>
+                      handleApplyVisualSettings({
+                        ...project.visualSettings,
+                        smartGuides: !(project.visualSettings.smartGuides !== false),
+                      })
+                    }
+                    onToggleLayerVisibility={handleToggleLayerVisibility}
+                    onToggleLayerLock={handleToggleLayerLock}
+                    onShowAllLayers={handleShowAllLayers}
+                    onUnlockAllLayers={handleUnlockAllLayers}
                     onSelectDevice={(id) => {
                       setSelectedDeviceId(id);
                       if (id) {
@@ -1878,6 +2480,10 @@ export default function App() {
                     onMoveDevice={handleMoveDevice}
                     onCreateWire={handleCreateWire}
                     onDropCatalogItem={(item, x, y, shId) => handlePlaceCatalogItem(item, x, y, shId)}
+                    onOpenStampEditor={(sheetId, fieldKey) => {
+                      if (isLayerLocked(docStateRef.current.present.layers, 'frame')) return;
+                      setStampModalState({ open: true, sheetId, mode: 'values', field: fieldKey || null });
+                    }}
                   />
                 </div>
               );
@@ -1890,22 +2496,25 @@ export default function App() {
         {renderDockBand(bottomPanels, 'bottom')}
 
         {/* Floating Undocked Panels */}
-        {floatingPanels.map((fp) => (
-          <FloatingPanelWindow
-            key={fp.id}
-            panel={fp}
-            onStartDrag={handleStartPanelDrag}
-            onResizeFloatingStart={handleResizeFloatingStart}
-            onMoveDock={(id, side) =>
-              setDockLayout((prev) =>
-                movePanelDock(prev, id, side, undefined, window.innerWidth, window.innerHeight)
-              )
-            }
-            onToggleCollapse={(id) => setDockLayout((prev) => togglePanelCollapse(prev, id))}
-          >
-            {renderPanelContent(fp.id)}
-          </FloatingPanelWindow>
-        ))}
+        <AnimatePresence initial={false}>
+          {floatingPanels.map((fp) => (
+            <FloatingPanelWindow
+              key={fp.id}
+              panel={fp}
+              isResizing={resizingDockEdge === 'floating'}
+              onStartDrag={handleStartPanelDrag}
+              onResizeFloatingStart={handleResizeFloatingStart}
+              onMoveDock={(id, side) =>
+                setDockLayout((prev) =>
+                  movePanelDock(prev, id, side, undefined, window.innerWidth, window.innerHeight)
+                )
+              }
+              onToggleCollapse={(id) => setDockLayout((prev) => togglePanelCollapse(prev, id))}
+            >
+              {renderPanelContent(fp.id)}
+            </FloatingPanelWindow>
+          ))}
+        </AnimatePresence>
 
         {/* Live Dock Drop Targets while dragging panel headers */}
         <DockDropOverlay
@@ -1995,6 +2604,28 @@ export default function App() {
         onClose={() => setHvacWizardOpen(false)}
         onBuild={handleBuildHvacDiagram}
       />
+
+      <StampEditorModal
+        open={stampModalState.open}
+        project={project}
+        customTemplates={mergedStampTemplates}
+        initialSheetId={stampModalState.sheetId}
+        initialMode={stampModalState.mode}
+        focusedField={stampModalState.field}
+        onClose={() => setStampModalState((prev) => ({ ...prev, open: false }))}
+        onApplyStamp={handleApplyStamp}
+        onSaveCustomTemplate={handleSaveCustomTemplate}
+        onDeleteCustomTemplate={handleDeleteCustomTemplate}
+      />
+
+      <PublishModal
+        open={publishModalOpen}
+        project={project}
+        activeSheetId={activeSheetId}
+        onClose={() => setPublishModalOpen(false)}
+        onPublish={handleBatchPublish}
+      />
     </div>
+    </MotionConfig>
   );
 }

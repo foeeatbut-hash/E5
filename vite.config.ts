@@ -7,9 +7,13 @@ export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'motion/react', 'lucide-react'],
     },
     server: {
       host: '0.0.0.0',

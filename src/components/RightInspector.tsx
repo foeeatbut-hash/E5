@@ -1,22 +1,39 @@
 import React, { useState } from 'react';
-import { BookmarkPlus, Check, Copy, Plus, RotateCw, Trash2, Unlink } from 'lucide-react';
+import {
+  BookmarkPlus,
+  Check,
+  Copy,
+  FileSpreadsheet,
+  LayoutTemplate,
+  Lock,
+  Plus,
+  RotateCw,
+  Trash2,
+  Type,
+  Unlink,
+} from 'lucide-react';
+import { CAD_LAYER_DEFS, resolveCadLayers } from '../core/cadLayers';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type {
   AnnotationKind,
+  CadLayerId,
   E3Annotation,
   E3Attribute,
   E3Device,
   E3Project,
   E3Sheet,
   E3Wire,
+  GostStampTemplate,
   SchematicFontFamily,
   SheetFormat,
   SignalType,
 } from '../core/e3Types';
+import type { StampFieldKey } from '../core/gostFrame';
 
 interface RightInspectorProps {
   project: E3Project;
   activeSheet: E3Sheet | undefined;
+  customTemplates?: GostStampTemplate[];
   selectedDevice: E3Device | null;
   selectedWire: E3Wire | null;
   selectedAnnotation: E3Annotation | null;
@@ -29,11 +46,16 @@ interface RightInspectorProps {
   onUpdateSheetTitle: (sheetId: string, patch: Partial<E3Sheet['titleBlock']>) => void;
   onUpdateSheetFormat: (sheetId: string, format: SheetFormat) => void;
   onUpdateFontFamily: (font: SchematicFontFamily) => void;
+  onOpenStampEditor?: (sheetId: string, field?: StampFieldKey) => void;
+  onOpenStampDesigner?: (sheetId: string) => void;
+  onOpenBomPanel?: () => void;
+  onToggleLayerLock?: (layerId: CadLayerId) => void;
 }
 
 export const RightInspector: React.FC<RightInspectorProps> = ({
   project,
   activeSheet,
+  customTemplates = [],
   selectedDevice,
   selectedWire,
   selectedAnnotation,
@@ -46,10 +68,26 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   onUpdateSheetTitle,
   onUpdateSheetFormat,
   onUpdateFontFamily,
+  onOpenStampEditor,
+  onOpenStampDesigner,
+  onOpenBomPanel,
+  onToggleLayerLock,
 }) => {
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
   const [copiedElId, setCopiedElId] = useState(false);
+
+  const layersMap = resolveCadLayers(project.layers, project.visualSettings.showGostFrame);
+  const activeLayerId: CadLayerId = selectedDevice
+    ? 'devices'
+    : selectedWire
+      ? 'wires'
+      : selectedAnnotation
+        ? 'annotations'
+        : 'frame';
+  const activeLayerLocked = layersMap[activeLayerId].locked;
+  const activeLayerMeta = CAD_LAYER_DEFS[activeLayerId];
+  const wiresLocked = layersMap.wires.locked;
 
   const handleAttrChange = (idx: number, patch: Partial<E3Attribute>) => {
     if (!selectedDevice) return;
@@ -84,7 +122,8 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   return (
     <aside
       aria-label="Свойства и атрибуты E3 / Flux"
-      className="no-print w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0 select-none"
+      data-testid="right-inspector"
+      className="no-print w-full h-full flex-1 min-w-0 max-w-full bg-[var(--flux-bg)] flex flex-col min-h-0 overflow-x-hidden select-none"
     >
       <div className="px-3 h-8 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between shrink-0">
         <span className="text-[12px] font-semibold text-[var(--flux-text)] truncate">
@@ -121,7 +160,32 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-4">
+      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-4">
+        {activeLayerLocked && (
+          <div
+            data-testid="inspector-layer-locked-banner"
+            className="px-2.5 py-2 rounded border border-amber-500/50 bg-amber-500/10 flex items-center justify-between gap-2 text-[11px]"
+          >
+            <div className="flex items-center gap-2 min-w-0 text-amber-700 dark:text-amber-300">
+              <Lock className="w-3.5 h-3.5 shrink-0" />
+              <div className="min-w-0 leading-tight">
+                <div className="font-semibold">Слой «{activeLayerMeta.shortName}»</div>
+                <div className="text-[10px] opacity-90">Редактирование закрыто</div>
+              </div>
+            </div>
+            {onToggleLayerLock && (
+              <button
+                type="button"
+                data-testid="inspector-unlock-layer-btn"
+                onClick={() => onToggleLayerLock(activeLayerId)}
+                className="h-6 px-2 rounded border border-amber-500/60 bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] shrink-0"
+              >
+                Разблокировать
+              </button>
+            )}
+          </div>
+        )}
+
         {selectedDevice ? (
           <>
             {/* Integral E3 / Flux Component Summary & Save to Base */}
@@ -147,6 +211,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               )}
             </div>
 
+            <fieldset disabled={activeLayerLocked} className="space-y-4 min-w-0 disabled:opacity-65">
             {/* Device Core Identity */}
             <div className="space-y-2.5">
               <div>
@@ -321,11 +386,11 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 </span>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="border border-[var(--flux-line)] rounded bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] overflow-hidden">
                 {selectedDevice.attributes.map((attr, idx) => (
                   <div
                     key={`${attr.name}-${idx}`}
-                    className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] space-y-1.5"
+                    className="px-2.5 py-2 space-y-1.5"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-medium text-[var(--flux-text)] truncate">
@@ -417,9 +482,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                           </span>
                           <button
                             type="button"
+                            disabled={activeLayerLocked || wiresLocked}
                             onClick={() => onDeleteWire(wire.id)}
                             aria-label={`Отключить цепь от вывода ${pin.name}`}
-                            className="text-[var(--flux-text-muted)] hover:text-rose-600"
+                            className="text-[var(--flux-text-muted)] hover:text-rose-600 disabled:opacity-35"
                           >
                             <Unlink className="w-3 h-3" />
                           </button>
@@ -432,9 +498,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 })}
               </div>
             </div>
+            </fieldset>
           </>
         ) : selectedWire ? (
-          <div className="space-y-3">
+          <fieldset disabled={activeLayerLocked} className="space-y-3 min-w-0 disabled:opacity-65">
             <div>
               <label
                 htmlFor="wire-net"
@@ -540,9 +607,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             >
               Удалить соединение
             </button>
-          </div>
+          </fieldset>
         ) : selectedAnnotation ? (
-          <div className="space-y-3">
+          <fieldset disabled={activeLayerLocked} className="space-y-3 min-w-0 disabled:opacity-65">
             <div>
               <label
                 htmlFor="ann-kind"
@@ -682,12 +749,101 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             >
               Удалить аннотацию
             </button>
-          </div>
+          </fieldset>
         ) : activeSheet ? (
-          <div className="space-y-3">
+          <div className="space-y-3 min-w-0">
             <p className="text-[12px] text-[var(--flux-text-muted)]">
               Выберите элемент или провод на схеме для редактирования, либо настройте штамп листа ГОСТ 2.104.
             </p>
+            <div className="space-y-1.5">
+              {(onOpenStampEditor || onOpenStampDesigner) && (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {onOpenStampEditor && (
+                    <button
+                      type="button"
+                      disabled={activeLayerLocked}
+                      data-testid="inspector-open-stamp-btn"
+                      onClick={() => onOpenStampEditor(activeSheet.id)}
+                      className="inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white text-[11px] font-medium truncate disabled:opacity-45"
+                    >
+                      <Type className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">Заполнить штамп</span>
+                    </button>
+                  )}
+                  {onOpenStampDesigner && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenStampDesigner(activeSheet.id)}
+                      data-testid="inspector-open-designer-btn"
+                      className="inline-flex items-center justify-center gap-1.5 h-8 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[11px] font-medium truncate"
+                    >
+                      <LayoutTemplate className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                      <span className="truncate">Конструктор</span>
+                    </button>
+                  )}
+                </div>
+              )}
+              {onOpenBomPanel && (
+                <button
+                  type="button"
+                  data-testid="inspector-open-bom-btn"
+                  onClick={onOpenBomPanel}
+                  className="w-full inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[12px] font-medium"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                  <span>Открыть спецификацию ПЭ3</span>
+                </button>
+              )}
+            </div>
+            <fieldset disabled={activeLayerLocked} className="space-y-3 min-w-0 disabled:opacity-65">
+            <div>
+              <label
+                htmlFor="sheet-stamp-form"
+                className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+              >
+                Форма основной надписи ГОСТ 2.104
+              </label>
+              <select
+                id="sheet-stamp-form"
+                value={
+                  activeSheet.titleBlock.stampForm === 'custom' && activeSheet.titleBlock.customTemplateId
+                    ? `custom:${activeSheet.titleBlock.customTemplateId}`
+                    : activeSheet.titleBlock.stampForm === 'form2a' ||
+                        (activeSheet.titleBlock.stampForm === undefined && activeSheet.number > 1)
+                      ? 'form2a'
+                      : 'form1'
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val.startsWith('custom:')) {
+                    onUpdateSheetTitle(activeSheet.id, {
+                      stampForm: 'custom',
+                      customTemplateId: val.slice('custom:'.length),
+                    });
+                  } else {
+                    onUpdateSheetTitle(activeSheet.id, {
+                      stampForm: val as 'form1' | 'form2a',
+                      customTemplateId: undefined,
+                    });
+                  }
+                }}
+                className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+              >
+                <optgroup label="Стандарт ГОСТ 2.104">
+                  <option value="form1">Форма 1 (первый лист)</option>
+                  <option value="form2a">Форма 2а (последующие листы)</option>
+                </optgroup>
+                {customTemplates.length > 0 && (
+                  <optgroup label="Пользовательские и шаблоны">
+                    {customTemplates.map((tpl) => (
+                      <option key={tpl.id} value={`custom:${tpl.id}`}>
+                        {tpl.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
             <div>
               <label
                 htmlFor="sheet-doc"
@@ -707,6 +863,23 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             </div>
             <div>
               <label
+                htmlFor="sheet-proj-title"
+                className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+              >
+                Наименование проекта (Графа 1)
+              </label>
+              <input
+                id="sheet-proj-title"
+                type="text"
+                value={activeSheet.titleBlock.projectTitle ?? project.name}
+                onChange={(e) =>
+                  onUpdateSheetTitle(activeSheet.id, { projectTitle: e.target.value })
+                }
+                className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+              />
+            </div>
+            <div>
+              <label
                 htmlFor="sheet-title"
                 className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
               >
@@ -722,8 +895,25 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
               />
             </div>
+            <div>
+              <label
+                htmlFor="sheet-org"
+                className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+              >
+                Организация (Графа 9)
+              </label>
+              <input
+                id="sheet-org"
+                type="text"
+                value={activeSheet.titleBlock.organization}
+                onChange={(e) =>
+                  onUpdateSheetTitle(activeSheet.id, { organization: e.target.value })
+                }
+                className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+              />
+            </div>
             <div className="grid grid-cols-2 gap-2">
-              <div>
+              <div className="min-w-0">
                 <label
                   htmlFor="sheet-des"
                   className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
@@ -740,7 +930,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label
                   htmlFor="sheet-chk"
                   className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
@@ -757,7 +947,42 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
                 />
               </div>
+              <div className="min-w-0">
+                <label
+                  htmlFor="sheet-nchk"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Н. контроль
+                </label>
+                <input
+                  id="sheet-nchk"
+                  type="text"
+                  value={activeSheet.titleBlock.normControl || ''}
+                  onChange={(e) =>
+                    onUpdateSheetTitle(activeSheet.id, { normControl: e.target.value })
+                  }
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                />
+              </div>
+              <div className="min-w-0">
+                <label
+                  htmlFor="sheet-appr"
+                  className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                >
+                  Утвердил
+                </label>
+                <input
+                  id="sheet-appr"
+                  type="text"
+                  value={activeSheet.titleBlock.approver || ''}
+                  onChange={(e) =>
+                    onUpdateSheetTitle(activeSheet.id, { approver: e.target.value })
+                  }
+                  className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                />
+              </div>
             </div>
+            </fieldset>
             <div className="grid grid-cols-1 gap-2 pt-1">
               <div>
                 <label

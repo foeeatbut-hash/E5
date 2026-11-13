@@ -1,6 +1,9 @@
 import React from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   GripHorizontal,
   PanelBottom,
@@ -9,6 +12,19 @@ import {
   PictureInPicture2,
 } from 'lucide-react';
 import type { DockEdge, DockSide, PanelConfig, PanelId } from '../core/dockLayout';
+
+export const CAD_PANEL_TRANSITION = {
+  duration: 0.24,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
+
+export const CAD_FAST_TRANSITION = {
+  duration: 0.16,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
+
+export const COLLAPSED_SIDE_RAIL_WIDTH = 34;
+export const COLLAPSED_HEADER_HEIGHT = 28;
 
 export interface ActivePanelDrag {
   panelId: PanelId;
@@ -44,6 +60,7 @@ export function resolveDropTarget(
 
 interface PanelHeaderBarProps {
   panel: PanelConfig;
+  edge?: DockEdge | 'floating';
   onStartDrag: (panelId: PanelId, e: React.PointerEvent) => void;
   onMoveDock: (panelId: PanelId, side: DockSide) => void;
   onToggleCollapse: (panelId: PanelId) => void;
@@ -51,6 +68,7 @@ interface PanelHeaderBarProps {
 
 const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
   panel,
+  edge = 'bottom',
   onStartDrag,
   onMoveDock,
   onToggleCollapse,
@@ -61,6 +79,15 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
         ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]'
         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
     }`;
+
+  const CollapseChevron =
+    edge === 'left'
+      ? ChevronLeft
+      : edge === 'right'
+        ? ChevronRight
+        : edge === 'top'
+          ? ChevronUp
+          : ChevronDown;
 
   return (
     <div
@@ -125,9 +152,15 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
           onClick={() => onToggleCollapse(panel.id)}
           title={panel.collapsed ? 'Развернуть панель' : 'Свернуть панель'}
           aria-label={panel.collapsed ? `Развернуть «${panel.title}»` : `Свернуть «${panel.title}»`}
-          className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+          className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
         >
-          {panel.collapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          <motion.span
+            animate={{ rotate: panel.collapsed ? 180 : 0 }}
+            transition={CAD_FAST_TRANSITION}
+            className="inline-flex items-center justify-center"
+          >
+            <CollapseChevron className="w-3.5 h-3.5" />
+          </motion.span>
         </button>
       </div>
     </div>
@@ -136,6 +169,11 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
 
 interface DockablePanelFrameProps {
   panel: PanelConfig;
+  edge: DockEdge;
+  bandSize: number;
+  useSideRail?: boolean;
+  multiPanelInBand?: boolean;
+  isResizing?: boolean;
   className?: string;
   onStartDrag: (panelId: PanelId, e: React.PointerEvent) => void;
   onMoveDock: (panelId: PanelId, side: DockSide) => void;
@@ -145,26 +183,154 @@ interface DockablePanelFrameProps {
 
 export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = ({
   panel,
+  edge,
+  bandSize,
+  useSideRail = false,
+  multiPanelInBand = false,
+  isResizing = false,
   className = '',
   onStartDrag,
   onMoveDock,
   onToggleCollapse,
   children,
-}) => (
-  <div
-    data-testid={`dock-panel-${panel.id}`}
-    data-dock={panel.dock}
-    className={`flex flex-col min-w-0 min-h-0 bg-[var(--flux-bg)] overflow-hidden ${className}`}
-  >
-    <PanelHeaderBar
-      panel={panel}
-      onStartDrag={onStartDrag}
-      onMoveDock={onMoveDock}
-      onToggleCollapse={onToggleCollapse}
-    />
-    {!panel.collapsed && <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">{children}</div>}
-  </div>
-);
+}) => {
+  const isSideBand = edge === 'left' || edge === 'right';
+  const showSideRail = isSideBand && useSideRail && panel.collapsed;
+  const collapseMotion = isResizing ? { duration: 0 } : CAD_PANEL_TRANSITION;
+
+  if (isSideBand && useSideRail) {
+    return (
+      <div
+        data-testid={`dock-panel-${panel.id}`}
+        data-dock={panel.dock}
+        data-collapsed={panel.collapsed ? 'true' : 'false'}
+        className={`relative flex flex-col min-w-0 min-h-0 bg-[var(--flux-bg)] overflow-hidden ${className}`}
+      >
+        <AnimatePresence initial={false} mode="popLayout">
+          {showSideRail ? (
+            <motion.div
+              key="rail"
+              data-testid={`panel-header-${panel.id}`}
+              initial={{ opacity: 0, x: edge === 'left' ? -8 : 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: edge === 'left' ? -8 : 8 }}
+              transition={collapseMotion}
+              onPointerDown={(e) => {
+                if ((e.target as HTMLElement).closest('button')) return;
+                onStartDrag(panel.id, e);
+              }}
+              onDoubleClick={() => onToggleCollapse(panel.id)}
+              title={`Развернуть «${panel.title}» (или перетащите для перемещения)`}
+              className="h-full w-[34px] bg-[var(--flux-surface)] flex flex-col items-center py-1.5 gap-1.5 select-none cursor-grab active:cursor-grabbing"
+            >
+              <button
+                type="button"
+                data-testid={`panel-expand-${panel.id}`}
+                onClick={() => onToggleCollapse(panel.id)}
+                title={`Развернуть «${panel.title}»`}
+                aria-label={`Развернуть «${panel.title}»`}
+                className="inline-flex items-center justify-center w-6 h-6 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+              >
+                {edge === 'left' ? (
+                  <ChevronRight className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => onToggleCollapse(panel.id)}
+                aria-label={`Открыть панель «${panel.title}»`}
+                className="flex-1 w-full flex items-center justify-center overflow-hidden rounded-xs hover:bg-[var(--flux-hover)]/70 transition-colors py-2 cursor-pointer"
+              >
+                <span
+                  className="text-[11px] font-semibold tracking-wide text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] whitespace-nowrap"
+                  style={{
+                    writingMode: 'vertical-rl',
+                    transform: edge === 'left' ? 'rotate(180deg)' : undefined,
+                  }}
+                >
+                  {panel.title}
+                </span>
+              </button>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="expanded"
+              initial={{ opacity: 0, x: edge === 'left' ? -12 : 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: edge === 'left' ? -12 : 12 }}
+              transition={collapseMotion}
+              style={{ width: bandSize }}
+              className="h-full flex flex-col min-h-0 overflow-hidden bg-[var(--flux-bg)]"
+            >
+              <PanelHeaderBar
+                panel={panel}
+                edge={edge}
+                onStartDrag={onStartDrag}
+                onMoveDock={onMoveDock}
+                onToggleCollapse={onToggleCollapse}
+              />
+              <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">{children}</div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      data-testid={`dock-panel-${panel.id}`}
+      data-dock={panel.dock}
+      data-collapsed={panel.collapsed ? 'true' : 'false'}
+      animate={multiPanelInBand ? { flexGrow: panel.collapsed ? 0 : 1 } : undefined}
+      transition={collapseMotion}
+      className={`flex flex-col min-w-0 min-h-0 bg-[var(--flux-bg)] overflow-hidden ${
+        multiPanelInBand && panel.collapsed ? 'shrink-0' : className
+      }`}
+    >
+      <PanelHeaderBar
+        panel={panel}
+        edge={edge}
+        onStartDrag={onStartDrag}
+        onMoveDock={onMoveDock}
+        onToggleCollapse={onToggleCollapse}
+      />
+      <AnimatePresence initial={false}>
+        {!panel.collapsed && (
+          <motion.div
+            key="panel-body"
+            initial={
+              multiPanelInBand
+                ? { opacity: 0, height: 0 }
+                : { opacity: 0, y: edge === 'top' ? -6 : 6 }
+            }
+            animate={
+              multiPanelInBand
+                ? { opacity: 1, height: 'auto' }
+                : { opacity: 1, y: 0 }
+            }
+            exit={
+              multiPanelInBand
+                ? { opacity: 0, height: 0 }
+                : { opacity: 0, y: edge === 'top' ? -6 : 6 }
+            }
+            transition={collapseMotion}
+            style={
+              !multiPanelInBand && !isSideBand
+                ? { minHeight: Math.max(72, bandSize - COLLAPSED_HEADER_HEIGHT) }
+                : undefined
+            }
+            className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};
 
 interface DockResizeHandleProps {
   edge: DockEdge;
@@ -174,14 +340,18 @@ interface DockResizeHandleProps {
 export const DockResizeHandle: React.FC<DockResizeHandleProps> = ({ edge, onResizeStart }) => {
   const isVertical = edge === 'left' || edge === 'right';
   return (
-    <div
+    <motion.div
       role="separator"
       aria-orientation={isVertical ? 'vertical' : 'horizontal'}
       aria-label={`Изменить размер области (${edge})`}
       data-testid={`dock-resizer-${edge}`}
       onPointerDown={(e) => onResizeStart(edge, e)}
+      initial={isVertical ? { width: 0, opacity: 0 } : { height: 0, opacity: 0 }}
+      animate={isVertical ? { width: 4, opacity: 1 } : { height: 4, opacity: 1 }}
+      exit={isVertical ? { width: 0, opacity: 0 } : { height: 0, opacity: 0 }}
+      transition={CAD_FAST_TRANSITION}
       className={`no-print shrink-0 relative group z-10 transition-colors bg-[var(--flux-line)] hover:bg-[var(--flux-accent)] ${
-        isVertical ? 'w-1 cursor-col-resize' : 'h-1 cursor-row-resize'
+        isVertical ? 'cursor-col-resize' : 'cursor-row-resize'
       }`}
     >
       <div
@@ -189,12 +359,13 @@ export const DockResizeHandle: React.FC<DockResizeHandleProps> = ({ edge, onResi
           isVertical ? '-inset-x-1 inset-y-0' : '-inset-y-1 inset-x-0'
         }`}
       />
-    </div>
+    </motion.div>
   );
 };
 
 interface FloatingPanelWindowProps {
   panel: PanelConfig;
+  isResizing?: boolean;
   onStartDrag: (panelId: PanelId, e: React.PointerEvent) => void;
   onResizeFloatingStart: (panelId: PanelId, e: React.PointerEvent) => void;
   onMoveDock: (panelId: PanelId, side: DockSide) => void;
@@ -204,93 +375,132 @@ interface FloatingPanelWindowProps {
 
 export const FloatingPanelWindow: React.FC<FloatingPanelWindowProps> = ({
   panel,
+  isResizing = false,
   onStartDrag,
   onResizeFloatingStart,
   onMoveDock,
   onToggleCollapse,
   children,
 }) => {
-  const height = panel.collapsed ? 28 : panel.floating.height;
+  const targetHeight = panel.collapsed ? COLLAPSED_HEADER_HEIGHT : panel.floating.height;
   return (
-    <div
+    <motion.div
       data-testid={`floating-panel-${panel.id}`}
+      data-collapsed={panel.collapsed ? 'true' : 'false'}
+      initial={{ opacity: 0, scale: 0.97, height: targetHeight }}
+      animate={{ opacity: 1, scale: 1, height: targetHeight }}
+      exit={{ opacity: 0, scale: 0.97 }}
+      transition={isResizing ? { duration: 0 } : CAD_PANEL_TRANSITION}
       style={{
         left: panel.floating.x,
         top: panel.floating.y,
         width: panel.floating.width,
-        height,
         boxShadow: 'var(--flux-paper-shadow)',
       }}
       className="no-print fixed z-40 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] flex flex-col overflow-hidden"
     >
       <PanelHeaderBar
         panel={panel}
+        edge="floating"
         onStartDrag={onStartDrag}
         onMoveDock={onMoveDock}
         onToggleCollapse={onToggleCollapse}
       />
-      {!panel.collapsed && (
-        <>
-          <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">{children}</div>
-          <div
-            data-testid={`floating-resizer-${panel.id}`}
-            onPointerDown={(e) => onResizeFloatingStart(panel.id, e)}
-            title="Потяните для изменения размера окна"
-            className="absolute right-0 bottom-0 w-3.5 h-3.5 cursor-nwse-resize z-20 flex items-end justify-end p-0.5 text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)]"
+      <AnimatePresence initial={false}>
+        {!panel.collapsed && (
+          <motion.div
+            key="floating-body"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={CAD_FAST_TRANSITION}
+            style={{ minHeight: Math.max(80, panel.floating.height - COLLAPSED_HEADER_HEIGHT) }}
+            className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden relative"
           >
-            <svg viewBox="0 0 10 10" className="w-2.5 h-2.5 fill-current">
-              <path d="M9 1v8H1l8-8z" opacity="0.45" />
-            </svg>
-          </div>
-        </>
-      )}
-    </div>
+            {children}
+            <div
+              data-testid={`floating-resizer-${panel.id}`}
+              onPointerDown={(e) => onResizeFloatingStart(panel.id, e)}
+              title="Потяните для изменения размера окна"
+              className="absolute right-0 bottom-0 w-3.5 h-3.5 cursor-nwse-resize z-20 flex items-end justify-end p-0.5 text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)]"
+            >
+              <svg viewBox="0 0 10 10" className="w-2.5 h-2.5 fill-current">
+                <path d="M9 1v8H1l8-8z" opacity="0.45" />
+              </svg>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 };
 
 export const DockDropOverlay: React.FC<{
   drag: ActivePanelDrag | null;
   bounds: { left: number; top: number; width: number; height: number } | null;
-}> = ({ drag, bounds }) => {
-  if (!drag || !bounds) return null;
-
-  const zoneCls = (active: boolean) =>
-    `absolute flex items-center justify-center border-2 rounded transition-all pointer-events-none text-[11px] font-semibold tracking-wide ${
-      active
-        ? 'border-[var(--flux-accent)] bg-[var(--flux-accent)]/20 text-[var(--flux-text)]'
-        : 'border-dashed border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/45 text-[var(--flux-text-muted)]'
-    }`;
-
-  return (
-    <div
-      className="no-print fixed z-50 pointer-events-none"
-      style={{ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}
-    >
-      <div className={`${zoneCls(drag.hoverTarget === 'left')} left-2 top-16 bottom-16 w-20`}>
-        <span className="-rotate-90 whitespace-nowrap">Слева</span>
-      </div>
-      <div className={`${zoneCls(drag.hoverTarget === 'right')} right-2 top-16 bottom-16 w-20`}>
-        <span className="rotate-90 whitespace-nowrap">Справа</span>
-      </div>
-      <div className={`${zoneCls(drag.hoverTarget === 'top')} top-2 left-24 right-24 h-12`}>
-        <span>Сверху</span>
-      </div>
-      <div className={`${zoneCls(drag.hoverTarget === 'bottom')} bottom-2 left-24 right-24 h-14`}>
-        <span>Снизу</span>
-      </div>
-      {!drag.wasFloating && drag.hoverTarget === 'floating' && (
+}> = ({ drag, bounds }) => (
+  <AnimatePresence>
+    {drag && bounds && (
+      <motion.div
+        key="dock-drop-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.14 }}
+        className="no-print fixed z-50 pointer-events-none"
+        style={{ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}
+      >
         <div
-          className="fixed border-2 border-[var(--flux-accent)] bg-[var(--flux-accent)]/10 rounded pointer-events-none shadow-lg flex items-center justify-center text-[11px] font-semibold text-[var(--flux-text)]"
-          style={{
-            left: Math.max(12, drag.currentX - 140),
-            top: Math.max(48, drag.currentY - 14),
-            width: 280,
-            height: 160,
-          }}
+          className={`absolute flex items-center justify-center border-2 rounded transition-all pointer-events-none text-[11px] font-semibold tracking-wide left-2 top-16 bottom-16 w-20 ${
+            drag.hoverTarget === 'left'
+              ? 'border-[var(--flux-accent)] bg-[var(--flux-accent)]/20 text-[var(--flux-text)]'
+              : 'border-dashed border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/45 text-[var(--flux-text-muted)]'
+          }`}
         >
-          Плавающее окно
+          <span className="-rotate-90 whitespace-nowrap">Слева</span>
         </div>
-      )}
-    </div>
-  );
-};
+        <div
+          className={`absolute flex items-center justify-center border-2 rounded transition-all pointer-events-none text-[11px] font-semibold tracking-wide right-2 top-16 bottom-16 w-20 ${
+            drag.hoverTarget === 'right'
+              ? 'border-[var(--flux-accent)] bg-[var(--flux-accent)]/20 text-[var(--flux-text)]'
+              : 'border-dashed border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/45 text-[var(--flux-text-muted)]'
+          }`}
+        >
+          <span className="rotate-90 whitespace-nowrap">Справа</span>
+        </div>
+        <div
+          className={`absolute flex items-center justify-center border-2 rounded transition-all pointer-events-none text-[11px] font-semibold tracking-wide top-2 left-24 right-24 h-12 ${
+            drag.hoverTarget === 'top'
+              ? 'border-[var(--flux-accent)] bg-[var(--flux-accent)]/20 text-[var(--flux-text)]'
+              : 'border-dashed border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/45 text-[var(--flux-text-muted)]'
+          }`}
+        >
+          <span>Сверху</span>
+        </div>
+        <div
+          className={`absolute flex items-center justify-center border-2 rounded transition-all pointer-events-none text-[11px] font-semibold tracking-wide bottom-2 left-24 right-24 h-14 ${
+            drag.hoverTarget === 'bottom'
+              ? 'border-[var(--flux-accent)] bg-[var(--flux-accent)]/20 text-[var(--flux-text)]'
+              : 'border-dashed border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/45 text-[var(--flux-text-muted)]'
+          }`}
+        >
+          <span>Снизу</span>
+        </div>
+        {!drag.wasFloating && drag.hoverTarget === 'floating' && (
+          <div
+            className="fixed border-2 border-[var(--flux-accent)] bg-[var(--flux-accent)]/10 rounded pointer-events-none shadow-lg flex items-center justify-center text-[11px] font-semibold text-[var(--flux-text)]"
+            style={{
+              left: Math.max(12, drag.currentX - 140),
+              top: Math.max(48, drag.currentY - 14),
+              width: 280,
+              height: 160,
+            }}
+          >
+            Плавающее окно
+          </div>
+        )}
+      </motion.div>
+    )}
+  </AnimatePresence>
+);
+

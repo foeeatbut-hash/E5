@@ -186,14 +186,77 @@ export function updateFloatingRect(
   };
 }
 
-export function loadDockLayout(storage?: Pick<Storage, 'getItem'>): DockLayoutState {
+export function clampDockLayoutToViewport(
+  state: DockLayoutState,
+  viewportW = 1440,
+  viewportH = 900
+): DockLayoutState {
+  const safeW = Math.max(640, Math.round(viewportW));
+  const safeH = Math.max(480, Math.round(viewportH));
+
+  const leftActive = getPanelsByDock(state, 'left').some((p) => !p.collapsed);
+  const rightActive = getPanelsByDock(state, 'right').some((p) => !p.collapsed);
+
+  // Reserve a minimum usable center canvas width so side docks never clip off-screen
+  const minCenterW = safeW >= 1200 ? 440 : safeW >= 960 ? 360 : 280;
+  const maxSideBudget = Math.max(360, safeW - minCenterW);
+
+  let nextLeft = clampDockSize('left', state.sizes.left, safeW, safeH);
+  let nextRight = clampDockSize('right', state.sizes.right, safeW, safeH);
+
+  // Proportional clamping on narrower viewports so neither left nor right clips
+  if (leftActive && rightActive && nextLeft + nextRight > maxSideBudget) {
+    const ratio = maxSideBudget / (nextLeft + nextRight);
+    nextLeft = Math.max(190, Math.floor(nextLeft * ratio));
+    nextRight = Math.max(210, maxSideBudget - nextLeft);
+  } else if (leftActive && !rightActive && nextLeft > maxSideBudget) {
+    nextLeft = Math.max(200, maxSideBudget);
+  } else if (rightActive && !leftActive && nextRight > maxSideBudget) {
+    nextRight = Math.max(220, maxSideBudget);
+  }
+
+  const nextBottom = clampDockSize('bottom', state.sizes.bottom, safeW, safeH);
+  const nextTop = clampDockSize('top', state.sizes.top, safeW, safeH);
+
+  const clampedPanels = { ...state.panels };
+  for (const id of ['explorer', 'inspector', 'console'] as PanelId[]) {
+    const p = clampedPanels[id];
+    if (p) {
+      clampedPanels[id] = {
+        ...p,
+        floating: clampFloatingRect(p.floating, safeW, safeH),
+      };
+    }
+  }
+
+  return {
+    ...state,
+    panels: clampedPanels,
+    sizes: {
+      left: nextLeft,
+      right: nextRight,
+      bottom: nextBottom,
+      top: nextTop,
+    },
+  };
+}
+
+export function loadDockLayout(
+  storage?: Pick<Storage, 'getItem'>,
+  viewportW?: number,
+  viewportH?: number
+): DockLayoutState {
   const def = createDefaultDockLayout();
+  const vw = viewportW ?? (typeof window !== 'undefined' ? window.innerWidth : 1440);
+  const vh = viewportH ?? (typeof window !== 'undefined' ? window.innerHeight : 900);
   try {
     const store = storage || (typeof window !== 'undefined' ? window.localStorage : undefined);
     const raw = store?.getItem(DOCK_LAYOUT_STORAGE_KEY);
-    if (!raw) return def;
+    if (!raw) return clampDockLayoutToViewport(def, vw, vh);
     const parsed = JSON.parse(raw) as Partial<DockLayoutState>;
-    if (!parsed || typeof parsed !== 'object' || !parsed.panels || !parsed.sizes) return def;
+    if (!parsed || typeof parsed !== 'object' || !parsed.panels || !parsed.sizes) {
+      return clampDockLayoutToViewport(def, vw, vh);
+    }
 
     const mergedPanels = { ...def.panels };
     for (const id of ['explorer', 'inspector', 'console'] as PanelId[]) {
@@ -203,23 +266,27 @@ export function loadDockLayout(storage?: Pick<Storage, 'getItem'>): DockLayoutSt
           ...def.panels[id],
           ...candidate,
           id,
-          floating: clampFloatingRect(candidate.floating || def.panels[id].floating),
+          floating: clampFloatingRect(candidate.floating || def.panels[id].floating, vw, vh),
         };
       }
     }
 
-    return {
-      version: 1,
-      panels: mergedPanels,
-      sizes: {
-        left: clampDockSize('left', Number(parsed.sizes.left ?? def.sizes.left)),
-        right: clampDockSize('right', Number(parsed.sizes.right ?? def.sizes.right)),
-        bottom: clampDockSize('bottom', Number(parsed.sizes.bottom ?? def.sizes.bottom)),
-        top: clampDockSize('top', Number(parsed.sizes.top ?? def.sizes.top)),
+    return clampDockLayoutToViewport(
+      {
+        version: 1,
+        panels: mergedPanels,
+        sizes: {
+          left: Number(parsed.sizes.left ?? def.sizes.left),
+          right: Number(parsed.sizes.right ?? def.sizes.right),
+          bottom: Number(parsed.sizes.bottom ?? def.sizes.bottom),
+          top: Number(parsed.sizes.top ?? def.sizes.top),
+        },
       },
-    };
+      vw,
+      vh
+    );
   } catch {
-    return def;
+    return clampDockLayoutToViewport(def, vw, vh);
   }
 }
 

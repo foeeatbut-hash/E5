@@ -1,24 +1,32 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   AlertTriangle,
   Check,
   ChevronDown,
   ChevronUp,
   Copy,
-  Download,
-  FileCode2,
+  Globe,
+  Layers,
   Play,
+  Plus,
   RefreshCw,
+  Send,
   Terminal,
+  Trash2,
 } from 'lucide-react';
+import { E3_API_ENDPOINTS } from '../core/apiEcosystem';
 import type {
   BomRow,
   CableJournalRow,
   E3Project,
   ErcIssue,
+  ExternalWebhookConfig,
+  FluxBusMessage,
   ProcessLogEntry,
   TerminalPlanRow,
 } from '../core/e3Types';
+import { createFluxBusLogEntry, detectFluxHost, invokeFluxModule } from '../core/fluxHostBridge';
 
 export type ConsoleTab = 'bom' | 'cables' | 'erc' | 'logs' | 'api';
 
@@ -31,15 +39,11 @@ interface BottomConsoleProps {
   terminals: TerminalPlanRow[];
   erc: ErcIssue[];
   logs: ProcessLogEntry[];
-  lastWorkerMs: number;
+  fluxBusMessages?: FluxBusMessage[];
+  onFluxBusLog?: (entry: FluxBusMessage) => void;
   onSetTab: (tab: ConsoleTab) => void;
   onToggleCollapse: () => void;
   onJumpToIssue: (issue: ErcIssue) => void;
-  onDownloadBomCsv: () => void;
-  onDownloadCablesCsv: () => void;
-  onDownloadDxf: () => void;
-  onDownloadE3Xml: () => void;
-  onDownloadLogs: () => void;
   onTestApiSyncPush: () => Promise<void>;
 }
 
@@ -52,15 +56,11 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   terminals,
   erc,
   logs,
-  lastWorkerMs,
+  fluxBusMessages = [],
+  onFluxBusLog,
   onSetTab,
   onToggleCollapse,
   onJumpToIssue,
-  onDownloadBomCsv,
-  onDownloadCablesCsv,
-  onDownloadDxf,
-  onDownloadE3Xml,
-  onDownloadLogs,
   onTestApiSyncPush,
 }) => {
   const [bomQuery, setBomQuery] = useState('');
@@ -70,6 +70,48 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   const [copiedLogs, setCopiedLogs] = useState(false);
   const [expandedLogIds, setExpandedLogIds] = useState<Record<string, boolean>>({});
   const [apiBusy, setApiBusy] = useState(false);
+
+  // 3-Tier API Hub state
+  const [apiSubTab, setApiSubTab] = useState<'own' | 'flux-internal' | 'external'>('own');
+  const [openApiPreview, setOpenApiPreview] = useState<string | null>(null);
+  const [fluxTargetApp, setFluxTargetApp] = useState('flux-hvac-selector');
+  const [fluxAction, setFluxAction] = useState('e3.getBom');
+  const [fluxResultPreview, setFluxResultPreview] = useState<string | null>(null);
+  const [webhooks, setWebhooks] = useState<ExternalWebhookConfig[]>([]);
+  const [recentReceipts, setRecentReceipts] = useState<Array<{ receivedAt: string; event: string; payload: unknown }>>([]);
+  const [newWhName, setNewWhName] = useState('1С:ERP / Внешняя SCADA');
+  const [newWhUrl, setNewWhUrl] = useState(() =>
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/api/v1/integrations/mock-external-receiver`
+      : 'http://127.0.0.1:3000/api/v1/integrations/mock-external-receiver'
+  );
+  const [extCallMethod, setExtCallMethod] = useState<'POST' | 'GET'>('POST');
+  const [extCallUrl, setExtCallUrl] = useState(() =>
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/api/v1/integrations/mock-external-receiver`
+      : 'http://127.0.0.1:3000/api/v1/integrations/mock-external-receiver'
+  );
+  const [extStatusMsg, setExtStatusMsg] = useState<string | null>(null);
+
+  const loadWebhooks = useCallback(async () => {
+    try {
+      const r = await fetch('/api/v1/integrations/webhooks');
+      if (!r.ok) return;
+      const d = await r.json();
+      if (Array.isArray(d.webhooks)) setWebhooks(d.webhooks);
+      if (Array.isArray(d.recentMockReceipts)) setRecentReceipts(d.recentMockReceipts);
+    } catch {
+      // ignore offline
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'api' && apiSubTab === 'external') {
+      void loadWebhooks();
+    }
+  }, [activeTab, apiSubTab, loadWebhooks]);
+
+  const fluxHostStatus = useMemo(() => detectFluxHost(), []);
 
   const filteredBom = useMemo(() => {
     const q = bomQuery.trim().toLowerCase();
@@ -120,11 +162,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   return (
     <section
       aria-label="Спецификации, отчёты, диагностика и API"
-      className="no-print w-full h-full flex-1 min-w-0 min-h-0 bg-[var(--flux-surface)] flex flex-col"
+      data-testid="bottom-console"
+      className="no-print w-full max-w-full h-full flex-1 min-w-0 min-h-0 bg-[var(--flux-surface)] flex flex-col overflow-hidden"
     >
       {/* Console Header Tabs */}
-      <div className="h-8 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-2 shrink-0">
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+      <div className="h-8 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-2 shrink-0 min-w-0">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar min-w-0 flex-1">
           {(
             [
               ['bom', `Спецификация ПЭ3 (${bom.length})`],
@@ -151,7 +194,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
               >
                 <span>{label}</span>
                 {active && (
-                  <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)]" />
+                  <motion.span
+                    layoutId="console-active-tab"
+                    transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                    aria-hidden="true"
+                    className="absolute bottom-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)]"
+                  />
                 )}
               </button>
             );
@@ -160,7 +208,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
 
         <div className="flex items-center gap-3 shrink-0">
           <span className="hidden md:inline font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)]">
-            Асинхр. расчёт: {lastWorkerMs.toFixed(1)} мс · Итого поз.: {totalDevicesInBom}
+            Позиций ПЭ3: {bom.length} · Изделий: {totalDevicesInBom}
           </span>
           <button
             type="button"
@@ -185,34 +233,11 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                   onChange={(e) => setBomQuery(e.target.value)}
                   placeholder="Фильтр спецификации (обозначение, артикул, завод)…"
                   aria-label="Фильтр спецификации ПЭ3"
-                  className="w-64 max-w-full flex-1 min-w-[160px] h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[12px] text-[var(--flux-text)]"
+                  className="w-72 max-w-full flex-1 min-w-[160px] h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[12px] text-[var(--flux-text)]"
                 />
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={onDownloadBomCsv}
-                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] font-medium text-[var(--flux-text)] whitespace-nowrap"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>CSV (Excel)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onDownloadE3Xml}
-                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] font-medium text-[var(--flux-text)] whitespace-nowrap"
-                  >
-                    <FileCode2 className="w-3.5 h-3.5" />
-                    <span>Проект E3 (.e3s)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onDownloadDxf}
-                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] font-medium text-[var(--flux-text)] whitespace-nowrap"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>CAD DXF</span>
-                  </button>
-                </div>
+                <span className="text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)] shrink-0">
+                  Показано позиций: {filteredBom.length} из {bom.length}
+                </span>
               </div>
               <div className="flex-1 overflow-auto">
                 <table className="w-full border-collapse text-[12px]">
@@ -275,10 +300,10 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                   <button
                     type="button"
                     onClick={() => setCableSubTab('cables')}
-                    className={`h-6 px-2.5 rounded text-[11px] font-medium ${
+                    className={`h-6 px-2.5 rounded text-[11px] font-medium transition-colors ${
                       cableSubTab === 'cables'
                         ? 'bg-[var(--flux-surface)] text-[var(--flux-text)]'
-                        : 'text-[var(--flux-text-muted)]'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                     }`}
                   >
                     Кабельный журнал ({cables.length})
@@ -286,23 +311,18 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                   <button
                     type="button"
                     onClick={() => setCableSubTab('terminals')}
-                    className={`h-6 px-2.5 rounded text-[11px] font-medium ${
+                    className={`h-6 px-2.5 rounded text-[11px] font-medium transition-colors ${
                       cableSubTab === 'terminals'
                         ? 'bg-[var(--flux-surface)] text-[var(--flux-text)]'
-                        : 'text-[var(--flux-text-muted)]'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                     }`}
                   >
                     Клеммник ({terminals.length})
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={onDownloadCablesCsv}
-                  className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] font-medium text-[var(--flux-text)]"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Экспорт кабелей CSV</span>
-                </button>
+                <span className="text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)] shrink-0">
+                  {cableSubTab === 'cables' ? `Кабельных трасс: ${cables.length}` : `Контактов XT: ${terminals.length}`}
+                </span>
               </div>
               <div className="flex-1 overflow-auto">
                 {cableSubTab === 'cables' ? (
@@ -467,22 +487,6 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                     {copiedLogs ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                     <span>{copiedLogs ? 'Скопировано' : 'Копировать'}</span>
                   </button>
-                  <a
-                    href="/api/v1/diagnostics/logs/download"
-                    download="e3promax-diag.log"
-                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)]"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Скачать diag.log</span>
-                  </a>
-                  <button
-                    type="button"
-                    onClick={onDownloadLogs}
-                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)]"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>JSON</span>
-                  </button>
                 </div>
               </div>
               <div className="flex-1 overflow-auto font-mono text-[11px] divide-y divide-[var(--flux-line)]">
@@ -560,13 +564,52 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
           )}
 
           {activeTab === 'api' && (
-            <div className="flex-1 overflow-auto p-3 grid grid-cols-1 lg:grid-cols-2 gap-4 text-[12px]">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-[var(--flux-text)] flex items-center gap-1.5">
-                    <Terminal className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                    <span>REST & SSE API автоматизации</span>
-                  </h3>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden text-[12px]">
+              {/* 3-Tier API Sub-Tabs */}
+              <div className="px-3 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex flex-wrap items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-1 p-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)]">
+                  <button
+                    type="button"
+                    data-testid="api-subtab-own"
+                    onClick={() => setApiSubTab('own')}
+                    className={`h-6 px-2.5 rounded text-[11px] font-medium inline-flex items-center gap-1.5 ${
+                      apiSubTab === 'own'
+                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] shadow-xs'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                    }`}
+                  >
+                    <Terminal className="w-3 h-3 text-[var(--flux-accent)]" />
+                    <span>Свой API (REST / OpenAPI)</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="api-subtab-flux"
+                    onClick={() => setApiSubTab('flux-internal')}
+                    className={`h-6 px-2.5 rounded text-[11px] font-medium inline-flex items-center gap-1.5 ${
+                      apiSubTab === 'flux-internal'
+                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] shadow-xs'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                    }`}
+                  >
+                    <Layers className="w-3 h-3 text-[var(--flux-accent)]" />
+                    <span>Внутри Flux Studio ({fluxBusMessages.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="api-subtab-external"
+                    onClick={() => setApiSubTab('external')}
+                    className={`h-6 px-2.5 rounded text-[11px] font-medium inline-flex items-center gap-1.5 ${
+                      apiSubTab === 'external'
+                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] shadow-xs'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                    }`}
+                  >
+                    <Globe className="w-3 h-3 text-[var(--flux-accent)]" />
+                    <span>Внешние программы (Webhooks)</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     disabled={apiBusy}
@@ -584,47 +627,352 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                     <span>Тест API Push (Синхр.)</span>
                   </button>
                 </div>
-                <div className="border border-[var(--flux-line)] rounded bg-[var(--flux-bg)] divide-y divide-[var(--flux-line)] font-mono text-[11px]">
-                  <div className="px-2.5 py-1.5 flex justify-between gap-2">
-                    <span className="text-[var(--flux-accent)]">GET /api/sync/stream</span>
-                    <span className="text-[var(--flux-text-muted)]">SSE поток изменений в реальном времени</span>
-                  </div>
-                  <div className="px-2.5 py-1.5 flex justify-between gap-2">
-                    <span className="text-[var(--flux-accent)]">GET /api/v1/projects/{project.id}/bom</span>
-                    <span className="text-[var(--flux-text-muted)]">Авто-спецификация ПЭ3 JSON/CSV</span>
-                  </div>
-                  <div className="px-2.5 py-1.5 flex justify-between gap-2">
-                    <span className="text-[var(--flux-accent)]">POST /api/v1/projects/{project.id}/devices</span>
-                    <span className="text-[var(--flux-text-muted)]">Добавление/обновление компонента</span>
-                  </div>
-                  <div className="px-2.5 py-1.5 flex justify-between gap-2">
-                    <span className="text-[var(--flux-accent)]">GET /api/v1/projects/{project.id}/export/e3s</span>
-                    <span className="text-[var(--flux-text-muted)]">Контейнер E3ProMax .e3s (OLE2 / XML)</span>
-                  </div>
-                  <div className="px-2.5 py-1.5 flex justify-between gap-2">
-                    <span className="text-[var(--flux-accent)]">GET /api/v1/projects/{project.id}/export/e3vbs</span>
-                    <span className="text-[var(--flux-text-muted)]">COM-скрипт генерации нативного .e3s (E³ 2022)</span>
-                  </div>
-                  <div className="px-2.5 py-1.5 flex justify-between gap-2">
-                    <span className="text-[var(--flux-accent)]">GET /api/export/flux-studio</span>
-                    <span className="text-[var(--flux-text-muted)]">Пакет подпрограммы Flux Studio (.zip)</span>
-                  </div>
-                </div>
               </div>
 
-              <div className="space-y-2">
-                <h3 className="font-semibold text-[var(--flux-text)]">
-                  Пример автоматизации (cURL / Flux Script)
-                </h3>
-                <pre className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)] overflow-x-auto leading-relaxed">
-{`curl -X POST http://localhost:3000/api/v1/projects/${project.id}/devices \\
+              {/* Sub-tab 1: Own REST / SSE / OpenAPI */}
+              {apiSubTab === 'own' && (
+                <div className="flex-1 overflow-auto p-3 grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
+                  <div className="space-y-2 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-semibold text-[var(--flux-text)]">
+                        Собственные REST и SSE эндпоинты E3ProMax
+                      </h3>
+                      <button
+                        type="button"
+                        data-testid="load-openapi-btn"
+                        onClick={async () => {
+                          try {
+                            const r = await fetch('/api/v1/openapi.json');
+                            const data = await r.json();
+                            setOpenApiPreview(JSON.stringify(data, null, 2));
+                          } catch (err) {
+                            setOpenApiPreview(String(err));
+                          }
+                        }}
+                        className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] text-[var(--flux-accent)] font-medium shrink-0"
+                      >
+                        Загрузить OpenAPI 3.0
+                      </button>
+                    </div>
+                    <div className="border border-[var(--flux-line)] rounded bg-[var(--flux-bg)] divide-y divide-[var(--flux-line)] font-mono text-[11px]">
+                      {E3_API_ENDPOINTS.filter((ep) => ep.tier === 'own').map((ep) => (
+                        <div key={`${ep.method}-${ep.path}`} className="px-2.5 py-1.5 flex items-start justify-between gap-2">
+                          <span className="text-[var(--flux-accent)] break-all">
+                            <span className="font-semibold">{ep.method}</span>{' '}
+                            {ep.path.replace(':id', project.id)}
+                          </span>
+                          <span className="text-[var(--flux-text-muted)] text-right font-sans text-[11px]">
+                            {ep.summary}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 min-w-0">
+                    <h3 className="font-semibold text-[var(--flux-text)]">
+                      {openApiPreview ? 'OpenAPI 3.0 Спецификация (/api/v1/openapi.json)' : 'Пример автоматизации (Штампы, Элементы, Пакет PDF/DXF)'}
+                    </h3>
+                    <pre className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)] overflow-auto max-h-56 leading-relaxed">
+                      {openApiPreview ||
+`# 1. Обновить штамп ГОСТ на всех листах
+curl -X PATCH http://localhost:3000/api/v1/projects/${project.id}/sheets/sheet-1/stamp \\
   -H "Content-Type: application/json" \\
-  -d '{"designation":"-KM2","article":"LC1D25BD","manufacturer":"Schneider Electric"}'`}
-                </pre>
-                <p className="text-[11px] text-[var(--flux-text-muted)]">
-                  Все изменения через API мгновенно транслируются всем подключённым сессиям CAD через EventSource и BroadcastChannel.
-                </p>
-              </div>
+  -d '{"applyToAll":true,"patch":{"organization":"ООО ПромВентАвтоматика"}}'
+
+# 2. Пакетная публикация в многостраничный PDF или AutoCAD DXF
+curl -X POST http://localhost:3000/api/v1/projects/${project.id}/publish/dxf \\
+  -H "Content-Type: application/json" \\
+  -d '{"format":"dxf-single","editableBlocks":true}' -o project.dxf`}
+                    </pre>
+                    <p className="text-[11px] text-[var(--flux-text-muted)]">
+                      Все изменения через REST API мгновенно транслируются подключённым сессиям CAD через EventSource и BroadcastChannel.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-tab 2: Internal Flux Studio Apps Bus */}
+              {apiSubTab === 'flux-internal' && (
+                <div className="flex-1 overflow-auto p-3 grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
+                  <div className="space-y-2.5 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-semibold text-[var(--flux-text)]">
+                        Шина приложений внутри Flux Studio
+                      </h3>
+                      <span className="text-[11px] font-mono text-[var(--flux-accent)]">
+                        {fluxHostStatus.hostedInFlux ? 'Flux Host Active' : 'Standalone + Relay'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {fluxHostStatus.capabilities.map((cap) => (
+                        <span
+                          key={cap}
+                          className="px-2 py-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-text)]"
+                        >
+                          {cap}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">
+                            Целевой модуль Flux
+                          </label>
+                          <select
+                            value={fluxTargetApp}
+                            onChange={(e) => setFluxTargetApp(e.target.value)}
+                            className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
+                          >
+                            <option value="flux-hvac-selector">Подбор ОВКВ и ПЧ (flux-hvac-selector)</option>
+                            <option value="flux-panel-3d">Компоновка шкафа 3D (flux-panel-3d)</option>
+                            <option value="flux-cable-calc">Расчёт кабельных трасс (flux-cable-calc)</option>
+                            <option value="e3promax-ecad">Обратный вызов E3ProMax API</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">
+                            Команда RPC / Событие
+                          </label>
+                          <select
+                            value={fluxAction}
+                            onChange={(e) => setFluxAction(e.target.value)}
+                            className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+                          >
+                            <option value="e3.getBom">e3.getBom</option>
+                            <option value="e3.runErc">e3.runErc</option>
+                            <option value="e3.getBridgeBundle">e3.getBridgeBundle</option>
+                            <option value="e3.getProject">e3.getProject</option>
+                          </select>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="invoke-flux-bus-btn"
+                        onClick={async () => {
+                          const res = await invokeFluxModule(fluxTargetApp, fluxAction, {
+                            projectId: project.id,
+                          });
+                          setFluxResultPreview(JSON.stringify(res, null, 2));
+                          onFluxBusLog?.(
+                            createFluxBusLogEntry(
+                              'outbound',
+                              res.via,
+                              fluxAction,
+                              'e3promax-ecad',
+                              fluxTargetApp,
+                              res.ok ? 'OK' : 'FAIL'
+                            )
+                          );
+                        }}
+                        className="inline-flex items-center gap-1.5 h-7 px-3 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white text-[11px] font-medium"
+                      >
+                        <Send className="w-3 h-3" />
+                        <span>Выполнить обмен по шине Flux</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 min-w-0">
+                    <h3 className="font-semibold text-[var(--flux-text)]">
+                      Журнал вызовов Flux Studio ({fluxBusMessages.length})
+                    </h3>
+                    {fluxResultPreview && (
+                      <pre className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-text)] max-h-28 overflow-auto">
+                        {fluxResultPreview}
+                      </pre>
+                    )}
+                    <div className="border border-[var(--flux-line)] rounded bg-[var(--flux-bg)] divide-y divide-[var(--flux-line)] max-h-36 overflow-y-auto font-mono text-[10px]">
+                      {fluxBusMessages.length === 0 ? (
+                        <div className="p-2.5 text-[var(--flux-text-muted)] font-sans">
+                          Сообщений шины Flux пока нет. Нажмите «Выполнить обмен по шине Flux» или отправьте событие из другого модуля.
+                        </div>
+                      ) : (
+                        fluxBusMessages.map((msg) => (
+                          <div key={msg.id} className="px-2 py-1 flex items-center justify-between gap-2">
+                            <span className="truncate">
+                              <span className="text-[var(--flux-accent)]">{msg.direction}</span> {msg.sourceApp} → {msg.targetApp} [{msg.action}]
+                            </span>
+                            <span className="text-[var(--flux-text-muted)] shrink-0">{msg.payloadSummary}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-tab 3: External Programs API (Webhooks & Outbound REST Relay) */}
+              {apiSubTab === 'external' && (
+                <div className="flex-1 overflow-auto p-3 grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
+                  <div className="space-y-2.5 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-semibold text-[var(--flux-text)]">
+                        Внешние Webhooks (1С, PDM, SCADA, AutoCAD)
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => void loadWebhooks()}
+                        className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] text-[var(--flux-text)]"
+                      >
+                        Обновить
+                      </button>
+                    </div>
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const r = await fetch('/api/v1/integrations/webhooks', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ name: newWhName, url: newWhUrl, enabled: true }),
+                        });
+                        const data = await r.json();
+                        if (!r.ok) {
+                          setExtStatusMsg(data.error || 'Ошибка регистрации');
+                        } else {
+                          setExtStatusMsg(`Зарегистрирован Webhook: ${data.webhook?.name}`);
+                          await loadWebhooks();
+                        }
+                      }}
+                      className="flex flex-wrap items-center gap-1.5"
+                    >
+                      <input
+                        type="text"
+                        value={newWhName}
+                        onChange={(e) => setNewWhName(e.target.value)}
+                        placeholder="Название системы"
+                        aria-label="Название внешней системы"
+                        className="w-36 h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
+                      />
+                      <input
+                        type="url"
+                        value={newWhUrl}
+                        onChange={(e) => setNewWhUrl(e.target.value)}
+                        placeholder="https://erp.company.local/hook"
+                        aria-label="URL внешнего Webhook"
+                        className="flex-1 min-w-[160px] h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
+                      />
+                      <button
+                        type="submit"
+                        data-testid="add-webhook-btn"
+                        className="inline-flex items-center gap-1 h-7 px-2.5 rounded bg-[var(--flux-accent)] hover:bg-[var(--flux-accent-hover)] text-white text-[11px] font-medium shrink-0"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Добавить</span>
+                      </button>
+                    </form>
+
+                    <div className="border border-[var(--flux-line)] rounded bg-[var(--flux-bg)] divide-y divide-[var(--flux-line)] max-h-36 overflow-y-auto text-[11px]">
+                      {webhooks.length === 0 ? (
+                        <div className="p-2.5 text-[var(--flux-text-muted)]">
+                          Внешние Webhook-подписки ещё не добавлены. Нажмите «Добавить» для проверки встроенного приёмника.
+                        </div>
+                      ) : (
+                        webhooks.map((wh) => (
+                          <div key={wh.id} className="px-2.5 py-1.5 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="font-medium text-[var(--flux-text)] truncate">{wh.name}</div>
+                              <div className="font-mono text-[10px] text-[var(--flux-text-muted)] truncate">{wh.url}</div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {wh.lastStatus && (
+                                <span className="font-mono text-[10px] text-[var(--flux-accent)]">{wh.lastStatus}</span>
+                              )}
+                              <button
+                                type="button"
+                                data-testid={`test-webhook-${wh.id}`}
+                                onClick={async () => {
+                                  const r = await fetch(`/api/v1/integrations/webhooks/${wh.id}/test`, { method: 'POST' });
+                                  const d = await r.json();
+                                  setExtStatusMsg(`Доставка "${wh.name}": HTTP ${d.status ?? 0} (${d.ok ? 'OK' : d.error})`);
+                                  await loadWebhooks();
+                                }}
+                                className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[10px]"
+                              >
+                                Тест
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await fetch(`/api/v1/integrations/webhooks/${wh.id}`, { method: 'DELETE' });
+                                  await loadWebhooks();
+                                }}
+                                aria-label={`Удалить ${wh.name}`}
+                                className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5 min-w-0">
+                    <h3 className="font-semibold text-[var(--flux-text)]">
+                      Исходящий REST вызов во внешнее ПО + квитанции
+                    </h3>
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={extCallMethod}
+                        onChange={(e) => setExtCallMethod(e.target.value as 'POST' | 'GET')}
+                        className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px]"
+                      >
+                        <option value="POST">POST</option>
+                        <option value="GET">GET</option>
+                      </select>
+                      <input
+                        type="url"
+                        value={extCallUrl}
+                        onChange={(e) => setExtCallUrl(e.target.value)}
+                        className="flex-1 min-w-0 h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px]"
+                      />
+                      <button
+                        type="button"
+                        data-testid="external-call-btn"
+                        onClick={async () => {
+                          const r = await fetch('/api/v1/integrations/external-call', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              method: extCallMethod,
+                              url: extCallUrl,
+                              body: { projectCode: project.projectCode, bomCount: bom.length },
+                            }),
+                          });
+                          const d = await r.json();
+                          setExtStatusMsg(`Ответ HTTP ${d.status}: ${JSON.stringify(d.data).slice(0, 120)}`);
+                          await loadWebhooks();
+                        }}
+                        className="h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium shrink-0"
+                      >
+                        Отправить ПЭ3
+                      </button>
+                    </div>
+                    {extStatusMsg && (
+                      <div className="px-2 py-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-accent)]">
+                        {extStatusMsg}
+                      </div>
+                    )}
+                    <div className="border border-[var(--flux-line)] rounded bg-[var(--flux-bg)] divide-y divide-[var(--flux-line)] max-h-28 overflow-y-auto font-mono text-[10px]">
+                      {recentReceipts.length === 0 ? (
+                        <div className="p-2 text-[var(--flux-text-muted)] font-sans">
+                          Квитанции доставки событий во внешние программы отсутствуют.
+                        </div>
+                      ) : (
+                        recentReceipts.slice(-6).reverse().map((rc, idx) => (
+                          <div key={idx} className="px-2 py-1 flex items-center justify-between gap-2">
+                            <span className="text-[var(--flux-text)] truncate">{rc.event}</span>
+                            <span className="text-[var(--flux-text-muted)] shrink-0">{rc.receivedAt.slice(11, 19)}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
