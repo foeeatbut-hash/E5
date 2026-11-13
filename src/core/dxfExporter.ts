@@ -242,6 +242,9 @@ function drawDeviceSymbolInBlock(w: DxfWriter, dev: E3Device, ox: number, oy: nu
   } else if (dev.category === 'drive' || dev.category === 'plc' || dev.category === 'psu') {
     w.line(ox + 10, oy - 24, ox + rw - 10, oy - 24, 'E3_DEVICES', 8);
     w.text(ox + rw / 2, oy - 13, dev.category.toUpperCase(), 9, 'E3_DEVICES', 7, 1, 2);
+  } else if (dev.category === 'offpage_ref') {
+    const pot = dev.offPageRef?.potentialName || dev.designation;
+    w.text(ox + rw / 2, oy - rh / 2 + 2, pot, 8.5, 'E3_LABELS', 2, 1, 2);
   }
 
   // Pins stubs and pin numbers

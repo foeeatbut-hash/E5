@@ -9,6 +9,7 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalDistributeCenter,
+  ArrowLeftRight,
   BookmarkPlus,
   Check,
   Copy,
@@ -16,15 +17,18 @@ import {
   FileSpreadsheet,
   LayoutTemplate,
   Lock,
+  Navigation,
   Plus,
   RotateCw,
   Trash2,
   Type,
   Unlink,
   Workflow,
+  Zap,
 } from 'lucide-react';
 import { CAD_LAYER_DEFS, resolveCadLayers } from '../core/cadLayers';
 import type { DeviceAlignKind } from '../core/cadSelection';
+import { getOffPageMeta, resolveOffPageLinks } from '../core/crossSheetRefs';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type {
   AnnotationKind,
@@ -37,6 +41,7 @@ import type {
   E3Sheet,
   E3Wire,
   GostStampTemplate,
+  OffPageRefMeta,
   SchematicFontFamily,
   SheetFormat,
   SignalType,
@@ -72,6 +77,10 @@ interface RightInspectorProps {
   onOpenStampDesigner?: (sheetId: string) => void;
   onOpenBomPanel?: () => void;
   onToggleLayerLock?: (layerId: CadLayerId) => void;
+  onNavigateOffPage?: (device: E3Device) => void;
+  onCreateOffPageCounterpart?: (sourceDevice: E3Device, targetSheetId: string) => void;
+  onUpdateOffPageMeta?: (deviceId: string, patch: Partial<OffPageRefMeta>) => void;
+  onHighlightPotential?: (seed: { wireId?: string; netName?: string; deviceId?: string; pinId?: string }) => void;
 }
 
 export const RightInspector: React.FC<RightInspectorProps> = ({
@@ -103,10 +112,15 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   onOpenStampDesigner,
   onOpenBomPanel,
   onToggleLayerLock,
+  onNavigateOffPage,
+  onCreateOffPageCounterpart,
+  onUpdateOffPageMeta,
+  onHighlightPotential,
 }) => {
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
   const [copiedElId, setCopiedElId] = useState(false);
+  const [counterpartSheetId, setCounterpartSheetId] = useState<string>('');
 
   const totalSelectedCount =
     selectedDeviceIds.length + selectedWireIds.length + selectedAnnotationIds.length;
@@ -585,6 +599,190 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               </div>
             </div>
 
+            {selectedDevice.category === 'offpage_ref' && (() => {
+              const linkMap = resolveOffPageLinks(project);
+              const link = linkMap.get(selectedDevice.id);
+              const connectedWire = project.wires.find(
+                (w) => w.fromDeviceId === selectedDevice.id || w.toDeviceId === selectedDevice.id
+              );
+              const meta = getOffPageMeta(selectedDevice, connectedWire);
+              const otherSheets = project.sheets.filter((s) => s.id !== selectedDevice.sheetId);
+              const fallbackTargetSheetId = otherSheets[0]?.id || project.sheets[0]?.id || 'sheet-1';
+              const targetSheetId =
+                counterpartSheetId && project.sheets.some((s) => s.id === counterpartSheetId && s.id !== selectedDevice.sheetId)
+                  ? counterpartSheetId
+                  : fallbackTargetSheetId;
+              const uniqueNets = Array.from(new Set(project.wires.map((w) => w.netName).filter(Boolean)));
+
+              return (
+                <div
+                  data-testid="inspector-offpage-panel"
+                  className="pt-3 border-t border-[var(--flux-line)] space-y-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--flux-text)]">
+                      <ArrowLeftRight className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                      <span>Межлистовая ссылка (E3.series)</span>
+                    </h3>
+                    <span className="font-mono text-[11px] font-semibold px-1.5 py-0.5 rounded bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] whitespace-nowrap shrink-0">
+                      {link?.addressText || (meta.direction === 'out' ? '→ Л.?' : '← Л.?')}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label
+                        htmlFor="insp-offpage-dir"
+                        className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                      >
+                        Направление
+                      </label>
+                      <select
+                        id="insp-offpage-dir"
+                        data-testid="inspector-offpage-dir"
+                        value={meta.direction}
+                        onChange={(e) =>
+                          onUpdateOffPageMeta?.(selectedDevice.id, {
+                            direction: e.target.value as 'out' | 'in',
+                          })
+                        }
+                        className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                      >
+                        <option value="out">Исходящая (→)</option>
+                        <option value="in">Входящая (←)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="insp-offpage-sig"
+                        className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                      >
+                        Потенциал / тип
+                      </label>
+                      <select
+                        id="insp-offpage-sig"
+                        value={meta.signalType}
+                        onChange={(e) =>
+                          onUpdateOffPageMeta?.(selectedDevice.id, {
+                            signalType: e.target.value as SignalType,
+                          })
+                        }
+                        className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                      >
+                        <option value="power">Силовая фаза</option>
+                        <option value="neutral">Нейтраль N</option>
+                        <option value="pe">Земля PE</option>
+                        <option value="dc24">+24V DC</option>
+                        <option value="dc0">0V DC</option>
+                        <option value="signal">Сигнал КИП</option>
+                        <option value="bus">Шина RS-485</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="insp-offpage-potential"
+                      className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                    >
+                      Имя потенциала / цепи
+                    </label>
+                    <input
+                      id="insp-offpage-potential"
+                      data-testid="inspector-offpage-potential"
+                      type="text"
+                      list="offpage-potential-nets"
+                      value={meta.potentialName}
+                      onChange={(e) =>
+                        onUpdateOffPageMeta?.(selectedDevice.id, {
+                          potentialName: e.target.value,
+                        })
+                      }
+                      className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                    />
+                    <datalist id="offpage-potential-nets">
+                      {uniqueNets.map((net) => (
+                        <option key={net} value={net} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  <div className="px-2.5 py-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] space-y-1">
+                    <div className="flex items-center justify-between text-[var(--flux-text-muted)]">
+                      <span>Текущая зона ГОСТ:</span>
+                      <span className="font-mono font-semibold text-[var(--flux-text)]">
+                        Л.{link?.sheetNumber ?? 1} ({link?.ownZone ?? 'А1'})
+                      </span>
+                    </div>
+                    {link?.counterparts && link.counterparts.length > 0 ? (
+                      <div className="text-[var(--flux-text-muted)]">
+                        Ответная:{' '}
+                        <span className="font-mono font-semibold text-[var(--flux-text)]">
+                          {link.counterparts
+                            .map((cp) => `${cp.designation} · Л.${cp.sheetNumber} (${cp.zone})`)
+                            .join(', ')}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-amber-600 dark:text-amber-400">
+                        Ответная ссылка не найдена. Создайте парную ниже или задайте совпадающий потенциал.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <button
+                      type="button"
+                      data-testid="inspector-offpage-jump-btn"
+                      disabled={!link?.primaryCounterpart}
+                      onClick={() => onNavigateOffPage?.(selectedDevice)}
+                      className="w-full h-8 inline-flex items-center justify-center gap-1.5 rounded border border-[var(--flux-accent)]/70 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[var(--flux-text)] text-[12px] font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      <span>Перейти на ответный лист</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-testid="inspector-highlight-potential-btn"
+                      onClick={() => onHighlightPotential?.({ deviceId: selectedDevice.id })}
+                      className="w-full h-8 inline-flex items-center justify-center gap-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[12px] font-medium"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Подсветить весь потенциал</span>
+                    </button>
+
+                    {otherSheets.length > 0 && onCreateOffPageCounterpart && (
+                      <div className="flex items-center gap-1.5 pt-0.5">
+                        <select
+                          aria-label="Целевой лист для ответной ссылки"
+                          data-testid="inspector-offpage-target-sheet"
+                          value={targetSheetId}
+                          onChange={(e) => setCounterpartSheetId(e.target.value)}
+                          className="flex-1 min-w-0 h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
+                        >
+                          {otherSheets.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              Л.{s.number}: {s.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          data-testid="inspector-create-counterpart-btn"
+                          onClick={() => onCreateOffPageCounterpart(selectedDevice, targetSheetId)}
+                          className="h-8 px-2.5 shrink-0 inline-flex items-center gap-1 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11.5px] font-medium text-[var(--flux-text)]"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Создать ответную</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* E3 Attributes Table */}
             <div className="pt-3 border-t border-[var(--flux-line)] space-y-2">
               <div className="flex items-center justify-between">
@@ -816,7 +1014,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               const pFrom = dFrom?.pins.find((p) => p.id === selectedWire.fromPinId);
               const pTo = dTo?.pins.find((p) => p.id === selectedWire.toPinId);
               return (
-                <div className="px-2.5 py-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] space-y-1">
+                <div className="px-2.5 py-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] space-y-1.5">
                   <div className="text-[10px] uppercase tracking-wider text-[var(--flux-text-muted)]">
                     Трасса подключения
                   </div>
@@ -824,9 +1022,35 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                     {dFrom ? `${dFrom.designation}:${pFrom?.name || '?'}` : selectedWire.fromDeviceId} →{' '}
                     {dTo ? `${dTo.designation}:${pTo?.name || '?'}` : selectedWire.toDeviceId}
                   </div>
+                  <div className="flex items-center justify-between pt-0.5 text-[10.5px]">
+                    <span className="text-[var(--flux-text-muted)]">Режим трассировки:</span>
+                    <span
+                      data-testid="inspector-manual-route-badge"
+                      data-manual={selectedWire.manualRoute ? 'true' : 'false'}
+                      className={`font-medium px-1.5 py-0.5 rounded ${
+                        selectedWire.manualRoute
+                          ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40'
+                          : 'bg-[var(--flux-surface)] text-[var(--flux-text-muted)] border border-[var(--flux-line)]'
+                      }`}
+                    >
+                      {selectedWire.manualRoute ? 'Ручная трасса' : 'Автотрасса'}
+                    </span>
+                  </div>
                 </div>
               );
             })()}
+
+            {onHighlightPotential && (
+              <button
+                type="button"
+                data-testid="inspector-highlight-net-btn"
+                onClick={() => onHighlightPotential({ wireId: selectedWire.id })}
+                className="w-full h-8 inline-flex items-center justify-center gap-1.5 rounded border border-amber-400/70 bg-amber-500/10 hover:bg-amber-500 hover:text-white text-[var(--flux-text)] text-[12px] font-medium transition-colors"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                <span>Подсветить весь потенциал</span>
+              </button>
+            )}
 
             {onRerouteWire && (
               <button
@@ -836,7 +1060,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 className="w-full h-8 inline-flex items-center justify-center gap-1.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[var(--flux-text)] text-[12px] font-medium transition-colors"
               >
                 <Workflow className="w-3.5 h-3.5" />
-                <span>Перестроить трассу</span>
+                <span>{selectedWire.manualRoute ? 'Перестроить (сброс ручной)' : 'Перестроить трассу'}</span>
               </button>
             )}
 

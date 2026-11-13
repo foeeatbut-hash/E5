@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Grid3X3, Layers, Lock, Magnet, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react';
+import { Crosshair, Grid3X3, Layers, Lock, Magnet, Maximize2, Minus, Plus, Ruler, X } from 'lucide-react';
 import {
   countSheetLayerEntities,
   resolveCadLayers,
@@ -22,6 +22,11 @@ import {
   getDeviceBounds,
   getSheetDrawableBounds,
 } from '../core/e3Engine';
+import {
+  type PotentialTraceResult,
+  resolveOffPageLinks,
+  traceConnectedPotential,
+} from '../core/crossSheetRefs';
 import { buildGostSheetGeometry, fitStampCellText, type StampFieldKey } from '../core/gostFrame';
 import {
   type AlignmentGuide,
@@ -30,6 +35,16 @@ import {
   type SnapRectEntity,
   type SpacingGuide,
 } from '../core/smartSnap';
+import {
+  buildOrthogonalWireWithWaypoints,
+  buildWirePreviewWithWaypoints,
+  dragWireSegment,
+  extractWireSegmentHandles,
+  findWireBreakCandidate,
+  isTwoPinBreakEligible,
+  type WireBreakCandidate,
+  type WirePoint,
+} from '../core/wireEditing';
 import type {
   AnnotationKind,
   CadLayerId,
@@ -73,12 +88,13 @@ interface SchematicCanvasProps {
   onToggleGrid?: () => void;
   onToggleSnapToGrid?: () => void;
   onToggleSmartGuides?: () => void;
+  onToggleCrosshair?: () => void;
   onToggleLayerVisibility?: (layerId: CadLayerId) => void;
   onToggleLayerLock?: (layerId: CadLayerId) => void;
   onShowAllLayers?: () => void;
   onUnlockAllLayers?: () => void;
   onBeginDrag?: () => void;
-  onCommitDrag?: (moved: boolean) => void;
+  onCommitDrag?: (moved: boolean, opts?: { tryWireBreakDeviceId?: string }) => void;
   onSelectDevice: (deviceId: string | null, opts?: { toggle?: boolean }) => void;
   onSelectWire: (wireId: string | null, opts?: { toggle?: boolean }) => void;
   onSelectAnnotation: (annId: string | null, opts?: { toggle?: boolean }) => void;
@@ -86,10 +102,22 @@ interface SchematicCanvasProps {
     next: { deviceIds: string[]; wireIds: string[]; annotationIds: string[] },
     additive?: boolean
   ) => void;
+  highlightedTrace?: PotentialTraceResult | null;
+  onHighlightPotential?: (seed: { wireId?: string; netName?: string; deviceId?: string; pinId?: string }) => void;
+  onClearPotentialHighlight?: () => void;
+  onNavigateOffPage?: (device: E3Device) => void;
+  onCreateOffPageAt?: (sheetId: string, x: number, y: number) => void;
   onCreateAnnotation: (sheetId: string, kind: AnnotationKind, x: number, y: number) => void;
   onMoveAnnotation: (annId: string, x: number, y: number) => void;
   onMoveDevice: (deviceId: string, x: number, y: number) => void;
-  onCreateWire: (fromDeviceId: string, fromPinId: string, toDeviceId: string, toPinId: string) => void;
+  onPreviewWireWaypoints?: (wireId: string, waypoints: WirePoint[]) => void;
+  onCreateWire: (
+    fromDeviceId: string,
+    fromPinId: string,
+    toDeviceId: string,
+    toPinId: string,
+    customWaypoints?: WirePoint[]
+  ) => void;
   onDropCatalogItem: (item: CatalogItem, x: number, y: number, sheetId: string) => void;
   onOpenStampEditor?: (sheetId: string, fieldKey?: StampFieldKey) => void;
 }
@@ -122,6 +150,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   onToggleGrid,
   onToggleSnapToGrid,
   onToggleSmartGuides,
+  onToggleCrosshair,
   onToggleLayerVisibility,
   onToggleLayerLock,
   onShowAllLayers,
@@ -132,15 +161,30 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   onSelectWire,
   onSelectAnnotation,
   onSetSelection,
+  highlightedTrace = null,
+  onHighlightPotential,
+  onClearPotentialHighlight,
+  onNavigateOffPage,
+  onCreateOffPageAt,
   onCreateAnnotation,
   onMoveAnnotation,
   onMoveDevice,
+  onPreviewWireWaypoints,
   onCreateWire,
   onDropCatalogItem,
   onOpenStampEditor,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [cursorPos, setCursorPos] = useState<{
+    world: { x: number; y: number };
+    screen: { x: number; y: number };
+    inside: boolean;
+  }>({
+    world: { x: 0, y: 0 },
+    screen: { x: 0, y: 0 },
+    inside: false,
+  });
+  const cursorWorld = cursorPos.world;
   const [activeSnapHud, setActiveSnapHud] = useState<{
     entityId: string;
     x: number;
@@ -161,6 +205,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     y: number;
     direction: 'top' | 'right' | 'bottom' | 'left';
   } | null>(null);
+  const [wireAnchors, setWireAnchors] = useState<WirePoint[]>([]);
+  const [wireBreakPreview, setWireBreakPreview] = useState<WireBreakCandidate | null>(null);
   const [hoveredPin, setHoveredPin] = useState<{
     deviceId: string;
     pinId: string;
@@ -186,6 +232,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   useEffect(() => {
     if ((!wiresVisible || wiresLocked) && wireStart) {
       setWireStart(null);
+      setWireAnchors([]);
     }
   }, [wiresVisible, wiresLocked, wireStart]);
 
@@ -201,6 +248,26 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   onSetPanRef.current = onSetPan;
 
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+  const [altHeld, setAltHeld] = useState(false);
+  const [hoveredWireId, setHoveredWireId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' || e.altKey) setAltHeld(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' || !e.altKey) setAltHeld(false);
+    };
+    const onBlur = () => setAltHeld(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
 
   const selectedDeviceIdSet = useMemo(() => {
     const s = new Set<string>(selectedDeviceIds || []);
@@ -227,6 +294,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     | { kind: 'pan'; startX: number; startY: number; origPanX: number; origPanY: number; moved: boolean }
     | { kind: 'device'; deviceId: string; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean }
     | { kind: 'annotation'; annId: string; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean }
+    | { kind: 'wireSegment'; wireId: string; segmentIndex: number; origWaypoints: WirePoint[]; moved: boolean }
     | { kind: 'marquee'; startWorldX: number; startWorldY: number; additive: boolean; moved: boolean; currentBox?: SelectionBox }
     | null
   >(null);
@@ -285,9 +353,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     const d = dragRef.current;
     setActiveSnapHud(null);
     setSelectionBox(null);
+    setWireBreakPreview(null);
     if (!d) return;
     dragRef.current = null;
-    if (d.kind === 'device' || d.kind === 'annotation') {
+    if (d.kind === 'device') {
+      onCommitDrag?.(d.moved, d.moved ? { tryWireBreakDeviceId: d.deviceId } : undefined);
+    } else if (d.kind === 'annotation' || d.kind === 'wireSegment') {
       onCommitDrag?.(d.moved);
     } else if (d.kind === 'marquee') {
       if (d.moved && d.currentBox) {
@@ -312,6 +383,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
           onSelectWire(null);
           onSelectAnnotation(null);
         }
+        onClearPotentialHighlight?.();
       }
     }
   }, [
@@ -325,6 +397,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     onSelectDevice,
     onSelectWire,
     onSelectAnnotation,
+    onClearPotentialHighlight,
   ]);
 
   useEffect(() => {
@@ -343,6 +416,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       if (wireStart) {
         e.preventDefault();
         setWireStart(null);
+        setWireAnchors([]);
       } else if (isFocused && tool !== 'select') {
         e.preventDefault();
         onSetTool?.('select');
@@ -398,13 +472,38 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       return;
     }
     if (wireStart) {
+      if (e.button === 2) {
+        e.preventDefault();
+        if (wireAnchors.length > 0) {
+          setWireAnchors((prev) => prev.slice(0, -1));
+        } else {
+          setWireStart(null);
+        }
+        return;
+      }
+      if (e.button === 0) {
+        const world = toWorld(e.clientX, e.clientY);
+        const anchorPt: WirePoint = {
+          x: e.altKey ? world.x : snap(world.x),
+          y: e.altKey ? world.y : snap(world.y),
+        };
+        setWireAnchors((prev) => [...prev, anchorPt]);
+        return;
+      }
       setWireStart(null);
+      setWireAnchors([]);
       return;
     }
     if ((tool === 'text' || tool === 'rect' || tool === 'callout') && sheet) {
       if (annotationsLocked || !annotationsVisible) return;
       const world = toWorld(e.clientX, e.clientY);
       onCreateAnnotation(sheet.id, tool, snap(world.x), snap(world.y));
+      return;
+    }
+    if (tool === 'offpage' && sheet) {
+      if (devicesLocked || !devicesVisible) return;
+      const world = toWorld(e.clientX, e.clientY);
+      onCreateOffPageAt?.(sheet.id, snap(world.x), snap(world.y));
       return;
     }
     if (tool === 'select' && e.button === 0) {
@@ -422,9 +521,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     onSelectDevice(null);
     onSelectWire(null);
     onSelectAnnotation(null);
+    onClearPotentialHighlight?.();
   };
 
   const handleSelectDeviceDown = (e: React.MouseEvent, device: E3Device) => {
+    if (tool === 'offpage' || tool === 'text' || tool === 'rect' || tool === 'callout') {
+      return;
+    }
     e.stopPropagation();
     onFocusViewport?.();
     if (tool === 'pan' || e.button === 1) {
@@ -498,8 +601,20 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    const world = toWorld(e.clientX, e.clientY);
-    setCursorWorld(world);
+    const rect = containerRef.current?.getBoundingClientRect();
+    const world = rect
+      ? {
+          x: Math.round((e.clientX - rect.left - pan.x) / zoom),
+          y: Math.round((e.clientY - rect.top - pan.y) / zoom),
+        }
+      : { x: 0, y: 0 };
+    const screen = rect
+      ? {
+          x: Math.round(e.clientX - rect.left),
+          y: Math.round(e.clientY - rect.top),
+        }
+      : { x: 0, y: 0 };
+    setCursorPos({ world, screen, inside: true });
 
     const drag = dragRef.current;
     if (!drag) return;
@@ -564,12 +679,39 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         if (res.x !== dev.x || res.y !== dev.y) {
           onMoveDevice(drag.deviceId, res.x, res.y);
         }
+        const alreadyWired =
+          !wiresVisible ||
+          wiresLocked ||
+          sheetWires.some((w) => w.fromDeviceId === dev.id || w.toDeviceId === dev.id);
+        if (!alreadyWired && isTwoPinBreakEligible(dev)) {
+          setWireBreakPreview(
+            findWireBreakCandidate({ ...dev, x: res.x, y: res.y }, sheetWires)
+          );
+        } else {
+          setWireBreakPreview(null);
+        }
       } else {
         const nx = Math.max(30, snap(rawX));
         const ny = Math.max(30, snap(rawY));
         if (nx !== drag.origX || ny !== drag.origY) drag.moved = true;
         onMoveDevice(drag.deviceId, nx, ny);
+        setWireBreakPreview(null);
       }
+    } else if (drag.kind === 'wireSegment') {
+      const nextPts = dragWireSegment(
+        drag.origWaypoints,
+        drag.segmentIndex,
+        world,
+        vsCurr.gridSize,
+        e.altKey ? false : vsCurr.snapToGrid
+      );
+      if (
+        nextPts.length !== drag.origWaypoints.length ||
+        nextPts.some((p, i) => p.x !== drag.origWaypoints[i]?.x || p.y !== drag.origWaypoints[i]?.y)
+      ) {
+        drag.moved = true;
+      }
+      onPreviewWireWaypoints?.(drag.wireId, nextPts);
     } else if (drag.kind === 'annotation') {
       const ann = sheetAnnotations.find((a) => a.id === drag.annId);
       const rawX = drag.origX + (world.x - drag.startWorldX);
@@ -666,6 +808,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     const abs = getAbsolutePinPos(device, pin);
 
     if (!wireStart) {
+      setWireAnchors([]);
       setWireStart({
         deviceId: device.id,
         pinId: pin.id,
@@ -676,16 +819,27 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     } else {
       if (wireStart.deviceId === device.id && wireStart.pinId === pin.id) {
         setWireStart(null);
+        setWireAnchors([]);
         return;
       }
-      onCreateWire(wireStart.deviceId, wireStart.pinId, device.id, pin.id);
+      const customWaypoints =
+        wireAnchors.length > 0
+          ? buildOrthogonalWireWithWaypoints(
+              { x: wireStart.x, y: wireStart.y, direction: wireStart.direction },
+              wireAnchors,
+              { x: abs.x, y: abs.y, direction: abs.direction }
+            )
+          : undefined;
+      onCreateWire(wireStart.deviceId, wireStart.pinId, device.id, pin.id, customWaypoints);
       setWireStart(null);
+      setWireAnchors([]);
       setHoveredPin(null);
     }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
+    setWireBreakPreview(null);
     onFocusViewport?.();
     if (devicesLocked || !devicesVisible) return;
     const catId = e.dataTransfer.getData('application/x-flux-catalog-id');
@@ -758,17 +912,24 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
           y: cursorWorld.y,
           direction: inferredDir,
         };
-    const pts = autoRouteOrthogonal(
-      { x: wireStart.x, y: wireStart.y, direction: wireStart.direction, deviceId: wireStart.deviceId },
-      targetEndpoint,
-      20,
-      obstacles,
-      0,
-      occupied,
-      { sheetBounds }
-    );
+    const pts =
+      wireAnchors.length > 0
+        ? buildWirePreviewWithWaypoints(
+            { x: wireStart.x, y: wireStart.y, direction: wireStart.direction },
+            wireAnchors,
+            targetEndpoint
+          )
+        : autoRouteOrthogonal(
+            { x: wireStart.x, y: wireStart.y, direction: wireStart.direction, deviceId: wireStart.deviceId },
+            targetEndpoint,
+            20,
+            obstacles,
+            0,
+            occupied,
+            { sheetBounds }
+          );
     return pts.map((p) => `${p.x},${p.y}`).join(' ');
-  }, [wireStart, hoveredPin, cursorWorld, sheetDevices, sheetWires, sheet]);
+  }, [wireStart, wireAnchors, hoveredPin, cursorWorld, sheetDevices, sheetWires, sheet]);
 
   const gostGeom = useMemo(
     () => (sheet ? buildGostSheetGeometry(sheet, project) : null),
@@ -786,6 +947,37 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
     () => computeWireLabelPositions(sheetWires, sheetDevices),
     [sheetWires, sheetDevices]
   );
+
+  const offPageLinks = useMemo(() => resolveOffPageLinks(project), [project]);
+
+  const liveHoverTrace = useMemo<PotentialTraceResult | null>(() => {
+    if (!altHeld) return null;
+    if (hoveredWireId) {
+      return traceConnectedPotential(project, { wireId: hoveredWireId });
+    }
+    if (hoveredPin) {
+      return traceConnectedPotential(project, {
+        deviceId: hoveredPin.deviceId,
+        pinId: hoveredPin.pinId,
+      });
+    }
+    return null;
+  }, [altHeld, hoveredWireId, hoveredPin, project]);
+
+  const activeTrace = useMemo<PotentialTraceResult | null>(() => {
+    if (liveHoverTrace && (liveHoverTrace.wireIds.length > 0 || liveHoverTrace.offPageDeviceIds.length > 0)) {
+      return liveHoverTrace;
+    }
+    if (highlightedTrace && (highlightedTrace.wireIds.length > 0 || highlightedTrace.offPageDeviceIds.length > 0)) {
+      return highlightedTrace;
+    }
+    return null;
+  }, [liveHoverTrace, highlightedTrace]);
+
+  const tracedWireIdSet = useMemo(() => new Set(activeTrace?.wireIds || []), [activeTrace]);
+  const tracedPinKeySet = useMemo(() => new Set(activeTrace?.pinKeys || []), [activeTrace]);
+  const tracedOffPageIdSet = useMemo(() => new Set(activeTrace?.offPageDeviceIds || []), [activeTrace]);
+
   const frameSw = Math.max(0.5, vs.frameStrokeWidth ?? 1.6);
   const frameThinSw = Math.max(0.35, Number((frameSw * 0.44).toFixed(2)));
   const stampThickSw = Math.max(0.6, Number((frameSw * 0.88).toFixed(2)));
@@ -793,7 +985,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
   const fontCss = resolveSchematicCssFont(vs.fontFamily);
   const gridPatternId = `flux-cad-grid-vp-${viewportIndex}`;
 
-  const isDrawingTool = tool === 'wire' || tool === 'text' || tool === 'rect' || tool === 'callout';
+  const isDrawingTool =
+    tool === 'wire' || tool === 'text' || tool === 'rect' || tool === 'callout' || tool === 'offpage';
 
   return (
     <section
@@ -936,11 +1129,6 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
           </div>
 
           <div className="flex items-center gap-2.5 text-[11px] text-[var(--flux-text-muted)] shrink-0">
-            {wireStart && (
-              <span className="hidden md:inline font-mono text-[var(--flux-accent)] font-medium">
-                Выберите целевой вывод (Esc — отмена)
-              </span>
-            )}
             <span className="hidden md:inline font-mono tabular-nums">Эл.: {sheetDevices.length}</span>
             <span className="hidden md:inline font-mono tabular-nums">Связи: {sheetWires.length}</span>
 
@@ -992,6 +1180,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
       <div
         ref={containerRef}
         data-testid={viewportIndex === 0 ? 'schematic-canvas' : `schematic-canvas-${viewportIndex}`}
+        data-crosshair-enabled={String(vs.showCrosshair !== false)}
+        data-crosshair-active={String(vs.showCrosshair !== false && cursorPos.inside)}
         data-layer-devices-visible={String(devicesVisible)}
         data-layer-wires-visible={String(wiresVisible)}
         data-layer-annotations-visible={String(annotationsVisible)}
@@ -1000,7 +1190,37 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
         data-layer-wires-locked={String(wiresLocked)}
         data-layer-annotations-locked={String(annotationsLocked)}
         data-layer-frame-locked={String(frameLocked)}
-        onDragOver={(e) => e.preventDefault()}
+        onMouseLeave={() => setCursorPos((prev) => (prev.inside ? { ...prev, inside: false } : prev))}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (
+            !devicesLocked &&
+            devicesVisible &&
+            !wiresLocked &&
+            wiresVisible &&
+            sheet &&
+            e.dataTransfer.types.includes('application/x-flux-2pin')
+          ) {
+            const world = toWorld(e.clientX, e.clientY);
+            const virtualDev = {
+              id: '__drag_2pin__',
+              sheetId: sheet.id,
+              x: world.x - 30,
+              y: world.y - 40,
+              width: 60,
+              height: 80,
+              category: 'breaker' as const,
+              pins: [
+                { id: 'p1', name: '1', dx: 30, dy: 0, direction: 'top' as const, signalType: 'power' as const },
+                { id: 'p2', name: '2', dx: 30, dy: 80, direction: 'bottom' as const, signalType: 'power' as const },
+              ],
+            };
+            setWireBreakPreview(findWireBreakCandidate(virtualDev, sheetWires));
+          } else if (wireBreakPreview) {
+            setWireBreakPreview(null);
+          }
+        }}
+        onDragLeave={() => setWireBreakPreview(null)}
         onDrop={handleDrop}
         className="flex-1 min-h-0 overflow-hidden relative"
         style={{
@@ -1011,7 +1231,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   ((tool === 'text' || tool === 'rect' || tool === 'callout') &&
                     (annotationsLocked || !annotationsVisible))
                 ? 'not-allowed'
-                : wireStart || isDrawingTool
+                : wireStart || isDrawingTool || vs.showCrosshair !== false
                   ? 'crosshair'
                   : 'default',
         }}
@@ -1022,6 +1242,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
           onMouseDown={handleMouseDownBg}
           onMouseMove={handleMouseMove}
           onMouseUp={finishDrag}
+          onContextMenu={(e) => {
+            if (wireStart) e.preventDefault();
+          }}
           className="block w-full h-full"
         >
           <defs>
@@ -1521,12 +1744,15 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               <g data-testid="layer-group-wires">
                 {sheetWires.map((wire: E3Wire) => {
                   const selected = selectedWireIdSet.has(wire.id);
+                  const isTraced = tracedWireIdSet.has(wire.id);
+                  const isDimmed = Boolean(activeTrace) && !isTraced && !selected;
                   const pts = wire.waypoints.map((p) => `${p.x},${p.y}`).join(' ');
+                  const netSigColor = vs.netColors[wire.signalType] || 'var(--flux-text)';
                   const color = selected
                     ? wiresLocked
                       ? '#d97706'
                       : 'var(--flux-accent)'
-                    : vs.netColors[wire.signalType] || 'var(--flux-text)';
+                    : netSigColor;
                   const midPt =
                     wireLabelMap.get(wire.id) ||
                     (wire.waypoints.length >= 2
@@ -1540,18 +1766,43 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                     <g
                       key={wire.id}
                       data-testid={`wire-${wire.id}`}
+                      data-traced={isTraced ? 'true' : 'false'}
+                      style={{ opacity: isDimmed ? 0.32 : 1 }}
+                      onMouseEnter={() => setHoveredWireId(wire.id)}
+                      onMouseLeave={() => setHoveredWireId((prev) => (prev === wire.id ? null : prev))}
                       onClick={(e) => {
                         e.stopPropagation();
                         onSelectWire(wire.id, { toggle: e.shiftKey });
+                        if (!e.shiftKey || e.altKey) {
+                          onHighlightPotential?.({ wireId: wire.id });
+                        }
                       }}
                       className="cursor-pointer"
                     >
-                      <polyline points={pts} fill="none" stroke="transparent" strokeWidth={10} />
+                      <polyline points={pts} fill="none" stroke="transparent" strokeWidth={11} />
+                      {isTraced && (
+                        <polyline
+                          points={pts}
+                          fill="none"
+                          stroke={netSigColor}
+                          strokeOpacity={0.34}
+                          strokeWidth={vs.wireWidth + 7}
+                          strokeLinejoin="round"
+                          strokeLinecap="round"
+                          pointerEvents="none"
+                        />
+                      )}
                       <polyline
                         points={pts}
                         fill="none"
                         stroke={color}
-                        strokeWidth={selected ? vs.wireWidth + 1.5 : vs.wireWidth}
+                        strokeWidth={
+                          isTraced
+                            ? Math.max(vs.wireWidth + 1.8, 3.4)
+                            : selected
+                              ? vs.wireWidth + 1.5
+                              : vs.wireWidth
+                        }
                         strokeLinejoin="round"
                       />
                       {/* GOST Crossing Jump Bridges (Мостики при пересечении разных цепей) */}
@@ -1569,7 +1820,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                             d={`M ${arc.x - 6} ${arc.y} A 6 6 0 0 1 ${arc.x + 6} ${arc.y}`}
                             fill="none"
                             stroke={color}
-                            strokeWidth={selected ? vs.wireWidth + 1.2 : vs.wireWidth}
+                            strokeWidth={selected || isTraced ? vs.wireWidth + 1.2 : vs.wireWidth}
                             strokeLinecap="round"
                           />
                         </g>
@@ -1618,42 +1869,176 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
                   />
                 ))}
 
-                {/* Live Rubber-band Wire Preview */}
+                {/* Interactive Segment Drag Grips for Single Selected Wire */}
+                {selectedWireIdSet.size === 1 && !wiresLocked && !wireStart && tool === 'select' && (() => {
+                  const selWireId = Array.from(selectedWireIdSet)[0];
+                  const selWire = sheetWires.find((w) => w.id === selWireId);
+                  if (!selWire) return null;
+                  const handles = extractWireSegmentHandles(selWire.waypoints, 8);
+                  const inv = 1 / Math.max(0.25, zoom);
+                  const gripHalf = Math.max(3.5, Math.min(8, 4.5 * inv));
+                  return (
+                    <g data-testid="wire-segment-grips">
+                      {handles.map((h) => (
+                        <g
+                          key={`grip-${selWire.id}-${h.segmentIndex}`}
+                          data-testid={`wire-grip-${selWire.id}-${h.segmentIndex}`}
+                          data-orientation={h.orientation}
+                          style={{ cursor: h.orientation === 'h' ? 'ns-resize' : 'ew-resize' }}
+                          onMouseDown={(e) => {
+                            if (e.button !== 0) return;
+                            e.stopPropagation();
+                            onFocusViewport?.();
+                            onBeginDrag?.();
+                            dragRef.current = {
+                              kind: 'wireSegment',
+                              wireId: selWire.id,
+                              segmentIndex: h.segmentIndex,
+                              origWaypoints: selWire.waypoints.map((pt) => ({ ...pt })),
+                              moved: false,
+                            };
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <rect
+                            x={h.midX - gripHalf * 1.8}
+                            y={h.midY - gripHalf * 1.8}
+                            width={gripHalf * 3.6}
+                            height={gripHalf * 3.6}
+                            fill="transparent"
+                          />
+                          <rect
+                            x={h.midX - gripHalf}
+                            y={h.midY - gripHalf}
+                            width={gripHalf * 2}
+                            height={gripHalf * 2}
+                            rx={1.2 * inv}
+                            fill="var(--flux-surface)"
+                            stroke="var(--flux-accent)"
+                            strokeWidth={1.4 * inv}
+                          />
+                        </g>
+                      ))}
+                    </g>
+                  );
+                })()}
+
+                {/* Live Rubber-band Wire Preview + Step-by-Step Waypoint Anchors */}
                 {wireStart && previewWirePoints && (
-                  <polyline
-                    data-testid="wire-preview-polyline"
-                    points={previewWirePoints}
-                    fill="none"
-                    stroke="var(--flux-accent)"
-                    strokeWidth={vs.wireWidth}
-                    strokeDasharray="5 3"
-                    pointerEvents="none"
-                  />
+                  <g pointerEvents="none">
+                    <polyline
+                      data-testid="wire-preview-polyline"
+                      points={previewWirePoints}
+                      fill="none"
+                      stroke="var(--flux-accent)"
+                      strokeWidth={vs.wireWidth}
+                      strokeDasharray="5 3"
+                    />
+                    {wireAnchors.map((pt, idx) => (
+                      <circle
+                        key={`draft-anchor-${idx}`}
+                        data-testid={`wire-draft-anchor-${idx}`}
+                        cx={pt.x}
+                        cy={pt.y}
+                        r={3.5}
+                        fill="var(--flux-surface)"
+                        stroke="var(--flux-accent)"
+                        strokeWidth={1.6}
+                      />
+                    ))}
+                  </g>
                 )}
+
+                {/* Auto Wire Break Highlight when dragging 2-pin device over a wire */}
+                {wireBreakPreview && (() => {
+                  const bw = wireBreakPreview.wire;
+                  const segA = bw.waypoints[wireBreakPreview.segmentIndex];
+                  const segB = bw.waypoints[wireBreakPreview.segmentIndex + 1];
+                  if (!segA || !segB) return null;
+                  const inv = 1 / Math.max(0.25, zoom);
+                  const badgeText = `⚡ В разрыв цепи ${bw.netName}`;
+                  const badgeW = Math.max(120 * inv, badgeText.length * 5.8 * inv + 16 * inv);
+                  const badgeH = 18 * inv;
+                  return (
+                    <g
+                      data-testid="wire-break-preview"
+                      data-wire-id={bw.id}
+                      pointerEvents="none"
+                    >
+                      <line
+                        x1={segA.x}
+                        y1={segA.y}
+                        x2={segB.x}
+                        y2={segB.y}
+                        stroke="#f59e0b"
+                        strokeOpacity={0.45}
+                        strokeWidth={vs.wireWidth + 8 * inv}
+                        strokeLinecap="round"
+                      />
+                      <circle
+                        cx={wireBreakPreview.projX}
+                        cy={wireBreakPreview.projY}
+                        r={7 * inv}
+                        fill="var(--flux-surface)"
+                        stroke="#d97706"
+                        strokeWidth={1.8 * inv}
+                      />
+                      <rect
+                        x={wireBreakPreview.projX - badgeW / 2}
+                        y={wireBreakPreview.projY - 26 * inv}
+                        width={badgeW}
+                        height={badgeH}
+                        rx={2.5 * inv}
+                        fill="var(--flux-surface)"
+                        stroke="#d97706"
+                        strokeWidth={1 * inv}
+                      />
+                      <text
+                        x={wireBreakPreview.projX}
+                        y={wireBreakPreview.projY - 14 * inv}
+                        textAnchor="middle"
+                        fill="#b45309"
+                        fontSize={9.5 * inv}
+                        fontFamily={fontCss}
+                        fontWeight={600}
+                      >
+                        {badgeText}
+                      </text>
+                    </g>
+                  );
+                })()}
               </g>
             )}
 
             {/* Devices */}
             {devicesVisible && (
               <g data-testid="layer-group-devices">
-                {sheetDevices.slice(0, 1200).map((device) => (
-                  <SchematicSymbol
-                    key={device.id}
-                    device={device}
-                    selected={selectedDeviceIdSet.has(device.id)}
-                    locked={devicesLocked}
-                    wiresLocked={wiresLocked || !wiresVisible}
-                    visual={vs}
-                    wireStartPinKey={wireStart ? `${wireStart.deviceId}:${wireStart.pinId}` : null}
-                    hoveredPinKey={
-                      wireStart && hoveredPin ? `${hoveredPin.deviceId}:${hoveredPin.pinId}` : null
-                    }
-                    connectedPinKeys={connectedPinKeys}
-                    onSelectDevice={handleSelectDeviceDown}
-                    onPinClick={handlePinClick}
-                    onPinHover={wireStart ? handlePinHover : undefined}
-                  />
-                ))}
+                {sheetDevices.slice(0, 1200).map((device) => {
+                  const link = device.category === 'offpage_ref' ? offPageLinks.get(device.id) : undefined;
+                  return (
+                    <SchematicSymbol
+                      key={device.id}
+                      device={device}
+                      selected={selectedDeviceIdSet.has(device.id)}
+                      locked={devicesLocked}
+                      wiresLocked={wiresLocked || !wiresVisible}
+                      visual={vs}
+                      wireStartPinKey={wireStart ? `${wireStart.deviceId}:${wireStart.pinId}` : null}
+                      hoveredPinKey={
+                        wireStart && hoveredPin ? `${hoveredPin.deviceId}:${hoveredPin.pinId}` : null
+                      }
+                      connectedPinKeys={connectedPinKeys}
+                      highlightedPinKeys={tracedPinKeySet}
+                      isPotentialHighlighted={tracedOffPageIdSet.has(device.id)}
+                      offPageAddress={link?.addressText}
+                      offPageHasTarget={Boolean(link?.primaryCounterpart)}
+                      onOffPageNavigate={onNavigateOffPage}
+                      onSelectDevice={handleSelectDeviceDown}
+                      onPinClick={handlePinClick}
+                      onPinHover={handlePinHover}
+                    />
+                  );
+                })}
               </g>
             )}
 
@@ -1903,7 +2288,128 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               </g>
             )}
           </g>
+
+          {/* Global CAD Crosshair Cursor Overlay (full-viewport screen-space hairlines) */}
+          {vs.showCrosshair !== false && cursorPos.inside && (
+            <g
+              data-testid={viewportIndex === 0 ? 'canvas-crosshair' : `canvas-crosshair-${viewportIndex}`}
+              data-screen-x={cursorPos.screen.x}
+              data-screen-y={cursorPos.screen.y}
+              data-world-x={cursorPos.world.x}
+              data-world-y={cursorPos.world.y}
+              pointerEvents="none"
+            >
+              <line
+                x1={0}
+                y1={cursorPos.screen.y + 0.5}
+                x2={Math.max(0, cursorPos.screen.x - 7)}
+                y2={cursorPos.screen.y + 0.5}
+                stroke="var(--flux-accent)"
+                strokeOpacity={0.55}
+                strokeWidth={1}
+                strokeDasharray="6 4"
+              />
+              <line
+                x1={cursorPos.screen.x + 7}
+                y1={cursorPos.screen.y + 0.5}
+                x2="100%"
+                y2={cursorPos.screen.y + 0.5}
+                stroke="var(--flux-accent)"
+                strokeOpacity={0.55}
+                strokeWidth={1}
+                strokeDasharray="6 4"
+              />
+              <line
+                x1={cursorPos.screen.x + 0.5}
+                y1={0}
+                x2={cursorPos.screen.x + 0.5}
+                y2={Math.max(0, cursorPos.screen.y - 7)}
+                stroke="var(--flux-accent)"
+                strokeOpacity={0.55}
+                strokeWidth={1}
+                strokeDasharray="6 4"
+              />
+              <line
+                x1={cursorPos.screen.x + 0.5}
+                y1={cursorPos.screen.y + 7}
+                x2={cursorPos.screen.x + 0.5}
+                y2="100%"
+                stroke="var(--flux-accent)"
+                strokeOpacity={0.55}
+                strokeWidth={1}
+                strokeDasharray="6 4"
+              />
+              <rect
+                x={cursorPos.screen.x - 5}
+                y={cursorPos.screen.y - 5}
+                width={10}
+                height={10}
+                fill="none"
+                stroke="var(--flux-accent)"
+                strokeOpacity={0.7}
+                strokeWidth={1}
+              />
+            </g>
+          )}
         </svg>
+
+        {/* Floating Potential Signal Trace HUD */}
+        {activeTrace && viewportIndex === 0 && (
+          <div
+            data-testid="potential-trace-hud"
+            onMouseDown={(e) => e.stopPropagation()}
+            className="no-print absolute top-2.5 right-2.5 z-20 flex items-center gap-2 px-2.5 py-1.5 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/95 shadow-sm text-[11px] backdrop-blur-xs"
+          >
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: vs.netColors[activeTrace.signalType] || 'var(--flux-accent)' }}
+            />
+            <div className="flex items-center gap-1.5 font-mono">
+              <span className="font-semibold text-[var(--flux-text)]">
+                {activeTrace.netNames.join(' / ') || 'Цепь'}
+              </span>
+              <span className="text-[var(--flux-text-muted)]">
+                · {activeTrace.segmentCount} уч. · {activeTrace.totalLengthMm} мм
+              </span>
+            </div>
+            {activeTrace.sheetIds.length > 0 && (
+              <div className="flex items-center gap-1 border-l border-[var(--flux-line)] pl-1.5">
+                {activeTrace.sheetIds.map((sId) => {
+                  const sh = project.sheets.find((s) => s.id === sId);
+                  if (!sh) return null;
+                  const isCurr = sh.id === sheet?.id;
+                  return (
+                    <button
+                      key={sh.id}
+                      type="button"
+                      data-testid={`trace-sheet-chip-${sh.number}`}
+                      onClick={() => onSelectSheet(sh.id)}
+                      className={`h-5 px-1.5 rounded font-mono text-[10.5px] font-medium transition-colors ${
+                        isCurr
+                          ? 'bg-[var(--flux-accent-solid)] text-white'
+                          : 'bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                      }`}
+                    >
+                      Л.{sh.number}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {onClearPotentialHighlight && !liveHoverTrace && (
+              <button
+                type="button"
+                data-testid="clear-potential-trace-btn"
+                onClick={onClearPotentialHighlight}
+                title="Снять подсветку потенциала (Esc)"
+                aria-label="Снять подсветку потенциала"
+                className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Compact CAD Canvas Footer Strip */}
@@ -1930,12 +2436,23 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
               type="button"
               data-testid="cancel-tool-btn"
               onClick={() => {
-                if (wireStart) setWireStart(null);
-                else onSetTool?.('select');
+                if (wireStart) {
+                  setWireStart(null);
+                  setWireAnchors([]);
+                } else {
+                  onSetTool?.('select');
+                }
               }}
+              title={wireStart ? 'Клик — угол · ПКМ — откат угла · Вывод — соединить · Esc — отмена' : 'Вернуться в режим «Выбор» (Esc)'}
               className="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] font-sans font-medium whitespace-nowrap shrink-0"
             >
-              <span>{wireStart ? 'Укажите вывод' : `Режим: ${tool}`}</span>
+              <span>
+                {wireStart
+                  ? wireAnchors.length > 0
+                    ? `Углов: ${wireAnchors.length} · ПКМ откат · Esc`
+                    : 'Клик — угол · Вывод — соединить'
+                  : `Режим: ${tool}`}
+              </span>
               <X className="w-3 h-3" />
             </button>
           )}
@@ -1990,6 +2507,24 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = ({
             >
               <Ruler className={`w-3 h-3 ${vs.smartGuides !== false ? 'text-[var(--flux-accent)]' : ''}`} />
               <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Направл.</span>
+            </button>
+          )}
+          {onToggleCrosshair && (
+            <button
+              type="button"
+              data-testid={viewportIndex === 0 ? 'toggle-crosshair-btn' : `toggle-crosshair-btn-${viewportIndex}`}
+              onClick={onToggleCrosshair}
+              aria-pressed={vs.showCrosshair !== false}
+              title="Глобальное перекрестие курсора (Crosshair) для точного выравнивания на листе"
+              aria-label="Переключить перекрестие курсора"
+              className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
+                vs.showCrosshair !== false
+                  ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
+                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+              }`}
+            >
+              <Crosshair className={`w-3 h-3 ${vs.showCrosshair !== false ? 'text-[var(--flux-accent)]' : ''}`} />
+              <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Прицел</span>
             </button>
           )}
 

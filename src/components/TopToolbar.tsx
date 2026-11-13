@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Activity,
   Archive,
+  ArrowLeftRight,
   ArrowUpRight,
   CheckCircle2,
   ChevronDown,
@@ -13,6 +14,7 @@ import {
   Copy,
   CopyPlus,
   Cpu,
+  Crosshair,
   Database,
   Download,
   FileCode2,
@@ -109,6 +111,7 @@ interface TopToolbarProps {
   onFitView: () => void;
   onToggleGrid: () => void;
   onToggleSnapToGrid: () => void;
+  onToggleCrosshair?: () => void;
   onChangeGridSize: (gridSize: number) => void;
   onToggleFrame: () => void;
   onTogglePinNumbers: () => void;
@@ -398,6 +401,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onFitView,
   onToggleGrid,
   onToggleSnapToGrid,
+  onToggleCrosshair,
   onChangeGridSize,
   onToggleFrame,
   onTogglePinNumbers,
@@ -1234,6 +1238,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                           testId="tool-text-btn"
                           onClick={() => onSetTool('text')}
                         />
+                        <LargeRibbonBtn
+                          icon={<ArrowLeftRight className="w-[17px] h-[17px]" />}
+                          label="Ссылка Л↔Л"
+                          title="Поставить межлистовую ссылку потенциала (E3.series Off-Page Connector)"
+                          active={tool === 'offpage'}
+                          testId="tool-offpage-btn"
+                          onClick={() => onSetTool('offpage')}
+                        />
                       </RibbonPanel>
 
                       <RibbonPanel title="Сетка и Шаг">
@@ -1252,6 +1264,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                             onClick={onToggleSnapToGrid}
                           />
                         </RibbonStack>
+                        {onToggleCrosshair && (
+                          <LargeRibbonBtn
+                            icon={<Crosshair className="w-[17px] h-[17px]" />}
+                            label="Прицел"
+                            title="Глобальное перекрестие курсора (Crosshair) для точного выравнивания"
+                            active={vs.showCrosshair !== false}
+                            testId="toolbar-crosshair-btn"
+                            onClick={onToggleCrosshair}
+                          />
+                        )}
                         <div className="flex flex-col justify-center gap-1 px-1.5 h-[52px] shrink-0">
                           <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">Шаг сетки</span>
                           <select

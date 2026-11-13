@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Archive, Check, Copy, Download, ExternalLink, FileCode2, Package, Printer, Terminal, Upload, X } from 'lucide-react';
 import { SCHEMATIC_FONT_OPTIONS } from '../core/e3Catalog';
 import {
+  buildNetWireLengths,
   encodeUtf16LeWithBom,
   exportVisualSettings,
   generateE3ComScript,
@@ -14,6 +15,7 @@ import type {
   E3Project,
   E3VisualSettings,
   ErcIssue,
+  NetWireLengthRow,
   SchematicFontFamily,
   SignalType,
 } from '../core/e3Types';
@@ -656,6 +658,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               [
                 ['snapToGrid', 'Привязка к сетке'],
                 ['smartGuides', 'Магнитные направляющие'],
+                ['showCrosshair', 'Перекрестие курсора (Crosshair)'],
                 ['wireCrossingBridge', 'Мостики на пересечении цепей'],
                 ['showPinNumbers', 'Номера выводов'],
                 ['showWireNumbers', 'Маркировка проводов'],
@@ -665,12 +668,15 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               <label key={key} className="flex items-center gap-2 text-[var(--flux-text)] cursor-pointer">
                 <input
                   type="checkbox"
+                  data-testid={`vs-opt-${key}`}
                   checked={
                     key === 'smartGuides'
                       ? draft.smartGuides !== false
-                      : key === 'wireCrossingBridge'
-                        ? draft.wireCrossingBridge !== false
-                        : Boolean(draft[key])
+                      : key === 'showCrosshair'
+                        ? draft.showCrosshair !== false
+                        : key === 'wireCrossingBridge'
+                          ? draft.wireCrossingBridge !== false
+                          : Boolean(draft[key])
                   }
                   onChange={(e) => setDraft({ ...draft, [key]: e.target.checked })}
                   className="accent-[var(--flux-accent)]"
@@ -756,6 +762,7 @@ interface ReportModalProps {
   project: E3Project;
   bom: BomRow[];
   cables: CableJournalRow[];
+  netLengths?: NetWireLengthRow[];
   erc: ErcIssue[];
   onClose: () => void;
 }
@@ -765,6 +772,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   project,
   bom,
   cables,
+  netLengths,
   erc,
   onClose,
 }) => {
@@ -777,6 +785,10 @@ export const ReportModal: React.FC<ReportModalProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  const resolvedNetLengths = React.useMemo(
+    () => netLengths ?? buildNetWireLengths(project),
+    [netLengths, project]
+  );
   const totalQty = bom.reduce((s, r) => s + r.quantity, 0);
 
   return (
@@ -880,6 +892,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                   <th className="border border-[var(--flux-line)] px-2 py-1.5 text-left">Марка</th>
                   <th className="border border-[var(--flux-line)] px-2 py-1.5 text-left">Трасса</th>
                   <th className="border border-[var(--flux-line)] px-2 py-1.5 text-right">Жилы</th>
+                  <th className="border border-[var(--flux-line)] px-2 py-1.5 text-right">Схема, мм</th>
                   <th className="border border-[var(--flux-line)] px-2 py-1.5 text-right">Длина, м</th>
                 </tr>
               </thead>
@@ -895,12 +908,59 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                       {c.usedCores}/{c.coresCount}
                     </td>
                     <td className="border border-[var(--flux-line)] px-2 py-1 text-right font-mono tabular-nums">
+                      {c.wireLengthMm ?? 0}
+                    </td>
+                    <td className="border border-[var(--flux-line)] px-2 py-1 text-right font-mono tabular-nums">
                       {c.lengthMeters}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+
+            {resolvedNetLengths.length > 0 && (
+              <div className="mt-4">
+                <h5 className="text-[12px] font-semibold mb-1.5">
+                  Суммарная длина проводов по цепям (E3-CORE)
+                </h5>
+                <table className="w-full border border-[var(--flux-line)] border-collapse">
+                  <thead className="bg-[var(--flux-bg)]">
+                    <tr>
+                      <th className="border border-[var(--flux-line)] px-2 py-1 text-left">Цепь (Net)</th>
+                      <th className="border border-[var(--flux-line)] px-2 py-1 text-right">Проводов</th>
+                      <th className="border border-[var(--flux-line)] px-2 py-1 text-left">Кабели</th>
+                      <th className="border border-[var(--flux-line)] px-2 py-1 text-left">Сечение</th>
+                      <th className="border border-[var(--flux-line)] px-2 py-1 text-right">Сумм. длина, мм</th>
+                      <th className="border border-[var(--flux-line)] px-2 py-1 text-right">Длина, м</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resolvedNetLengths.map((n) => (
+                      <tr key={n.netName}>
+                        <td className="border border-[var(--flux-line)] px-2 py-1 font-mono font-medium">
+                          {n.netName}
+                        </td>
+                        <td className="border border-[var(--flux-line)] px-2 py-1 text-right font-mono tabular-nums">
+                          {n.wireCount}
+                        </td>
+                        <td className="border border-[var(--flux-line)] px-2 py-1 font-mono">
+                          {n.cableDesignations.join(', ') || 'Монтаж'}
+                        </td>
+                        <td className="border border-[var(--flux-line)] px-2 py-1 font-mono">
+                          {n.crossSections.join(', ') || '—'}
+                        </td>
+                        <td className="border border-[var(--flux-line)] px-2 py-1 text-right font-mono tabular-nums">
+                          {n.totalLengthMm}
+                        </td>
+                        <td className="border border-[var(--flux-line)] px-2 py-1 text-right font-mono tabular-nums">
+                          {n.totalLengthMeters.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <div className="text-[11px] text-[var(--flux-text-muted)]">

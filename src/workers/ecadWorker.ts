@@ -1,6 +1,7 @@
 import {
   buildBom,
   buildCableJournal,
+  buildNetWireLengths,
   buildTerminalPlan,
   exportToDxf,
   exportToFluxBridge,
@@ -28,6 +29,7 @@ export type WorkerResponse =
       durationMs: number;
       bom: ReturnType<typeof buildBom>;
       cables: ReturnType<typeof buildCableJournal>;
+      netLengths: ReturnType<typeof buildNetWireLengths>;
       terminals: ReturnType<typeof buildTerminalPlan>;
       erc: ReturnType<typeof runErc>;
     }
@@ -54,6 +56,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     if (req.type === 'ANALYZE_ALL') {
       const bom = buildBom(req.project);
       const cables = buildCableJournal(req.project);
+      const netLengths = buildNetWireLengths(req.project);
       const terminals = buildTerminalPlan(req.project);
       const erc = runErc(req.project);
       const res: WorkerResponse = {
@@ -63,6 +66,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         durationMs: Math.round((performance.now() - t0) * 100) / 100,
         bom,
         cables,
+        netLengths,
         terminals,
         erc,
       };

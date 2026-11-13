@@ -10,6 +10,7 @@ import { E3_CATALOG } from './src/core/e3Catalog.ts';
 import {
   buildBom,
   buildCableJournal,
+  buildNetWireLengths,
   buildTerminalPlan,
   encodeUtf16LeWithBom,
   exportBomCsv,
@@ -543,7 +544,11 @@ app.get('/api/v1/projects/:id/bom', (req, res) => {
 
 app.get('/api/v1/projects/:id/cables', (req, res) => {
   const proj = getOrDefaultProject(req.params.id);
-  res.json({ cables: buildCableJournal(proj), terminals: buildTerminalPlan(proj) });
+  res.json({
+    cables: buildCableJournal(proj),
+    netLengths: buildNetWireLengths(proj),
+    terminals: buildTerminalPlan(proj),
+  });
 });
 
 app.get('/api/v1/projects/:id/erc', (req, res) => {

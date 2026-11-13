@@ -9,6 +9,9 @@ import type {
 
 export type StampFieldKey = StampTextFieldKey;
 
+export const GOST_ZONE_COLS = ['1', '2', '3', '4', '5', '6'] as const;
+export const GOST_ZONE_ROWS = ['А', 'Б', 'В', 'Г', 'Д'] as const;
+
 export const CUSTOM_STAMPS_STORAGE_KEY = 'flux_e3_custom_stamps_v1';
 
 export const STAMP_FIELD_OPTIONS: Array<{ key: StampFieldKey; label: string; shortLabel: string }> = [

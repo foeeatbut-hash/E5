@@ -35,6 +35,7 @@ import type {
   ErcIssue,
   ExternalWebhookConfig,
   FluxBusMessage,
+  NetWireLengthRow,
   ProcessLogEntry,
   TerminalPlanRow,
 } from '../core/e3Types';
@@ -51,6 +52,7 @@ interface BottomConsoleProps {
   requestedApiSubTab?: ApiSubTab | null;
   bom: BomRow[];
   cables: CableJournalRow[];
+  netLengths?: NetWireLengthRow[];
   terminals: TerminalPlanRow[];
   erc: ErcIssue[];
   logs: ProcessLogEntry[];
@@ -64,8 +66,10 @@ interface BottomConsoleProps {
   onToggleCollapse: () => void;
   onJumpToIssue: (issue: ErcIssue) => void;
   onSelectDeviceByDesignation?: (designation: string) => void;
+  onHighlightNet?: (netName: string) => void;
   onDownloadBomCsv?: () => void;
   onDownloadCablesCsv?: () => void;
+  onDownloadNetLengthsCsv?: () => void;
   onOpenReportModal?: () => void;
   onOpenFluxPublishModal?: () => void;
   onClearLogs?: () => void;
@@ -80,6 +84,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   requestedApiSubTab = null,
   bom,
   cables,
+  netLengths = [],
   terminals,
   erc,
   logs,
@@ -93,15 +98,17 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   onToggleCollapse,
   onJumpToIssue,
   onSelectDeviceByDesignation,
+  onHighlightNet,
   onDownloadBomCsv,
   onDownloadCablesCsv,
+  onDownloadNetLengthsCsv,
   onOpenReportModal,
   onOpenFluxPublishModal,
   onClearLogs,
   onTestApiSyncPush,
 }) => {
   const [bomQuery, setBomQuery] = useState('');
-  const [cableSubTab, setCableSubTab] = useState<'cables' | 'terminals'>('cables');
+  const [cableSubTab, setCableSubTab] = useState<'cables' | 'nets' | 'terminals'>('cables');
   const [ercFilter, setErcFilter] = useState<'all' | 'error' | 'warning'>('all');
   const [logLevelFilter, setLogLevelFilter] = useState<'ALL' | 'INFO' | 'WARN' | 'ERROR' | 'SYNC'>('ALL');
   const [logQuery, setLogQuery] = useState('');
@@ -211,6 +218,18 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
   const totalCableMeters = useMemo(
     () => Math.round(cables.reduce((acc, c) => acc + (c.lengthMeters || 0), 0) * 10) / 10,
     [cables]
+  );
+  const totalNetLengthMm = useMemo(
+    () => netLengths.reduce((acc, n) => acc + n.totalLengthMm, 0),
+    [netLengths]
+  );
+  const totalNetLengthMeters = useMemo(
+    () => Math.round((totalNetLengthMm / 1000) * 1000) / 1000,
+    [totalNetLengthMm]
+  );
+  const totalNetWireCount = useMemo(
+    () => netLengths.reduce((acc, n) => acc + n.wireCount, 0),
+    [netLengths]
   );
   const errorCount = erc.filter((i) => i.severity === 'error').length;
   const warningCount = erc.filter((i) => i.severity === 'warning').length;
@@ -585,6 +604,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                     <div className="flex items-center gap-0.5 p-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)]">
                       <button
                         type="button"
+                        data-testid="cable-subtab-cables"
                         onClick={() => setCableSubTab('cables')}
                         className={`relative h-5 px-2 rounded text-[11px] font-medium transition-colors ${
                           cableSubTab === 'cables'
@@ -604,6 +624,27 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                       </button>
                       <button
                         type="button"
+                        data-testid="cable-subtab-nets"
+                        onClick={() => setCableSubTab('nets')}
+                        className={`relative h-5 px-2 rounded text-[11px] font-medium transition-colors ${
+                          cableSubTab === 'nets'
+                            ? 'text-[var(--flux-text)]'
+                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                        }`}
+                      >
+                        {cableSubTab === 'nets' && (
+                          <motion.span
+                            layoutId="console-cable-subtab"
+                            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                            aria-hidden="true"
+                            className="absolute inset-0 rounded-xs bg-[var(--flux-surface)] border border-[var(--flux-line)]"
+                          />
+                        )}
+                        <span className="relative z-10">Длины по цепям ({netLengths.length})</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="cable-subtab-terminals"
                         onClick={() => setCableSubTab('terminals')}
                         className={`relative h-5 px-2 rounded text-[11px] font-medium transition-colors ${
                           cableSubTab === 'terminals'
@@ -626,10 +667,23 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="hidden sm:inline text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)]">
                         {cableSubTab === 'cables'
-                          ? `Трасс: ${cables.length} · Сумм. длина: ${totalCableMeters} м`
-                          : `Клеммных соединений: ${terminals.length}`}
+                          ? `Трасс: ${cables.length} · Кабели: ${totalCableMeters} м · Цепи (${netLengths.length}): ${totalNetLengthMm} мм (${totalNetLengthMeters} м)`
+                          : cableSubTab === 'nets'
+                            ? `Цепей: ${netLengths.length} · Проводов: ${totalNetWireCount} · Сумм. длина: ${totalNetLengthMm} мм (${totalNetLengthMeters} м)`
+                            : `Клеммных соединений: ${terminals.length}`}
                       </span>
-                      {onDownloadCablesCsv && (
+                      {(cableSubTab === 'cables' || cableSubTab === 'nets') && onDownloadNetLengthsCsv && (
+                        <button
+                          type="button"
+                          data-testid="download-net-lengths-csv-btn"
+                          onClick={onDownloadNetLengthsCsv}
+                          className="inline-flex items-center gap-1 h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                        >
+                          <Download className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                          <span>CSV Цепи</span>
+                        </button>
+                      )}
+                      {onDownloadCablesCsv && cableSubTab !== 'nets' && (
                         <button
                           type="button"
                           onClick={onDownloadCablesCsv}
@@ -642,54 +696,159 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                     </div>
                   </div>
                   <div className="flex-1 overflow-auto bg-[var(--flux-surface)]">
-                    {cableSubTab === 'cables' ? (
-                      <table className="w-full border-collapse text-[11.5px]">
-                        <thead className="sticky top-0 z-10 bg-[var(--flux-bg)] border-b border-[var(--flux-line)] text-[var(--flux-text-muted)]">
-                          <tr>
-                            <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Кабель</th>
-                            <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Марка кабеля</th>
-                            <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Откуда</th>
-                            <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Куда</th>
-                            <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Жилы</th>
-                            <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Сечение</th>
-                            <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Длина, м</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--flux-line)]">
-                          {cables.length === 0 ? (
-                            <tr>
-                              <td colSpan={7} className="px-3 py-5 text-center text-[11.5px] text-[var(--flux-text-muted)]">
-                                Кабельные линии ещё не назначены в проекте.
-                              </td>
-                            </tr>
-                          ) : (
-                            cables.map((c) => (
-                              <tr key={c.designation} className="hover:bg-[var(--flux-hover)]">
-                                <td className="px-2.5 py-1 font-mono font-medium text-[var(--flux-text)] whitespace-nowrap">
-                                  {c.designation}
-                                </td>
-                                <td className="px-2.5 py-1 text-[var(--flux-text)] whitespace-nowrap">
-                                  {c.cableType}{' '}
-                                  {c.shielded && (
-                                    <span className="text-[10.5px] text-[var(--flux-accent)]">(экран)</span>
-                                  )}
-                                </td>
-                                <td className="px-2.5 py-1 font-mono text-[var(--flux-text)] whitespace-nowrap">{c.fromDevice}</td>
-                                <td className="px-2.5 py-1 font-mono text-[var(--flux-text)] whitespace-nowrap">{c.toDevice}</td>
-                                <td className="px-2.5 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
-                                  {c.usedCores}/{c.coresCount}
-                                </td>
-                                <td className="px-2.5 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
-                                  {c.crossSection}
-                                </td>
-                                <td className="px-2.5 py-1 text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
-                                  {c.lengthMeters}
-                                </td>
+                    {cableSubTab !== 'terminals' ? (
+                      <div className="flex flex-col divide-y divide-[var(--flux-line)]">
+                        {cableSubTab === 'cables' && (
+                          <table data-testid="cables-journal-table" className="w-full border-collapse text-[11.5px]">
+                            <thead className="sticky top-0 z-10 bg-[var(--flux-bg)] border-b border-[var(--flux-line)] text-[var(--flux-text-muted)]">
+                              <tr>
+                                <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Кабель</th>
+                                <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Марка кабеля</th>
+                                <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Откуда</th>
+                                <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Куда</th>
+                                <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Жилы</th>
+                                <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Сечение</th>
+                                <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Длина, м</th>
+                                <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">По схеме (цепи), мм</th>
                               </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--flux-line)]">
+                              {cables.length === 0 ? (
+                                <tr>
+                                  <td colSpan={8} className="px-3 py-5 text-center text-[11.5px] text-[var(--flux-text-muted)]">
+                                    Кабельные линии ещё не назначены в проекте.
+                                  </td>
+                                </tr>
+                              ) : (
+                                cables.map((c) => (
+                                  <tr key={c.designation} className="hover:bg-[var(--flux-hover)]">
+                                    <td className="px-2.5 py-1 font-mono font-medium text-[var(--flux-text)] whitespace-nowrap">
+                                      {c.designation}
+                                    </td>
+                                    <td className="px-2.5 py-1 text-[var(--flux-text)] whitespace-nowrap">
+                                      {c.cableType}{' '}
+                                      {c.shielded && (
+                                        <span className="text-[10.5px] text-[var(--flux-accent)]">(экран)</span>
+                                      )}
+                                    </td>
+                                    <td className="px-2.5 py-1 font-mono text-[var(--flux-text)] whitespace-nowrap">{c.fromDevice}</td>
+                                    <td className="px-2.5 py-1 font-mono text-[var(--flux-text)] whitespace-nowrap">{c.toDevice}</td>
+                                    <td className="px-2.5 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
+                                      {c.usedCores}/{c.coresCount}
+                                    </td>
+                                    <td className="px-2.5 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
+                                      {c.crossSection}
+                                    </td>
+                                    <td className="px-2.5 py-1 text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
+                                      {c.lengthMeters}
+                                    </td>
+                                    <td className="px-2.5 py-1 text-right font-mono tabular-nums text-[var(--flux-text)]">
+                                      <div className="font-medium whitespace-nowrap">{c.wireLengthMm ?? 0}</div>
+                                      {c.netLengths && c.netLengths.length > 0 && (
+                                        <div className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
+                                          {c.netLengths.map((nl) => `${nl.netName}: ${nl.lengthMm}`).join(' · ')}
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        )}
+
+                        <div className="bg-[var(--flux-surface)]">
+                          <div className="px-2.5 py-1.5 bg-[var(--flux-bg)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--flux-text-muted)]">
+                              Суммарная длина проводов по цепям (E3-CORE)
+                            </span>
+                            <span className="text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+                              Цепей: {netLengths.length} · Проводов: {totalNetWireCount} · Итого: {totalNetLengthMm} мм ({totalNetLengthMeters} м)
+                            </span>
+                          </div>
+                          <table data-testid="net-wire-lengths-table" className="w-full border-collapse text-[11.5px]">
+                            <thead className="sticky top-0 z-10 bg-[var(--flux-bg)] border-b border-[var(--flux-line)] text-[var(--flux-text-muted)]">
+                              <tr>
+                                <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Цепь</th>
+                                <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Тип сигнала</th>
+                                <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Участков</th>
+                                <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Провода</th>
+                                <th className="text-left font-medium px-2.5 py-1 whitespace-nowrap">Кабели</th>
+                                <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Сечения</th>
+                                <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Длина, мм</th>
+                                <th className="text-right font-medium px-2.5 py-1 whitespace-nowrap">Длина, м</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--flux-line)]">
+                              {netLengths.length === 0 ? (
+                                <tr>
+                                  <td colSpan={8} className="px-3 py-4 text-center text-[11.5px] text-[var(--flux-text-muted)]">
+                                    Соединительные провода отсутствуют в проекте.
+                                  </td>
+                                </tr>
+                              ) : (
+                                netLengths.map((n) => {
+                                  const sigColor = project.visualSettings.netColors[n.signalType] || '#64748b';
+                                  const sigLabel =
+                                    n.signalType === 'power'
+                                      ? 'Силовая'
+                                      : n.signalType === 'neutral'
+                                        ? 'Нейтраль N'
+                                        : n.signalType === 'pe'
+                                          ? 'Заземление PE'
+                                          : n.signalType === 'dc24'
+                                            ? '+24V DC'
+                                            : n.signalType === 'dc0'
+                                              ? '0V DC'
+                                              : n.signalType === 'bus'
+                                                ? 'Шина / RS-485'
+                                                : 'Сигнал / Упр.';
+                                  return (
+                                    <tr
+                                      key={`${n.netName}-${n.signalType}`}
+                                      data-testid={`net-row-${n.netName}`}
+                                      title="Нажмите, чтобы подсветить весь потенциал цепи на схеме"
+                                      onClick={() => onHighlightNet?.(n.netName)}
+                                      className="hover:bg-[var(--flux-hover)] cursor-pointer transition-colors"
+                                    >
+                                      <td className="px-2.5 py-1 font-mono font-medium text-[var(--flux-text)] whitespace-nowrap">
+                                        <span className="inline-flex items-center gap-1.5">
+                                          <span
+                                            className="inline-block w-2 h-2 rounded-full shrink-0"
+                                            style={{ backgroundColor: sigColor }}
+                                          />
+                                          <span>{n.netName}</span>
+                                        </span>
+                                      </td>
+                                      <td className="px-2.5 py-1 text-[var(--flux-text-muted)] whitespace-nowrap">
+                                        {sigLabel}
+                                      </td>
+                                      <td className="px-2.5 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
+                                        {n.wireCount}
+                                      </td>
+                                      <td className="px-2.5 py-1 font-mono text-[var(--flux-text-muted)]">
+                                        {n.wireNumbers.join(', ') || '—'}
+                                      </td>
+                                      <td className="px-2.5 py-1 font-mono text-[var(--flux-text-muted)] whitespace-nowrap">
+                                        {n.cableDesignations.join(', ') || '—'}
+                                      </td>
+                                      <td className="px-2.5 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
+                                        {n.crossSections.join(', ') || '—'}
+                                      </td>
+                                      <td className="px-2.5 py-1 text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
+                                        {n.totalLengthMm}
+                                      </td>
+                                      <td className="px-2.5 py-1 text-right font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
+                                        {n.totalLengthMeters.toFixed(3)}
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     ) : (
                       <table className="w-full border-collapse text-[11.5px]">
                         <thead className="sticky top-0 z-10 bg-[var(--flux-bg)] border-b border-[var(--flux-line)] text-[var(--flux-text-muted)]">

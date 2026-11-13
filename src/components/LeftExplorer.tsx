@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { CatalogItem, E3Device, E3Project } from '../core/e3Types';
+import { isTwoPinBreakEligible } from '../core/wireEditing';
 
 interface LeftExplorerProps {
   project: E3Project;
@@ -458,9 +459,13 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
                 {filteredCatalog.map((item) => (
                   <div
                     key={item.id}
+                    data-testid={`catalog-item-${item.id}`}
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData('application/x-flux-catalog-id', item.id);
+                      if (isTwoPinBreakEligible(item)) {
+                        e.dataTransfer.setData('application/x-flux-2pin', '1');
+                      }
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                     className="px-2.5 py-2 hover:bg-[var(--flux-hover)] transition-colors flex flex-col gap-1"

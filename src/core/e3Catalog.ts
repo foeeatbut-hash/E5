@@ -288,6 +288,26 @@ export const E3_CATALOG: CatalogItem[] = [
       { name: 'Монтаж', value: 'DIN-рейка 35 мм', owner: '', conflict: 'script' },
     ],
   },
+  {
+    id: 'cat-xt-1p',
+    category: 'terminal',
+    defaultPrefix: 'XT',
+    componentName: 'Клемма проходная 1-полюсная 4 мм²',
+    article: 'UT 4-1P',
+    manufacturer: 'Phoenix Contact',
+    e3BlockName: 'GOST_TERMINAL_1P',
+    width: 40,
+    height: 60,
+    pins: [
+      { name: '1', dx: 20, dy: 0, direction: 'top', signalType: 'power' },
+      { name: '2', dx: 20, dy: 60, direction: 'bottom', signalType: 'power' },
+    ],
+    defaultAttributes: [
+      { name: 'Сечение', value: '0.14...6 мм²', owner: '', conflict: 'flux' },
+      { name: 'Номинальный ток', value: '32 А', owner: '', conflict: 'flux' },
+      { name: 'Монтаж', value: 'DIN-рейка 35 мм', owner: '', conflict: 'script' },
+    ],
+  },
 
   // === База изделий ВЕЗА / ОВКВ для ФСА и Внешних соединений ===
   {
@@ -680,6 +700,40 @@ export const E3_CATALOG: CatalogItem[] = [
       { name: 'Номинальное напряжение', value: '690 В', owner: '', conflict: 'flux' },
       { name: 'Количество клемм', value: '8', owner: '', conflict: 'script' },
       { name: 'Размещение', value: 'На корпусе установки', owner: '', conflict: 'flux' },
+    ],
+  },
+  {
+    id: 'cat-offpage-out',
+    category: 'offpage_ref',
+    defaultPrefix: 'XP',
+    componentName: 'Ссылка межлистовая исходящая (→ Лист)',
+    article: 'E3-OFFPAGE-OUT',
+    manufacturer: 'ГОСТ 2.702 / E3.series',
+    e3BlockName: 'GOST_OFFPAGE_OUT',
+    width: 120,
+    height: 36,
+    pins: [{ name: 'IN', dx: 0, dy: 18, direction: 'left', signalType: 'signal' }],
+    defaultAttributes: [
+      { name: 'Потенциал', value: '+24V_DC', owner: '', conflict: 'flux' },
+      { name: 'Направление', value: 'Исходящая (→)', owner: '', conflict: 'flux' },
+      { name: 'Стандарт', value: 'ГОСТ 2.702 / E3.series', owner: '', conflict: 'flux' },
+    ],
+  },
+  {
+    id: 'cat-offpage-in',
+    category: 'offpage_ref',
+    defaultPrefix: 'XP',
+    componentName: 'Ссылка межлистовая входящая (← Лист)',
+    article: 'E3-OFFPAGE-IN',
+    manufacturer: 'ГОСТ 2.702 / E3.series',
+    e3BlockName: 'GOST_OFFPAGE_IN',
+    width: 120,
+    height: 36,
+    pins: [{ name: 'OUT', dx: 120, dy: 18, direction: 'right', signalType: 'signal' }],
+    defaultAttributes: [
+      { name: 'Потенциал', value: '+24V_DC', owner: '', conflict: 'flux' },
+      { name: 'Направление', value: 'Входящая (←)', owner: '', conflict: 'flux' },
+      { name: 'Стандарт', value: 'ГОСТ 2.702 / E3.series', owner: '', conflict: 'flux' },
     ],
   },
 ];

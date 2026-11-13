@@ -12,6 +12,11 @@ interface SchematicSymbolProps {
   wireStartPinKey: string | null;
   hoveredPinKey?: string | null;
   connectedPinKeys: Set<string>;
+  highlightedPinKeys?: Set<string>;
+  isPotentialHighlighted?: boolean;
+  offPageAddress?: string;
+  offPageHasTarget?: boolean;
+  onOffPageNavigate?: (device: E3Device) => void;
   onSelectDevice: (e: React.MouseEvent, device: E3Device) => void;
   onPinClick: (e: React.MouseEvent, device: E3Device, pinId: string) => void;
   onPinHover?: (device: E3Device, pinId: string | null) => void;
@@ -26,6 +31,11 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
   wireStartPinKey,
   hoveredPinKey = null,
   connectedPinKeys,
+  highlightedPinKeys,
+  isPotentialHighlighted = false,
+  offPageAddress,
+  offPageHasTarget = false,
+  onOffPageNavigate,
   onSelectDevice,
   onPinClick,
   onPinHover,
@@ -576,6 +586,99 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
           </g>
         );
       }
+      case 'offpage_ref': {
+        const dir = device.offPageRef?.direction || (device.e3BlockName.includes('IN') ? 'in' : 'out');
+        const isOut = dir === 'out';
+        const sig = device.offPageRef?.signalType || device.pins[0]?.signalType || 'dc24';
+        const potColor = visual.netColors[sig] || stroke;
+        const potName =
+          device.offPageRef?.potentialName?.trim() ||
+          device.attributes.find((a) => /потенциал/i.test(a.name))?.value?.trim() ||
+          device.designation;
+        const addrLabel = offPageAddress || (isOut ? '→ Л.?' : '← Л.?');
+        const pts = isOut
+          ? `2,2 ${w - 14},2 ${w - 2},${cy} ${w - 14},${h - 2} 2,${h - 2}`
+          : `2,2 ${w - 12},2 ${w - 2},${cy} ${w - 12},${h - 2} 2,${h - 2} 11,${cy}`;
+        const textX = isOut ? (w - 12) / 2 + 2 : (w + 6) / 2;
+
+        return (
+          <g>
+            {isPotentialHighlighted && (
+              <polygon
+                points={pts}
+                fill={potColor}
+                fillOpacity={0.18}
+                stroke={potColor}
+                strokeWidth={sw + 3}
+                strokeOpacity={0.35}
+              />
+            )}
+            <polygon
+              points={pts}
+              fill="var(--flux-surface)"
+              stroke={selected || isPotentialHighlighted ? potColor : stroke}
+              strokeWidth={selected || isPotentialHighlighted ? sw + 0.5 : sw}
+            />
+            {/* Signal accent bar along entry/exit */}
+            <line
+              x1={isOut ? 4 : w - 12}
+              y1={6}
+              x2={isOut ? 4 : w - 12}
+              y2={h - 6}
+              stroke={potColor}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+            />
+            <text
+              x={textX}
+              y={14}
+              textAnchor="middle"
+              fill={potColor}
+              fontSize={9.5 * visual.fontScale}
+              fontWeight={700}
+              fontFamily={fontCss}
+            >
+              {potName.length > 13 ? `${potName.slice(0, 12)}…` : potName}
+            </text>
+            <g
+              data-testid={`offpage-jump-${device.id}`}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOffPageNavigate?.(device);
+              }}
+              className={offPageHasTarget ? 'cursor-pointer' : 'cursor-default'}
+            >
+              <title>
+                {offPageHasTarget
+                  ? `Перейти к ответной ссылке (${addrLabel})`
+                  : 'Ответная ссылка не найдена на других листах'}
+              </title>
+              <rect
+                x={isOut ? 10 : 16}
+                y={17.5}
+                width={w - 30}
+                height={14}
+                rx={2}
+                fill={offPageHasTarget ? 'var(--flux-sel)' : 'var(--flux-bg)'}
+                stroke={offPageHasTarget ? potColor : 'var(--flux-line)'}
+                strokeWidth={0.75}
+              />
+              <text
+                x={textX}
+                y={27.5}
+                textAnchor="middle"
+                fill={offPageHasTarget ? 'var(--flux-accent)' : muted}
+                fontSize={8.2 * visual.fontScale}
+                fontWeight={600}
+                fontFamily="JetBrains Mono, monospace"
+              >
+                {addrLabel}
+              </text>
+            </g>
+          </g>
+        );
+      }
       default: {
         return (
           <g>
@@ -622,9 +725,16 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
     <g
       data-testid={`symbol-${device.id}`}
       data-locked={locked ? 'true' : 'false'}
+      data-potential-highlighted={isPotentialHighlighted ? 'true' : 'false'}
       transform={`translate(${device.x}, ${device.y})`}
       className={`${locked ? 'cursor-default' : 'cursor-pointer'} select-none`}
       onMouseDown={(e) => onSelectDevice(e, device)}
+      onDoubleClick={(e) => {
+        if (device.category === 'offpage_ref') {
+          e.stopPropagation();
+          onOffPageNavigate?.(device);
+        }
+      }}
       style={{ opacity: isRemoved ? 0.55 : 1 }}
     >
       {/* Selection halo */}
@@ -651,6 +761,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
           const pinKey = `${device.id}:${pin.id}`;
           const isStart = wireStartPinKey === pinKey;
           const isHoveredTarget = hoveredPinKey === pinKey && !isStart;
+          const isPinTraced = highlightedPinKeys?.has(pinKey) ?? false;
           const isConnected = connectedPinKeys.has(pinKey);
           const sigColor = visual.netColors[pin.signalType] || stroke;
 
@@ -679,6 +790,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
             <g
               key={pin.id}
               data-testid={`pin-${device.id}-${pin.id}`}
+              data-pin-traced={isPinTraced ? 'true' : 'false'}
               onMouseEnter={() => onPinHover?.(device, pin.id)}
               onMouseLeave={() => onPinHover?.(device, null)}
               onClick={(e) => {
@@ -687,7 +799,19 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               }}
               className={`group/pin ${wiresLocked ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
             >
-              <circle cx={pin.dx} cy={pin.dy} r={9} fill="transparent" />
+              <circle data-pin-hit="true" cx={pin.dx} cy={pin.dy} r={10} fill="transparent" />
+              {isPinTraced && (
+                <circle
+                  cx={pin.dx}
+                  cy={pin.dy}
+                  r={8.5}
+                  fill={sigColor}
+                  fillOpacity={0.22}
+                  stroke={sigColor}
+                  strokeWidth={1.4}
+                  pointerEvents="none"
+                />
+              )}
               <circle
                 cx={pin.dx}
                 cy={pin.dy}
@@ -698,8 +822,14 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
               <circle
                 cx={pin.dx}
                 cy={pin.dy}
-                r={isStart || isHoveredTarget ? 5 : isConnected ? 3.5 : 3}
-                fill={isStart || isHoveredTarget ? 'var(--flux-accent)' : isConnected ? sigColor : 'var(--flux-surface)'}
+                r={isStart || isHoveredTarget || isPinTraced ? 5 : isConnected ? 3.5 : 3}
+                fill={
+                  isStart || isHoveredTarget
+                    ? 'var(--flux-accent)'
+                    : isPinTraced || isConnected
+                      ? sigColor
+                      : 'var(--flux-surface)'
+                }
                 stroke={isStart || isHoveredTarget ? 'var(--flux-accent)' : sigColor}
                 strokeWidth={1.5}
               />
@@ -740,7 +870,10 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
           {device.designation}
         </text>
       )}
-      {visual.showCrossRefs && device.category !== 'airflow_arrow' && device.category !== 'io_matrix' && (
+      {visual.showCrossRefs &&
+        device.category !== 'airflow_arrow' &&
+        device.category !== 'io_matrix' &&
+        device.category !== 'offpage_ref' && (
         <text
           x={cx}
           y={device.height + 14}

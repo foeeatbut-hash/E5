@@ -78,9 +78,11 @@ import {
   autoRouteOrthogonal,
   buildBom,
   buildCableJournal,
+  buildNetWireLengths,
   buildTerminalPlan,
   exportBomCsv,
   exportCableJournalCsv,
+  exportNetWireLengthsCsv,
   extractWireSegments,
   generateStressBatch,
   getAbsolutePinPos,
@@ -93,6 +95,19 @@ import {
   runErc,
 } from './core/e3Engine';
 import { createSeedProject } from './core/e3Seed';
+import {
+  createOffPageConnectorDevice,
+  getOffPageMeta,
+  type PotentialTraceResult,
+  resolveOffPageLinks,
+  traceConnectedPotential,
+} from './core/crossSheetRefs';
+import {
+  applyAutoWireBreak,
+  findWireBreakCandidate,
+  isTwoPinBreakEligible,
+  type WirePoint,
+} from './core/wireEditing';
 import type {
   AnnotationKind,
   BatchPublishOptions,
@@ -111,6 +126,8 @@ import type {
   FluxBridgeBundle,
   FluxBusMessage,
   GostStampTemplate,
+  NetWireLengthRow,
+  OffPageRefMeta,
   ProcessLogEntry,
   SchematicFontFamily,
   SheetFormat,
@@ -174,6 +191,12 @@ export default function App() {
   const [selectedAnnotationIds, setSelectedAnnotationIds] = useState<string[]>([]);
   const [hasClipboard, setHasClipboard] = useState<boolean>(false);
   const clipboardRef = useRef<CadClipboardPayload | null>(null);
+  const [highlightedPotentialSeed, setHighlightedPotentialSeed] = useState<{
+    wireId?: string;
+    netName?: string;
+    deviceId?: string;
+    pinId?: string;
+  } | null>(null);
 
   const selectedDeviceId =
     selectedDeviceIds.length === 1 && selectedWireIds.length === 0 && selectedAnnotationIds.length === 0
@@ -206,6 +229,12 @@ export default function App() {
     []
   );
   const [tool, setTool] = useState<CadTool>('select');
+
+  const highlightedTrace = useMemo<PotentialTraceResult | null>(() => {
+    if (!highlightedPotentialSeed) return null;
+    const res = traceConnectedPotential(project, highlightedPotentialSeed);
+    return res.wireIds.length > 0 || res.offPageDeviceIds.length > 0 ? res : null;
+  }, [highlightedPotentialSeed, project]);
 
   // Multi-viewport state (1, 2, 3, or 4 simultaneous sheets in center)
   const [viewportLayout, setViewportLayout] = useState<ViewportLayoutMode>('single');
@@ -275,6 +304,7 @@ export default function App() {
 
   const [bom, setBom] = useState<BomRow[]>(() => buildBom(project));
   const [cables, setCables] = useState<CableJournalRow[]>(() => buildCableJournal(project));
+  const [netLengths, setNetLengths] = useState<NetWireLengthRow[]>(() => buildNetWireLengths(project));
   const [terminals, setTerminals] = useState<TerminalPlanRow[]>(() => buildTerminalPlan(project));
   const [erc, setErc] = useState<ErcIssue[]>(() => runErc(project));
   const [isBusy, setIsBusy] = useState<boolean>(false);
@@ -378,6 +408,7 @@ export default function App() {
         if (cancelled) return;
         setBom(res.bom);
         setCables(res.cables);
+        setNetLengths(res.netLengths);
         setTerminals(res.terminals);
         setErc(res.erc);
         appendLog(
@@ -596,16 +627,50 @@ export default function App() {
   }, []);
 
   const handleCommitDrag = useCallback(
-    (moved: boolean) => {
+    (moved: boolean, opts?: { tryWireBreakDeviceId?: string }) => {
       const snap = dragSnapshotRef.current;
       dragSnapshotRef.current = null;
-      if (!moved || !snap) return;
+      if (!snap) return;
+
       const cur = docStateRef.current.present;
-      const committed: E3Project = {
-        ...cur,
-        revision: cur.revision + 1,
-        updatedAt: new Date().toISOString(),
-      };
+      let nextProject = cur;
+      let didBreak = false;
+
+      if (opts?.tryWireBreakDeviceId && !isLayerLocked(cur.layers, 'wires')) {
+        const dev = cur.devices.find((d) => d.id === opts.tryWireBreakDeviceId);
+        const alreadyWired =
+          Boolean(dev) &&
+          cur.wires.some((w) => w.fromDeviceId === dev!.id || w.toDeviceId === dev!.id);
+        if (dev && !alreadyWired && isTwoPinBreakEligible(dev)) {
+          const sheetWires = cur.wires.filter((w) => w.sheetId === dev.sheetId);
+          const cand = findWireBreakCandidate(dev, sheetWires);
+          if (cand) {
+            const brkRes = applyAutoWireBreak(cur, dev, cand);
+            if (brkRes) {
+              nextProject = brkRes.nextProject;
+              didBreak = true;
+              setSelectedDeviceId(brkRes.updatedDevice.id);
+              setSelectedDeviceIds([brkRes.updatedDevice.id]);
+              setSelectedWireId(null);
+              setSelectedWireIds([]);
+              appendLog(
+                'INFO',
+                'E3-CORE',
+                `Изделие ${brkRes.updatedDevice.designation} вставлено в разрыв цепи ${cand.wire.netName} (${brkRes.wireBefore.wireNumber} / ${brkRes.wireAfter.wireNumber}).`
+              );
+            }
+          }
+        }
+      }
+
+      if (!moved && !didBreak) return;
+      const committed: E3Project = didBreak
+        ? nextProject
+        : {
+            ...nextProject,
+            revision: nextProject.revision + 1,
+            updatedAt: new Date().toISOString(),
+          };
       setDocState((s) => ({
         past: [...s.past.slice(-29), snap],
         present: committed,
@@ -613,8 +678,25 @@ export default function App() {
       }));
       pushSync(committed);
     },
-    [pushSync]
+    [pushSync, appendLog]
   );
+
+  const handlePreviewWireWaypoints = useCallback((wireId: string, waypoints: WirePoint[]) => {
+    setDocState((s) => {
+      const prev = s.present;
+      if (isLayerLocked(prev.layers, 'wires')) return s;
+      return {
+        ...s,
+        present: {
+          ...prev,
+          updatedAt: new Date().toISOString(),
+          wires: prev.wires.map((w) =>
+            w.id === wireId ? { ...w, waypoints, manualRoute: true } : w
+          ),
+        },
+      };
+    });
+  }, []);
 
   const handleMoveDevice = useCallback(
     (deviceId: string, x: number, y: number) => {
@@ -960,18 +1042,61 @@ export default function App() {
         bindingState: 'PLACED',
         pins: item.pins.map((p, idx) => ({ ...p, id: `${id}-p${idx + 1}` })),
         attributes: structuredClone(item.defaultAttributes),
+        offPageRef:
+          item.category === 'offpage_ref'
+            ? {
+                direction: item.e3BlockName.includes('IN') ? 'in' : 'out',
+                potentialName:
+                  item.defaultAttributes.find((a) => /потенциал/i.test(a.name))?.value || '+24V_DC',
+                signalType: item.pins[0]?.signalType || 'dc24',
+              }
+            : undefined,
       };
 
-      commitProject((prev) => ({
-        ...prev,
-        revision: prev.revision + 1,
+      const cur = docStateRef.current.present;
+      const baseWithDevice: E3Project = {
+        ...cur,
+        revision: cur.revision + 1,
         updatedAt: new Date().toISOString(),
-        devices: [...prev.devices, newDev],
-      }));
-      setSelectedDeviceId(newDev.id);
+        devices: [...cur.devices, newDev],
+      };
+
+      let finalProject = baseWithDevice;
+      let placedDevice = newDev;
+      let brokeWireNet: string | null = null;
+
+      if (
+        x !== undefined &&
+        y !== undefined &&
+        !isLayerLocked(cur.layers, 'wires') &&
+        isTwoPinBreakEligible(newDev)
+      ) {
+        const sheetWires = cur.wires.filter((w) => w.sheetId === sheetId);
+        const cand = findWireBreakCandidate(newDev, sheetWires);
+        if (cand) {
+          const brkRes = applyAutoWireBreak(baseWithDevice, newDev, cand);
+          if (brkRes) {
+            finalProject = brkRes.nextProject;
+            placedDevice = brkRes.updatedDevice;
+            brokeWireNet = `${cand.wire.netName} → ${brkRes.wireBefore.wireNumber}/${brkRes.wireAfter.wireNumber}`;
+          }
+        }
+      }
+
+      commitProject(() => finalProject);
+      setSelectedDeviceId(placedDevice.id);
+      setSelectedDeviceIds([placedDevice.id]);
       setSelectedWireId(null);
+      setSelectedWireIds([]);
       setSelectedAnnotationId(null);
-      appendLog('INFO', 'E3-CORE', `Размещён компонент ${newDev.designation} (${newDev.article}).`);
+      setSelectedAnnotationIds([]);
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        brokeWireNet
+          ? `Компонент ${placedDevice.designation} (${placedDevice.article}) вставлен в разрыв цепи ${brokeWireNet}.`
+          : `Размещён компонент ${placedDevice.designation} (${placedDevice.article}).`
+      );
     },
     [project.devices, project.sheets, project.visualSettings.gridSize, activeSheet?.id, commitProject, appendLog]
   );
@@ -1075,7 +1200,13 @@ export default function App() {
   );
 
   const handleCreateWire = useCallback(
-    (fromDeviceId: string, fromPinId: string, toDeviceId: string, toPinId: string) => {
+    (
+      fromDeviceId: string,
+      fromPinId: string,
+      toDeviceId: string,
+      toPinId: string,
+      customWaypoints?: WirePoint[]
+    ) => {
       const cur = docStateRef.current.present;
       if (isLayerLocked(cur.layers, 'wires')) {
         appendLog('WARN', 'E3-CORE', 'Трассировка отклонена: слой «Цепи и провода» заблокирован.');
@@ -1138,6 +1269,7 @@ export default function App() {
         .filter((w) => w.sheetId === targetSheetId)
         .flatMap((w) => extractWireSegments(w.waypoints, w.netName));
 
+      const hasManualPath = Boolean(customWaypoints && customWaypoints.length >= 2);
       const newWire: E3Wire = {
         id: `w-${Date.now()}`,
         sheetId: targetSheetId,
@@ -1147,12 +1279,15 @@ export default function App() {
         fromPinId,
         toDeviceId,
         toPinId,
-        waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles, 0, occupied, {
-          netName,
-          sheetBounds,
-        }),
+        waypoints: hasManualPath
+          ? customWaypoints!
+          : autoRouteOrthogonal(abs1, abs2, 20, obstacles, 0, occupied, {
+              netName,
+              sheetBounds,
+            }),
         crossSection: signalType === 'power' ? '2.5 мм²' : '0.75 мм²',
         wireNumber,
+        manualRoute: hasManualPath ? true : undefined,
       };
 
       commitProject((prev) => ({
@@ -1162,11 +1297,13 @@ export default function App() {
         wires: [...prev.wires, newWire],
       }));
       setSelectedWireId(newWire.id);
+      setSelectedWireIds([newWire.id]);
       setSelectedDeviceId(null);
+      setSelectedDeviceIds([]);
       appendLog(
         'INFO',
         'E3-CORE',
-        `Создана цепь ${newWire.netName}: ${d1.designation}:${p1.name} → ${d2.designation}:${p2.name}.`
+        `Создана цепь ${newWire.netName}${hasManualPath ? ' (ручная укладка)' : ''}: ${d1.designation}:${p1.name} → ${d2.designation}:${p2.name}.`
       );
     },
     [commitProject, appendLog]
@@ -1205,9 +1342,11 @@ export default function App() {
         ...prev,
         revision: prev.revision + 1,
         updatedAt: new Date().toISOString(),
-        wires: prev.wires.map((w) => (w.id === wireId ? { ...w, waypoints: nextPts } : w)),
+        wires: prev.wires.map((w) =>
+          w.id === wireId ? { ...w, waypoints: nextPts, manualRoute: undefined } : w
+        ),
       }));
-      appendLog('INFO', 'E3-CORE', `Перестроена трасса цепи ${target.netName} (${target.wireNumber}).`);
+      appendLog('INFO', 'E3-CORE', `Перестроена автотрасса цепи ${target.netName} (${target.wireNumber}).`);
     },
     [commitProject, appendLog]
   );
@@ -1312,6 +1451,229 @@ export default function App() {
       }));
     },
     [project.sheets, activeSheetId, activeViewportIdx]
+  );
+
+  const centerCameraOnCoords = useCallback(
+    (sheetId: string, worldX: number, worldY: number, vpIdx = activeViewportIdx) => {
+      setActiveSheetId(sheetId);
+      setViewportSheetIds((prev) => prev.map((sId, idx) => (idx === vpIdx ? sheetId : sId)));
+      window.requestAnimationFrame(() => {
+        const sel = vpIdx === 0 ? '[data-testid="schematic-canvas"]' : `[data-testid="schematic-canvas-${vpIdx}"]`;
+        const el = document.querySelector(sel) || document.querySelector('[data-testid="schematic-canvas"]');
+        const rect = el?.getBoundingClientRect();
+        const vw = rect?.width && rect.width > 100 ? rect.width : 820;
+        const vh = rect?.height && rect.height > 100 ? rect.height : 500;
+        setViewportTransforms((prev) => {
+          const curZoom = prev[vpIdx]?.zoom ?? 0.56;
+          const nextZ = Math.min(1.35, Math.max(0.68, curZoom));
+          return {
+            ...prev,
+            [vpIdx]: {
+              zoom: nextZ,
+              pan: {
+                x: Math.round(vw / 2 - worldX * nextZ),
+                y: Math.round(vh / 2 - worldY * nextZ),
+              },
+            },
+          };
+        });
+      });
+    },
+    [activeViewportIdx]
+  );
+
+  const handleNavigateOffPage = useCallback(
+    (device: E3Device) => {
+      const cur = docStateRef.current.present;
+      const link = resolveOffPageLinks(cur).get(device.id);
+      const cp = link?.primaryCounterpart;
+      if (!cp) {
+        applySelection({ deviceIds: [device.id] });
+        setHighlightedPotentialSeed({ deviceId: device.id });
+        appendLog(
+          'WARN',
+          'E3-CORE',
+          `Ссылка ${device.designation} (${link?.potentialName || '?'}) пока не имеет ответной на другом листе.`
+        );
+        return;
+      }
+      applySelection({ deviceIds: [cp.deviceId] });
+      setHighlightedPotentialSeed({ deviceId: cp.deviceId });
+      centerCameraOnCoords(cp.sheetId, cp.x, cp.y, activeViewportIdx);
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Переход по ссылке ${device.designation} → ${cp.designation} на Лист ${cp.sheetNumber} (зона ${cp.zone}).`
+      );
+    },
+    [applySelection, centerCameraOnCoords, activeViewportIdx, appendLog]
+  );
+
+  const handleCreateOffPageAt = useCallback(
+    (sheetId: string, x: number, y: number) => {
+      const cur = docStateRef.current.present;
+      if (isLayerLocked(cur.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Размещение ссылки отклонено: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const grid = cur.visualSettings.gridSize || 20;
+      const snappedX = cur.visualSettings.snapToGrid ? Math.round((x - 60) / grid) * grid : Math.round(x - 60);
+      const snappedY = cur.visualSettings.snapToGrid ? Math.round((y - 18) / grid) * grid : Math.round(y - 18);
+      const selectedWireObj = cur.wires.find((w) => w.id === selectedWireId);
+      const dev = createOffPageConnectorDevice({
+        existingDevices: cur.devices,
+        sheetId,
+        x: snappedX,
+        y: snappedY,
+        direction: 'out',
+        potentialName: selectedWireObj?.netName || '+24V_DC',
+        signalType: selectedWireObj?.signalType || 'dc24',
+      });
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        devices: [...prev.devices, dev],
+      }));
+      applySelection({ deviceIds: [dev.id] });
+      setHighlightedPotentialSeed({ deviceId: dev.id });
+      setTool('select');
+      appendLog('INFO', 'E3-CORE', `Размещена межлистовая ссылка ${dev.designation} (${dev.offPageRef?.potentialName}).`);
+    },
+    [selectedWireId, commitProject, applySelection, appendLog]
+  );
+
+  const handleCreateOffPageCounterpart = useCallback(
+    (sourceDevice: E3Device, targetSheetId: string) => {
+      const cur = docStateRef.current.present;
+      if (isLayerLocked(cur.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Создание ссылки отклонено: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const targetSheet = cur.sheets.find((s) => s.id === targetSheetId);
+      if (!targetSheet) return;
+      const connectedWire = cur.wires.find(
+        (w) => w.fromDeviceId === sourceDevice.id || w.toDeviceId === sourceDevice.id
+      );
+      const srcMeta = getOffPageMeta(sourceDevice, connectedWire);
+      const tgtDir: 'out' | 'in' = srcMeta.direction === 'out' ? 'in' : 'out';
+      const pairId = srcMeta.pairId || `pair-${Date.now().toString(36)}`;
+      const targetSheetDevices = cur.devices.filter((d) => d.sheetId === targetSheetId);
+      const spot = findSmartCatalogSpot(
+        { width: 120, height: 36 },
+        targetSheetDevices,
+        targetSheet,
+        cur.visualSettings.gridSize || 20
+      );
+      const targetDev = createOffPageConnectorDevice({
+        existingDevices: cur.devices,
+        sheetId: targetSheetId,
+        x: spot.x,
+        y: spot.y,
+        direction: tgtDir,
+        potentialName: srcMeta.potentialName,
+        signalType: srcMeta.signalType,
+        pairId,
+        targetDeviceId: sourceDevice.id,
+        idSuffix: 'cp',
+      });
+
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        devices: [
+          ...prev.devices.map((d) =>
+            d.id === sourceDevice.id
+              ? {
+                  ...d,
+                  offPageRef: {
+                    ...getOffPageMeta(d),
+                    pairId,
+                    targetDeviceId: targetDev.id,
+                  },
+                }
+              : d
+          ),
+          targetDev,
+        ],
+      }));
+      applySelection({ deviceIds: [targetDev.id] });
+      setHighlightedPotentialSeed({ deviceId: targetDev.id });
+      centerCameraOnCoords(
+        targetSheetId,
+        targetDev.x + targetDev.width / 2,
+        targetDev.y + targetDev.height / 2,
+        activeViewportIdx
+      );
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Создана ответная ссылка ${targetDev.designation} на «${targetSheet.name}» для потенциала ${srcMeta.potentialName}.`
+      );
+    },
+    [commitProject, applySelection, centerCameraOnCoords, activeViewportIdx, appendLog]
+  );
+
+  const handleUpdateOffPageMeta = useCallback(
+    (deviceId: string, patch: Partial<OffPageRefMeta>) => {
+      const cur = docStateRef.current.present;
+      if (isLayerLocked(cur.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const patchKeys = Object.keys(patch).sort().join(',');
+      const isDiscrete = 'direction' in patch || 'signalType' in patch;
+      const apply = (prev: E3Project): E3Project => {
+        const devices = prev.devices.map((d) => {
+          if (d.id !== deviceId) return d;
+          const prevMeta = getOffPageMeta(d);
+          const nextMeta: OffPageRefMeta = { ...prevMeta, ...patch };
+          const isOut = nextMeta.direction === 'out';
+          const updatedAttrs = d.attributes.map((a) => {
+            if (/^потенциал$/i.test(a.name)) return { ...a, value: nextMeta.potentialName };
+            if (/^направление$/i.test(a.name))
+              return { ...a, value: isOut ? 'Исходящая (→)' : 'Входящая (←)' };
+            return a;
+          });
+          const updatedPins = d.pins.map((p, idx) =>
+            idx === 0
+              ? {
+                  ...p,
+                  name: isOut ? 'IN' : 'OUT',
+                  dx: isOut ? 0 : 120,
+                  dy: 18,
+                  direction: (isOut ? 'left' : 'right') as E3Device['pins'][number]['direction'],
+                  signalType: nextMeta.signalType,
+                }
+              : p
+          );
+          return {
+            ...d,
+            e3BlockName: isOut ? 'GOST_OFFPAGE_OUT' : 'GOST_OFFPAGE_IN',
+            componentName: isOut
+              ? 'Ссылка межлистовая исходящая (→ Лист)'
+              : 'Ссылка межлистовая входящая (← Лист)',
+            article: isOut ? 'E3-OFFPAGE-OUT' : 'E3-OFFPAGE-IN',
+            pins: updatedPins,
+            attributes: updatedAttrs,
+            offPageRef: nextMeta,
+          };
+        });
+        const updated = devices.find((d) => d.id === deviceId);
+        const wires = updated ? rerouteDeviceWires(updated, devices, prev.wires, prev.sheets) : prev.wires;
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices,
+          wires,
+        };
+      };
+      if (isDiscrete) commitProject(apply);
+      else commitCoalesced(`offpage:${deviceId}:${patchKeys}`, apply);
+    },
+    [commitProject, commitCoalesced, appendLog]
   );
 
   const didInitialFitRef = useRef(false);
@@ -1552,6 +1914,9 @@ export default function App() {
   );
 
   const handleAutoRouteActiveSheetWires = useCallback(() => {
+    const manualPreservedCount = docStateRef.current.present.wires.filter(
+      (w) => w.sheetId === activeSheetId && w.manualRoute
+    ).length;
     commitProject((prev) => ({
       ...prev,
       revision: prev.revision + 1,
@@ -1564,7 +1929,13 @@ export default function App() {
         prev.sheets
       ),
     }));
-    appendLog('INFO', 'E3-CORE', 'Выполнена автотрассировка линий без наложений и пересечения блоков.');
+    appendLog(
+      'INFO',
+      'E3-CORE',
+      manualPreservedCount > 0
+        ? `Выполнена автотрассировка линий (сохранено ручных трасс: ${manualPreservedCount}).`
+        : 'Выполнена автотрассировка линий без наложений и пересечения блоков.'
+    );
   }, [activeSheetId, commitProject, appendLog]);
 
   const handleUpdateSheetFormat = useCallback(
@@ -1886,6 +2257,9 @@ export default function App() {
         handleDeleteSelected();
       } else if (!e.ctrlKey && !e.metaKey && key === 'r') {
         handleRotateSelected();
+      } else if (e.key === 'Escape') {
+        setHighlightedPotentialSeed(null);
+        setTool('select');
       } else if (!e.ctrlKey && !e.metaKey && key === 'v') {
         setTool('select');
       } else if (!e.ctrlKey && !e.metaKey && key === 'w') {
@@ -2479,6 +2853,10 @@ export default function App() {
             setConsoleCollapsed(false);
           }}
           onToggleLayerLock={handleToggleLayerLock}
+          onNavigateOffPage={handleNavigateOffPage}
+          onCreateOffPageCounterpart={handleCreateOffPageCounterpart}
+          onUpdateOffPageMeta={handleUpdateOffPageMeta}
+          onHighlightPotential={(seed) => setHighlightedPotentialSeed(seed)}
         />
       );
     }
@@ -2492,6 +2870,7 @@ export default function App() {
         requestedApiSubTab={requestedApiSubTab}
         bom={bom}
         cables={cables}
+        netLengths={netLengths}
         terminals={terminals}
         erc={erc}
         logs={logs}
@@ -2540,6 +2919,22 @@ export default function App() {
           setSelectedWireId(null);
           setSelectedAnnotationId(null);
         }}
+        onHighlightNet={(netName) => {
+          setHighlightedPotentialSeed({ netName });
+          const trace = traceConnectedPotential(project, { netName });
+          const firstWire = project.wires.find((w) => trace.wireIds.includes(w.id));
+          if (firstWire && firstWire.sheetId !== activeSheetId) {
+            setActiveSheetId(firstWire.sheetId);
+            setViewportSheetIds((prev) =>
+              prev.map((sId, idx) => (idx === activeViewportIdx ? firstWire.sheetId : sId))
+            );
+          }
+          appendLog(
+            'INFO',
+            'E3-CORE',
+            `Подсветка потенциала «${netName}»: ${trace.segmentCount} уч., ${trace.totalLengthMm} мм, листов: ${trace.sheetIds.length}.`
+          );
+        }}
         onDownloadBomCsv={() => {
           downloadText(`${project.projectCode}-PE3.csv`, exportBomCsv(bom), 'text/csv;charset=utf-8');
           appendLog('INFO', 'E3-CORE', `Выгружена спецификация ${project.projectCode}-PE3.csv.`);
@@ -2547,10 +2942,18 @@ export default function App() {
         onDownloadCablesCsv={() => {
           downloadText(
             `${project.projectCode}-cables.csv`,
-            exportCableJournalCsv(cables),
+            exportCableJournalCsv(cables, netLengths),
             'text/csv;charset=utf-8'
           );
           appendLog('INFO', 'E3-CORE', `Выгружен кабельный журнал ${project.projectCode}-cables.csv.`);
+        }}
+        onDownloadNetLengthsCsv={() => {
+          downloadText(
+            `${project.projectCode}-net-lengths.csv`,
+            exportNetWireLengthsCsv(netLengths),
+            'text/csv;charset=utf-8'
+          );
+          appendLog('INFO', 'E3-CORE', `Выгружена ведомость длин проводов по цепям ${project.projectCode}-net-lengths.csv.`);
         }}
         onOpenReportModal={() => setReportOpen(true)}
         onOpenFluxPublishModal={() => setFluxPublishOpen(true)}
@@ -2731,6 +3134,12 @@ export default function App() {
             snapToGrid: !project.visualSettings.snapToGrid,
           })
         }
+        onToggleCrosshair={() =>
+          handleApplyVisualSettings({
+            ...project.visualSettings,
+            showCrosshair: !(project.visualSettings.showCrosshair !== false),
+          })
+        }
         onChangeGridSize={(gridSize) =>
           handleApplyVisualSettings({
             ...project.visualSettings,
@@ -2831,7 +3240,7 @@ export default function App() {
         onDownloadCablesCsv={() => {
           downloadText(
             `${project.projectCode}-cables.csv`,
-            exportCableJournalCsv(cables),
+            exportCableJournalCsv(cables, netLengths),
             'text/csv;charset=utf-8'
           );
           appendLog('INFO', 'E3-CORE', `Выгружен кабельный журнал ${project.projectCode}-cables.csv.`);
@@ -2975,6 +3384,12 @@ export default function App() {
                         smartGuides: !(project.visualSettings.smartGuides !== false),
                       })
                     }
+                    onToggleCrosshair={() =>
+                      handleApplyVisualSettings({
+                        ...project.visualSettings,
+                        showCrosshair: !(project.visualSettings.showCrosshair !== false),
+                      })
+                    }
                     onToggleLayerVisibility={handleToggleLayerVisibility}
                     onToggleLayerLock={handleToggleLayerLock}
                     onShowAllLayers={handleShowAllLayers}
@@ -3029,9 +3444,15 @@ export default function App() {
                     }}
                     onBeginDrag={handleBeginDrag}
                     onCommitDrag={handleCommitDrag}
+                    highlightedTrace={highlightedTrace}
+                    onHighlightPotential={(seed) => setHighlightedPotentialSeed(seed)}
+                    onClearPotentialHighlight={() => setHighlightedPotentialSeed(null)}
+                    onNavigateOffPage={handleNavigateOffPage}
+                    onCreateOffPageAt={handleCreateOffPageAt}
                     onCreateAnnotation={handleCreateAnnotation}
                     onMoveAnnotation={handleMoveAnnotation}
                     onMoveDevice={handleMoveDevice}
+                    onPreviewWireWaypoints={handlePreviewWireWaypoints}
                     onCreateWire={handleCreateWire}
                     onDropCatalogItem={(item, x, y, shId) => handlePlaceCatalogItem(item, x, y, shId)}
                     onOpenStampEditor={(sheetId, fieldKey) => {
@@ -3125,6 +3546,7 @@ export default function App() {
         project={project}
         bom={bom}
         cables={cables}
+        netLengths={netLengths}
         erc={erc}
         onClose={() => setReportOpen(false)}
       />

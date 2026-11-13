@@ -1,4 +1,4 @@
-import { buildBom, buildCableJournal } from './e3Engine.ts';
+import { buildBom, buildCableJournal, buildNetWireLengths } from './e3Engine.ts';
 import type { E3Device, E3Project, E3Sheet } from './e3Types.ts';
 import { buildGostSheetGeometry } from './gostFrame.ts';
 
@@ -287,6 +287,9 @@ function drawPdfDevice(
       ops.push(`${px.toFixed(2)} ${(yTop - 8 * s).toFixed(2)} m ${px.toFixed(2)} ${(yTop - 32 * s).toFixed(2)} l ${(px - 8 * s).toFixed(2)} ${(yTop - 60 * s).toFixed(2)} l S`);
       ops.push(`${px.toFixed(2)} ${(yTop - 64 * s).toFixed(2)} m ${px.toFixed(2)} ${(yBot + 8 * s).toFixed(2)} l S`);
     }
+  } else if (dev.category === 'offpage_ref') {
+    const pot = dev.offPageRef?.potentialName || dev.designation;
+    drawText(x + w / 2, yBot + h / 2 - 2 * s, pot, Math.max(6, 8.5 * s), true, 'center');
   }
 
   // Label above device
@@ -538,6 +541,7 @@ function renderBomTablePage(project: E3Project, ctx: PdfContext): { widthPt: num
 function renderCableJournalPage(project: E3Project, ctx: PdfContext): { widthPt: number; heightPt: number; stream: string } {
   const [pageW, pageH] = pageSizePtsForFormat('A4');
   const cables = buildCableJournal(project);
+  const netLengths = buildNetWireLengths(project);
   const ops: string[] = [];
 
   const drawText = (px: number, py: number, txt: string, fontPt: number, bold = false, maxW?: number) => {
@@ -558,28 +562,74 @@ function renderCableJournalPage(project: E3Project, ctx: PdfContext): { widthPt:
   ops.push(`28 20 ${(pageW - 48).toFixed(2)} ${(pageH - 40).toFixed(2)} re B`);
   drawText(42, pageH - 44, `Кабельный журнал — ${project.projectCode}`, 12, true, pageW - 90);
 
-  const colWidths = [70, 180, 90, 90, 90, 80, 70];
-  const headers = ['Кабель', 'Марка кабеля', 'Откуда', 'Куда', 'Жилы', 'Сечение', 'Длина, м'];
+  const colWidths = [65, 165, 80, 80, 65, 70, 65, 80];
+  const headers = ['Кабель', 'Марка кабеля', 'Откуда', 'Куда', 'Жилы', 'Сечение', 'Длина, м', 'Схема, мм'];
   let y = pageH - 68;
-  const rowH = 20;
+  const rowH = 18;
   const tableW = colWidths.reduce((a, b) => a + b, 0);
 
   ops.push('0.94 0.96 0.98 rg 0.2 0.24 0.3 RG 0.6 w');
   ops.push(`40 ${(y - rowH).toFixed(2)} ${tableW} ${rowH} re B`);
   let x = 40;
   headers.forEach((h, idx) => {
-    drawText(x + 4, y - 13, h, 8.5, true, colWidths[idx] - 8);
+    drawText(x + 4, y - 12, h, 8, true, colWidths[idx] - 8);
     x += colWidths[idx];
   });
   y -= rowH;
 
-  for (const c of cables.slice(0, 22)) {
+  for (const c of cables.slice(0, 10)) {
     ops.push(`0.75 0.78 0.84 RG 0.4 w 40 ${(y - rowH).toFixed(2)} ${tableW} ${rowH} re S`);
-    const vals = [c.designation, c.cableType, c.fromDevice, c.toDevice, `${c.usedCores}/${c.coresCount}`, c.crossSection, String(c.lengthMeters)];
+    const vals = [
+      c.designation,
+      c.cableType,
+      c.fromDevice,
+      c.toDevice,
+      `${c.usedCores}/${c.coresCount}`,
+      c.crossSection,
+      String(c.lengthMeters),
+      `${c.wireLengthMm ?? 0} мм`,
+    ];
     let rx = 40;
     vals.forEach((v, idx) => {
-      drawText(rx + 4, y - 13, v, 8, false, colWidths[idx] - 8);
+      drawText(rx + 4, y - 12, v, 7.5, false, colWidths[idx] - 8);
       rx += colWidths[idx];
+    });
+    y -= rowH;
+  }
+
+  y -= 18;
+  drawText(42, y, 'Суммарная длина проводов по цепям (E3-CORE)', 10.5, true, pageW - 90);
+  y -= 10;
+
+  const netColWidths = [130, 75, 55, 130, 95, 95, 90];
+  const netHeaders = ['Цепь (Net)', 'Потенциал', 'Жилы', 'Кабели', 'Сечение', 'Схема, мм', 'Длина, м'];
+  const netTableW = netColWidths.reduce((a, b) => a + b, 0);
+
+  ops.push('0.94 0.96 0.98 rg 0.2 0.24 0.3 RG 0.6 w');
+  ops.push(`40 ${(y - rowH).toFixed(2)} ${netTableW} ${rowH} re B`);
+  let nx = 40;
+  netHeaders.forEach((h, idx) => {
+    drawText(nx + 4, y - 12, h, 8, true, netColWidths[idx] - 8);
+    nx += netColWidths[idx];
+  });
+  y -= rowH;
+
+  for (const n of netLengths) {
+    if (y - rowH < 36) break;
+    ops.push(`0.75 0.78 0.84 RG 0.4 w 40 ${(y - rowH).toFixed(2)} ${netTableW} ${rowH} re S`);
+    const vals = [
+      n.netName,
+      n.signalType,
+      String(n.wireCount),
+      n.cableDesignations.join(', ') || 'Монтаж',
+      n.crossSections.join(', ') || '—',
+      `${n.totalLengthMm} мм`,
+      n.totalLengthMeters.toFixed(2),
+    ];
+    let rx = 40;
+    vals.forEach((v, idx) => {
+      drawText(rx + 4, y - 12, v, 7.5, false, netColWidths[idx] - 8);
+      rx += netColWidths[idx];
     });
     y -= rowH;
   }

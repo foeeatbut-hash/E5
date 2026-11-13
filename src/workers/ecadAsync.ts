@@ -1,6 +1,7 @@
 import {
   buildBom,
   buildCableJournal,
+  buildNetWireLengths,
   buildTerminalPlan,
   exportToDxf,
   exportToFluxBridge,
@@ -15,6 +16,7 @@ import type {
   E3Project,
   ErcIssue,
   FluxBridgeBundle,
+  NetWireLengthRow,
   TerminalPlanRow,
 } from '../core/e3Types';
 import type { WorkerRequest, WorkerResponse } from './ecadWorker';
@@ -23,6 +25,7 @@ export interface AnalysisResult {
   durationMs: number;
   bom: BomRow[];
   cables: CableJournalRow[];
+  netLengths: NetWireLengthRow[];
   terminals: TerminalPlanRow[];
   erc: ErcIssue[];
   viaWorker: boolean;
@@ -76,6 +79,7 @@ class EcadAsyncRunner {
         durationMs: res.durationMs,
         bom: res.bom,
         cables: res.cables,
+        netLengths: res.netLengths,
         terminals: res.terminals,
         erc: res.erc,
         viaWorker: true,
@@ -88,6 +92,7 @@ class EcadAsyncRunner {
       durationMs: Math.round((performance.now() - t0) * 100) / 100,
       bom: buildBom(project),
       cables: buildCableJournal(project),
+      netLengths: buildNetWireLengths(project),
       terminals: buildTerminalPlan(project),
       erc: runErc(project),
       viaWorker: false,

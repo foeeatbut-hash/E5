@@ -6,11 +6,15 @@ import {
   autoRouteOrthogonal,
   buildBom,
   buildCableJournal,
+  buildNetWireLengths,
   buildTerminalPlan,
+  calculateWireLengthMm,
   computeWireCrossingArcs,
   computeWireJunctionDots,
   encodeUtf16LeWithBom,
   exportBomCsv,
+  exportCableJournalCsv,
+  exportNetWireLengthsCsv,
   exportToDxf,
   exportToFluxBridge,
   exportVisualSettings,
@@ -660,4 +664,109 @@ test('XML round-trip preserves visual stroke thicknesses, crossing bridges, and 
   assert.equal(parsed.annotations?.[0].strokeStyle, 'dotted');
   assert.equal(parsed.annotations?.[0].color, '#dc2626');
 });
+
+test('calculateWireLengthMm computes multi-segment polyline length and pin-to-pin fallback', () => {
+  const seed = createSeedProject();
+  const devMap = new Map(seed.devices.map((d) => [d.id, d]));
+
+  const multiSegWire = {
+    ...seed.wires[0],
+    waypoints: [
+      { x: 100, y: 100 },
+      { x: 100, y: 250 },
+      { x: 300, y: 250 },
+    ],
+  };
+  assert.equal(calculateWireLengthMm(multiSegWire, devMap), 350);
+
+  const diagWire = {
+    ...seed.wires[0],
+    waypoints: [
+      { x: 0, y: 0 },
+      { x: 30, y: 40 },
+    ],
+  };
+  assert.equal(calculateWireLengthMm(diagWire, devMap), 50);
+
+  const fallbackWire = {
+    ...seed.wires[0],
+    waypoints: [],
+  };
+  assert.ok(calculateWireLengthMm(fallbackWire, devMap) > 0);
+});
+
+test('buildNetWireLengths and buildCableJournal aggregate wire lengths per net accurately', () => {
+  const seed = createSeedProject();
+  const netRows = buildNetWireLengths(seed);
+  assert.ok(netRows.length > 0);
+
+  const l11 = netRows.find((r) => r.netName === 'L1.1');
+  assert.ok(l11, 'Expected net L1.1 in seed project');
+  assert.equal(l11.wireCount, 1);
+  assert.equal(l11.totalLengthMm, 90);
+  assert.equal(l11.totalLengthMeters, 0.09);
+
+  // Add a second wire to net L1.1 to verify multi-wire net summation
+  seed.wires.push({
+    id: 'w-extra-l11',
+    sheetId: 'sheet-1',
+    netName: 'L1.1',
+    signalType: 'power',
+    fromDeviceId: 'dev-qf1',
+    fromPinId: '2',
+    toDeviceId: 'dev-km1',
+    toPinId: '1',
+    waypoints: [
+      { x: 100, y: 100 },
+      { x: 250, y: 100 },
+      { x: 250, y: 160 },
+    ],
+    crossSection: '2.5',
+    wireNumber: 'L1.1b',
+    cableId: seed.cables[0]?.id,
+  });
+
+  const updatedNets = buildNetWireLengths(seed);
+  const updatedL11 = updatedNets.find((r) => r.netName === 'L1.1');
+  assert.ok(updatedL11);
+  assert.equal(updatedL11.wireCount, 2);
+  assert.equal(updatedL11.totalLengthMm, 90 + 210);
+  assert.equal(updatedL11.totalLengthMeters, 0.3);
+  assert.ok(updatedL11.cableDesignations.includes(seed.cables[0].designation));
+  assert.ok(updatedL11.wireNumbers.includes('L1.1b'));
+
+  const cableRows = buildCableJournal(seed);
+  const firstCable = cableRows[0];
+  assert.ok(firstCable);
+  assert.ok((firstCable.wireLengthMm ?? 0) >= 210);
+  assert.ok(firstCable.netLengths?.some((nl) => nl.netName === 'L1.1' && nl.lengthMm >= 210));
+
+  const cableCsv = exportCableJournalCsv(cableRows, updatedNets);
+  assert.ok(cableCsv.includes('Длина по схеме, мм'));
+  assert.ok(cableCsv.includes('Цепь (Net)'));
+  assert.ok(cableCsv.includes('Сумм. длина, мм'));
+
+  const netCsv = exportNetWireLengthsCsv(updatedNets);
+  assert.ok(netCsv.includes('L1.1'));
+  assert.ok(netCsv.includes('300'));
+});
+
+test('showCrosshair setting persists through XML and JSON visual settings round-trip', () => {
+  const seed = createSeedProject();
+  assert.equal(seed.visualSettings.showCrosshair, true);
+
+  seed.visualSettings.showCrosshair = false;
+  const xml = serializeE3Xml(seed);
+  const parsedXml = parseE3Xml(xml);
+  assert.equal(parsedXml.visualSettings.showCrosshair, false);
+
+  const json = exportVisualSettings(seed.visualSettings);
+  const parsedJson = parseVisualSettings(json);
+  assert.equal(parsedJson.showCrosshair, false);
+
+  seed.visualSettings.showCrosshair = true;
+  const parsedTrue = parseE3Xml(serializeE3Xml(seed));
+  assert.equal(parsedTrue.visualSettings.showCrosshair, true);
+});
+
 

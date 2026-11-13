@@ -19,6 +19,7 @@ import type {
   ErcIssue,
   FluxBridgeBundle,
   FluxExportNode,
+  NetWireLengthRow,
   PinDirection,
   SchematicFontFamily,
   SheetFormat,
@@ -877,8 +878,12 @@ export function routeSheetWiresCleanly(
   const sheetBounds = getSheetDrawableBounds(targetSheet);
 
   const targetWires = wires.filter((w) => w.sheetId === targetSheetId);
-  const plans = assignBundleRoutingPlans(targetWires, devMap, Math.max(16, Math.round(gridSize)));
-  const occupied: WireSegment[] = [];
+  const manualWires = targetWires.filter((w) => w.manualRoute);
+  const autoWires = targetWires.filter((w) => !w.manualRoute);
+  const plans = assignBundleRoutingPlans(autoWires, devMap, Math.max(16, Math.round(gridSize)));
+  const occupied: WireSegment[] = manualWires.flatMap((w) =>
+    extractWireSegments(w.waypoints, w.netName)
+  );
   const routedById = new Map<string, Array<{ x: number; y: number }>>();
 
   for (const plan of plans) {
@@ -894,7 +899,7 @@ export function routeSheetWiresCleanly(
   }
 
   return wires.map((w) => {
-    if (w.sheetId !== targetSheetId) return w;
+    if (w.sheetId !== targetSheetId || w.manualRoute) return w;
     const pts = routedById.get(w.id);
     return pts ? { ...w, waypoints: pts } : w;
   });
@@ -1092,6 +1097,7 @@ export function buildBom(project: E3Project): BomRow[] {
     if (
       dev.category === 'airflow_arrow' ||
       dev.category === 'io_matrix' ||
+      dev.category === 'offpage_ref' ||
       dev.e3BlockName === 'EXT_FIELD_UNIT'
     ) {
       continue;
@@ -1130,21 +1136,120 @@ export function buildBom(project: E3Project): BomRow[] {
   return rows;
 }
 
+export function calculateWireLengthMm(
+  wire: E3Wire,
+  deviceMap?: Map<string, E3Device>
+): number {
+  const pts = wire.waypoints;
+  if (Array.isArray(pts) && pts.length >= 2) {
+    let total = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      total += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+    }
+    return Math.round(total);
+  }
+  if (deviceMap) {
+    const dFrom = deviceMap.get(wire.fromDeviceId);
+    const dTo = deviceMap.get(wire.toDeviceId);
+    const pFrom = dFrom?.pins.find((p) => p.id === wire.fromPinId);
+    const pTo = dTo?.pins.find((p) => p.id === wire.toPinId);
+    if (dFrom && dTo && pFrom && pTo) {
+      const a = getAbsolutePinPos(dFrom, pFrom);
+      const b = getAbsolutePinPos(dTo, pTo);
+      return Math.round(Math.abs(b.x - a.x) + Math.abs(b.y - a.y));
+    }
+  }
+  return 0;
+}
+
 export function buildCableJournal(project: E3Project): CableJournalRow[] {
+  const devMap = new Map(project.devices.map((d) => [d.id, d]));
   return project.cables.map((cable) => {
-    const usedCores = project.wires.filter((w) => w.cableId === cable.id).length;
+    const assignedWires = project.wires.filter((w) => w.cableId === cable.id);
+    const netMap = new Map<string, number>();
+    let wireLengthMm = 0;
+    for (const w of assignedWires) {
+      const len = calculateWireLengthMm(w, devMap);
+      wireLengthMm += len;
+      const netKey = (w.netName || '').trim() || '(без цепи)';
+      netMap.set(netKey, (netMap.get(netKey) || 0) + len);
+    }
+    const netLengths = Array.from(netMap.entries())
+      .map(([netName, lengthMm]) => ({ netName, lengthMm }))
+      .sort((a, b) => naturalCompare(a.netName, b.netName));
     return {
       designation: cable.designation,
       cableType: cable.cableType,
       coresCount: cable.coresCount,
-      usedCores,
+      usedCores: assignedWires.length,
       crossSection: cable.crossSection,
       lengthMeters: cable.lengthMeters,
       fromDevice: cable.fromDevice,
       toDevice: cable.toDevice,
       shielded: cable.shielded,
+      wireLengthMm,
+      netLengths,
     };
   });
+}
+
+export function buildNetWireLengths(project: E3Project): NetWireLengthRow[] {
+  const devMap = new Map(project.devices.map((d) => [d.id, d]));
+  const cableMap = new Map(project.cables.map((c) => [c.id, c]));
+
+  interface Acc {
+    netName: string;
+    signalType: SignalType;
+    wireCount: number;
+    totalLengthMm: number;
+    crossSections: Set<string>;
+    wireNumbers: Set<string>;
+    cableDesignations: Set<string>;
+    sheetIds: Set<string>;
+  }
+
+  const groups = new Map<string, Acc>();
+  for (const wire of project.wires) {
+    const netName = (wire.netName || '').trim() || '(без цепи)';
+    const len = calculateWireLengthMm(wire, devMap);
+    let acc = groups.get(netName);
+    if (!acc) {
+      acc = {
+        netName,
+        signalType: wire.signalType,
+        wireCount: 0,
+        totalLengthMm: 0,
+        crossSections: new Set(),
+        wireNumbers: new Set(),
+        cableDesignations: new Set(),
+        sheetIds: new Set(),
+      };
+      groups.set(netName, acc);
+    }
+    acc.wireCount += 1;
+    acc.totalLengthMm += len;
+    if (wire.crossSection?.trim()) acc.crossSections.add(wire.crossSection.trim());
+    if (wire.wireNumber?.trim()) acc.wireNumbers.add(wire.wireNumber.trim());
+    if (wire.sheetId?.trim()) acc.sheetIds.add(wire.sheetId.trim());
+    if (wire.cableId) {
+      const cab = cableMap.get(wire.cableId);
+      if (cab?.designation) acc.cableDesignations.add(cab.designation);
+    }
+  }
+
+  return Array.from(groups.values())
+    .map((acc) => ({
+      netName: acc.netName,
+      signalType: acc.signalType,
+      wireCount: acc.wireCount,
+      totalLengthMm: acc.totalLengthMm,
+      totalLengthMeters: Math.round((acc.totalLengthMm / 1000) * 1000) / 1000,
+      crossSections: Array.from(acc.crossSections).sort(naturalCompare),
+      wireNumbers: Array.from(acc.wireNumbers).sort(naturalCompare),
+      cableDesignations: Array.from(acc.cableDesignations).sort(naturalCompare),
+      sheetIds: Array.from(acc.sheetIds).sort(naturalCompare),
+    }))
+    .sort((a, b) => naturalCompare(a.netName, b.netName));
 }
 
 export function buildTerminalPlan(project: E3Project): TerminalPlanRow[] {
@@ -1239,7 +1344,12 @@ export function runErc(project: E3Project): ErcIssue[] {
       designationCounts.set(normDes, list);
     }
 
-    if (!dev.article.trim() || !dev.manufacturer.trim()) {
+    const skipBomPartCheck =
+      dev.category === 'offpage_ref' ||
+      dev.category === 'airflow_arrow' ||
+      dev.category === 'io_matrix';
+
+    if (!skipBomPartCheck && (!dev.article.trim() || !dev.manufacturer.trim())) {
       issues.push({
         id: `erc-art-${dev.id}`,
         severity: 'warning',
@@ -1367,7 +1477,7 @@ export function serializeE3Xml(project: E3Project): string {
   // Visual Settings synchronization block
   const vs = project.visualSettings;
   lines.push(
-    `  <VisualSettings schemaVersion="${vs.schemaVersion}" presetName="${xmlEscape(vs.presetName)}" theme="${vs.theme}" gridSize="${vs.gridSize}" snapToGrid="${vs.snapToGrid}" smartGuides="${vs.smartGuides !== false}" showGrid="${vs.showGrid}" showGostFrame="${vs.showGostFrame}" showPinNumbers="${vs.showPinNumbers}" showWireNumbers="${vs.showWireNumbers}" showCrossRefs="${vs.showCrossRefs}" wireWidth="${vs.wireWidth}" symbolStrokeWidth="${vs.symbolStrokeWidth}" frameStrokeWidth="${vs.frameStrokeWidth ?? 1.6}" annotationStrokeWidth="${vs.annotationStrokeWidth ?? 1.4}" wireCrossingBridge="${vs.wireCrossingBridge !== false}" fontScale="${vs.fontScale}" fontFamily="${xmlEscape(vs.fontFamily || 'GOST')}">`
+    `  <VisualSettings schemaVersion="${vs.schemaVersion}" presetName="${xmlEscape(vs.presetName)}" theme="${vs.theme}" gridSize="${vs.gridSize}" snapToGrid="${vs.snapToGrid}" smartGuides="${vs.smartGuides !== false}" showCrosshair="${vs.showCrosshair !== false}" showGrid="${vs.showGrid}" showGostFrame="${vs.showGostFrame}" showPinNumbers="${vs.showPinNumbers}" showWireNumbers="${vs.showWireNumbers}" showCrossRefs="${vs.showCrossRefs}" wireWidth="${vs.wireWidth}" symbolStrokeWidth="${vs.symbolStrokeWidth}" frameStrokeWidth="${vs.frameStrokeWidth ?? 1.6}" annotationStrokeWidth="${vs.annotationStrokeWidth ?? 1.4}" wireCrossingBridge="${vs.wireCrossingBridge !== false}" fontScale="${vs.fontScale}" fontFamily="${xmlEscape(vs.fontFamily || 'GOST')}">`
   );
   for (const [sig, color] of Object.entries(vs.netColors)) {
     lines.push(`    <NetColor signalType="${xmlEscape(sig)}" hex="${xmlEscape(color)}" />`);
@@ -1396,8 +1506,11 @@ export function serializeE3Xml(project: E3Project): string {
   // Devices with Pins & Attributes
   lines.push('  <Devices>');
   for (const d of project.devices) {
+    const offPageAttrs = d.offPageRef
+      ? ` offPageDir="${xmlEscape(d.offPageRef.direction)}" offPagePotential="${xmlEscape(d.offPageRef.potentialName)}" offPageSignal="${xmlEscape(d.offPageRef.signalType)}" offPagePairId="${xmlEscape(d.offPageRef.pairId || '')}" offPageTargetId="${xmlEscape(d.offPageRef.targetDeviceId || '')}"`
+      : '';
     lines.push(
-      `    <Device id="${xmlEscape(d.id)}" elementId="${xmlEscape(d.elementId)}" designation="${xmlEscape(d.designation)}" componentName="${xmlEscape(d.componentName)}" article="${xmlEscape(d.article)}" manufacturer="${xmlEscape(d.manufacturer)}" category="${xmlEscape(d.category)}" sheetId="${xmlEscape(d.sheetId)}" x="${d.x}" y="${d.y}" rotation="${d.rotation}" width="${d.width}" height="${d.height}" e3BlockName="${xmlEscape(d.e3BlockName)}" bindingState="${xmlEscape(d.bindingState)}">`
+      `    <Device id="${xmlEscape(d.id)}" elementId="${xmlEscape(d.elementId)}" designation="${xmlEscape(d.designation)}" componentName="${xmlEscape(d.componentName)}" article="${xmlEscape(d.article)}" manufacturer="${xmlEscape(d.manufacturer)}" category="${xmlEscape(d.category)}" sheetId="${xmlEscape(d.sheetId)}" x="${d.x}" y="${d.y}" rotation="${d.rotation}" width="${d.width}" height="${d.height}" e3BlockName="${xmlEscape(d.e3BlockName)}" bindingState="${xmlEscape(d.bindingState)}"${offPageAttrs}>`
     );
     lines.push('      <Pins>');
     for (const p of d.pins) {
@@ -1421,8 +1534,9 @@ export function serializeE3Xml(project: E3Project): string {
   lines.push('  <Wires>');
   for (const w of project.wires) {
     const pts = w.waypoints.map((pt) => `${pt.x},${pt.y}`).join(';');
+    const manualAttr = w.manualRoute ? ' manualRoute="true"' : '';
     lines.push(
-      `    <Wire id="${xmlEscape(w.id)}" sheetId="${xmlEscape(w.sheetId)}" netName="${xmlEscape(w.netName)}" signalType="${xmlEscape(w.signalType)}" fromDeviceId="${xmlEscape(w.fromDeviceId)}" fromPinId="${xmlEscape(w.fromPinId)}" toDeviceId="${xmlEscape(w.toDeviceId)}" toPinId="${xmlEscape(w.toPinId)}" crossSection="${xmlEscape(w.crossSection)}" wireNumber="${xmlEscape(w.wireNumber)}" cableId="${xmlEscape(w.cableId || '')}" coreNumber="${xmlEscape(w.coreNumber || '')}" waypoints="${xmlEscape(pts)}" />`
+      `    <Wire id="${xmlEscape(w.id)}" sheetId="${xmlEscape(w.sheetId)}" netName="${xmlEscape(w.netName)}" signalType="${xmlEscape(w.signalType)}" fromDeviceId="${xmlEscape(w.fromDeviceId)}" fromPinId="${xmlEscape(w.fromPinId)}" toDeviceId="${xmlEscape(w.toDeviceId)}" toPinId="${xmlEscape(w.toPinId)}" crossSection="${xmlEscape(w.crossSection)}" wireNumber="${xmlEscape(w.wireNumber)}" cableId="${xmlEscape(w.cableId || '')}" coreNumber="${xmlEscape(w.coreNumber || '')}"${manualAttr} waypoints="${xmlEscape(pts)}" />`
     );
   }
   lines.push('  </Wires>');
@@ -1477,6 +1591,7 @@ export function parseE3Xml(xml: string): E3Project {
     visualSettings.gridSize = Number(va.gridSize || 20);
     visualSettings.snapToGrid = va.snapToGrid !== 'false';
     if (va.smartGuides !== undefined) visualSettings.smartGuides = va.smartGuides !== 'false';
+    if (va.showCrosshair !== undefined) visualSettings.showCrosshair = va.showCrosshair !== 'false';
     visualSettings.showGrid = va.showGrid !== 'false';
     visualSettings.showGostFrame = va.showGostFrame !== 'false';
     visualSettings.showPinNumbers = va.showPinNumbers !== 'false';
@@ -1599,6 +1714,8 @@ export function parseE3Xml(xml: string): E3Project {
       });
     }
 
+    const devCat = (da.category as E3Device['category']) || 'breaker';
+    const hasOffPage = devCat === 'offpage_ref' || Boolean(da.offPageDir || da.offPagePotential);
     devices.push({
       id: da.id,
       elementId: da.elementId || da.id,
@@ -1606,7 +1723,7 @@ export function parseE3Xml(xml: string): E3Project {
       componentName: da.componentName,
       article: da.article || '',
       manufacturer: da.manufacturer || '',
-      category: (da.category as E3Device['category']) || 'breaker',
+      category: devCat,
       sheetId: da.sheetId || sheets[0]?.id || 'sheet-1',
       x: Number(da.x || 0),
       y: Number(da.y || 0),
@@ -1617,6 +1734,15 @@ export function parseE3Xml(xml: string): E3Project {
       bindingState: (da.bindingState as E3Device['bindingState']) || 'PLACED',
       pins,
       attributes,
+      offPageRef: hasOffPage
+        ? {
+            direction: da.offPageDir === 'in' ? 'in' : 'out',
+            potentialName: da.offPagePotential || da.designation.replace(/^-/, '') || '+24V',
+            signalType: (da.offPageSignal as SignalType) || pins[0]?.signalType || 'signal',
+            pairId: da.offPagePairId || undefined,
+            targetDeviceId: da.offPageTargetId || undefined,
+          }
+        : undefined,
     });
   }
 
@@ -1647,6 +1773,7 @@ export function parseE3Xml(xml: string): E3Project {
       wireNumber: wa.wireNumber || wa.netName,
       cableId: wa.cableId || undefined,
       coreNumber: wa.coreNumber || undefined,
+      manualRoute: wa.manualRoute === 'true' ? true : undefined,
     });
   }
 
@@ -1926,11 +2053,28 @@ export function exportBomCsv(rows: BomRow[]): string {
   return '\uFEFF' + lines.join('\r\n');
 }
 
-export function exportCableJournalCsv(rows: CableJournalRow[]): string {
-  const header = ['Кабель', 'Марка', 'Жилы (исп./всего)', 'Сечение', 'Длина, м', 'Откуда', 'Куда', 'Экран'];
+export function exportCableJournalCsv(
+  rows: CableJournalRow[],
+  netRows?: NetWireLengthRow[]
+): string {
+  const header = [
+    'Кабель',
+    'Марка',
+    'Жилы (исп./всего)',
+    'Сечение',
+    'Длина, м',
+    'Длина по схеме, мм',
+    'Цепи кабеля',
+    'Откуда',
+    'Куда',
+    'Экран',
+  ];
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
   const lines = [header.map(esc).join(';')];
   for (const r of rows) {
+    const netsSummary = (r.netLengths || [])
+      .map((n) => `${n.netName}: ${n.lengthMm} мм`)
+      .join(', ');
     lines.push(
       [
         r.designation,
@@ -1938,9 +2082,67 @@ export function exportCableJournalCsv(rows: CableJournalRow[]): string {
         `${r.usedCores}/${r.coresCount}`,
         r.crossSection,
         r.lengthMeters,
+        r.wireLengthMm ?? 0,
+        netsSummary || '—',
         r.fromDevice,
         r.toDevice,
         r.shielded ? 'Да' : 'Нет',
+      ]
+        .map(esc)
+        .join(';')
+    );
+  }
+  if (netRows && netRows.length > 0) {
+    lines.push('');
+    lines.push(
+      ['Цепь (Net)', 'Потенциал', 'Проводов', 'Маркировка', 'Кабели', 'Сечение', 'Сумм. длина, мм', 'Длина, м']
+        .map(esc)
+        .join(';')
+    );
+    for (const n of netRows) {
+      lines.push(
+        [
+          n.netName,
+          n.signalType,
+          n.wireCount,
+          n.wireNumbers.join(', ') || '—',
+          n.cableDesignations.join(', ') || 'Монтаж',
+          n.crossSections.join(', ') || '—',
+          n.totalLengthMm,
+          n.totalLengthMeters.toFixed(3),
+        ]
+          .map(esc)
+          .join(';')
+      );
+    }
+  }
+  return '\uFEFF' + lines.join('\r\n');
+}
+
+export function exportNetWireLengthsCsv(rows: NetWireLengthRow[]): string {
+  const header = [
+    'Цепь (Net)',
+    'Потенциал',
+    'Проводов',
+    'Маркировка',
+    'Кабели',
+    'Сечение',
+    'Сумм. длина, мм',
+    'Длина, м',
+  ];
+  const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [header.map(esc).join(';')];
+  for (const n of rows) {
+    lines.push(
+      [
+        n.netName,
+        n.signalType,
+        n.wireCount,
+        n.wireNumbers.join(', ') || '—',
+        n.cableDesignations.join(', ') || 'Монтаж',
+        n.crossSections.join(', ') || '—',
+        n.totalLengthMm,
+        n.totalLengthMeters.toFixed(3),
       ]
         .map(esc)
         .join(';')

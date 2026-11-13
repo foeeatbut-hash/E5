@@ -27,7 +27,8 @@ export type DeviceCategory =
   | 'kip_circle'
   | 'junction_box'
   | 'io_matrix'
-  | 'airflow_arrow';
+  | 'airflow_arrow'
+  | 'offpage_ref';
 
 export type PinDirection = 'left' | 'right' | 'top' | 'bottom';
 
@@ -50,6 +51,14 @@ export interface E3Attribute {
   service?: boolean;
 }
 
+export interface OffPageRefMeta {
+  direction: 'out' | 'in';
+  potentialName: string;
+  signalType: SignalType;
+  pairId?: string;
+  targetDeviceId?: string;
+}
+
 export interface E3Device {
   id: string;
   elementId: string; // Persistent Flux ID (never recycled)
@@ -68,6 +77,7 @@ export interface E3Device {
   bindingState: BindingState;
   pins: E3Pin[];
   attributes: E3Attribute[];
+  offPageRef?: OffPageRefMeta;
 }
 
 export interface E3Wire {
@@ -84,6 +94,7 @@ export interface E3Wire {
   wireNumber: string;
   cableId?: string;
   coreNumber?: string;
+  manualRoute?: boolean;
 }
 
 export interface E3Cable {
@@ -198,6 +209,7 @@ export interface E3VisualSettings {
   gridSize: number;
   snapToGrid: boolean;
   smartGuides?: boolean;
+  showCrosshair?: boolean;
   showGrid: boolean;
   showGostFrame: boolean;
   showPinNumbers: boolean;
@@ -213,7 +225,7 @@ export interface E3VisualSettings {
   netColors: Record<SignalType, string>;
 }
 
-export type CadTool = 'select' | 'wire' | 'pan' | 'text' | 'rect' | 'callout';
+export type CadTool = 'select' | 'wire' | 'pan' | 'text' | 'rect' | 'callout' | 'offpage';
 
 export type AnnotationKind = 'text' | 'rect' | 'callout';
 export type AnnotationStrokeStyle = 'solid' | 'dashed' | 'dotted';
@@ -325,6 +337,20 @@ export interface CableJournalRow {
   fromDevice: string;
   toDevice: string;
   shielded: boolean;
+  wireLengthMm?: number;
+  netLengths?: Array<{ netName: string; lengthMm: number }>;
+}
+
+export interface NetWireLengthRow {
+  netName: string;
+  signalType: SignalType;
+  wireCount: number;
+  totalLengthMm: number;
+  totalLengthMeters: number;
+  crossSections: string[];
+  wireNumbers: string[];
+  cableDesignations: string[];
+  sheetIds: string[];
 }
 
 export interface TerminalPlanRow {
