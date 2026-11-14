@@ -149,11 +149,11 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
     <aside
       aria-label="Библиотека УГО и изделий E3"
       data-testid="symbol-library-browser"
-      className="w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0 select-none"
+      className="w-full h-full flex-1 min-w-0 flux-glass-panel flex flex-col min-h-0 select-none"
     >
       {/* Flush CAD Switcher: УГО (Графика) vs Изделия (БД) */}
-      <div className="border-b border-[var(--flux-line)] bg-[var(--flux-surface)]">
-        <div className="grid grid-cols-2 h-7 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)]">
+      <div className="border-b border-[var(--flux-line)] flux-glass-surface">
+        <div className="grid grid-cols-2 h-7 border-b border-[var(--flux-line)] flux-glass-bar">
           <button
             type="button"
             data-testid="sym-lib-tab-symbols"
@@ -257,9 +257,9 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
       </div>
 
       {/* Scrollable Items List */}
-      <div className="flex-1 overflow-y-auto p-1 space-y-1 bg-[var(--flux-surface)]">
+      <div className="flex-1 overflow-y-auto p-1.5 space-y-1 bg-transparent">
         {subTab === 'symbols' ? (
-          <div className="border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] overflow-hidden">
+          <div className="border border-[var(--flux-line)] rounded-lg bg-[var(--flux-surface)]/75 divide-y divide-[var(--flux-line)] overflow-hidden">
               {filteredSymbols.map((sym) => {
                 const active = draft.symbolId === sym.id;
                 return (
@@ -311,7 +311,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
               )}
               </div>
             ) : (
-              <div className="border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] overflow-hidden">
+              <div className="border border-[var(--flux-line)] rounded-lg bg-[var(--flux-surface)]/75 divide-y divide-[var(--flux-line)] overflow-hidden">
               {filteredCatalog.map((item) => {
                 const active = draft.catalogItemId === item.id;
                 const shapes =

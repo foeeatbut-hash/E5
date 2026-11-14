@@ -618,7 +618,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
       className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--flux-canvas-bg)] select-none"
     >
       {/* Top Block Editor Context Bar (AutoCAD BEDIT header strip) */}
-      <div className="shrink-0 h-8 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2 z-10">
+      <div className="shrink-0 h-8 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 z-10">
         <div className="flex items-center gap-2 min-w-0">
           <span className="px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] font-mono text-[10px] font-semibold tracking-wider text-[var(--flux-accent)] whitespace-nowrap shrink-0">
             {draft.targetMode === 'device'
@@ -1180,12 +1180,12 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
           data-testid="symbol-workspace-hud"
           className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none flex items-center justify-between gap-2"
         >
-          <div className="pointer-events-auto inline-flex items-center gap-2 px-2 h-6 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text-muted)] shadow-sm">
+          <div className="pointer-events-auto inline-flex items-center gap-2 px-2.5 h-7 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover text-[11px] text-[var(--flux-text-muted)]">
             <Crosshair className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
             <span className="truncate">{toolHint}</span>
           </div>
 
-          <div className="pointer-events-auto inline-flex items-center gap-1.5 px-2 h-6 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[11px] font-mono tabular-nums text-[var(--flux-text)] shadow-sm shrink-0">
+          <div className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 h-7 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover text-[11px] font-mono tabular-nums text-[var(--flux-text)] shrink-0">
             <span className="text-[var(--flux-text-muted)] inline-block w-[112px] whitespace-nowrap tabular-nums">
               <span ref={coordsHudRef} />
             </span>

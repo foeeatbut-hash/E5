@@ -4,14 +4,17 @@ import {
   clampDockLayoutToViewport,
   clampDockSize,
   clampFloatingRect,
+  closeSheetTab,
   COLLAPSED_BOTTOM_TABS_HEIGHT,
   computeViewportSheets,
   createDefaultDockLayout,
   deleteSheetFromProject,
   duplicateSheetInProject,
+  ensureSheetTabOpen,
   getPanelsByDock,
   movePanelDock,
   resizeDockEdge,
+  syncOpenSheetIds,
   togglePanelCollapse,
   updateFloatingRect,
 } from './dockLayout.ts';
@@ -135,3 +138,38 @@ test('clampDockLayoutToViewport guarantees right & left panels never clip off na
     assert.ok(clamped.sizes.bottom <= vh - 320);
   }
 });
+
+test('closeSheetTab, ensureSheetTabOpen, and syncOpenSheetIds manage open canvas tabs safely', () => {
+  const proj = createSeedProject();
+  const initialIds = proj.sheets.map((s) => s.id);
+  assert.deepEqual(initialIds, ['sheet-1', 'sheet-2', 'sheet-3']);
+
+  // Closing an inactive tab keeps activeSheetId unchanged
+  const closeInactive = closeSheetTab(initialIds, 'sheet-2', 'sheet-1');
+  assert.deepEqual(closeInactive.nextOpenSheetIds, ['sheet-1', 'sheet-3']);
+  assert.equal(closeInactive.nextActiveSheetId, 'sheet-1');
+
+  // Closing the active tab picks next neighbor at the same index
+  const closeActiveFirst = closeSheetTab(initialIds, 'sheet-1', 'sheet-1');
+  assert.deepEqual(closeActiveFirst.nextOpenSheetIds, ['sheet-2', 'sheet-3']);
+  assert.equal(closeActiveFirst.nextActiveSheetId, 'sheet-2');
+
+  // Closing the last active tab chooses left neighbor, and closing all yields empty activeSheetId
+  const closeLast = closeSheetTab(['sheet-1', 'sheet-3'], 'sheet-3', 'sheet-3');
+  assert.deepEqual(closeLast.nextOpenSheetIds, ['sheet-1']);
+  assert.equal(closeLast.nextActiveSheetId, 'sheet-1');
+
+  const closeFinal = closeSheetTab(['sheet-1'], 'sheet-1', 'sheet-1');
+  assert.deepEqual(closeFinal.nextOpenSheetIds, []);
+  assert.equal(closeFinal.nextActiveSheetId, '');
+
+  // Reopening a closed sheet from project tree appends tab without duplicates
+  const reopened = ensureSheetTabOpen(['sheet-1'], 'sheet-2', proj.sheets);
+  assert.deepEqual(reopened, ['sheet-1', 'sheet-2']);
+  assert.deepEqual(ensureSheetTabOpen(reopened, 'sheet-2', proj.sheets), ['sheet-1', 'sheet-2']);
+  assert.deepEqual(ensureSheetTabOpen(reopened, 'nonexistent', proj.sheets), ['sheet-1', 'sheet-2']);
+
+  // Sync removes deleted IDs while respecting intentionally closed sheets
+  assert.deepEqual(syncOpenSheetIds(['sheet-1', 'deleted-99', 'sheet-1'], proj.sheets), ['sheet-1']);
+});
+

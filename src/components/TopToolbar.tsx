@@ -581,7 +581,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   return (
     <header
       ref={headerRef}
-      className="no-print shrink-0 w-full max-w-full min-w-0 relative z-40 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] select-none"
+      className="no-print shrink-0 w-full max-w-full min-w-0 relative z-40 border-b border-[var(--flux-line)] flux-glass-surface select-none"
     >
       <input
         ref={fileInputRef}
@@ -599,7 +599,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
       />
 
       {/* Row 1: CAD Application Button + Monochrome Quick Access Toolbar + Document Title */}
-      <div className="flex items-center justify-between gap-2 lg:gap-4 px-1.5 lg:px-2 h-8 border-b border-[var(--flux-line)] min-w-0 bg-[var(--flux-surface-alt)]">
+      <div className="flex items-center justify-between gap-2 lg:gap-4 px-1.5 lg:px-2 h-8 border-b border-[var(--flux-line)] min-w-0 flux-glass-bar">
         <div className="flex items-center gap-0.5 shrink-0">
           <button
             ref={menuBtnRef}
@@ -609,17 +609,17 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             aria-expanded={appMenuOpen}
             onClick={() => setAppMenuOpen((o) => !o)}
             title="Главное меню программы: файлы, экспорт, штампы, настройки"
-            className={`inline-flex items-center gap-1.5 h-6 pl-2 pr-1.5 rounded-[2px] font-semibold text-[11.5px] tracking-tight border transition-colors whitespace-nowrap shrink-0 mr-1 ${
+            className={`inline-flex items-center gap-1.5 h-6 pl-2 pr-2 rounded-md font-semibold text-[11.5px] tracking-tight border transition-colors whitespace-nowrap shrink-0 mr-1 ${
               appMenuOpen
                 ? 'bg-[var(--flux-accent-solid)] text-white border-[var(--flux-accent-solid)]'
-                : 'bg-[#263142] dark:bg-[#2d3646] hover:bg-[#1f2938] dark:hover:bg-[#364052] text-slate-50 border-[#394558]'
+                : 'bg-[#12261e] dark:bg-[#193329] hover:bg-[#183428] dark:hover:bg-[#214235] text-emerald-50 border-[#285442]'
             }`}
           >
             <svg width="13" height="13" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-              <rect x="1.5" y="1.5" width="15" height="15" rx="1" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.5" />
+              <rect x="1.5" y="1.5" width="15" height="15" rx="3" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.5" />
               <path
                 d="M4.2 9h3.4l1.9-3.6 2 7.2 1.6-3.6H14"
-                stroke="#6ca8ff"
+                stroke="#34d399"
                 strokeWidth="1.7"
                 strokeLinecap="square"
                 strokeLinejoin="miter"
@@ -631,46 +631,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
           <span className="h-3.5 w-px bg-[var(--flux-line)] mr-0.5 shrink-0" aria-hidden="true" />
 
-          {/* Quick Access Toolbar (QAT) */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title="Открыть файл .e3s / .e3d / XML / JSON"
-            aria-label="Открыть файл .e3s"
-            className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
-          >
-            <Upload className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenPublishModal}
-            title="Пакетная публикация (PDF / AutoCAD DXF)"
-            aria-label="Пакетная публикация"
-            className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={onDirectOpenE3}
-            title={
-              e3BridgeHost
-                ? `Открыть напрямую в E³.series (${e3BridgeHost})`
-                : 'Перенести проект в E³.series 2022'
-            }
-            aria-label="В E3.series"
-            className={`relative inline-flex items-center justify-center w-6 h-6 rounded-[2px] hover:bg-[var(--flux-hover)] transition-colors shrink-0 ${
-              e3BridgeHost
-                ? 'text-[var(--flux-accent)]'
-                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
-            }`}
-          >
-            <Share2 className="w-3.5 h-3.5" />
-          </button>
-
-          <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
+          {/* Quick Access Toolbar (QAT): Undo / Redo */}
 
           <button
             type="button"
@@ -754,15 +715,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           )}
           <button
             type="button"
-            onClick={onOpenVisualModal}
-            aria-label="Настройки программы и графики"
-            title="Настройки программы и графики"
-            className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
             onClick={onToggleTheme}
             aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}
             title={isDark ? 'Светлая тема' : 'Тёмная тема'}
@@ -801,12 +753,11 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -3 }}
             transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
-            style={{ boxShadow: 'var(--flux-popover-shadow)' }}
-            className="absolute top-8 left-1.5 z-50 w-[min(640px,calc(100vw-16px))] rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] overflow-hidden flex flex-col"
+            className="absolute top-9 left-1.5 z-50 w-[min(640px,calc(100vw-16px))] rounded-2xl border border-[var(--flux-line-strong)] flux-glass-popover overflow-hidden flex flex-col"
           >
             <div className="grid grid-cols-1 sm:grid-cols-12 min-h-[340px] max-h-[78vh]">
               {/* Left Navigation Categories */}
-              <div className="sm:col-span-4 border-b sm:border-b-0 sm:border-r border-[var(--flux-line)] bg-[var(--flux-bg)] p-2 flex flex-col justify-between gap-2">
+              <div className="sm:col-span-4 border-b sm:border-b-0 sm:border-r border-[var(--flux-line)] bg-[var(--flux-bg)]/55 p-2 flex flex-col justify-between gap-2">
                 <div className="space-y-0.5">
                   {(
                     [
@@ -1243,22 +1194,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           active={tool === 'wire'}
                           onClick={() => onSetTool('wire')}
                         />
-                        <LargeRibbonBtn
-                          icon={<Hand className="w-[17px] h-[17px]" />}
-                          label="Панорама"
-                          title="Перемещение листа (H)"
-                          active={tool === 'pan'}
-                          onClick={() => onSetTool('pan')}
-                        />
                       </RibbonPanel>
 
-                      <RibbonPanel title="Правка и Трассировка">
-                        <LargeRibbonBtn
-                          icon={<Workflow className="w-[17px] h-[17px]" />}
-                          label="Выровнять"
-                          title="Выровнять соединительные линии без пересечения блоков"
-                          onClick={onAutoRouteWires}
-                        />
+                      <RibbonPanel title="Правка">
                         {(onCopySelected || onPasteClipboard) && (
                           <RibbonStack>
                             <SmallRibbonBtn
@@ -1298,73 +1236,22 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         </RibbonStack>
                       </RibbonPanel>
 
-                      <RibbonPanel title="Слои и Сетка">
-                        {onToggleLayerVisibility && onToggleLayerLock && (
-                          <LargeRibbonBtn
-                            icon={<Layers className="w-[17px] h-[17px]" />}
-                            label={
-                              layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
-                                ? `Слои (${layerSummary.visibleCount}/4)`
-                                : 'Слои'
-                            }
-                            title="Диспетчер слоёв AutoCAD (видимость и блокировка)"
-                            active={layersPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0}
-                            testId="toolbar-layers-btn"
-                            onClick={(e) => {
-                              toggleRibbonLayers(e.currentTarget);
-                            }}
-                          />
-                        )}
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<Grid3X3 className="w-3.5 h-3.5" />}
-                            label="Сетка"
-                            title="Показать/скрыть чертёжную сетку"
-                            active={vs.showGrid}
-                            onClick={onToggleGrid}
-                          />
-                          <SmallRibbonBtn
-                            icon={<Magnet className="w-3.5 h-3.5" />}
-                            label="Привязка"
-                            title="Магнитная привязка к сетке и направляющие"
-                            active={vs.snapToGrid}
-                            onClick={onToggleSnapToGrid}
-                          />
-                        </RibbonStack>
+                      <RibbonPanel title="База изделий">
+                        <LargeRibbonBtn
+                          icon={<Database className="w-[17px] h-[17px]" />}
+                          label="База изделий"
+                          title="Открыть каталог изделий в левом окне"
+                          onClick={onOpenCatalogTab}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Plus className="w-[17px] h-[17px]" />}
+                          label="+ Изделие"
+                          title="Создать новое изделие с атрибутами в базе"
+                          onClick={onOpenAddCatalogItem}
+                        />
                       </RibbonPanel>
 
-                      <RibbonPanel title="ФСА и База">
-                        <LargeRibbonBtn
-                          icon={<Cpu className="w-[17px] h-[17px]" />}
-                          label="Схема ФСА"
-                          title="Мастер автоматической сборки приточной/вытяжной схемы и внешки"
-                          accent
-                          onClick={onOpenHvacWizard}
-                        />
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<Plus className="w-3.5 h-3.5" />}
-                            label="+ Изделие"
-                            title="Создать новое изделие с атрибутами в базе"
-                            onClick={onOpenAddCatalogItem}
-                          />
-                          <SmallRibbonBtn
-                            icon={<Database className="w-3.5 h-3.5" />}
-                            label="База изделий"
-                            title="Открыть каталог изделий в левом окне"
-                            onClick={onOpenCatalogTab}
-                          />
-                        </RibbonStack>
-                      </RibbonPanel>
-
-                      <RibbonPanel title="Контроль и Выпуск" isLast>
-                        <LargeRibbonBtn
-                          icon={<FileCode2 className="w-[17px] h-[17px]" />}
-                          label="PDF / DXF"
-                          title="Пакетная публикация листов в редактируемый AutoCAD (.dxf) и PDF"
-                          testId="toolbar-publish-btn"
-                          onClick={onOpenPublishModal}
-                        />
+                      <RibbonPanel title="Проверка и ПЭ3" isLast>
                         <RibbonStack>
                           <SmallRibbonBtn
                             icon={
@@ -1392,44 +1279,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             onClick={onGenerateBom}
                           />
                         </RibbonStack>
-                        {(onOpenTerminalEditor || onOpenAutoNumbering) && (
-                          <RibbonStack>
-                            {onOpenTerminalEditor && (
-                              <SmallRibbonBtn
-                                icon={<Tag className="w-3.5 h-3.5" />}
-                                label="Клеммы XT"
-                                title="Интерактивный редактор клеммных рядов (-XT): перемычки, резервы, лист"
-                                testId="toolbar-terminal-editor-btn"
-                                onClick={onOpenTerminalEditor}
-                              />
-                            )}
-                            {onOpenAutoNumbering && (
-                              <SmallRibbonBtn
-                                icon={<Hash className="w-3.5 h-3.5" />}
-                                label="Нумерация"
-                                title="Пакетная автонумерация цепей и ОУО по ГОСТ 2.710"
-                                testId="toolbar-autonumber-btn"
-                                onClick={onOpenAutoNumbering}
-                              />
-                            )}
-                          </RibbonStack>
-                        )}
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<Type className="w-3.5 h-3.5" />}
-                            label="Штамп ГОСТ"
-                            title="Редактировать основную надпись ГОСТ 2.104 (один лист или все листы)"
-                            testId="toolbar-stamp-btn"
-                            onClick={onOpenStampEditor}
-                          />
-                          <SmallRibbonBtn
-                            icon={<LayoutTemplate className="w-3.5 h-3.5" />}
-                            label="Конструктор"
-                            title="Создать и настроить собственный шаблон штампа"
-                            testId="toolbar-stamp-designer-btn"
-                            onClick={onOpenStampDesigner}
-                          />
-                        </RibbonStack>
                         <LargeRibbonBtn
                           icon={<Printer className="w-[17px] h-[17px]" />}
                           label="Отчёт ПЭ3"
@@ -1442,22 +1291,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                   {activeTab === 'drafting' && (
                     <>
-                      <RibbonPanel title="Инструменты">
-                        <LargeRibbonBtn
-                          icon={<MousePointer2 className="w-[17px] h-[17px]" />}
-                          label="Выбор"
-                          active={tool === 'select'}
-                          onClick={() => onSetTool('select')}
-                        />
-                        <LargeRibbonBtn
-                          icon={<Spline className="w-[17px] h-[17px]" />}
-                          label="Провод"
-                          active={tool === 'wire'}
-                          onClick={() => onSetTool('wire')}
-                        />
-                      </RibbonPanel>
-
-                      <RibbonPanel title="Графика и Зоны">
+                      <RibbonPanel title="Графика и УГО">
                         <LargeRibbonBtn
                           icon={<Square className="w-[17px] h-[17px]" />}
                           label="Рамка"
@@ -1502,11 +1336,21 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         )}
                       </RibbonPanel>
 
-                      <RibbonPanel title="Сетка и Шаг">
+                      <RibbonPanel title="Трассировка">
+                        <LargeRibbonBtn
+                          icon={<Workflow className="w-[17px] h-[17px]" />}
+                          label="Выровнять"
+                          title="Выровнять соединительные линии без пересечения блоков"
+                          onClick={onAutoRouteWires}
+                        />
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Сетка и Привязка" isLast>
                         <RibbonStack>
                           <SmallRibbonBtn
                             icon={<Grid3X3 className="w-3.5 h-3.5" />}
                             label="Сетка"
+                            title="Показать/скрыть чертёжную сетку"
                             active={vs.showGrid}
                             onClick={onToggleGrid}
                           />
@@ -1542,58 +1386,11 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           </select>
                         </div>
                       </RibbonPanel>
-
-                      <RibbonPanel title="Операции" isLast>
-                        <LargeRibbonBtn
-                          icon={<Workflow className="w-[17px] h-[17px]" />}
-                          label="Выровнять"
-                          onClick={onAutoRouteWires}
-                        />
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<RotateCw className="w-3.5 h-3.5" />}
-                            label="Поворот"
-                            disabled={!hasSelection}
-                            onClick={onRotateSelected}
-                          />
-                          <SmallRibbonBtn
-                            icon={<Trash2 className="w-3.5 h-3.5" />}
-                            label="Удалить"
-                            danger
-                            disabled={!hasSelection}
-                            onClick={onDeleteSelected}
-                          />
-                        </RibbonStack>
-                      </RibbonPanel>
                     </>
                   )}
 
                   {activeTab === 'annotations' && (
                     <>
-                      <RibbonPanel title="Размещение аннотаций">
-                        <LargeRibbonBtn
-                          icon={<Type className="w-[17px] h-[17px]" />}
-                          label="Текст"
-                          title="Кликните на лист для вставки надписи"
-                          active={tool === 'text'}
-                          onClick={() => onSetTool('text')}
-                        />
-                        <LargeRibbonBtn
-                          icon={<ArrowUpRight className="w-[17px] h-[17px]" />}
-                          label="Выноска"
-                          title="Кликните на лист для вставки выноски"
-                          active={tool === 'callout'}
-                          onClick={() => onSetTool('callout')}
-                        />
-                        <LargeRibbonBtn
-                          icon={<Square className="w-[17px] h-[17px]" />}
-                          label="Зона"
-                          title="Пунктирная рамка зоны или шкафа"
-                          active={tool === 'rect'}
-                          onClick={() => onSetTool('rect')}
-                        />
-                      </RibbonPanel>
-
                       {onInsertGostTable && (
                         <RibbonPanel title="Таблицы ГОСТ на лист">
                           <LargeRibbonBtn
@@ -1647,22 +1444,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         </RibbonStack>
                       </RibbonPanel>
 
-                      <RibbonPanel title="Основная надпись">
-                        <LargeRibbonBtn
-                          icon={<Type className="w-[17px] h-[17px]" />}
-                          label="Штамп ГОСТ"
-                          title="Заполнение граф основной надписи"
-                          onClick={onOpenStampEditor}
-                        />
-                        <LargeRibbonBtn
-                          icon={<LayoutTemplate className="w-[17px] h-[17px]" />}
-                          label="Создать штамп"
-                          title="Конструктор шаблонов штампов"
-                          onClick={onOpenStampDesigner}
-                        />
-                      </RibbonPanel>
-
-                      <RibbonPanel title="Толщины и линии">
+                      <RibbonPanel title="Толщины и Стиль" isLast>
                         <div className="grid grid-cols-2 gap-x-2 gap-y-1 px-1 shrink-0">
                           <label className="flex items-center justify-between gap-1.5 text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
                             <span>Изделия</span>
@@ -1757,9 +1539,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             onClick={onOpenVisualModal}
                           />
                         </RibbonStack>
-                      </RibbonPanel>
-
-                      <RibbonPanel title="Стиль и Отчёт" isLast>
                         <div className="flex flex-col justify-center gap-1 px-1.5 h-[46px] shrink-0">
                           <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">Шрифт ГОСТ</span>
                           <select
@@ -1775,11 +1554,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             ))}
                           </select>
                         </div>
-                        <LargeRibbonBtn
-                          icon={<Printer className="w-[17px] h-[17px]" />}
-                          label="Отчёт ПЭ3"
-                          onClick={onOpenReportModal}
-                        />
                       </RibbonPanel>
                     </>
                   )}
@@ -1789,15 +1563,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       <RibbonPanel title="Листы схемы">
                         <div className="flex flex-col justify-center gap-1 px-1.5 h-[46px] shrink-0">
                           <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
-                            Формат ({activeSheet?.format || 'A3'})
+                            Формат ({activeSheet?.format || '—'})
                           </span>
                           <select
                             aria-label="Формат активного листа"
+                            disabled={!activeSheet}
                             value={activeSheet?.format || 'A3'}
                             onChange={(e) =>
                               activeSheet && onUpdateSheetFormat(activeSheet.id, e.target.value as SheetFormat)
                             }
-                            className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] max-w-[180px]"
+                            className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] max-w-[180px] disabled:opacity-45"
                           >
                             {(Object.keys(SHEET_DIMENSIONS) as SheetFormat[]).map((fmt) => (
                               <option key={fmt} value={fmt}>
@@ -1830,66 +1605,39 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         </RibbonStack>
                       </RibbonPanel>
 
-                      <RibbonPanel title="Оформление ГОСТ">
+                      <RibbonPanel title="Основная надпись">
                         <LargeRibbonBtn
                           icon={<Type className="w-[17px] h-[17px]" />}
                           label="Штамп ГОСТ"
                           title="Редактор основной надписи ГОСТ 2.104 (один лист / все листы)"
-                          testId="sheet-stamp-btn"
+                          testId="toolbar-stamp-btn"
                           onClick={onOpenStampEditor}
                         />
                         <LargeRibbonBtn
                           icon={<LayoutTemplate className="w-[17px] h-[17px]" />}
                           label="Создать штамп"
-                          title="Конструктор пользовательских штампов"
+                          title="Конструктор пользовательских шаблонов штампов"
+                          testId="toolbar-stamp-designer-btn"
                           onClick={onOpenStampDesigner}
-                        />
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<Frame className="w-3.5 h-3.5" />}
-                            label="Рамка"
-                            active={vs.showGostFrame}
-                            onClick={onToggleFrame}
-                          />
-                          <SmallRibbonBtn
-                            icon={<Grid3X3 className="w-3.5 h-3.5" />}
-                            label="Сетка"
-                            active={vs.showGrid}
-                            onClick={onToggleGrid}
-                          />
-                        </RibbonStack>
-                        <LargeRibbonBtn
-                          icon={<Palette className="w-[17px] h-[17px]" />}
-                          label="Шрифты"
-                          onClick={onOpenVisualModal}
                         />
                       </RibbonPanel>
 
-                      <RibbonPanel title="Автоматизация ОВКВ (ФСА)" isLast>
+                      <RibbonPanel title="Автоматизация ФСА и XT" isLast>
                         <LargeRibbonBtn
                           icon={<Cpu className="w-[17px] h-[17px]" />}
                           label="Собрать ФСА"
+                          title="Мастер автоматической сборки приточной/вытяжной схемы и внешки"
                           accent
                           onClick={onOpenHvacWizard}
                         />
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<Workflow className="w-3.5 h-3.5" />}
-                            label="Выровнять"
-                            onClick={onAutoRouteWires}
-                          />
-                          <SmallRibbonBtn
-                            icon={<Plus className="w-3.5 h-3.5" />}
-                            label="+ Изделие"
-                            onClick={onOpenAddCatalogItem}
-                          />
-                        </RibbonStack>
                         {(onOpenTerminalEditor || onOpenAutoNumbering) && (
                           <RibbonStack>
                             {onOpenTerminalEditor && (
                               <SmallRibbonBtn
                                 icon={<Tag className="w-3.5 h-3.5" />}
                                 label="Клеммы XT"
+                                title="Интерактивный редактор клеммных рядов (-XT): перемычки, резервы, лист"
+                                testId="toolbar-terminal-editor-btn"
                                 onClick={onOpenTerminalEditor}
                               />
                             )}
@@ -1897,6 +1645,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                               <SmallRibbonBtn
                                 icon={<Hash className="w-3.5 h-3.5" />}
                                 label="Нумерация"
+                                title="Пакетная автонумерация цепей и ОУО по ГОСТ 2.710"
+                                testId="toolbar-autonumber-btn"
                                 onClick={onOpenAutoNumbering}
                               />
                             )}
@@ -1952,6 +1702,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         <LargeRibbonBtn
                           icon={<Hand className="w-[17px] h-[17px]" />}
                           label="Панорама"
+                          title="Перемещение листа (H)"
                           active={tool === 'pan'}
                           onClick={() => onSetTool('pan')}
                         />
@@ -1978,31 +1729,28 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         </div>
                       </RibbonPanel>
 
-                      <RibbonPanel title="Слои и Среда" isLast>
+                      <RibbonPanel title="Слои и Панели" isLast>
                         {onToggleLayerVisibility && onToggleLayerLock && (
                           <LargeRibbonBtn
                             icon={<Layers className="w-[17px] h-[17px]" />}
-                            label={`Слои (${layerSummary.visibleCount}/4)`}
+                            label={
+                              layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
+                                ? `Слои (${layerSummary.visibleCount}/4)`
+                                : 'Слои'
+                            }
                             title="Управление видимостью и блокировкой слоёв чертежа"
-                            testId="ribbon-view-layers-btn"
+                            testId="toolbar-layers-btn"
                             active={layersPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0}
                             onClick={(e) => toggleRibbonLayers(e.currentTarget)}
                           />
                         )}
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<RotateCcw className="w-3.5 h-3.5" />}
-                            label="Сброс окон"
-                            title="Вернуть боковые и нижнюю панели в исходное положение"
-                            testId="reset-dock-layout-btn"
-                            onClick={onResetDockLayout}
-                          />
-                          <SmallRibbonBtn
-                            icon={isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-                            label={isDark ? 'Светлая тема' : 'Тёмная тема'}
-                            onClick={onToggleTheme}
-                          />
-                        </RibbonStack>
+                        <LargeRibbonBtn
+                          icon={<RotateCcw className="w-[17px] h-[17px]" />}
+                          label="Сброс окон"
+                          title="Вернуть боковые и нижнюю панели в исходное положение"
+                          testId="reset-dock-layout-btn"
+                          onClick={onResetDockLayout}
+                        />
                       </RibbonPanel>
                     </>
                   )}
@@ -2021,57 +1769,26 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           testId="ribbon-flux-push-btn"
                           onClick={onPushToFluxHost}
                         />
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<RefreshCw className="w-3.5 h-3.5" />}
-                            label="Шина RPC"
-                            title="Открыть шину вызовов модулей внутри Flux Studio"
-                            testId="ribbon-flux-bus-btn"
-                            onClick={onOpenFluxBusConsole}
-                          />
-                          <SmallRibbonBtn
-                            icon={<Hash className="w-3.5 h-3.5" />}
-                            label={`Ключ: ${project.fluxProjectKey}`}
-                            title="Настроить привязку ключа проекта Flux и манифеста"
-                            onClick={onOpenFluxPublishModal}
-                          />
-                        </RibbonStack>
+                        <LargeRibbonBtn
+                          icon={<RefreshCw className="w-[17px] h-[17px]" />}
+                          label="Шина RPC и API"
+                          title="Открыть шину вызовов модулей и контракт API внутри Flux Studio"
+                          testId="ribbon-flux-bus-btn"
+                          onClick={onOpenFluxBusConsole}
+                        />
                       </RibbonPanel>
 
-                      <RibbonPanel title="Подпрограммы и Обмен">
-                        <LargeRibbonBtn
-                          icon={<Cpu className="w-[17px] h-[17px]" />}
-                          label="Подбор ОВКВ"
-                          title="Интеграция с подбором ОВКВ и сборка схемы ФСА"
-                          onClick={onOpenHvacWizard}
-                        />
+                      <RibbonPanel title="Мост и Студия Flux" isLast>
                         <LargeRibbonBtn
                           icon={<Share2 className="w-[17px] h-[17px]" />}
                           label="Мост (.json)"
                           title="Экспортировать пакет обмена flux-e3-bridge/v1 JSON"
                           onClick={onExportFluxBridge}
                         />
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<Upload className="w-3.5 h-3.5" />}
-                            label="Импорт Flux"
-                            title="Загрузить пакет JSON от модуля Flux"
-                            onClick={onOpenExchangeModal}
-                          />
-                          <SmallRibbonBtn
-                            icon={<Terminal className="w-3.5 h-3.5" />}
-                            label="Контракт API"
-                            title="Просмотреть capabilities и OpenAPI для Flux"
-                            onClick={onOpenFluxBusConsole}
-                          />
-                        </RibbonStack>
-                      </RibbonPanel>
-
-                      <RibbonPanel title="Публикация во Flux Studio">
                         <LargeRibbonBtn
                           icon={<Layers className="w-[17px] h-[17px]" />}
                           label="Студия Flux"
-                          title="Настроить manifest.json (contractVersion 2) и опубликовать подпрограмму во Flux Studio"
+                          title={`Настроить привязку ключа (${project.fluxProjectKey}), manifest.json и опубликовать подпрограмму`}
                           accent
                           testId="ribbon-flux-publish-btn"
                           onClick={onOpenFluxPublishModal}
@@ -2084,21 +1801,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={onDownloadFluxStudioZip}
                         />
                       </RibbonPanel>
-
-                      <RibbonPanel title="Сборка и Код" isLast>
-                        <RibbonStack>
-                          <SmallRibbonBtn
-                            icon={<Package className="w-3.5 h-3.5" />}
-                            label="Portable (.zip)"
-                            onClick={onOpenPortableBuild}
-                          />
-                          <SmallRibbonBtn
-                            icon={<FileCode2 className="w-3.5 h-3.5" />}
-                            label="Исходники (.zip)"
-                            onClick={onDownloadCodebase}
-                          />
-                        </RibbonStack>
-                      </RibbonPanel>
                     </>
                   )}
 
@@ -2108,56 +1810,69 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         <LargeRibbonBtn
                           icon={<Upload className="w-[17px] h-[17px]" />}
                           label="Открыть .e3s"
+                          title="Открыть файл .e3s / .e3d / XML / JSON"
                           onClick={() => fileInputRef.current?.click()}
                         />
                         <LargeRibbonBtn
                           icon={<Share2 className="w-[17px] h-[17px]" />}
                           label="В E³.series"
+                          title={
+                            e3BridgeHost
+                              ? `Открыть напрямую в E³.series (${e3BridgeHost})`
+                              : 'Перенести проект в E³.series 2022'
+                          }
                           onClick={onDirectOpenE3}
                         />
                         <LargeRibbonBtn
                           icon={<FolderOpen className="w-[17px] h-[17px]" />}
                           label="Обмен E3"
+                          title="Центр обмена E3.series и импорт пакетов"
                           onClick={onOpenExchangeModal}
                         />
                       </RibbonPanel>
 
-                      <RibbonPanel title="Документация">
+                      <RibbonPanel title="Документация и Таблицы">
                         <LargeRibbonBtn
                           icon={<FileCode2 className="w-[17px] h-[17px]" />}
                           label="Пакет PDF/DXF"
-                          title="Пакетная публикация в PDF и редактируемый AutoCAD DXF"
+                          title="Пакетная публикация листов в редактируемый AutoCAD (.dxf) и PDF"
                           accent
+                          testId="toolbar-publish-btn"
                           onClick={onOpenPublishModal}
                         />
                         <LargeRibbonBtn
                           icon={<FileCode2 className="w-[17px] h-[17px]" />}
                           label="Лист DXF"
+                          title="Экспорт активного листа в AutoCAD (.dxf)"
                           onClick={onExportDxf}
                         />
                         <RibbonStack>
                           <SmallRibbonBtn
                             icon={<FileSpreadsheet className="w-3.5 h-3.5" />}
-                            label="Список ПЭ3"
-                            onClick={onGenerateBom}
+                            label="Список ПЭ3 (CSV)"
+                            title="Выгрузить спецификацию ПЭ3 в CSV для Excel"
+                            onClick={onDownloadBomCsv}
                           />
                           <SmallRibbonBtn
-                            icon={<Printer className="w-3.5 h-3.5" />}
-                            label="Отчёт ПЭ3"
-                            onClick={onOpenReportModal}
+                            icon={<Download className="w-3.5 h-3.5" />}
+                            label="Каб. журнал (CSV)"
+                            title="Выгрузить кабельный журнал в CSV"
+                            onClick={onDownloadCablesCsv}
                           />
                         </RibbonStack>
                       </RibbonPanel>
 
-                      <RibbonPanel title="Сборка и Код" isLast>
+                      <RibbonPanel title="Дистрибутив" isLast>
                         <LargeRibbonBtn
                           icon={<Package className="w-[17px] h-[17px]" />}
-                          label="Portable"
+                          label="Portable (.zip)"
+                          title="Сборка автономной Windows Portable (.zip)"
                           onClick={onOpenPortableBuild}
                         />
                         <LargeRibbonBtn
                           icon={<Archive className="w-[17px] h-[17px]" />}
-                          label="Код (.zip)"
+                          label="Исходники (.zip)"
+                          title="Скачать полный архив исходного кода проекта (.zip)"
                           onClick={onDownloadCodebase}
                         />
                       </RibbonPanel>

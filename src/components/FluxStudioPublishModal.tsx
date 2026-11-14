@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import {
   Archive,
   Check,
@@ -7,8 +6,8 @@ import {
   Layers,
   Loader2,
   Send,
-  X,
 } from 'lucide-react';
+import { StudioWindow } from './StudioWindow';
 import type { E3Project } from '../core/e3Types';
 import { detectFluxHost } from '../core/fluxHostBridge';
 import {
@@ -207,49 +206,19 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="flux-publish-title"
-          data-testid="flux-publish-modal"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !busyZip && !busyPush) onClose();
-          }}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.99 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.99 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-4xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[92vh] overflow-hidden"
-          >
-            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <Layers className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
-                <h2
-                  id="flux-publish-title"
-                  className="text-[14px] font-semibold text-[var(--flux-text)] truncate"
-                >
-                  Публикация подпрограммы во Flux Studio (contractVersion 2)
-                </h2>
-              </div>
-              <button
-                type="button"
-                disabled={busyZip || busyPush}
-                onClick={onClose}
-                aria-label="Закрыть окно публикации во Flux Studio"
-                className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-40"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="floating"
+      maxWidthClass="max-w-4xl"
+      heightClass="max-h-[92vh]"
+      title="Публикация подпрограммы во Flux Studio (contractVersion 2)"
+      titleId="flux-publish-title"
+      icon={<Layers className="w-4 h-4 text-[var(--flux-accent)]" />}
+      testId="flux-publish-modal"
+      closeDisabled={busyZip || busyPush}
+      closeAriaLabel="Закрыть окно публикации во Flux Studio"
+    >
 
             <div className="p-4 overflow-y-auto grid grid-cols-1 md:grid-cols-12 gap-4">
               {/* Left: Manifest Configuration & Included Payload */}
@@ -532,9 +501,6 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
                 </button>
               </div>
             </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };

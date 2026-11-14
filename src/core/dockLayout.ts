@@ -465,3 +465,51 @@ export function deleteSheetFromProject(
     },
   };
 }
+
+export function syncOpenSheetIds(openSheetIds: string[], sheets: E3Sheet[]): string[] {
+  const validIds = new Set(sheets.map((s) => s.id));
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const id of openSheetIds) {
+    if (validIds.has(id) && !seen.has(id)) {
+      seen.add(id);
+      result.push(id);
+    }
+  }
+  return result;
+}
+
+export function ensureSheetTabOpen(
+  openSheetIds: string[],
+  sheetId: string,
+  sheets: E3Sheet[]
+): string[] {
+  if (!sheetId || !sheets.some((s) => s.id === sheetId)) {
+    return openSheetIds;
+  }
+  if (openSheetIds.includes(sheetId)) {
+    return openSheetIds;
+  }
+  return [...openSheetIds, sheetId];
+}
+
+export function closeSheetTab(
+  openSheetIds: string[],
+  closedSheetId: string,
+  activeSheetId: string
+): { nextOpenSheetIds: string[]; nextActiveSheetId: string } {
+  const idx = openSheetIds.indexOf(closedSheetId);
+  const nextOpenSheetIds = openSheetIds.filter((id) => id !== closedSheetId);
+  if (closedSheetId !== activeSheetId) {
+    return { nextOpenSheetIds, nextActiveSheetId: activeSheetId };
+  }
+  if (nextOpenSheetIds.length === 0) {
+    return { nextOpenSheetIds: [], nextActiveSheetId: '' };
+  }
+  const fallbackIdx = idx >= 0 ? Math.min(idx, nextOpenSheetIds.length - 1) : 0;
+  return {
+    nextOpenSheetIds,
+    nextActiveSheetId: nextOpenSheetIds[fallbackIdx],
+  };
+}
+

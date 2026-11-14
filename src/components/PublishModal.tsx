@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { Archive, CheckSquare, Download, FileCode2, FileText, Loader2, X } from 'lucide-react';
+import { Archive, CheckSquare, Download, FileCode2, FileText, Loader2 } from 'lucide-react';
 import type { BatchPublishFormat, BatchPublishOptions, E3Project } from '../core/e3Types';
+import { StudioWindow } from './StudioWindow';
 
 interface PublishModalProps {
   open: boolean;
@@ -73,48 +73,19 @@ export const PublishModal: React.FC<PublishModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="publish-modal-title"
-          data-testid="publish-modal"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !busy) onClose();
-          }}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.99 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.99 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[90vh] overflow-hidden"
-          >
-            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <Download className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
-                <h2 id="publish-modal-title" className="text-[14px] font-semibold text-[var(--flux-text)] truncate">
-                  Пакетная публикация в AutoCAD (.dxf) и PDF
-                </h2>
-              </div>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={onClose}
-                aria-label="Закрыть окно публикации"
-                className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-40"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-4 overflow-y-auto space-y-4">
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="drawer"
+      maxWidthClass="max-w-xl"
+      title="Пакетная публикация в AutoCAD (.dxf) и PDF"
+      titleId="publish-modal-title"
+      icon={<Download className="w-4 h-4 text-[var(--flux-accent)]" />}
+      testId="publish-modal"
+      closeDisabled={busy}
+      closeAriaLabel="Закрыть окно публикации"
+    >
+            <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4">
               {/* Format Picker */}
               <div className="space-y-2">
                 <div className="text-[12px] font-semibold text-[var(--flux-text)]">
@@ -324,9 +295,6 @@ export const PublishModal: React.FC<PublishModalProps> = ({
             </button>
           </div>
         </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };

@@ -1,4 +1,7 @@
-import type { E3Project } from './e3Types.ts';
+import { SHEET_DIMENSIONS } from './e3Catalog.ts';
+import { DEFAULT_VISUAL_SETTINGS } from './e3Seed.ts';
+import { resolveCadLayers } from './cadLayers.ts';
+import type { E3Project, E3Sheet, SheetFormat } from './e3Types.ts';
 import { normalizeProjectSheetRevisions } from './sheetRevisions.ts';
 
 export const ACTIVE_SESSION_STORAGE_KEY = 'e3promax_active_session_v1';
@@ -32,17 +35,106 @@ function getStorage(storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'
   return null;
 }
 
-function isValidProjectShape(candidate: unknown): candidate is E3Project {
+function isValidProjectShape(candidate: unknown): candidate is Partial<E3Project> & {
+  id: string;
+  name: string;
+  sheets: Array<Partial<E3Sheet>>;
+} {
   if (!candidate || typeof candidate !== 'object') return false;
   const p = candidate as Partial<E3Project>;
   return (
     typeof p.id === 'string' &&
+    p.id.trim().length > 0 &&
     typeof p.name === 'string' &&
     Array.isArray(p.sheets) &&
     p.sheets.length > 0 &&
+    p.sheets.every((s) => Boolean(s && typeof s === 'object' && typeof s.id === 'string' && s.id.trim().length > 0)) &&
     Array.isArray(p.devices) &&
     Array.isArray(p.wires)
   );
+}
+
+export function hydrateProjectDefaults(candidate: Partial<E3Project>): E3Project {
+  const rawVs = (candidate.visualSettings || {}) as Partial<typeof DEFAULT_VISUAL_SETTINGS>;
+  const showGostFrame =
+    typeof rawVs.showGostFrame === 'boolean' ? rawVs.showGostFrame : DEFAULT_VISUAL_SETTINGS.showGostFrame;
+  const mergedVs = {
+    ...DEFAULT_VISUAL_SETTINGS,
+    ...rawVs,
+    netColors: {
+      ...DEFAULT_VISUAL_SETTINGS.netColors,
+      ...(rawVs.netColors || {}),
+    },
+  };
+
+  const projectCode = String(candidate.projectCode || 'E3-PRJ-001');
+  const projectName = String(candidate.name || 'Проект E3ProMax');
+  const author = String(candidate.author || 'Инженер');
+
+  const rawSheets = Array.isArray(candidate.sheets) ? candidate.sheets : [];
+  const hydratedSheets: E3Sheet[] = rawSheets.map((s, idx) => {
+    const fmt: SheetFormat =
+      s?.format && s.format in SHEET_DIMENSIONS ? (s.format as SheetFormat) : 'A3';
+    const dims = SHEET_DIMENSIONS[fmt];
+    const tb = (s?.titleBlock || {}) as Partial<E3Sheet['titleBlock']>;
+    const num = Number.isFinite(Number(s?.number)) && Number(s?.number) > 0 ? Number(s.number) : idx + 1;
+    return {
+      id: String(s?.id || `sheet-${idx + 1}`),
+      number: num,
+      name: String(s?.name || `Лист ${num}`),
+      format: fmt,
+      width: Number.isFinite(Number(s?.width)) && Number(s?.width) > 100 ? Number(s.width) : dims.width,
+      height: Number.isFinite(Number(s?.height)) && Number(s?.height) > 100 ? Number(s.height) : dims.height,
+      revision: Number.isFinite(Number(s?.revision)) ? Number(s.revision) : undefined,
+      updatedAt: typeof s?.updatedAt === 'string' ? s.updatedAt : undefined,
+      revisions: Array.isArray(s?.revisions) ? s.revisions : undefined,
+      titleBlock: {
+        stampForm: tb.stampForm || (num > 1 ? 'form2a' : 'form1'),
+        customTemplateId: tb.customTemplateId,
+        documentCode: String(tb.documentCode ?? projectCode),
+        projectTitle: String(tb.projectTitle ?? projectName),
+        organization: String(tb.organization ?? ''),
+        designer: String(tb.designer ?? author),
+        checker: String(tb.checker ?? ''),
+        techControl: String(tb.techControl ?? ''),
+        normControl: String(tb.normControl ?? ''),
+        approver: String(tb.approver ?? ''),
+        litera: String(tb.litera ?? ''),
+        mass: String(tb.mass ?? '—'),
+        scale: String(tb.scale ?? 'б/м'),
+        date: String(tb.date ?? ''),
+        izm: tb.izm,
+        changeDoc: tb.changeDoc,
+        changeDate: tb.changeDate,
+        invOriginal: String(tb.invOriginal ?? ''),
+        invDuplicate: String(tb.invDuplicate ?? ''),
+        sheetTitle: String(tb.sheetTitle ?? s?.name ?? `Лист ${num}`),
+      },
+    };
+  });
+
+  const hydrated: E3Project = {
+    schemaVersion: String(candidate.schemaVersion || '1.0'),
+    id: String(candidate.id || 'proj-restored'),
+    name: projectName,
+    projectCode,
+    fluxProjectKey: String(candidate.fluxProjectKey || 'FLUX_PRJ_LOCAL'),
+    author,
+    revision: Number.isFinite(Number(candidate.revision)) ? Number(candidate.revision) : 1,
+    standard: candidate.standard === 'IEC' ? 'IEC' : 'GOST',
+    updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : new Date().toISOString(),
+    visualSettings: mergedVs,
+    layers: resolveCadLayers(candidate.layers, showGostFrame),
+    sheets: hydratedSheets,
+    devices: Array.isArray(candidate.devices) ? candidate.devices : [],
+    wires: Array.isArray(candidate.wires) ? candidate.wires : [],
+    cables: Array.isArray(candidate.cables) ? candidate.cables : [],
+    annotations: Array.isArray(candidate.annotations) ? candidate.annotations : [],
+    customStampTemplates: Array.isArray(candidate.customStampTemplates) ? candidate.customStampTemplates : [],
+    symbolLibrary: Array.isArray(candidate.symbolLibrary) ? candidate.symbolLibrary : [],
+  };
+
+  return normalizeProjectSheetRevisions(hydrated);
 }
 
 export function loadActiveSession(
@@ -55,7 +147,7 @@ export function loadActiveSession(
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<ActiveSessionRecord>;
     if (!parsed || !isValidProjectShape(parsed.project)) return null;
-    const normalized = normalizeProjectSheetRevisions(parsed.project);
+    const normalized = hydrateProjectDefaults(parsed.project);
     const activeSheetId =
       typeof parsed.activeSheetId === 'string' &&
       normalized.sheets.some((s) => s.id === parsed.activeSheetId)
@@ -84,7 +176,7 @@ export function loadRecentProjects(
     const valid: RecentProjectEntry[] = [];
     for (const item of parsed) {
       if (!item || typeof item !== 'object' || !isValidProjectShape(item.project)) continue;
-      const normalized = normalizeProjectSheetRevisions(item.project);
+      const normalized = hydrateProjectDefaults(item.project);
       valid.push({
         id: String(item.id || normalized.id),
         name: String(item.name || normalized.name),

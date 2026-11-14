@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   Copy,
@@ -10,8 +9,8 @@ import {
   Plus,
   Save,
   Trash2,
-  X,
 } from 'lucide-react';
+import { StudioWindow } from './StudioWindow';
 import type {
   E3Project,
   E3Sheet,
@@ -467,91 +466,56 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="stamp-modal-title"
-          data-testid="stamp-editor-modal"
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="floating"
+      maxWidthClass={mode === 'designer' ? 'max-w-5xl' : 'max-w-4xl'}
+      heightClass="max-h-[92vh]"
+      title="Основная надпись и конструктор штампов"
+      titleId="stamp-modal-title"
+      icon={<FileText className="w-4 h-4 text-[var(--flux-accent)]" />}
+      testId="stamp-editor-modal"
+      closeAriaLabel="Закрыть редактор штампа"
+      headerExtra={
+        <div
+          role="tablist"
+          aria-label="Режим работы со штампами"
+          className="inline-flex divide-x divide-[var(--flux-line)] rounded-lg border border-[var(--flux-line)] overflow-hidden bg-[var(--flux-bg)]/80"
         >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98, y: 6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.98, y: 4 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className={`w-full ${
-              mode === 'designer' ? 'max-w-5xl' : 'max-w-3xl'
-            } rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[92vh] overflow-hidden transition-[max-width] duration-200`}
+          <button
+            type="button"
+            role="tab"
+            data-testid="stamp-tab-values"
+            aria-selected={mode === 'values'}
+            onClick={() => setMode('values')}
+            className={`inline-flex items-center gap-1.5 h-6 px-2.5 text-[11px] font-medium transition-colors whitespace-nowrap ${
+              mode === 'values'
+                ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold'
+                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+            }`}
           >
-            {/* Header with Mode Switcher */}
-            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
-                <h2
-                  id="stamp-modal-title"
-                  className="text-[13px] font-semibold text-[var(--flux-text)] truncate"
-                >
-                  Основная надпись и конструктор штампов
-                </h2>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <div
-                  role="tablist"
-                  aria-label="Режим работы со штампами"
-                  className="inline-flex divide-x divide-[var(--flux-line)] rounded-[2px] border border-[var(--flux-line)] overflow-hidden bg-[var(--flux-bg)]"
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    data-testid="stamp-tab-values"
-                    aria-selected={mode === 'values'}
-                    onClick={() => setMode('values')}
-                    className={`inline-flex items-center gap-1.5 h-6 px-2.5 text-[11px] font-medium transition-colors whitespace-nowrap ${
-                      mode === 'values'
-                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold'
-                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                    <span>Заполнение граф</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    data-testid="stamp-tab-designer"
-                    aria-selected={mode === 'designer'}
-                    onClick={() => setMode('designer')}
-                    className={`inline-flex items-center gap-1.5 h-6 px-2.5 text-[11px] font-medium transition-colors whitespace-nowrap ${
-                      mode === 'designer'
-                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold'
-                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-                    }`}
-                  >
-                    <LayoutTemplate className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                    <span>Создать / настроить штамп</span>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label="Закрыть редактор штампа"
-                  className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+            <Layers className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <span>Заполнение граф</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            data-testid="stamp-tab-designer"
+            aria-selected={mode === 'designer'}
+            onClick={() => setMode('designer')}
+            className={`inline-flex items-center gap-1.5 h-6 px-2.5 text-[11px] font-medium transition-colors whitespace-nowrap ${
+              mode === 'designer'
+                ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold'
+                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+            }`}
+          >
+            <LayoutTemplate className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <span>Создать / настроить штамп</span>
+          </button>
+        </div>
+      }
+    >
 
             {mode === 'values' ? (
               <>
@@ -1316,9 +1280,6 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                 </div>
               </>
             )}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import {
   Cable,
   FilePlus2,
@@ -7,8 +6,8 @@ import {
   Link2Off,
   Plus,
   Sparkles,
-  X,
 } from 'lucide-react';
+import { StudioWindow } from './StudioWindow';
 import type { E3Project } from '../core/e3Types';
 import {
   addTerminalSparePole,
@@ -146,52 +145,23 @@ export const TerminalStripModal: React.FC<TerminalStripModalProps> = ({
   }, [activeStrip, selectedPoleKeys]);
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="xt-modal-title"
-          data-testid="terminal-strip-modal"
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98, y: 6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.98, y: 4 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-5xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[90vh] overflow-hidden"
-          >
-            {/* Header */}
-            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Cable className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
-                <h2
-                  id="xt-modal-title"
-                  className="text-[14px] font-semibold text-[var(--flux-text)] truncate"
-                >
-                  Редактор клеммных рядов (-XT) · E3.series
-                </h2>
-                <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)]">
-                  Рядов: {strips.length}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Закрыть редактор клеммников"
-                className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="floating"
+      maxWidthClass="max-w-5xl"
+      heightClass="max-h-[90vh]"
+      title="Редактор клеммных рядов (-XT) · E3.series"
+      titleId="xt-modal-title"
+      icon={<Cable className="w-4 h-4 text-[var(--flux-accent)]" />}
+      subtitle={
+        <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md bg-[var(--flux-bg)]/80 border border-[var(--flux-line)] font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)]">
+          Рядов: {strips.length}
+        </span>
+      }
+      testId="terminal-strip-modal"
+      closeAriaLabel="Закрыть редактор клеммников"
+    >
 
             {strips.length === 0 ? (
               <div className="p-8 text-center text-[13px] text-[var(--flux-text-muted)]">
@@ -487,9 +457,6 @@ export const TerminalStripModal: React.FC<TerminalStripModalProps> = ({
                 Закрыть
               </button>
             </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };

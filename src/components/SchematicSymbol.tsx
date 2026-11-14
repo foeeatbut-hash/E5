@@ -763,8 +763,12 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = React.memo(({
             </text>
             <g
               data-testid={`offpage-jump-${device.id}`}
-              onMouseDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                if (e.button === 1) return;
+                e.stopPropagation();
+              }}
               onClick={(e) => {
+                if (e.button !== 0 || (e.buttons & 4) !== 0) return;
                 e.stopPropagation();
                 onOffPageNavigate?.(device);
               }}
@@ -851,6 +855,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = React.memo(({
       className={`${locked ? 'cursor-default' : 'cursor-pointer'} select-none`}
       onMouseDown={(e) => onSelectDevice(e, device)}
       onDoubleClick={(e) => {
+        if (e.button !== 0 || (e.buttons & 4) !== 0) return;
         if (device.category === 'offpage_ref') {
           e.stopPropagation();
           onOffPageNavigate?.(device);
@@ -915,6 +920,7 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = React.memo(({
               onMouseEnter={() => onPinHover?.(device, pin.id)}
               onMouseLeave={() => onPinHover?.(device, null)}
               onClick={(e) => {
+                if (e.button !== 0 || (e.buttons & 4) !== 0) return;
                 e.stopPropagation();
                 onPinClick(e, device, pin.id);
               }}

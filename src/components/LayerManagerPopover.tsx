@@ -84,13 +84,12 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -4, scale: 0.985 }}
           transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          style={{ boxShadow: 'var(--flux-popover-shadow)' }}
-          className={`absolute top-full mt-1 z-50 w-[328px] max-w-[calc(100vw-16px)] rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] overflow-hidden select-none text-[11.5px] ${
+          className={`absolute top-full mt-1.5 z-50 w-[332px] max-w-[calc(100vw-16px)] rounded-2xl border border-[var(--flux-line-strong)] flux-glass-popover overflow-hidden select-none text-[11.5px] ${
             align === 'right' ? 'right-0' : 'left-0'
           }`}
         >
           {/* Header */}
-          <div className="px-2.5 h-7 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2">
+          <div className="px-3 h-8 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <Layers className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
               <span className="font-semibold text-[var(--flux-text)] truncate tracking-[-0.01em]">

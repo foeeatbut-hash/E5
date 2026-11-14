@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import {
   Circle,
   Cpu,
@@ -9,8 +8,8 @@ import {
   Square,
   Trash2,
   Type,
-  X,
 } from 'lucide-react';
+import { StudioWindow } from './StudioWindow';
 import type {
   CatalogItem,
   CustomSymbolShape,
@@ -330,50 +329,23 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="symbol-designer-title"
-          data-testid="symbol-designer-modal"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.985 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-5xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[90vh]"
-          >
-            {/* Header */}
-            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-[var(--flux-accent)]" />
-                <h2 id="symbol-designer-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
-                  Редактор графики УГО (Symbol Designer)
-                </h2>
-                <span className="text-[11px] font-mono text-[var(--flux-text-muted)]">
-                  · сетка 10 мм · {width}×{height}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Закрыть редактор УГО"
-                className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="floating"
+      maxWidthClass="max-w-5xl"
+      heightClass="max-h-[90vh]"
+      title="Редактор графики УГО (Symbol Designer)"
+      titleId="symbol-designer-title"
+      icon={<Cpu className="w-4 h-4 text-[var(--flux-accent)]" />}
+      subtitle={
+        <span className="text-[11px] font-mono text-[var(--flux-text-muted)]">
+          · сетка 10 мм · {width}×{height}
+        </span>
+      }
+      testId="symbol-designer-modal"
+      closeAriaLabel="Закрыть редактор УГО"
+    >
             {/* Body */}
             <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
               {/* Left Tool + Drawing Canvas */}
@@ -958,9 +930,6 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                 </button>
               </div>
             </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };

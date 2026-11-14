@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { Archive, Check, Copy, Download, ExternalLink, FileCode2, Package, Printer, Terminal, Upload, X } from 'lucide-react';
+import { Archive, Check, Copy, Download, ExternalLink, FileCode2, Layers, Package, Printer, SlidersHorizontal, Terminal, Upload } from 'lucide-react';
+import { StudioWindow } from './StudioWindow';
 import { SCHEMATIC_FONT_OPTIONS } from '../core/e3Catalog';
 import {
   buildNetWireLengths,
@@ -164,43 +164,18 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="exchange-title"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !busy) onClose();
-          }}
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.985 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-2xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden"
-          >
-            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between">
-          <h2 id="exchange-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
-            Совместимость E3.series и Flux Studio
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть окно обмена данными"
-            className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-5 max-h-[82vh] overflow-y-auto text-[12px]">
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="drawer"
+      maxWidthClass="max-w-2xl"
+      title="Совместимость E3.series и Flux Studio"
+      titleId="exchange-title"
+      icon={<Layers className="w-4 h-4 text-[var(--flux-accent)]" />}
+      closeDisabled={busy}
+      closeAriaLabel="Закрыть окно обмена данными"
+    >
+        <div className="flex-1 min-h-0 p-4 space-y-5 overflow-y-auto text-[12px]">
           {/* Embedded Bridge section */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between gap-2">
@@ -430,10 +405,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
             </div>
           </div>
         </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };
 
@@ -500,43 +472,17 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="vis-title"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.985 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden"
-          >
-            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between">
-          <h2 id="vis-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
-            Настройки и синхронизация визуализации графики
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть настройки визуализации"
-            className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-4 max-h-[80vh] overflow-y-auto text-[12px]">
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="drawer"
+      maxWidthClass="max-w-xl"
+      title="Настройки и синхронизация визуализации графики"
+      titleId="vis-title"
+      icon={<SlidersHorizontal className="w-4 h-4 text-[var(--flux-accent)]" />}
+      closeAriaLabel="Закрыть настройки визуализации"
+    >
+        <div className="flex-1 min-h-0 p-4 space-y-4 overflow-y-auto text-[12px]">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="vs-preset" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
@@ -787,10 +733,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
             </div>
           </div>
         </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };
 
@@ -829,53 +772,28 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   const totalQty = bom.reduce((s, r) => s + r.quantity, 0);
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="report-title"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="floating"
+      maxWidthClass="max-w-4xl"
+      heightClass="max-h-[88vh]"
+      title={`Перечень элементов ПЭ3 и кабельный журнал — ${project.projectCode}`}
+      titleId="report-title"
+      icon={<Printer className="w-4 h-4 text-[var(--flux-accent)]" />}
+      closeAriaLabel="Закрыть отчёт"
+      headerExtra={
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="no-print inline-flex items-center gap-1.5 h-7 px-3 rounded-lg bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium"
         >
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.985 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-4xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[88vh]"
-          >
-            <div className="no-print px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between shrink-0">
-          <h2 id="report-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
-            Перечень элементов ПЭ3 и кабельный журнал — {project.projectCode}
-          </h2>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 h-7 px-3 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Печать / PDF</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть отчёт"
-              className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6 overflow-y-auto space-y-6 text-[12px] text-[var(--flux-text)]">
+          <Printer className="w-3.5 h-3.5" />
+          <span>Печать / PDF</span>
+        </button>
+      }
+    >
+        <div className="flex-1 min-h-0 p-6 overflow-y-auto space-y-6 text-[12px] text-[var(--flux-text)]">
           <div className="flex items-start justify-between border-b border-[var(--flux-line)] pb-4">
             <div>
               <h3 className="text-[16px] font-semibold">{project.name}</h3>
@@ -1005,9 +923,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             {erc.filter((i) => i.severity === 'warning').length} предупреждений.
           </div>
         </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };

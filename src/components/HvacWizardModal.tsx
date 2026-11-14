@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { ArrowDown, ArrowUp, Cpu, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Cpu, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { StudioWindow } from './StudioWindow';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type { CatalogItem, E3Project, HvacStageRole, SchematicFontFamily, SheetFormat } from '../core/e3Types';
 import {
@@ -113,46 +113,18 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
   }, [stages, catalog]);
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="hvac-wizard-title"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.985 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-4xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[90vh]"
-          >
-            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-[var(--flux-accent)]" />
-                <h2 id="hvac-wizard-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
-                  Мастер построения ФСА и Схемы внешних соединений (Приточная / Вытяжная система)
-                </h2>
-              </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть мастер ФСА"
-            className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-4 overflow-y-auto space-y-4 text-[12px]">
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="floating"
+      maxWidthClass="max-w-4xl"
+      heightClass="max-h-[90vh]"
+      title="Мастер построения ФСА и Схемы внешних соединений (Приточная / Вытяжная система)"
+      titleId="hvac-wizard-title"
+      icon={<Cpu className="w-4 h-4 text-[var(--flux-accent)]" />}
+      closeAriaLabel="Закрыть мастер ФСА"
+    >
+        <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4 text-[12px]">
           {/* Top Configuration */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
@@ -505,9 +477,6 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
             </button>
           </div>
         </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };

@@ -36,6 +36,7 @@ import { SymbolWorkspaceCanvas } from './components/SymbolWorkspaceCanvas';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
 import {
   clampDockLayoutToViewport,
+  closeSheetTab,
   type DockEdge,
   type DockLayoutState,
   type DockSide,
@@ -46,11 +47,13 @@ import {
   createDefaultDockLayout,
   deleteSheetFromProject,
   duplicateSheetInProject,
+  ensureSheetTabOpen,
   getPanelsByDock,
   loadDockLayout,
   movePanelDock,
   resizeDockEdge,
   saveDockLayout,
+  syncOpenSheetIds,
   togglePanelCollapse,
   updateFloatingRect,
   viewportCountForMode,
@@ -210,6 +213,7 @@ import {
   buildGostTableRenderModel,
 } from './core/gostTables';
 import {
+  hydrateProjectDefaults,
   loadActiveSession,
   loadRecentProjects,
   type RecentProjectEntry,
@@ -265,6 +269,11 @@ export default function App() {
   );
   const activeSheetIdRef = useRef(activeSheetId);
   activeSheetIdRef.current = activeSheetId;
+  const [openSheetIds, setOpenSheetIds] = useState<string[]>(() =>
+    docState.present.sheets.map((s) => s.id)
+  );
+  const openSheetIdsRef = useRef(openSheetIds);
+  openSheetIdsRef.current = openSheetIds;
   const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>(() => loadRecentProjects());
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(
     () => initialSessionRef.current?.savedAt || null
@@ -321,8 +330,14 @@ export default function App() {
 
   // Multi-viewport state (1, 2, 3, or 4 simultaneous sheets in center)
   const [viewportLayout, setViewportLayout] = useState<ViewportLayoutMode>('single');
+  const viewportLayoutRef = useRef(viewportLayout);
+  viewportLayoutRef.current = viewportLayout;
   const [viewportSheetIds, setViewportSheetIds] = useState<string[]>(['sheet-1', 'sheet-2', 'sheet-3', 'sheet-1']);
+  const viewportSheetIdsRef = useRef(viewportSheetIds);
+  viewportSheetIdsRef.current = viewportSheetIds;
   const [activeViewportIdx, setActiveViewportIdx] = useState<number>(0);
+  const activeViewportIdxRef = useRef(activeViewportIdx);
+  activeViewportIdxRef.current = activeViewportIdx;
   const [viewportTransforms, setViewportTransforms] = useState<
     Record<number, { zoom: number; pan: { x: number; y: number } }>
   >({
@@ -348,7 +363,10 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    saveDockLayout(dockLayout);
+    const timer = window.setTimeout(() => {
+      saveDockLayout(dockLayout);
+    }, 150);
+    return () => window.clearTimeout(timer);
   }, [dockLayout]);
 
   useEffect(() => {
@@ -419,7 +437,7 @@ export default function App() {
     memoryLimitMb: null,
   });
   const perfRef = useRef<PerfSnapshot>(perfSnapshot);
-  const screenSnapshotRef = useRef<string>('');
+  const getScreenSnapshotRef = useRef<() => string>(() => '');
   const fluxHostStatus = useMemo(() => detectFluxHost(), []);
   const [stampModalState, setStampModalState] = useState<{
     open: boolean;
@@ -525,7 +543,7 @@ export default function App() {
         lagMs?: number;
       }
     ) => {
-      const screenState = meta?.screenState ?? (screenSnapshotRef.current || undefined);
+      const screenState = meta?.screenState ?? (getScreenSnapshotRef.current() || undefined);
       setLogs((prev) => [
         {
           id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -569,80 +587,10 @@ export default function App() {
     [appendLog]
   );
 
-  // Maximum diagnostic collectors: Frame FPS / lag watchdog, LongTasks, UI interactions, fetch RTT/errors, runtime exceptions
+  // Passive diagnostic collectors: LongTasks (zero idle CPU), UI interactions, fetch RTT/errors, runtime exceptions
   useEffect(() => {
-    let rafId = 0;
-    let lastFrameAt = performance.now();
-    const mountWarmUntil = lastFrameAt + 1800;
-    let fpsCounter = 0;
-    let fpsWindowStart = lastFrameAt;
-    let lastLagLogAt = 0;
+    const mountWarmUntil = performance.now() + 1800;
     let lastLongTaskLogAt = 0;
-    let visibleResumedAt = lastFrameAt;
-
-    const readMemory = () => {
-      const mem = (performance as Performance & {
-        memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
-      }).memory;
-      if (!mem) return { memoryUsedMb: null, memoryLimitMb: null };
-      return {
-        memoryUsedMb: Math.round((mem.usedJSHeapSize / (1024 * 1024)) * 10) / 10,
-        memoryLimitMb: Math.round((mem.jsHeapSizeLimit / (1024 * 1024)) * 10) / 10,
-      };
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        visibleResumedAt = performance.now();
-        lastFrameAt = visibleResumedAt;
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    const tick = (now: number) => {
-      const delta = now - lastFrameAt;
-      lastFrameAt = now;
-      fpsCounter += 1;
-
-      const cur = perfRef.current;
-      const isWarm = now >= mountWarmUntil && now - visibleResumedAt > 800;
-      const saneDelta = isWarm ? Math.min(delta, 5000) : 16.7;
-      cur.lastFrameDeltaMs = Math.round(saneDelta * 10) / 10;
-      if (isWarm && saneDelta > cur.maxFrameDeltaMs) {
-        cur.maxFrameDeltaMs = Math.round(saneDelta * 10) / 10;
-      }
-      if (isWarm && saneDelta > 50) {
-        cur.jankFramesCount += 1;
-        if (saneDelta >= 100 && now - lastLagLogAt > 2500) {
-          lastLagLogAt = now;
-          appendLog(
-            'WARN',
-            'PERF-DIAG',
-            `Зафиксирован лаг кадра интерфейса (${saneDelta.toFixed(1)} мс).`,
-            Math.round(saneDelta * 10) / 10,
-            undefined,
-            {
-              lagMs: Math.round(saneDelta * 10) / 10,
-              cause: 'Задержка основного UI-потока между кадрами requestAnimationFrame',
-              outcome: `Мгновенный FPS снизился до ${Math.max(1, Math.round(1000 / saneDelta))} к/с`,
-            }
-          );
-        }
-      }
-
-      if (now - fpsWindowStart >= 1000) {
-        const elapsedSec = (now - fpsWindowStart) / 1000;
-        const measuredFps = Math.max(1, Math.round(fpsCounter / Math.max(0.25, elapsedSec)));
-        const memInfo = readMemory();
-        cur.fps = Math.min(240, measuredFps);
-        cur.memoryUsedMb = memInfo.memoryUsedMb;
-        cur.memoryLimitMb = memInfo.memoryLimitMb;
-        fpsCounter = 0;
-        fpsWindowStart = now;
-      }
-      rafId = window.requestAnimationFrame(tick);
-    };
-    rafId = window.requestAnimationFrame(tick);
 
     let longTaskObs: PerformanceObserver | null = null;
     if (typeof PerformanceObserver !== 'undefined') {
@@ -869,9 +817,7 @@ export default function App() {
     window.addEventListener('unhandledrejection', onUnhandledRejection);
 
     return () => {
-      window.cancelAnimationFrame(rafId);
       longTaskObs?.disconnect();
-      document.removeEventListener('visibilitychange', onVisibilityChange);
       document.removeEventListener('click', onCaptureClick, true);
       document.removeEventListener('change', onCaptureChange, true);
       document.removeEventListener('keydown', onCaptureKey, true);
@@ -891,14 +837,85 @@ export default function App() {
     };
   }, [appendLog]);
 
-  // Publish FPS/PerfSnapshot to React state only while SystemHealthDashboard is open
+  // Run high-frequency FPS sampler ONLY while SystemHealthDashboard is open (0 idle CPU when closed)
   useEffect(() => {
     if (!healthOpen) return;
+    let rafId = 0;
+    let lastFrameAt = performance.now();
+    let fpsCounter = 0;
+    let fpsWindowStart = lastFrameAt;
+    let visibleResumedAt = lastFrameAt;
+
+    const readMemory = () => {
+      const mem = (performance as Performance & {
+        memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
+      }).memory;
+      if (!mem) return { memoryUsedMb: null, memoryLimitMb: null };
+      return {
+        memoryUsedMb: Math.round((mem.usedJSHeapSize / (1024 * 1024)) * 10) / 10,
+        memoryLimitMb: Math.round((mem.jsHeapSizeLimit / (1024 * 1024)) * 10) / 10,
+      };
+    };
+
+    const initialMem = readMemory();
+    perfRef.current.memoryUsedMb = initialMem.memoryUsedMb;
+    perfRef.current.memoryLimitMb = initialMem.memoryLimitMb;
     setPerfSnapshot({ ...perfRef.current });
-    const id = window.setInterval(() => {
-      setPerfSnapshot({ ...perfRef.current });
-    }, 1000);
-    return () => window.clearInterval(id);
+
+    const tick = (now: number) => {
+      if (document.visibilityState === 'visible') {
+        const delta = now - lastFrameAt;
+        lastFrameAt = now;
+        fpsCounter += 1;
+
+        const cur = perfRef.current;
+        const isWarm = now - visibleResumedAt > 250;
+        const saneDelta = isWarm ? Math.min(delta, 5000) : 16.7;
+        cur.lastFrameDeltaMs = Math.round(saneDelta * 10) / 10;
+        if (isWarm && saneDelta > cur.maxFrameDeltaMs) {
+          cur.maxFrameDeltaMs = Math.round(saneDelta * 10) / 10;
+        }
+        if (isWarm && saneDelta > 50) {
+          cur.jankFramesCount += 1;
+        }
+
+        if (now - fpsWindowStart >= 1000) {
+          const elapsedSec = (now - fpsWindowStart) / 1000;
+          const measuredFps = Math.max(1, Math.round(fpsCounter / Math.max(0.25, elapsedSec)));
+          const memInfo = readMemory();
+          cur.fps = Math.min(240, measuredFps);
+          cur.memoryUsedMb = memInfo.memoryUsedMb;
+          cur.memoryLimitMb = memInfo.memoryLimitMb;
+          fpsCounter = 0;
+          fpsWindowStart = now;
+          setPerfSnapshot({ ...cur });
+        }
+        rafId = window.requestAnimationFrame(tick);
+      } else {
+        rafId = 0;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        visibleResumedAt = performance.now();
+        lastFrameAt = visibleResumedAt;
+        if (!rafId) rafId = window.requestAnimationFrame(tick);
+      } else if (rafId) {
+        window.cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    if (document.visibilityState === 'visible') {
+      rafId = window.requestAnimationFrame(tick);
+    }
+
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [healthOpen]);
 
   // Sync theme class on <html>
@@ -911,14 +928,31 @@ export default function App() {
     }
   }, [project.visualSettings.theme]);
 
-  // Stage 7.3: Debounced autosave + immediate flush on unload
+  // Stage 7.3: Idle-scheduled debounced autosave + immediate flush on unload
   useEffect(() => {
+    let idleId: number | null = null;
+    const winWithIdle = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
     const timer = window.setTimeout(() => {
-      const res = saveActiveSession(project, activeSheetId);
-      setLastSavedAt(res.savedAt);
-      setRecentProjects(res.recent);
-    }, 350);
-    return () => window.clearTimeout(timer);
+      const runSave = () => {
+        const res = saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+        setLastSavedAt(res.savedAt);
+        setRecentProjects(res.recent);
+      };
+      if (typeof winWithIdle.requestIdleCallback === 'function') {
+        idleId = winWithIdle.requestIdleCallback(runSave, { timeout: 600 });
+      } else {
+        runSave();
+      }
+    }, 450);
+    return () => {
+      window.clearTimeout(timer);
+      if (idleId !== null && typeof winWithIdle.cancelIdleCallback === 'function') {
+        winWithIdle.cancelIdleCallback(idleId);
+      }
+    };
   }, [project, activeSheetId]);
 
   useEffect(() => {
@@ -941,13 +975,14 @@ export default function App() {
     }
   }, [appendLog]);
 
-  // Async Web Worker computation for BOM, Cables, Terminals, ERC
+  // Async Web Worker computation for BOM, Cables, Terminals, ERC (scoped to electrical topology changes)
   useEffect(() => {
     let cancelled = false;
-    setIsBusy(true);
     const timer = window.setTimeout(async () => {
+      setIsBusy(true);
       try {
-        const res = await ecadAsync.analyzeProject(project);
+        const currentProj = docStateRef.current.present;
+        const res = await ecadAsync.analyzeProject(currentProj);
         if (cancelled) return;
         setBom(res.bom);
         setCables(res.cables);
@@ -957,7 +992,7 @@ export default function App() {
         appendLog(
           'INFO',
           'WORKER',
-          `Пересчитана модель (${project.devices.length} изд., ${project.wires.length} цепей)${res.viaWorker ? ' в Web Worker' : ''}.`,
+          `Пересчитана модель (${currentProj.devices.length} изд., ${currentProj.wires.length} цепей)${res.viaWorker ? ' в Web Worker' : ''}.`,
           res.durationMs
         );
       } finally {
@@ -969,14 +1004,15 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [project, appendLog]);
+  }, [project.devices, project.wires, project.sheets, appendLog]);
 
   const setProjectRemote = useCallback(
     (nextOrUpdater: E3Project | ((curr: E3Project) => E3Project)) => {
       setDocState((s) => {
-        const next =
+        const rawNext =
           typeof nextOrUpdater === 'function' ? nextOrUpdater(s.present) : nextOrUpdater;
-        return next === s.present ? s : { ...s, present: next };
+        if (rawNext === s.present) return s;
+        return { ...s, present: hydrateProjectDefaults(rawNext) };
       });
     },
     []
@@ -1145,8 +1181,52 @@ export default function App() {
   }, [pushSync, appendLog]);
 
   const activeSheet = useMemo(
-    () => project.sheets.find((s) => s.id === activeSheetId) || project.sheets[0],
+    () => (activeSheetId ? project.sheets.find((s) => s.id === activeSheetId) : undefined),
     [project.sheets, activeSheetId]
+  );
+
+  useEffect(() => {
+    setOpenSheetIds((prev) => {
+      const synced = syncOpenSheetIds(prev, project.sheets);
+      return synced.length === prev.length && synced.every((id, i) => id === prev[i]) ? prev : synced;
+    });
+    if (activeSheetId && !project.sheets.some((s) => s.id === activeSheetId)) {
+      const nextFallback =
+        openSheetIdsRef.current.find((id) => project.sheets.some((s) => s.id === id)) ||
+        project.sheets[0]?.id ||
+        '';
+      setActiveSheetId(nextFallback);
+    }
+  }, [project.sheets, activeSheetId]);
+
+  const openSheetTab = useCallback((sheetId: string, vpIdx?: number) => {
+    if (!sheetId) return;
+    const sheets = docStateRef.current.present.sheets;
+    if (!sheets.some((s) => s.id === sheetId)) return;
+    const targetVp = typeof vpIdx === 'number' ? vpIdx : activeViewportIdxRef.current;
+    setOpenSheetIds((prev) => ensureSheetTabOpen(prev, sheetId, sheets));
+    setActiveSheetId(sheetId);
+    setViewportSheetIds((prev) => prev.map((sId, idx) => (idx === targetVp ? sheetId : sId)));
+  }, []);
+
+  const handleCloseSheetTab = useCallback(
+    (sheetId: string) => {
+      const res = closeSheetTab(openSheetIdsRef.current, sheetId, activeSheetIdRef.current);
+      setOpenSheetIds(res.nextOpenSheetIds);
+      setActiveSheetId(res.nextActiveSheetId);
+      if (sheetId === activeSheetIdRef.current) {
+        applySelection({});
+      }
+      const closedSheet = docStateRef.current.present.sheets.find((s) => s.id === sheetId);
+      if (closedSheet) {
+        appendLog(
+          'INFO',
+          'E3-CORE',
+          `Вкладка листа ${closedSheet.number} («${closedSheet.name}») закрыта на холсте (лист сохранён в проекте).`
+        );
+      }
+    },
+    [applySelection, appendLog]
   );
 
   const selectedDevice = useMemo(
@@ -1657,6 +1737,7 @@ export default function App() {
       }
 
       commitProject(() => finalProject);
+      openSheetTab(sheetId);
       setSelectedDeviceId(placedDevice.id);
       setSelectedDeviceIds([placedDevice.id]);
       setSelectedWireId(null);
@@ -1671,7 +1752,7 @@ export default function App() {
           : `Размещён компонент ${placedDevice.designation} (${placedDevice.article}).`
       );
     },
-    [project.devices, project.sheets, project.visualSettings.gridSize, activeSheet?.id, commitProject, appendLog]
+    [project.devices, project.sheets, project.visualSettings.gridSize, activeSheet?.id, commitProject, openSheetTab, appendLog]
   );
 
   const handleCreateAnnotation = useCallback(
@@ -1958,7 +2039,11 @@ export default function App() {
       revision: prev.revision + 1,
       sheets: [...prev.sheets, newSheet],
     }));
+    setOpenSheetIds((prev) => ensureSheetTabOpen(prev, newSheet.id, [...project.sheets, newSheet]));
     setActiveSheetId(newSheet.id);
+    setViewportSheetIds((prev) =>
+      prev.map((sId, idx) => (idx === activeViewportIdxRef.current ? newSheet.id : sId))
+    );
     appendLog('INFO', 'E3-CORE', `Добавлен новый лист: ${newSheet.name}.`);
   }, [project.sheets, project.projectCode, project.author, commitProject, appendLog]);
 
@@ -2810,9 +2895,10 @@ export default function App() {
   );
 
   const fitSheetToViewport = useCallback(
-    (sheetObj?: E3Sheet, vpIdx = activeViewportIdx, animate = false) => {
+    (sheetObj?: E3Sheet, vpIdx = activeViewportIdxRef.current, animate = false) => {
+      const sheets = docStateRef.current.present.sheets;
       const target =
-        sheetObj || project.sheets.find((s) => s.id === activeSheetId) || project.sheets[0];
+        sheetObj || sheets.find((s) => s.id === activeSheetIdRef.current) || sheets[0];
       if (!target) return;
       const sel = vpIdx === 0 ? '[data-testid="schematic-canvas"]' : `[data-testid="schematic-canvas-${vpIdx}"]`;
       const el = document.querySelector(sel) || document.querySelector('[data-testid="schematic-canvas"]');
@@ -2825,13 +2911,16 @@ export default function App() {
       const panY = Math.max(6, Math.round((vh - target.height * clampedZ) / 2));
       animateCameraTo(vpIdx, clampedZ, { x: panX, y: panY }, animate);
     },
-    [project.sheets, activeSheetId, activeViewportIdx, animateCameraTo]
+    [animateCameraTo]
   );
+  const fitSheetToViewportRef = useRef(fitSheetToViewport);
+  fitSheetToViewportRef.current = fitSheetToViewport;
+  const cancelCameraAnimRef = useRef(cancelCameraAnim);
+  cancelCameraAnimRef.current = cancelCameraAnim;
 
   const centerCameraOnCoords = useCallback(
     (sheetId: string, worldX: number, worldY: number, vpIdx = activeViewportIdx, animate = true) => {
-      setActiveSheetId(sheetId);
-      setViewportSheetIds((prev) => prev.map((sId, idx) => (idx === vpIdx ? sheetId : sId)));
+      openSheetTab(sheetId, vpIdx);
       window.requestAnimationFrame(() => {
         const sel = vpIdx === 0 ? '[data-testid="schematic-canvas"]' : `[data-testid="schematic-canvas-${vpIdx}"]`;
         const el = document.querySelector(sel) || document.querySelector('[data-testid="schematic-canvas"]');
@@ -2851,7 +2940,7 @@ export default function App() {
         );
       });
     },
-    [activeViewportIdx, animateCameraTo]
+    [activeViewportIdx, animateCameraTo, openSheetTab]
   );
 
   const handleJumpToIssue = useCallback(
@@ -2895,10 +2984,7 @@ export default function App() {
         }
         centerCameraOnCoords(wire.sheetId, wx, wy, activeViewportIdx);
       } else if (targetSheet) {
-        setActiveSheetId(targetSheet.id);
-        setViewportSheetIds((prev) =>
-          prev.map((sId, idx) => (idx === activeViewportIdx ? targetSheet.id : sId))
-        );
+        openSheetTab(targetSheet.id, activeViewportIdx);
         fitSheetToViewport(targetSheet, activeViewportIdx);
       }
 
@@ -2908,7 +2994,7 @@ export default function App() {
         `Переход к замечанию ${issue.code}${targetSheet ? ` (Лист ${targetSheet.number})` : ''}: ${issue.message}`
       );
     },
-    [applySelection, centerCameraOnCoords, activeViewportIdx, fitSheetToViewport, appendLog]
+    [applySelection, centerCameraOnCoords, activeViewportIdx, fitSheetToViewport, openSheetTab, appendLog]
   );
 
   const handleNavigateOffPage = useCallback(
@@ -3126,11 +3212,22 @@ export default function App() {
       setViewportLayout(mode);
       setViewportSheetIds(nextSheetIds);
       setActiveViewportIdx(0);
-      setActiveSheetId(nextSheetIds[0] || activeSheetId);
+      const nextTargetId =
+        mode === 'single'
+          ? openSheetIdsRef.current.length > 0
+            ? activeSheetId || openSheetIdsRef.current[0]
+            : ''
+          : nextSheetIds[0] || activeSheetId;
+      if (nextTargetId) {
+        setOpenSheetIds((prev) => ensureSheetTabOpen(prev, nextTargetId, project.sheets));
+      }
+      setActiveSheetId(nextTargetId);
       window.requestAnimationFrame(() => {
         const cnt = viewportCountForMode(mode);
         for (let i = 0; i < cnt; i++) {
-          const sh = project.sheets.find((s) => s.id === nextSheetIds[i]) || project.sheets[0];
+          const id = mode === 'single' ? nextTargetId : nextSheetIds[i];
+          if (!id) continue;
+          const sh = project.sheets.find((s) => s.id === id);
           if (sh) fitSheetToViewport(sh, i);
         }
       });
@@ -3153,6 +3250,7 @@ export default function App() {
     (sheetId: string) => {
       const { nextProject, newSheetId } = duplicateSheetInProject(project, sheetId);
       commitProject(() => nextProject);
+      setOpenSheetIds((prev) => ensureSheetTabOpen(prev, newSheetId, nextProject.sheets));
       setActiveSheetId(newSheetId);
       setViewportSheetIds((prev) => prev.map((id, idx) => (idx === activeViewportIdx ? newSheetId : id)));
       appendLog('INFO', 'E3-CORE', 'Создана копия листа со всеми элементами и связями.');
@@ -3165,9 +3263,15 @@ export default function App() {
       if (project.sheets.length <= 1) return;
       const { nextProject, nextActiveSheetId } = deleteSheetFromProject(project, sheetId);
       commitProject(() => nextProject);
-      setActiveSheetId(nextActiveSheetId);
+      const syncedOpen = syncOpenSheetIds(openSheetIdsRef.current, nextProject.sheets);
+      setOpenSheetIds(syncedOpen);
+      const nextActive =
+        activeSheetIdRef.current === sheetId
+          ? syncedOpen[0] || (syncedOpen.length > 0 ? nextActiveSheetId : '')
+          : activeSheetIdRef.current;
+      setActiveSheetId(nextActive);
       setViewportSheetIds((prev) =>
-        prev.map((id) => (id === sheetId ? nextActiveSheetId : id))
+        prev.map((id) => (id === sheetId ? nextActive || nextActiveSheetId : id))
       );
       setSelectedDeviceId(null);
       setSelectedWireId(null);
@@ -3177,7 +3281,7 @@ export default function App() {
     [project, commitProject, appendLog]
   );
 
-  // Panel dock dragging & edge resizing handlers
+  // Panel dock dragging & edge resizing handlers (RAF-coalesced for high-refresh responsiveness)
   const handleStartPanelDrag = useCallback(
     (panelId: PanelId, e: React.PointerEvent) => {
       e.preventDefault();
@@ -3195,14 +3299,17 @@ export default function App() {
       };
       setPanelDrag(dragState);
 
-      const onMove = (ev: PointerEvent) => {
-        const dx = ev.clientX - dragState.startX;
-        const dy = ev.clientY - dragState.startY;
+      let dragRafId: number | null = null;
+      let latestEv: { clientX: number; clientY: number } | null = null;
+
+      const applyMove = (clientX: number, clientY: number) => {
+        const dx = clientX - dragState.startX;
+        const dy = clientY - dragState.startY;
         const movedEnough = Math.hypot(dx, dy) > 8;
         const bounds = workspaceRef.current?.getBoundingClientRect();
         const hover =
           movedEnough && bounds
-            ? resolveDropTarget(ev.clientX, ev.clientY, bounds)
+            ? resolveDropTarget(clientX, clientY, bounds)
             : null;
 
         if (panel.dock === 'floating' && movedEnough) {
@@ -3224,15 +3331,29 @@ export default function App() {
           curr
             ? {
                 ...curr,
-                currentX: ev.clientX,
-                currentY: ev.clientY,
+                currentX: clientX,
+                currentY: clientY,
                 hoverTarget: hover,
               }
             : null
         );
       };
 
+      const onMove = (ev: PointerEvent) => {
+        latestEv = { clientX: ev.clientX, clientY: ev.clientY };
+        if (!dragRafId) {
+          dragRafId = window.requestAnimationFrame(() => {
+            dragRafId = null;
+            if (latestEv) applyMove(latestEv.clientX, latestEv.clientY);
+          });
+        }
+      };
+
       const onUp = (ev: PointerEvent) => {
+        if (dragRafId) {
+          window.cancelAnimationFrame(dragRafId);
+          dragRafId = null;
+        }
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         const dx = ev.clientX - dragState.startX;
@@ -3273,19 +3394,34 @@ export default function App() {
       const startSize = dockLayout.sizes[edge];
       setResizingDockEdge(edge);
 
-      const onMove = (ev: PointerEvent) => {
-        let next = startSize;
-        if (edge === 'left') next = startSize + (ev.clientX - startX);
-        else if (edge === 'right') next = startSize - (ev.clientX - startX);
-        else if (edge === 'bottom') next = startSize - (ev.clientY - startY);
-        else if (edge === 'top') next = startSize + (ev.clientY - startY);
+      let resizeRafId: number | null = null;
+      let latestNext = startSize;
 
-        setDockLayout((prev) =>
-          resizeDockEdge(prev, edge, next, window.innerWidth, window.innerHeight)
-        );
+      const onMove = (ev: PointerEvent) => {
+        if (edge === 'left') latestNext = startSize + (ev.clientX - startX);
+        else if (edge === 'right') latestNext = startSize - (ev.clientX - startX);
+        else if (edge === 'bottom') latestNext = startSize - (ev.clientY - startY);
+        else if (edge === 'top') latestNext = startSize + (ev.clientY - startY);
+
+        if (!resizeRafId) {
+          resizeRafId = window.requestAnimationFrame(() => {
+            resizeRafId = null;
+            const targetSize = latestNext;
+            setDockLayout((prev) =>
+              resizeDockEdge(prev, edge, targetSize, window.innerWidth, window.innerHeight)
+            );
+          });
+        }
       };
 
       const onUp = () => {
+        if (resizeRafId) {
+          window.cancelAnimationFrame(resizeRafId);
+          resizeRafId = null;
+        }
+        setDockLayout((prev) =>
+          resizeDockEdge(prev, edge, latestNext, window.innerWidth, window.innerHeight)
+        );
         setResizingDockEdge(null);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
@@ -3306,22 +3442,45 @@ export default function App() {
       const orig = dockLayout.panels[panelId].floating;
       setResizingDockEdge('floating');
 
+      let floatRafId: number | null = null;
+      let latestW = orig.width;
+      let latestH = orig.height;
+
       const onMove = (ev: PointerEvent) => {
+        latestW = orig.width + (ev.clientX - startX);
+        latestH = orig.height + (ev.clientY - startY);
+        if (!floatRafId) {
+          floatRafId = window.requestAnimationFrame(() => {
+            floatRafId = null;
+            const w = latestW;
+            const h = latestH;
+            setDockLayout((prev) =>
+              updateFloatingRect(
+                prev,
+                panelId,
+                { width: w, height: h },
+                window.innerWidth,
+                window.innerHeight
+              )
+            );
+          });
+        }
+      };
+
+      const onUp = () => {
+        if (floatRafId) {
+          window.cancelAnimationFrame(floatRafId);
+          floatRafId = null;
+        }
         setDockLayout((prev) =>
           updateFloatingRect(
             prev,
             panelId,
-            {
-              width: orig.width + (ev.clientX - startX),
-              height: orig.height + (ev.clientY - startY),
-            },
+            { width: latestW, height: latestH },
             window.innerWidth,
             window.innerHeight
           )
         );
-      };
-
-      const onUp = () => {
         setResizingDockEdge(null);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
@@ -3337,6 +3496,13 @@ export default function App() {
     (options: HvacBuildOptions) => {
       const res = generateHvacDiagram(options, mergedCatalog, project);
       commitProject(() => res.nextProject);
+      setOpenSheetIds((prev) =>
+        ensureSheetTabOpen(
+          res.wiringSheetId ? ensureSheetTabOpen(prev, res.fsaSheetId, res.nextProject.sheets) : prev,
+          res.wiringSheetId || res.fsaSheetId,
+          res.nextProject.sheets
+        )
+      );
       setActiveSheetId(res.fsaSheetId);
       setViewportSheetIds((prev) =>
         prev.map((id, idx) => (idx === activeViewportIdx ? res.fsaSheetId : id))
@@ -3895,6 +4061,7 @@ export default function App() {
 
       commitProject(() => importedProj as E3Project, true, { skipSheetTracking: true });
       const sheetIds = importedProj.sheets.map((s) => s.id);
+      setOpenSheetIds(sheetIds);
       if (sheetIds[0]) {
         setActiveSheetId(sheetIds[0]);
         setViewportSheetIds((prev) =>
@@ -3939,6 +4106,7 @@ export default function App() {
       const res = await ecadAsync.importXml(trimmed);
       commitProject(() => res.project, true, { skipSheetTracking: true });
       const sheetIds = res.project.sheets.map((s) => s.id);
+      setOpenSheetIds(sheetIds);
       if (sheetIds[0]) {
         setActiveSheetId(sheetIds[0]);
         setViewportSheetIds((prev) =>
@@ -4088,6 +4256,7 @@ export default function App() {
         updatedAt: new Date().toISOString(),
         annotations: [...(prev.annotations || []), newAnn],
       }));
+      openSheetTab(targetSheet.id);
       applySelection({ annotationIds: [newAnn.id] });
       setTool('select');
       appendLog(
@@ -4124,6 +4293,7 @@ export default function App() {
     };
     const nextSheetId = fresh.sheets[0]?.id || 'sheet-1';
     setDocState({ past: [], present: fresh, future: [] });
+    setOpenSheetIds(fresh.sheets.map((s) => s.id));
     setActiveSheetId(nextSheetId);
     setViewportSheetIds(fresh.sheets.map((s) => s.id));
     applySelection({ deviceIds: fresh.devices[0] ? [fresh.devices[0].id] : [] });
@@ -4145,11 +4315,12 @@ export default function App() {
         latest.find((r) => r.id === projectId);
       if (!target) return;
       saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
-      const restoredProj = normalizeProjectSheetRevisions(structuredClone(target.project));
+      const restoredProj = hydrateProjectDefaults(structuredClone(target.project));
       const nextSheetId = restoredProj.sheets.some((s) => s.id === target.activeSheetId)
         ? target.activeSheetId
         : restoredProj.sheets[0]?.id || 'sheet-1';
       setDocState({ past: [], present: restoredProj, future: [] });
+      setOpenSheetIds(restoredProj.sheets.map((s) => s.id));
       setActiveSheetId(nextSheetId);
       setViewportSheetIds(restoredProj.sheets.map((s) => s.id));
       applySelection({});
@@ -4354,10 +4525,7 @@ export default function App() {
         case 'jump-sheet': {
           const sh = project.sheets.find((s) => s.id === act.sheetId);
           if (sh) {
-            setActiveSheetId(sh.id);
-            setViewportSheetIds((prev) =>
-              prev.map((sId, idx) => (idx === activeViewportIdx ? sh.id : sId))
-            );
+            openSheetTab(sh.id, activeViewportIdx);
             fitSheetToViewport(sh, activeViewportIdx);
             appendLog('INFO', 'E3-CORE', `Переход на Лист ${sh.number}: «${sh.name}».`);
           }
@@ -4459,21 +4627,30 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+      const target = e.target as HTMLElement | null;
+      const inEditableText = Boolean(
+        target &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable ||
+            target.closest('.select-text, pre, [data-selectable="true"]'))
+      );
       if ((e.ctrlKey || e.metaKey) && key === 'k') {
         if (anyModalOpen) return;
         e.preventDefault();
         setCommandPaletteOpen((o) => !o);
         return;
       }
+      if ((e.ctrlKey || e.metaKey) && key === 'a' && !inEditableText) {
+        e.preventDefault();
+        if (!anyModalOpen && !commandPaletteOpen && !symbolDraft.open) {
+          handleSelectAllOnSheet();
+        }
+        return;
+      }
       if (anyModalOpen || commandPaletteOpen) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      ) {
+      if (inEditableText) {
         return;
       }
       if (symbolDraft.open) {
@@ -4732,12 +4909,14 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : null))
       .then((srvProj: E3Project | null) => {
         if (srvProj && srvProj.id && Array.isArray(srvProj.devices)) {
+          const hydratedSrv = hydrateProjectDefaults(srvProj);
           setProjectRemote((curr) => {
             const hasSavedLocal = Boolean(initialSessionRef.current);
-            if ((!hasSavedLocal || srvProj.id === curr.id) && srvProj.revision > curr.revision) {
+            if ((!hasSavedLocal || hydratedSrv.id === curr.id) && hydratedSrv.revision > curr.revision) {
               suppressSyncPushRef.current = true;
-              if (srvProj.sheets[0]) setActiveSheetId(srvProj.sheets[0].id);
-              return srvProj;
+              setOpenSheetIds(hydratedSrv.sheets.map((s) => s.id));
+              if (hydratedSrv.sheets[0]) setActiveSheetId(hydratedSrv.sheets[0].id);
+              return hydratedSrv;
             }
             return curr;
           });
@@ -4879,19 +5058,13 @@ export default function App() {
           activeTab={leftTab}
           onTabChange={setLeftTab}
           onSelectSheet={(id) => {
-            setActiveSheetId(id);
-            setViewportSheetIds((prev) =>
-              prev.map((sId, idx) => (idx === activeViewportIdx ? id : sId))
-            );
+            openSheetTab(id, activeViewportIdx);
             setSelectedDeviceId(null);
             setSelectedWireId(null);
             setSelectedAnnotationId(null);
           }}
           onSelectDevice={(dev) => {
-            setActiveSheetId(dev.sheetId);
-            setViewportSheetIds((prev) =>
-              prev.map((sId, idx) => (idx === activeViewportIdx ? dev.sheetId : sId))
-            );
+            openSheetTab(dev.sheetId, activeViewportIdx);
             setSelectedDeviceId(dev.id);
             setSelectedWireId(null);
             setSelectedAnnotationId(null);
@@ -5025,10 +5198,7 @@ export default function App() {
         onSelectDeviceByDesignation={(designation) => {
           const dev = project.devices.find((d) => d.designation === designation);
           if (!dev) return;
-          setActiveSheetId(dev.sheetId);
-          setViewportSheetIds((prev) =>
-            prev.map((sId, idx) => (idx === activeViewportIdx ? dev.sheetId : sId))
-          );
+          openSheetTab(dev.sheetId, activeViewportIdx);
           setSelectedDeviceId(dev.id);
           setSelectedWireId(null);
           setSelectedAnnotationId(null);
@@ -5038,10 +5208,7 @@ export default function App() {
           const trace = traceConnectedPotential(project, { netName });
           const firstWire = project.wires.find((w) => trace.wireIds.includes(w.id));
           if (firstWire && firstWire.sheetId !== activeSheetId) {
-            setActiveSheetId(firstWire.sheetId);
-            setViewportSheetIds((prev) =>
-              prev.map((sId, idx) => (idx === activeViewportIdx ? firstWire.sheetId : sId))
-            );
+            openSheetTab(firstWire.sheetId, activeViewportIdx);
           }
           appendLog(
             'INFO',
@@ -5186,82 +5353,77 @@ export default function App() {
   const effectiveViewportSheetsRef = useRef<string[]>(effectiveViewportSheets);
   effectiveViewportSheetsRef.current = effectiveViewportSheets;
 
-  const currentScreenSnapshot = useMemo(
-    () =>
-      formatScreenSnapshot({
-        projectCode: project.projectCode,
-        revision: project.revision,
-        sheetNumber: activeSheet?.number,
-        sheetName: activeSheet?.name,
-        viewportIdx: activeViewportIdx,
-        viewportLayout,
-        zoom,
-        pan,
-        tool,
-        selectedDevices: selectedDeviceIds.length,
-        selectedWires: selectedWireIds.length,
-        selectedAnnotations: selectedAnnotationIds.length,
-        openModal: healthOpen
-          ? 'SystemHealthDashboard'
-          : exchangeOpen
-            ? 'ExchangeModal'
-            : visualOpen
-              ? 'VisualSettingsModal'
-              : reportOpen
-                ? 'ReportModal'
-                : portableOpen
-                  ? 'PortableBuildModal'
-                  : hvacWizardOpen
-                    ? 'HvacWizardModal'
-                    : catalogModalOpen
-                      ? 'CatalogItemModal'
-                      : publishModalOpen
-                        ? 'PublishModal'
-                        : fluxPublishOpen
-                          ? 'FluxStudioPublishModal'
-                          : terminalEditorOpen
-                            ? 'TerminalStripModal'
-                            : autoNumberModalOpen
-                              ? 'AutoNumberingModal'
-                              : commandPaletteOpen
-                                ? 'CommandPaletteModal'
-                                : stampModalState.open
-                                  ? 'StampEditorModal'
-                                  : null,
-        theme: project.visualSettings.theme,
-        symbolEditorOpen: symbolDraft.open,
-      }),
-    [
-      project.projectCode,
-      project.revision,
-      project.visualSettings.theme,
-      activeSheet?.number,
-      activeSheet?.name,
-      activeViewportIdx,
+  const getScreenSnapshot = useCallback(() => {
+    const curProj = docStateRef.current.present;
+    const curSheetId = activeSheetIdRef.current;
+    const curSheet = curProj.sheets.find((s) => s.id === curSheetId) || curProj.sheets[0];
+    const vpIdx = activeViewportIdxRef.current;
+    const vpTr = viewportTransformsRef.current[vpIdx] || { zoom: 0.56, pan: { x: 46, y: 12 } };
+    return formatScreenSnapshot({
+      projectCode: curProj.projectCode,
+      revision: curProj.revision,
+      sheetNumber: curSheet?.number,
+      sheetName: curSheet?.name,
+      viewportIdx: vpIdx,
       viewportLayout,
-      zoom,
-      pan,
+      zoom: vpTr.zoom,
+      pan: vpTr.pan,
       tool,
-      selectedDeviceIds.length,
-      selectedWireIds.length,
-      selectedAnnotationIds.length,
-      healthOpen,
-      exchangeOpen,
-      visualOpen,
-      reportOpen,
-      portableOpen,
-      hvacWizardOpen,
-      catalogModalOpen,
-      publishModalOpen,
-      fluxPublishOpen,
-      terminalEditorOpen,
-      autoNumberModalOpen,
-      commandPaletteOpen,
-      stampModalState.open,
-      symbolDraft.open,
-    ]
-  );
-  screenSnapshotRef.current = currentScreenSnapshot;
+      selectedDevices: selectedDeviceIds.length,
+      selectedWires: selectedWireIds.length,
+      selectedAnnotations: selectedAnnotationIds.length,
+      openModal: healthOpen
+        ? 'SystemHealthDashboard'
+        : exchangeOpen
+          ? 'ExchangeModal'
+          : visualOpen
+            ? 'VisualSettingsModal'
+            : reportOpen
+              ? 'ReportModal'
+              : portableOpen
+                ? 'PortableBuildModal'
+                : hvacWizardOpen
+                  ? 'HvacWizardModal'
+                  : catalogModalOpen
+                    ? 'CatalogItemModal'
+                    : publishModalOpen
+                      ? 'PublishModal'
+                      : fluxPublishOpen
+                        ? 'FluxStudioPublishModal'
+                        : terminalEditorOpen
+                          ? 'TerminalStripModal'
+                          : autoNumberModalOpen
+                            ? 'AutoNumberingModal'
+                            : commandPaletteOpen
+                              ? 'CommandPaletteModal'
+                              : stampModalState.open
+                                ? 'StampEditorModal'
+                                : null,
+      theme: curProj.visualSettings.theme,
+      symbolEditorOpen: symbolDraft.open,
+    });
+  }, [
+    viewportLayout,
+    tool,
+    selectedDeviceIds.length,
+    selectedWireIds.length,
+    selectedAnnotationIds.length,
+    healthOpen,
+    exchangeOpen,
+    visualOpen,
+    reportOpen,
+    portableOpen,
+    hvacWizardOpen,
+    catalogModalOpen,
+    publishModalOpen,
+    fluxPublishOpen,
+    terminalEditorOpen,
+    autoNumberModalOpen,
+    commandPaletteOpen,
+    stampModalState.open,
+    symbolDraft.open,
+  ]);
+  getScreenSnapshotRef.current = getScreenSnapshot;
 
   const errorLogCount = useMemo(
     () => logs.reduce((acc, l) => acc + (l.level === 'ERROR' ? 1 : 0), 0),
@@ -5393,51 +5555,66 @@ export default function App() {
       Array.from({ length: 4 }, (_, idx) => ({
         onFocusViewport: () => {
           setActiveViewportIdx(idx);
-          const shId = effectiveViewportSheetsRef.current[idx] || viewportSheetIds[idx] || activeSheetId;
+          if (viewportLayoutRef.current === 'single') {
+            return;
+          }
+          const shId =
+            effectiveViewportSheetsRef.current[idx] ||
+            viewportSheetIdsRef.current[idx] ||
+            activeSheetIdRef.current;
           setActiveSheetId(shId);
         },
         onFitViewport: () => {
-          const shId = effectiveViewportSheetsRef.current[idx] || viewportSheetIds[idx] || activeSheetId;
+          const shId =
+            viewportLayoutRef.current === 'single'
+              ? activeSheetIdRef.current
+              : effectiveViewportSheetsRef.current[idx] ||
+                viewportSheetIdsRef.current[idx] ||
+                activeSheetIdRef.current;
+          if (!shId) return;
           const sh = docStateRef.current.present.sheets.find((s) => s.id === shId);
-          if (sh) fitSheetToViewport(sh, idx, true);
+          if (sh) fitSheetToViewportRef.current(sh, idx, true);
         },
         onSelectSheet: (id: string) => {
           setActiveViewportIdx(idx);
+          const sheets = docStateRef.current.present.sheets;
+          setOpenSheetIds((prev) => ensureSheetTabOpen(prev, id, sheets));
           setActiveSheetId(id);
           setViewportSheetIds((prev) => {
-            const base = effectiveViewportSheetsRef.current.length >= 4
-              ? effectiveViewportSheetsRef.current
-              : prev;
+            const base =
+              effectiveViewportSheetsRef.current.length >= 4
+                ? effectiveViewportSheetsRef.current
+                : prev;
             const next = [...base];
             next[idx] = id;
             return next;
           });
-          const target = docStateRef.current.present.sheets.find((s) => s.id === id);
-          if (target) fitSheetToViewport(target, idx, true);
+          const target = sheets.find((s) => s.id === id);
+          if (target) fitSheetToViewportRef.current(target, idx, true);
         },
         onSetZoom: (nextZ: number) => {
-          cancelCameraAnim(idx);
+          cancelCameraAnimRef.current(idx);
           setViewportTransforms((prev) => ({
             ...prev,
             [idx]: { zoom: nextZ, pan: prev[idx]?.pan || { x: 20, y: 12 } },
           }));
         },
         onSetPan: (nextPan: { x: number; y: number }) => {
-          cancelCameraAnim(idx);
+          cancelCameraAnimRef.current(idx);
           setViewportTransforms((prev) => ({
             ...prev,
             [idx]: { zoom: prev[idx]?.zoom ?? 0.45, pan: nextPan },
           }));
         },
         onSetTransform: (nextZ: number, nextPan: { x: number; y: number }) => {
-          cancelCameraAnim(idx);
+          cancelCameraAnimRef.current(idx);
           setViewportTransforms((prev) => ({
             ...prev,
             [idx]: { zoom: nextZ, pan: nextPan },
           }));
         },
       })),
-    [viewportSheetIds, activeSheetId, fitSheetToViewport, cancelCameraAnim]
+    []
   );
 
   const workspaceBoundsRect = workspaceRef.current?.getBoundingClientRect();
@@ -5446,7 +5623,7 @@ export default function App() {
     <MotionConfig reducedMotion="user">
     <div
       data-testid="app-shell"
-      className="h-screen w-full max-w-full overflow-hidden flex flex-col bg-[var(--flux-bg)] text-[var(--flux-text)]"
+      className="h-screen w-full max-w-full overflow-hidden flex flex-col flux-ambient-shell text-[var(--flux-text)]"
     >
       <TopToolbar
         project={project}
@@ -5705,7 +5882,10 @@ export default function App() {
               className={centerGridClass}
             >
             {Array.from({ length: vpCount }, (_, idx) => {
-              const vpSheetId = effectiveViewportSheets[idx] || activeSheetId;
+              const vpSheetId =
+                viewportLayout === 'single'
+                  ? activeSheetId
+                  : effectiveViewportSheets[idx] || activeSheetId;
               const vpTr = viewportTransforms[idx] || { zoom: 0.42, pan: { x: 20, y: 12 } };
               const vpH = viewportHandlers[idx] || viewportHandlers[0];
               const spanClass =
@@ -5720,6 +5900,7 @@ export default function App() {
                     project={project}
                     catalog={mergedCatalog}
                     activeSheetId={vpSheetId}
+                    openSheetIds={viewportLayout === 'single' ? openSheetIds : undefined}
                     viewportIndex={idx}
                     isMultiViewport={viewportLayout !== 'single'}
                     isFocused={activeViewportIdx === idx}
@@ -5736,6 +5917,7 @@ export default function App() {
                     onFocusViewport={vpH.onFocusViewport}
                     onFitViewport={vpH.onFitViewport}
                     onSelectSheet={vpH.onSelectSheet}
+                    onCloseSheet={viewportLayout === 'single' ? handleCloseSheetTab : undefined}
                     onAddSheet={handleAddSheet}
                     onSetTool={setTool}
                     onSetZoom={vpH.onSetZoom}
@@ -5943,6 +6125,9 @@ export default function App() {
           const res = generateOrUpdateTerminalStripSheet(docStateRef.current.present, targetDevId);
           commitProject(() => res.nextProject, true);
           setTerminalEditorOpen(false);
+          setOpenSheetIds((prev) =>
+            ensureSheetTabOpen(prev, res.sheetId, res.nextProject.sheets)
+          );
           setActiveSheetId(res.sheetId);
           setViewportSheetIds((prev) =>
             prev.map((sId, idx) => (idx === activeViewportIdx ? res.sheetId : sId))
@@ -5997,7 +6182,7 @@ export default function App() {
         open={healthOpen}
         logs={logs}
         perf={perfSnapshot}
-        screenSnapshot={currentScreenSnapshot}
+        screenSnapshot={healthOpen ? getScreenSnapshot() : ''}
         onClose={() => setHealthOpen(false)}
         onClearLogs={() => setLogs([])}
         onDownloadLogsJson={() => {

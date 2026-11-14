@@ -6,7 +6,7 @@
   --font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', 'Consolas', ui-monospace, SFMono-Regular, monospace;
 
-  /* Semantic green strictly for electrical PE / verified status indicators */
+  /* Flux brand emerald scale (2026 modern CAD & PE semantic tokens) */
   --color-emerald-50:  #eefbf3;
   --color-emerald-100: #d6f5e3;
   --color-emerald-200: #b0eaca;
@@ -19,64 +19,84 @@
   --color-emerald-900: #10442f;
   --color-emerald-950: #08261b;
 
-  /* True neutral steel-graphite CAD scale (zero hue tint) */
-  --color-slate-50:  #f7f8fa;
-  --color-slate-100: #eef0f3;
-  --color-slate-200: #dfe3e9;
-  --color-slate-300: #c8ced7;
-  --color-slate-400: #939ca8;
-  --color-slate-500: #6c7582;
-  --color-slate-600: #525a66;
-  --color-slate-700: #3d434d;
-  --color-slate-800: #2b3038;
-  --color-slate-900: #1f2329;
-  --color-slate-950: #15181c;
+  /* True neutral mineral steel-graphite CAD scale */
+  --color-slate-50:  #f6f8f7;
+  --color-slate-100: #ecf0ee;
+  --color-slate-200: #dce3df;
+  --color-slate-300: #c4cec9;
+  --color-slate-400: #8e9b95;
+  --color-slate-500: #66736d;
+  --color-slate-600: #4d5853;
+  --color-slate-700: #39423e;
+  --color-slate-800: #272e2b;
+  --color-slate-900: #1b211f;
+  --color-slate-950: #111614;
 }
 
 :root {
   color-scheme: light;
   --flux-surface: #ffffff;
-  --flux-surface-alt: #f4f6f8;
-  --flux-bg: #eceff3;
-  --flux-hover: #e3e7ed;
-  --flux-sel: #dce7fa;
-  --flux-line: #d3d8e0;
-  --flux-line-strong: #b4bcc8;
-  --flux-text: #181c22;
-  --flux-text-muted: #58616e;
-  --flux-accent: #1a5fd0;
-  --flux-accent-hover: #144fb3;
-  --flux-accent-solid: #1a5fd0;
-  --flux-accent-solid-hover: #144fb3;
-  --flux-accent-soft: rgba(26, 95, 208, 0.10);
-  --flux-focus: #1a5fd0;
-  --flux-canvas-bg: #dde1e7;
-  --flux-grid-dot: #c3cad4;
-  --flux-paper-shadow: 0 2px 10px rgba(15, 23, 42, 0.14);
-  --flux-popover-shadow: 0 6px 20px -4px rgba(15, 23, 42, 0.18), 0 1px 4px rgba(15, 23, 42, 0.08);
+  --flux-surface-alt: #f3f7f5;
+  --flux-bg: #ebf0ed;
+  --flux-hover: #e1e8e4;
+  --flux-sel: rgba(21, 132, 83, 0.13);
+  --flux-line: rgba(17, 24, 21, 0.11);
+  --flux-line-strong: rgba(17, 24, 21, 0.20);
+  --flux-text: #141c19;
+  --flux-text-muted: #505e58;
+  --flux-accent: #138553;
+  --flux-accent-hover: #0e6b43;
+  --flux-accent-solid: #158f5a;
+  --flux-accent-solid-hover: #107348;
+  --flux-accent-soft: rgba(21, 143, 90, 0.12);
+  --flux-focus: #158f5a;
+  --flux-canvas-bg: #dfe6e2;
+  --flux-grid-dot: #b9c5be;
+
+  /* iOS 27 Glassmorphism semi-transparent surface variables */
+  --flux-glass-bg: rgba(242, 247, 244, 0.76);
+  --flux-glass-surface: rgba(255, 255, 255, 0.78);
+  --flux-glass-surface-alt: rgba(244, 248, 246, 0.74);
+  --flux-glass-modal: rgba(250, 253, 251, 0.84);
+  --flux-glass-border: rgba(255, 255, 255, 0.70);
+  --flux-glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(17, 24, 21, 0.05);
+
+  --flux-paper-shadow: 0 10px 30px -8px rgba(10, 26, 19, 0.16), 0 2px 8px rgba(10, 26, 19, 0.06);
+  --flux-popover-shadow: 0 14px 36px -8px rgba(10, 26, 19, 0.20), 0 2px 10px rgba(10, 26, 19, 0.08);
+  --flux-window-shadow: 0 24px 64px -12px rgba(10, 26, 19, 0.24), 0 8px 24px -6px rgba(10, 26, 19, 0.10);
 }
 
 .dark {
   color-scheme: dark;
-  --flux-surface: #23272e;
-  --flux-surface-alt: #1e2228;
-  --flux-bg: #1a1d22;
-  --flux-hover: #2d323b;
-  --flux-sel: #243958;
-  --flux-line: #343a44;
-  --flux-line-strong: #474f5c;
-  --flux-text: #e3e7ee;
-  --flux-text-muted: #939ca8;
-  --flux-accent: #5897ff;
-  --flux-accent-hover: #74a9ff;
-  --flux-accent-solid: #2667d4;
-  --flux-accent-solid-hover: #1f57b8;
-  --flux-accent-soft: rgba(88, 151, 255, 0.15);
-  --flux-focus: #5897ff;
-  --flux-canvas-bg: #14171b;
-  --flux-grid-dot: #3a414d;
-  --flux-paper-shadow: 0 4px 16px rgba(0, 0, 0, 0.50);
-  --flux-popover-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --flux-surface: #1a201e;
+  --flux-surface-alt: #151a18;
+  --flux-bg: #111514;
+  --flux-hover: #232b28;
+  --flux-sel: rgba(52, 211, 153, 0.16);
+  --flux-line: rgba(224, 242, 234, 0.10);
+  --flux-line-strong: rgba(224, 242, 234, 0.19);
+  --flux-text: #e6efeb;
+  --flux-text-muted: #90a29a;
+  --flux-accent: #34d399;
+  --flux-accent-hover: #5eead4;
+  --flux-accent-solid: #158f5a;
+  --flux-accent-solid-hover: #107348;
+  --flux-accent-soft: rgba(52, 211, 153, 0.15);
+  --flux-focus: #34d399;
+  --flux-canvas-bg: #0d1110;
+  --flux-grid-dot: #2b3631;
+
+  /* iOS 27 Glassmorphism semi-transparent surface variables */
+  --flux-glass-bg: rgba(19, 25, 23, 0.74);
+  --flux-glass-surface: rgba(26, 33, 30, 0.78);
+  --flux-glass-surface-alt: rgba(21, 27, 24, 0.74);
+  --flux-glass-modal: rgba(22, 29, 26, 0.82);
+  --flux-glass-border: rgba(255, 255, 255, 0.11);
+  --flux-glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+
+  --flux-paper-shadow: 0 14px 36px -8px rgba(0, 0, 0, 0.56), 0 2px 8px rgba(0, 0, 0, 0.34);
+  --flux-popover-shadow: 0 16px 42px -8px rgba(0, 0, 0, 0.66), 0 4px 12px rgba(0, 0, 0, 0.42);
+  --flux-window-shadow: 0 28px 72px -12px rgba(0, 0, 0, 0.76), 0 10px 28px -6px rgba(0, 0, 0, 0.48);
 }
 
 html, body, #root {
@@ -89,11 +109,105 @@ html, body, #root {
   font-size: 12px;
   line-height: 17px;
   -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Global anti-copy protection for UI chrome, buttons, tabs, labels & SVG schematics */
+button,
+[role="button"],
+[role="tab"],
+[role="menuitem"],
+summary,
+label,
+header,
+nav,
+aside,
+kbd,
+svg text,
+svg tspan,
+.cad-prop-section,
+.cad-prop-label {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Preserve text selection exclusively in text inputs, textareas, code blocks, and explicit copy areas */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([type="file"]),
+textarea,
+[contenteditable="true"],
+pre,
+.select-text,
+[data-selectable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* iOS 27 Glassmorphism surfaces for dockable panels, toolbars, popovers & studio windows */
+.flux-glass-panel {
+  background-color: var(--flux-glass-bg);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  box-shadow: var(--flux-glass-specular);
+  contain: layout style;
+}
+
+.flux-glass-surface {
+  background-color: var(--flux-glass-surface);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  box-shadow: var(--flux-glass-specular);
+}
+
+.flux-glass-bar {
+  background-color: var(--flux-glass-surface-alt);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+}
+
+.flux-glass-modal {
+  background-color: var(--flux-glass-modal);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  box-shadow: var(--flux-window-shadow), var(--flux-glass-specular);
+  contain: layout style;
+}
+
+.flux-glass-popover {
+  background-color: var(--flux-glass-modal);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  box-shadow: var(--flux-popover-shadow), var(--flux-glass-specular);
+  contain: layout style;
+}
+
+/* Avoid redundant nested GPU blur readbacks inside already-frosted top-level glass shells */
+.flux-glass-panel .flux-glass-bar,
+.flux-glass-panel .flux-glass-surface,
+.flux-glass-modal .flux-glass-bar,
+.flux-glass-modal .flux-glass-surface,
+.flux-glass-surface .flux-glass-bar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Subtle 2026 ambient backdrop behind translucent workspace shell */
+.flux-ambient-shell {
+  background-color: var(--flux-bg);
+  background-image:
+    radial-gradient(60% 45% at 14% 0%, rgba(21, 143, 90, 0.08) 0%, transparent 70%),
+    radial-gradient(50% 40% at 88% 100%, rgba(16, 185, 129, 0.07) 0%, transparent 72%);
+}
+
+.dark .flux-ambient-shell {
+  background-image:
+    radial-gradient(60% 45% at 14% 0%, rgba(52, 211, 153, 0.09) 0%, transparent 70%),
+    radial-gradient(50% 40% at 88% 100%, rgba(16, 185, 129, 0.08) 0%, transparent 72%);
 }
 
 /* Precision CAD vector stroke weight for UI chrome icons */
 svg.lucide {
-  stroke-width: 1.4;
+  stroke-width: 1.45;
 }
 
 .tabular-nums {
@@ -108,9 +222,9 @@ svg.lucide {
   display: none;
 }
 
-/* Authentic 2-column CAD Property Grid (AutoCAD / KiCad / Altium / EPLAN style) */
+/* Authentic 2-column CAD Property Grid */
 .cad-prop-section {
-  background-color: var(--flux-surface-alt);
+  background-color: var(--flux-glass-surface-alt);
   border-top: 1px solid var(--flux-line);
   border-bottom: 1px solid var(--flux-line);
   padding: 3px 8px;
@@ -126,7 +240,7 @@ svg.lucide {
 .cad-prop-grid {
   display: grid;
   grid-template-columns: minmax(96px, 43%) minmax(0, 1fr);
-  background-color: var(--flux-surface);
+  background-color: var(--flux-glass-surface);
 }
 
 .cad-prop-label {
@@ -134,7 +248,7 @@ svg.lucide {
   font-size: 11px;
   line-height: 18px;
   color: var(--flux-text-muted);
-  background-color: var(--flux-surface-alt);
+  background-color: var(--flux-glass-surface-alt);
   border-right: 1px solid var(--flux-line);
   border-bottom: 1px solid var(--flux-line);
   display: flex;
@@ -146,7 +260,7 @@ svg.lucide {
 }
 
 .cad-prop-cell {
-  background-color: var(--flux-surface);
+  background-color: var(--flux-glass-surface);
   border-bottom: 1px solid var(--flux-line);
   min-width: 0;
   display: flex;
@@ -246,7 +360,7 @@ textarea:focus-visible,
 }
 ::-webkit-scrollbar-thumb {
   background: var(--flux-line-strong);
-  border-radius: 1px;
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--flux-text-muted);

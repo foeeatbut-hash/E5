@@ -119,16 +119,16 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   return (
     <aside
       aria-label="Дерево проекта и библиотека компонентов"
-      className="no-print w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0 select-none"
+      className="no-print w-full h-full flex-1 min-w-0 flux-glass-panel flex flex-col min-h-0 select-none"
     >
       {/* Flush CAD Navigator Tabs */}
-      <div className="grid grid-cols-2 h-7 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)]">
+      <div className="grid grid-cols-2 h-7 border-b border-[var(--flux-line)] flux-glass-bar">
         <button
           type="button"
           onClick={() => setTab('project')}
           className={`relative inline-flex items-center justify-center gap-1.5 h-full border-r border-[var(--flux-line)] text-[11.5px] transition-colors whitespace-nowrap ${
             tab === 'project'
-              ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
+              ? 'bg-[var(--flux-surface)]/80 text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
               : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
           }`}
         >
@@ -140,7 +140,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
           onClick={() => setTab('library')}
           className={`relative inline-flex items-center justify-center gap-1.5 h-full text-[11.5px] transition-colors whitespace-nowrap ${
             tab === 'library'
-              ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
+              ? 'bg-[var(--flux-surface)]/80 text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
               : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
           }`}
         >
@@ -150,7 +150,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
       </div>
 
       {/* Search */}
-      <div className="p-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-bg)]">
+      <div className="p-1.5 border-b border-[var(--flux-line)] bg-transparent">
         <div className="relative">
           <Search className="w-3.5 h-3.5 text-[var(--flux-text-muted)] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input

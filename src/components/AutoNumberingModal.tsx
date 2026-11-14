@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowRight, Check, Cpu, Hash, Spline, X } from 'lucide-react';
+import { ArrowRight, Check, Cpu, Hash, Spline } from 'lucide-react';
+import { StudioWindow } from './StudioWindow';
 import type { E3Project } from '../core/e3Types';
 import {
   type DeviceScanOrder,
@@ -77,49 +78,18 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.14 }}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="autonum-modal-title"
-          data-testid="auto-numbering-modal"
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98, y: 6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.98, y: 4 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-3xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[90vh] overflow-hidden"
-          >
-            {/* Header */}
-            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Hash className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
-                <h2
-                  id="autonum-modal-title"
-                  className="text-[14px] font-semibold text-[var(--flux-text)] truncate"
-                >
-                  Пакетная автонумерация по ГОСТ 2.710
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Закрыть окно автонумерации"
-                className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="floating"
+      maxWidthClass="max-w-3xl"
+      heightClass="max-h-[90vh]"
+      title="Пакетная автонумерация по ГОСТ 2.710"
+      titleId="autonum-modal-title"
+      icon={<Hash className="w-4 h-4 text-[var(--flux-accent)]" />}
+      testId="auto-numbering-modal"
+      closeAriaLabel="Закрыть окно автонумерации"
+    >
 
             {/* Sub-tabs */}
             <div className="px-3 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center shrink-0">
@@ -456,9 +426,6 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
               </motion.div>
             )}
             </AnimatePresence>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </StudioWindow>
   );
 };

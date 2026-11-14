@@ -322,7 +322,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
           ? 'Нажмите вкладку для открытия/переключения, перетащите свободную область для перемещения панели'
           : undefined
       }
-      className={`group/tabstrip h-7 pr-1.5 bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2 shrink-0 min-w-0 select-none ${
+      className={`group/tabstrip h-7 pr-1.5 flux-glass-bar flex items-center justify-between gap-2 shrink-0 min-w-0 select-none ${
         isBottomTabs
           ? `border-t border-[var(--flux-line)] ${onStartPanelDrag ? 'cursor-grab active:cursor-grabbing' : ''}`
           : 'border-b border-[var(--flux-line)]'
@@ -458,11 +458,11 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
   );
 
   const bodyElement = !collapsed ? (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[var(--flux-bg)]">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden flux-glass-panel">
       {/* TAB 1: BOM (Спецификация ПЭ3) */}
       {activeTab === 'bom' && (
         <>
-          <div className="h-7 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
+          <div className="h-7 px-2 border-b border-[var(--flux-line)] flux-glass-surface flex items-center justify-between gap-2 shrink-0">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <input
                         type="search"

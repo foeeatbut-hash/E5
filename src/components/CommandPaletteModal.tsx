@@ -16,6 +16,8 @@ import {
   filterCommandPaletteItems,
 } from '../core/commandPalette';
 
+import { StudioWindow } from './StudioWindow';
+
 interface CommandPaletteModalProps {
   open: boolean;
   items: CommandPaletteItem[];
@@ -100,124 +102,108 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          data-testid="command-palette-modal"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.12 }}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4 bg-black/50"
+    <StudioWindow
+      open={open}
+      onClose={onClose}
+      variant="spotlight"
+      hideHeader
+      maxWidthClass="max-w-[640px]"
+      testId="command-palette-modal"
+    >
+      <div className="h-11 px-3.5 border-b border-[var(--flux-line)] flex items-center gap-2.5 flux-glass-bar">
+        <Search className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
+        <input
+          ref={inputRef}
+          type="text"
+          spellCheck={false}
+          data-testid="command-palette-input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Команда (WIRE, MOVE, ROTATE, ZOOM, ERC, DXF) или ОУО (-KM1)…"
+          aria-label="Палитра команд CAD"
+          className="flex-1 min-w-0 bg-transparent text-[13px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none"
+        />
+        <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 font-mono text-[10px] text-[var(--flux-text-muted)]">
+          Esc
+        </kbd>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Закрыть палитру команд"
+          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
         >
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
-            style={{ boxShadow: 'var(--flux-popover-shadow)' }}
-            className="w-full max-w-[640px] rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] overflow-hidden flex flex-col"
-          >
-            <div className="h-9 px-3 border-b border-[var(--flux-line)] flex items-center gap-2 bg-[var(--flux-surface-alt)]">
-              <Search className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-              <input
-                ref={inputRef}
-                type="text"
-                spellCheck={false}
-                data-testid="command-palette-input"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Команда (WIRE, MOVE, ROTATE, ZOOM, ERC, DXF) или ОУО (-KM1)…"
-                aria-label="Палитра команд CAD"
-                className="flex-1 min-w-0 bg-transparent text-[12.5px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none"
-              />
-              <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10px] text-[var(--flux-text-muted)]">
-                Esc
-              </kbd>
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div
+        ref={listRef}
+        data-testid="command-palette-list"
+        className="max-h-[380px] overflow-y-auto divide-y divide-[var(--flux-line)]/60"
+      >
+        {filtered.length === 0 ? (
+          <div className="px-4 py-8 text-center text-[12px] text-[var(--flux-text-muted)]">
+            По запросу «{query}» команды или аппараты не найдены.
+          </div>
+        ) : (
+          filtered.map((item, idx) => {
+            const isActive = idx === selectedIdx;
+            return (
               <button
+                key={item.id}
                 type="button"
-                onClick={onClose}
-                aria-label="Закрыть палитру команд"
-                className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                data-testid={`cmd-item-${item.id}`}
+                data-active={isActive ? 'true' : 'false'}
+                disabled={item.disabled}
+                onMouseEnter={() => setSelectedIdx(idx)}
+                onClick={() => runItem(item)}
+                className={`w-full px-3.5 py-2 flex items-center justify-between gap-3 text-left transition-colors disabled:opacity-45 ${
+                  isActive ? 'bg-[var(--flux-sel)]' : 'hover:bg-[var(--flux-hover)]'
+                }`}
               >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div
-              ref={listRef}
-              data-testid="command-palette-list"
-              className="max-h-[380px] overflow-y-auto divide-y divide-[var(--flux-line)]/70"
-            >
-              {filtered.length === 0 ? (
-                <div className="px-4 py-8 text-center text-[12px] text-[var(--flux-text-muted)]">
-                  По запросу «{query}» команды или аппараты не найдены.
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <CategoryIcon category={item.category} />
+                  <div className="min-w-0">
+                    <div className="text-[12.5px] font-medium text-[var(--flux-text)] truncate">
+                      {item.title}
+                    </div>
+                    <div className="text-[11px] text-[var(--flux-text-muted)] truncate">
+                      {item.subtitle}
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                filtered.map((item, idx) => {
-                  const isActive = idx === selectedIdx;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      data-testid={`cmd-item-${item.id}`}
-                      data-active={isActive ? 'true' : 'false'}
-                      disabled={item.disabled}
-                      onMouseEnter={() => setSelectedIdx(idx)}
-                      onClick={() => runItem(item)}
-                      className={`w-full px-3 py-2 flex items-center justify-between gap-3 text-left transition-colors disabled:opacity-45 ${
-                        isActive ? 'bg-[var(--flux-sel)]' : 'hover:bg-[var(--flux-hover)]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <CategoryIcon category={item.category} />
-                        <div className="min-w-0">
-                          <div className="text-[12.5px] font-medium text-[var(--flux-text)] truncate">
-                            {item.title}
-                          </div>
-                          <div className="text-[11px] text-[var(--flux-text-muted)] truncate">
-                            {item.subtitle}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="px-1.5 py-0.5 rounded-[2px] bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[10px] text-[var(--flux-text-muted)]">
-                          {COMMAND_CATEGORY_LABELS[item.category]}
-                        </span>
-                        {item.shortcut && (
-                          <kbd className="px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-text)]">
-                            {item.shortcut}
-                          </kbd>
-                        )}
-                        {isActive && !item.disabled && (
-                          <CornerDownLeft className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                        )}
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="px-1.5 py-0.5 rounded-md bg-[var(--flux-bg)]/80 border border-[var(--flux-line)] text-[10px] text-[var(--flux-text-muted)]">
+                    {COMMAND_CATEGORY_LABELS[item.category]}
+                  </span>
+                  {item.shortcut && (
+                    <kbd className="px-1.5 py-0.5 rounded-md border border-[var(--flux-line)] bg-[var(--flux-bg)]/80 font-mono text-[10px] text-[var(--flux-text)]">
+                      {item.shortcut}
+                    </kbd>
+                  )}
+                  {isActive && !item.disabled && (
+                    <CornerDownLeft className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                  )}
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
 
-            <div className="h-7 px-3 border-t border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2 text-[10.5px] text-[var(--flux-text-muted)]">
-              <div className="flex items-center gap-3">
-                <span>↑↓ выбор</span>
-                <span>Enter выполнить</span>
-              </div>
-              <div className="hidden sm:flex items-center gap-2.5 font-mono">
-                <span>F3 Привязка</span>
-                <span>F8 Орто</span>
-                <span>F9 Сетка</span>
-                <span>Space Провод</span>
-              </div>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+      <div className="h-7 px-3.5 border-t border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 text-[10.5px] text-[var(--flux-text-muted)]">
+        <div className="flex items-center gap-3">
+          <span>↑↓ выбор</span>
+          <span>Enter выполнить</span>
+        </div>
+        <div className="hidden sm:flex items-center gap-2.5 font-mono">
+          <span>F3 Привязка</span>
+          <span>F8 Орто</span>
+          <span>F9 Сетка</span>
+          <span>Space Провод</span>
+        </div>
+      </div>
+    </StudioWindow>
   );
 };

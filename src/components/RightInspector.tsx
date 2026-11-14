@@ -158,7 +158,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   const totalSelectedCount =
     selectedDeviceIds.length + selectedWireIds.length + selectedAnnotationIds.length;
   const isMultiSelection = totalSelectedCount > 1;
-  const isSheetMode = !isMultiSelection && !selectedDevice && !selectedWire && !selectedAnnotation;
+  const isSheetMode = Boolean(activeSheet) && !isMultiSelection && !selectedDevice && !selectedWire && !selectedAnnotation;
 
   useEffect(() => {
     if (!pendingScrollToHistory || !isSheetMode) return;
@@ -219,9 +219,9 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
     <aside
       aria-label="Свойства и атрибуты E3 / Flux"
       data-testid="right-inspector"
-      className="no-print w-full h-full flex-1 min-w-0 max-w-full bg-[var(--flux-surface)] flex flex-col min-h-0 overflow-x-hidden select-none"
+      className="no-print w-full h-full flex-1 min-w-0 max-w-full flux-glass-surface flex flex-col min-h-0 overflow-x-hidden select-none"
     >
-      <div className="px-2 h-6 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1.5 shrink-0">
+      <div className="px-2 h-6 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-1.5 shrink-0">
         <span className="text-[11px] font-semibold text-[var(--flux-text)] truncate">
           {isMultiSelection
             ? `Выборка: ${totalSelectedCount} об.`
@@ -231,7 +231,9 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                 ? `Цепь · ${selectedWire.netName}`
                 : selectedAnnotation
                   ? `Аннотация · ${selectedAnnotation.kind === 'rect' ? 'Зона' : selectedAnnotation.kind === 'callout' ? 'Выноска' : 'Текст'}`
-                  : 'Лист ГОСТ 2.104'}
+                  : activeSheet
+                    ? 'Лист ГОСТ 2.104'
+                    : 'Нет открытых листов'}
         </span>
         <div className="flex items-center gap-1 shrink-0">
           {selectedDevice && !isMultiSelection && (
@@ -1894,7 +1896,17 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               );
             })()}
           </div>
-        ) : null}
+        ) : (
+          <div
+            data-testid="inspector-no-sheet-empty"
+            className="p-3 space-y-2 text-[11.5px] leading-relaxed text-[var(--flux-text-muted)]"
+          >
+            <div className="font-semibold text-[var(--flux-text)]">Нет открытого листа на холсте</div>
+            <p>
+              Все вкладки листов закрыты. Откройте любой лист проекта из дерева «Проект и База» слева или прямо на пустом холсте.
+            </p>
+          </div>
+        )}
       </div>
     </aside>
   );

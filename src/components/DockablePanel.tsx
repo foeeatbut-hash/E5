@@ -14,12 +14,12 @@ import {
 import type { DockEdge, DockSide, PanelConfig, PanelId } from '../core/dockLayout';
 
 export const CAD_PANEL_TRANSITION = {
-  duration: 0.24,
+  duration: 0.15,
   ease: [0.22, 1, 0.36, 1] as const,
 };
 
 export const CAD_FAST_TRANSITION = {
-  duration: 0.16,
+  duration: 0.11,
   ease: [0.22, 1, 0.36, 1] as const,
 };
 
@@ -75,7 +75,7 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
   onToggleCollapse,
 }) => {
   const dockBtnCls = (active: boolean) =>
-    `inline-flex items-center justify-center w-[18px] h-[18px] rounded-[2px] transition-colors ${
+    `inline-flex items-center justify-center w-[18px] h-[18px] rounded-md transition-colors ${
       active
         ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]'
         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -102,7 +102,7 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
         onToggleCollapse(panel.id);
       }}
       title="Перетащите заголовок для закрепления или дважды кликните для сворачивания"
-      className="group/header h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1.5 shrink-0 cursor-grab active:cursor-grabbing select-none"
+      className="group/header h-6 px-2 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-1.5 shrink-0 cursor-grab active:cursor-grabbing select-none"
     >
       <div className="flex items-center gap-1.5 min-w-0">
         <GripHorizontal className="w-3 h-3 text-[var(--flux-text-muted)]/50 group-hover/header:text-[var(--flux-text-muted)] transition-colors shrink-0" />
@@ -209,7 +209,7 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = React.memo(
         data-testid={`dock-panel-${panel.id}`}
         data-dock={panel.dock}
         data-collapsed={panel.collapsed ? 'true' : 'false'}
-        className={`flex flex-col min-w-0 min-h-0 bg-[var(--flux-surface)] overflow-hidden ${className}`}
+        className={`flex flex-col min-w-0 min-h-0 flux-glass-surface overflow-hidden ${className}`}
       >
         {children}
       </div>
@@ -222,7 +222,7 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = React.memo(
         data-testid={`dock-panel-${panel.id}`}
         data-dock={panel.dock}
         data-collapsed={panel.collapsed ? 'true' : 'false'}
-        className={`relative flex flex-col min-w-0 min-h-0 bg-[var(--flux-bg)] overflow-hidden ${className}`}
+        className={`relative flex flex-col min-w-0 min-h-0 flux-glass-panel overflow-hidden ${className}`}
       >
         <AnimatePresence initial={false} mode="popLayout">
           {showSideRail ? (
@@ -239,7 +239,7 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = React.memo(
               }}
               onDoubleClick={() => onToggleCollapse(panel.id)}
               title={`Развернуть «${panel.title}» (или перетащите для перемещения)`}
-              className="h-full w-[28px] bg-[var(--flux-surface-alt)] flex flex-col items-center py-1 gap-1 select-none cursor-grab active:cursor-grabbing"
+              className="h-full w-[28px] flux-glass-bar flex flex-col items-center py-1 gap-1 select-none cursor-grab active:cursor-grabbing"
             >
               <button
                 type="button"
@@ -280,7 +280,7 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = React.memo(
               exit={{ opacity: 0, x: edge === 'left' ? -12 : 12 }}
               transition={collapseMotion}
               style={{ width: bandSize }}
-              className="h-full flex flex-col min-h-0 overflow-hidden bg-[var(--flux-bg)]"
+              className="h-full flex flex-col min-h-0 overflow-hidden flux-glass-panel"
             >
               <PanelHeaderBar
                 panel={panel}
@@ -304,7 +304,7 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = React.memo(
       data-collapsed={panel.collapsed ? 'true' : 'false'}
       animate={multiPanelInBand ? { flexGrow: panel.collapsed ? 0 : 1 } : undefined}
       transition={collapseMotion}
-      className={`flex flex-col min-w-0 min-h-0 bg-[var(--flux-bg)] overflow-hidden ${
+      className={`flex flex-col min-w-0 min-h-0 flux-glass-panel overflow-hidden ${
         multiPanelInBand && panel.collapsed ? 'shrink-0' : className
       }`}
     >
@@ -415,9 +415,8 @@ export const FloatingPanelWindow: React.FC<FloatingPanelWindowProps> = React.mem
         left: panel.floating.x,
         top: panel.floating.y,
         width: panel.floating.width,
-        boxShadow: 'var(--flux-paper-shadow)',
       }}
-      className="no-print fixed z-40 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] flex flex-col overflow-hidden"
+      className="no-print fixed z-40 rounded-2xl border border-[var(--flux-line-strong)] flux-glass-modal flex flex-col overflow-hidden"
     >
       <PanelHeaderBar
         panel={panel}
