@@ -86,6 +86,14 @@ test('computeViewportSheets allocates 1, 2, 3, and 4 sheets cleanly', () => {
   assert.equal(s4.length, 4);
   // Seed has 3 sheets, so 4th wraps cleanly without throwing
   assert.ok(proj.sheets.some((sh) => sh.id === s4[3]));
+
+  // Regression: focusing or middle-clicking Viewport 1 (setting activeSheetId = s2[1])
+  // must NOT swap Viewport 0 and Viewport 1 sheets.
+  const focusedVp1 = computeViewportSheets('two', proj.sheets, s2, s2[1]);
+  assert.deepEqual(focusedVp1, s2);
+
+  const focusedVp2 = computeViewportSheets('three', proj.sheets, s3, s3[2]);
+  assert.deepEqual(focusedVp2, s3);
 });
 
 test('duplicateSheetInProject and deleteSheetFromProject manage sheets safely', () => {

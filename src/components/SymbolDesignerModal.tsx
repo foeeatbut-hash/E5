@@ -344,17 +344,17 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
         >
           <motion.div
             initial={{ opacity: 0, y: 8, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.985 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-5xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            className="w-full max-w-5xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[90vh]"
           >
             {/* Header */}
-            <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between shrink-0">
+            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-[var(--flux-accent)]" />
                 <h2 id="symbol-designer-title" className="text-[14px] font-semibold text-[var(--flux-text)]">

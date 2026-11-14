@@ -541,10 +541,17 @@ export interface ProcessLogEntry {
     | 'CAD-DXF'
     | 'PORTABLE'
     | 'SERVER'
-    | 'E3-COM';
+    | 'E3-COM'
+    | 'UI-INTERACT'
+    | 'PERF-DIAG'
+    | 'NET-API';
   message: string;
   durationMs?: number;
   details?: string;
+  cause?: string;
+  outcome?: string;
+  screenState?: string;
+  lagMs?: number;
 }
 
 export interface FluxExportNode {

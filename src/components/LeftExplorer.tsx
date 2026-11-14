@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import {
   Cable,
   ChevronRight,
@@ -37,8 +36,6 @@ interface LeftExplorerProps {
   onOpenHvacWizard: () => void;
   onOpenSymbolDesigner?: () => void;
 }
-
-const TREE_TRANSITION = { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const };
 
 export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   project,
@@ -124,56 +121,38 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
       aria-label="Дерево проекта и библиотека компонентов"
       className="no-print w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0 select-none"
     >
-      {/* Segmented Switcher */}
-      <div className="p-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)]">
-        <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded-md border border-[var(--flux-line)] bg-[var(--flux-bg)]">
-          <button
-            type="button"
-            onClick={() => setTab('project')}
-            className={`relative inline-flex items-center justify-center gap-1.5 h-7 rounded text-[12px] font-medium transition-colors whitespace-nowrap ${
-              tab === 'project'
-                ? 'text-[var(--flux-text)]'
-                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
-            }`}
-          >
-            {tab === 'project' && (
-              <motion.span
-                layoutId="explorer-tab-pill"
-                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-0 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] shadow-2xs"
-                aria-hidden="true"
-              />
-            )}
-            <FolderTree className={`relative z-10 w-3.5 h-3.5 ${tab === 'project' ? 'text-[var(--flux-accent)]' : ''}`} />
-            <span className="relative z-10">Проект ({project.devices.length})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('library')}
-            className={`relative inline-flex items-center justify-center gap-1.5 h-7 rounded text-[12px] font-medium transition-colors whitespace-nowrap ${
-              tab === 'library'
-                ? 'text-[var(--flux-text)]'
-                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
-            }`}
-          >
-            {tab === 'library' && (
-              <motion.span
-                layoutId="explorer-tab-pill"
-                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-0 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] shadow-2xs"
-                aria-hidden="true"
-              />
-            )}
-            <Database className={`relative z-10 w-3.5 h-3.5 ${tab === 'library' ? 'text-[var(--flux-accent)]' : ''}`} />
-            <span className="relative z-10">База ({catalog.length})</span>
-          </button>
-        </div>
+      {/* Flush CAD Navigator Tabs */}
+      <div className="grid grid-cols-2 h-7 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)]">
+        <button
+          type="button"
+          onClick={() => setTab('project')}
+          className={`relative inline-flex items-center justify-center gap-1.5 h-full border-r border-[var(--flux-line)] text-[11.5px] transition-colors whitespace-nowrap ${
+            tab === 'project'
+              ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
+              : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+          }`}
+        >
+          <FolderTree className={`w-3.5 h-3.5 ${tab === 'project' ? 'text-[var(--flux-accent)]' : ''}`} />
+          <span>Проект ({project.devices.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('library')}
+          className={`relative inline-flex items-center justify-center gap-1.5 h-full text-[11.5px] transition-colors whitespace-nowrap ${
+            tab === 'library'
+              ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
+              : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+          }`}
+        >
+          <Database className={`w-3.5 h-3.5 ${tab === 'library' ? 'text-[var(--flux-accent)]' : ''}`} />
+          <span>База ({catalog.length})</span>
+        </button>
       </div>
 
       {/* Search */}
-      <div className="p-2 border-b border-[var(--flux-line)]">
+      <div className="p-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-bg)]">
         <div className="relative">
-          <Search className="w-3.5 h-3.5 text-[var(--flux-text-muted)] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-3.5 h-3.5 text-[var(--flux-text-muted)] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
             spellCheck={false}
@@ -181,89 +160,71 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
             onChange={(e) => setQuery(e.target.value)}
             placeholder={tab === 'project' ? 'Поиск тега, артикула…' : 'Поиск символа или ГОСТ…'}
             aria-label={tab === 'project' ? 'Поиск по проекту' : 'Поиск в базе компонентов'}
-            className="w-full h-7 pl-8 pr-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
+            className="w-full h-6 pl-7 pr-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
           />
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
+      <div className="flex-1 overflow-y-auto p-1 space-y-0.5 bg-[var(--flux-surface)]">
         {tab === 'project' ? (
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {/* Sheets */}
             <div>
               <button
                 type="button"
                 onClick={() => toggleSection('sheets')}
-                className="w-full flex items-center justify-between px-2 h-7 rounded text-[12px] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+                className="w-full flex items-center justify-between px-1.5 h-6 rounded-[2px] text-[11.5px] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
               >
-                <span className="flex items-center gap-1.5">
-                  <motion.span
-                    animate={{ rotate: openSections.sheets ? 90 : 0 }}
-                    transition={TREE_TRANSITION}
-                    className="inline-flex items-center justify-center"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
-                  </motion.span>
+                <span className="flex items-center gap-1">
+                  <ChevronRight
+                    className={`w-3.5 h-3.5 text-[var(--flux-text-muted)] transition-transform duration-150 ${
+                      openSections.sheets ? 'rotate-90' : ''
+                    }`}
+                  />
                   <span>Листы схемы</span>
                 </span>
-                <span className="font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)]">
+                <span className="font-mono tabular-nums text-[10.5px] text-[var(--flux-text-muted)]">
                   {project.sheets.length}
                 </span>
               </button>
-              <AnimatePresence initial={false}>
-                {openSections.sheets && (
-                  <motion.div
-                    key="tree-sheets"
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={TREE_TRANSITION}
-                    className="overflow-hidden"
-                  >
-                    <div className="mt-0.5 space-y-0.5 pl-2">
-                      {project.sheets.map((s) => {
-                        const active = s.id === activeSheetId;
-                        return (
-                          <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => onSelectSheet(s.id)}
-                            className={`w-full flex items-center justify-between gap-2 px-2 h-7 rounded text-left text-[12px] transition-colors ${
-                              active
-                                ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
-                                : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+              {openSections.sheets && (
+                <div className="ml-2.5 pl-1.5 border-l border-[var(--flux-line)] space-y-px py-0.5">
+                  {project.sheets.map((s) => {
+                    const active = s.id === activeSheetId;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => onSelectSheet(s.id)}
+                        className={`w-full flex items-center justify-between gap-1.5 px-1.5 h-6 rounded-[2px] text-left text-[11.5px] transition-colors ${
+                          active
+                            ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
+                            : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <FileText
+                            className={`w-3.5 h-3.5 shrink-0 ${
+                              active ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'
                             }`}
-                          >
-                            <span className="flex items-center gap-1.5 min-w-0">
-                              <FileText
-                                className={`w-3.5 h-3.5 shrink-0 ${
-                                  active ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'
-                                }`}
-                              />
-                              <span className="truncate">
-                                {s.number}. {s.name}
-                              </span>
-                            </span>
-                            <span className="flex items-center gap-1.5 shrink-0">
-                              <span
-                                data-testid={`explorer-sheet-rev-${s.id}`}
-                                className="font-mono tabular-nums text-[10px] px-1 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] text-[var(--flux-text-muted)]"
-                              >
-                                {getSheetRevisionLabel(s)}
-                                {hasSheetUncommittedChanges(project, s) ? '*' : ''}
-                              </span>
-                              <span className="font-mono text-[11px] text-[var(--flux-text-muted)]">
-                                {s.format}
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                          />
+                          <span className="truncate">
+                            {s.number}. {s.name}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-1.5 shrink-0 font-mono tabular-nums text-[10.5px] text-[var(--flux-text-muted)]">
+                          <span data-testid={`explorer-sheet-rev-${s.id}`}>
+                            {getSheetRevisionLabel(s)}
+                            {hasSheetUncommittedChanges(project, s) ? '*' : ''}
+                          </span>
+                          <span>{s.format}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Devices */}
@@ -271,80 +232,67 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => toggleSection('devices')}
-                className="w-full flex items-center justify-between px-2 h-7 rounded text-[12px] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+                className="w-full flex items-center justify-between px-1.5 h-6 rounded-[2px] text-[11.5px] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
               >
-                <span className="flex items-center gap-1.5">
-                  <motion.span
-                    animate={{ rotate: openSections.devices ? 90 : 0 }}
-                    transition={TREE_TRANSITION}
-                    className="inline-flex items-center justify-center"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
-                  </motion.span>
+                <span className="flex items-center gap-1">
+                  <ChevronRight
+                    className={`w-3.5 h-3.5 text-[var(--flux-text-muted)] transition-transform duration-150 ${
+                      openSections.devices ? 'rotate-90' : ''
+                    }`}
+                  />
                   <span>Устройства (Изделия)</span>
                 </span>
-                <span className="font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)]">
+                <span className="font-mono tabular-nums text-[10.5px] text-[var(--flux-text-muted)]">
                   {project.devices.length}
                 </span>
               </button>
-              <AnimatePresence initial={false}>
-                {openSections.devices && (
-                  <motion.div
-                    key="tree-devices"
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={TREE_TRANSITION}
-                    className="overflow-hidden"
-                  >
-                    <div className="mt-0.5 space-y-0.5 pl-2">
-                      {filteredDevices.length === 0 ? (
-                        <div className="px-2 py-3 text-[12px] text-[var(--flux-text-muted)]">
-                          Ничего не найдено по запросу «{query}».
-                        </div>
-                      ) : (
-                        filteredDevices.map((dev) => {
-                          const active = dev.id === selectedDeviceId;
-                          return (
-                            <button
-                              key={dev.id}
-                              type="button"
-                              onClick={() => onSelectDevice(dev)}
-                              className={`w-full flex items-center justify-between gap-2 px-2 h-7 rounded text-left text-[12px] transition-colors ${
-                                active
-                                  ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
-                                  : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-                              }`}
-                            >
-                              <span className="flex items-center gap-1.5 min-w-0">
-                                <Cpu
-                                  className={`w-3.5 h-3.5 shrink-0 ${
-                                    active ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'
-                                  }`}
-                                />
-                                <span className="font-mono shrink-0">{dev.designation}</span>
-                                <span className="truncate text-[var(--flux-text-muted)]">
-                                  {dev.article}
-                                </span>
-                              </span>
-                              {dev.bindingState === 'REMOVED_IN_FLUX' && (
-                                <span className="text-[11px] text-rose-600 dark:text-rose-400 shrink-0">
-                                  Снят
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })
-                      )}
-                      {project.devices.length > 180 && !q && (
-                        <div className="px-2 py-1 text-[11px] text-[var(--flux-text-muted)]">
-                          Показаны первые 180 из {project.devices.length}. Используйте поиск.
-                        </div>
-                      )}
+              {openSections.devices && (
+                <div className="ml-2.5 pl-1.5 border-l border-[var(--flux-line)] space-y-px py-0.5">
+                  {filteredDevices.length === 0 ? (
+                    <div className="px-2 py-2.5 text-[11.5px] text-[var(--flux-text-muted)]">
+                      Ничего не найдено по запросу «{query}».
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  ) : (
+                    filteredDevices.map((dev) => {
+                      const active = dev.id === selectedDeviceId;
+                      return (
+                        <button
+                          key={dev.id}
+                          type="button"
+                          onClick={() => onSelectDevice(dev)}
+                          className={`w-full flex items-center justify-between gap-2 px-1.5 h-6 rounded-[2px] text-left text-[11.5px] transition-colors ${
+                            active
+                              ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
+                              : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            <Cpu
+                              className={`w-3.5 h-3.5 shrink-0 ${
+                                active ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'
+                              }`}
+                            />
+                            <span className="font-mono shrink-0">{dev.designation}</span>
+                            <span className="truncate text-[var(--flux-text-muted)] text-[11px]">
+                              {dev.article}
+                            </span>
+                          </span>
+                          {dev.bindingState === 'REMOVED_IN_FLUX' && (
+                            <span className="text-[10.5px] text-rose-600 dark:text-rose-400 shrink-0">
+                              Снят
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                  {project.devices.length > 180 && !q && (
+                    <div className="px-2 py-1 text-[10.5px] text-[var(--flux-text-muted)]">
+                      Показаны первые 180 из {project.devices.length}. Используйте поиск.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Cables */}
@@ -352,63 +300,50 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => toggleSection('cables')}
-                className="w-full flex items-center justify-between px-2 h-7 rounded text-[12px] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+                className="w-full flex items-center justify-between px-1.5 h-6 rounded-[2px] text-[11.5px] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
               >
-                <span className="flex items-center gap-1.5">
-                  <motion.span
-                    animate={{ rotate: openSections.cables ? 90 : 0 }}
-                    transition={TREE_TRANSITION}
-                    className="inline-flex items-center justify-center"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
-                  </motion.span>
+                <span className="flex items-center gap-1">
+                  <ChevronRight
+                    className={`w-3.5 h-3.5 text-[var(--flux-text-muted)] transition-transform duration-150 ${
+                      openSections.cables ? 'rotate-90' : ''
+                    }`}
+                  />
                   <span>Кабели</span>
                 </span>
-                <span className="font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)]">
+                <span className="font-mono tabular-nums text-[10.5px] text-[var(--flux-text-muted)]">
                   {project.cables.length}
                 </span>
               </button>
-              <AnimatePresence initial={false}>
-                {openSections.cables && (
-                  <motion.div
-                    key="tree-cables"
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={TREE_TRANSITION}
-                    className="overflow-hidden"
-                  >
-                    <div className="mt-0.5 space-y-0.5 pl-2">
-                      {project.cables.map((cab) => (
-                        <div
-                          key={cab.id}
-                          className="flex items-center justify-between gap-2 px-2 h-7 rounded text-[12px] text-[var(--flux-text)]"
-                        >
-                          <span className="flex items-center gap-1.5 min-w-0">
-                            <Cable className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
-                            <span className="font-mono shrink-0">{cab.designation}</span>
-                            <span className="truncate text-[var(--flux-text-muted)]">{cab.cableType}</span>
-                          </span>
-                          <span className="font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)] shrink-0">
-                            {cab.lengthMeters}м
-                          </span>
-                        </div>
-                      ))}
+              {openSections.cables && (
+                <div className="ml-2.5 pl-1.5 border-l border-[var(--flux-line)] space-y-px py-0.5">
+                  {project.cables.map((cab) => (
+                    <div
+                      key={cab.id}
+                      className="flex items-center justify-between gap-2 px-1.5 h-6 rounded-[2px] text-[11.5px] text-[var(--flux-text)]"
+                    >
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <Cable className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                        <span className="font-mono shrink-0">{cab.designation}</span>
+                        <span className="truncate text-[var(--flux-text-muted)] text-[11px]">{cab.cableType}</span>
+                      </span>
+                      <span className="font-mono tabular-nums text-[10.5px] text-[var(--flux-text-muted)] shrink-0">
+                        {cab.lengthMeters}м
+                      </span>
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ) : (
           /* Component Catalog Library */
           <div className="space-y-1.5">
             <div className="space-y-1 px-0.5 pb-1">
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-2 gap-1">
                 <button
                   type="button"
                   onClick={onOpenAddCatalogItem}
-                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+                  className="inline-flex items-center justify-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
                   <span>Новое изделие</span>
@@ -416,9 +351,9 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                 <button
                   type="button"
                   onClick={onOpenHvacWizard}
-                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+                  className="inline-flex items-center justify-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
                 >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                   <span>Схема ПВ</span>
                 </button>
               </div>
@@ -427,7 +362,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                   type="button"
                   data-testid="explorer-symbol-designer-btn"
                   onClick={onOpenSymbolDesigner}
-                  className="w-full inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/60 text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+                  className="w-full inline-flex items-center justify-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
                 >
                   <PenTool className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                   <span>Редактор графики УГО…</span>
@@ -437,7 +372,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
             <div
               role="group"
               aria-label="Фильтр категории базы"
-              className="grid grid-cols-4 gap-0.5 p-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] mx-0.5"
+              className="grid grid-cols-4 rounded-[2px] border border-[var(--flux-line)] divide-x divide-[var(--flux-line)] bg-[var(--flux-bg)] mx-0.5 overflow-hidden"
             >
               {(
                 [
@@ -454,27 +389,19 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                     type="button"
                     data-testid={`catalog-filter-${catKey}`}
                     onClick={() => setCatalogFilter(catKey)}
-                    className={`relative h-6 rounded-xs text-[11px] font-medium transition-colors whitespace-nowrap ${
+                    className={`h-6 text-[11px] transition-colors whitespace-nowrap ${
                       active
-                        ? 'text-[var(--flux-text)]'
-                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                        ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                     }`}
                   >
-                    {active && (
-                      <motion.span
-                        layoutId="catalog-filter-pill"
-                        transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-                        className="absolute inset-0 rounded-xs bg-[var(--flux-sel)]"
-                        aria-hidden="true"
-                      />
-                    )}
-                    <span className="relative z-10">{label}</span>
+                    {label}
                   </button>
                 );
               })}
             </div>
             {filteredCatalog.length === 0 ? (
-              <div className="px-2 py-4 text-[12px] text-[var(--flux-text-muted)] space-y-1.5 text-center">
+              <div className="px-2 py-4 text-[11.5px] text-[var(--flux-text-muted)] space-y-1.5 text-center">
                 <div>Компоненты в выбранной категории не найдены.</div>
                 {(q || catalogFilter !== 'all') && (
                   <button
@@ -490,7 +417,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                 )}
               </div>
             ) : (
-              <div className="border border-[var(--flux-line)] rounded bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] mx-0.5 overflow-hidden">
+              <div className="border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] mx-0.5 overflow-hidden">
                 {filteredCatalog.map((item) => (
                   <div
                     key={item.id}
@@ -503,19 +430,19 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                       }
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
-                    className="px-2.5 py-2 hover:bg-[var(--flux-hover)] transition-colors flex flex-col gap-1"
+                    className="px-2 py-1.5 hover:bg-[var(--flux-hover)] transition-colors flex flex-col gap-0.5"
                   >
                     <div className="flex items-center justify-between gap-1.5">
                       <span className="font-mono text-[11px] font-medium text-[var(--flux-text)] truncate">
                         -{item.defaultPrefix}? · {item.article}
                       </span>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-0.5 shrink-0">
                         <button
                           type="button"
                           onClick={() => onEditCatalogItem(item)}
                           title="Редактировать изделие и его атрибуты"
                           aria-label={`Редактировать ${item.componentName}`}
-                          className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-bg)] transition-colors"
+                          className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-bg)] transition-colors"
                         >
                           <Pencil className="w-3 h-3" />
                         </button>
@@ -524,7 +451,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                             type="button"
                             onClick={() => onDeleteCustomCatalogItem(item.id)}
                             aria-label={`Удалить ${item.componentName}`}
-                            className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 hover:bg-[var(--flux-bg)] transition-colors"
+                            className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:text-rose-600 hover:bg-[var(--flux-bg)] transition-colors"
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
@@ -532,7 +459,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                         <button
                           type="button"
                           onClick={() => onPlaceCatalogItem(item)}
-                          className="inline-flex items-center gap-1 h-6 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:border-[var(--flux-accent)] hover:bg-[var(--flux-accent-soft)] text-[11px] font-medium text-[var(--flux-text)] transition-colors whitespace-nowrap shrink-0"
+                          className="inline-flex items-center gap-1 h-5 px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:border-[var(--flux-accent)] hover:bg-[var(--flux-sel)] text-[10.5px] font-medium text-[var(--flux-text)] transition-colors whitespace-nowrap shrink-0"
                         >
                           <Plus className="w-3 h-3 text-[var(--flux-accent)]" />
                           <span>На лист</span>

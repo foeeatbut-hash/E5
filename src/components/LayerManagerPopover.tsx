@@ -85,12 +85,12 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
           exit={{ opacity: 0, y: -4, scale: 0.985 }}
           transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
           style={{ boxShadow: 'var(--flux-popover-shadow)' }}
-          className={`absolute top-full mt-1.5 z-50 w-[336px] max-w-[calc(100vw-16px)] rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] overflow-hidden select-none text-[12px] ${
+          className={`absolute top-full mt-1 z-50 w-[328px] max-w-[calc(100vw-16px)] rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] overflow-hidden select-none text-[11.5px] ${
             align === 'right' ? 'right-0' : 'left-0'
           }`}
         >
           {/* Header */}
-          <div className="px-3 py-2 border-b border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-2">
+          <div className="px-2.5 h-7 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <Layers className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
               <span className="font-semibold text-[var(--flux-text)] truncate tracking-[-0.01em]">
@@ -137,9 +137,9 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
                     aria-pressed={state.visible}
                     title={state.visible ? 'Скрыть слой (Вкл)' : 'Показать слой (Выкл)'}
                     onClick={() => onToggleVisibility(id)}
-                    className={`inline-flex items-center justify-center w-7 h-6 rounded border transition-colors ${
+                    className={`inline-flex items-center justify-center w-6 h-5 rounded-[2px] border transition-colors ${
                       state.visible
-                        ? 'border-[var(--flux-line)] bg-[var(--flux-bg)] text-[var(--flux-text)] hover:border-[var(--flux-line-strong)]'
+                        ? 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] text-[var(--flux-text)] hover:border-[var(--flux-line-strong)]'
                         : 'border-dashed border-[var(--flux-line-strong)] bg-transparent text-[var(--flux-text-muted)]'
                     }`}
                   >
@@ -196,10 +196,10 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
                         : 'Заблокировать слой от изменений'
                     }
                     onClick={() => onToggleLock(id)}
-                    className={`inline-flex items-center justify-center w-7 h-6 rounded border transition-colors ${
+                    className={`inline-flex items-center justify-center w-6 h-5 rounded-[2px] border transition-colors ${
                       state.locked
                         ? 'border-amber-500/60 bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                        : 'border-transparent text-[var(--flux-text-muted)] hover:border-[var(--flux-line)] hover:bg-[var(--flux-bg)] hover:text-[var(--flux-text)]'
+                        : 'border-transparent text-[var(--flux-text-muted)] hover:border-[var(--flux-line)] hover:bg-[var(--flux-surface-alt)] hover:text-[var(--flux-text)]'
                     }`}
                   >
                     {state.locked ? (
@@ -214,13 +214,13 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
           </div>
 
           {/* Footer Quick Actions */}
-          <div className="px-2.5 py-2 border-t border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-2">
+          <div className="px-2.5 py-1.5 border-t border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2">
             <button
               type="button"
               data-testid="layers-show-all-btn"
               disabled={summary.hiddenCount === 0}
               onClick={onShowAll}
-              className="h-6 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] disabled:opacity-40 transition-colors"
+              className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] disabled:opacity-40 transition-colors"
             >
               Показать все
             </button>
@@ -229,7 +229,7 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
               data-testid="layers-unlock-all-btn"
               disabled={summary.lockedCount === 0}
               onClick={onUnlockAll}
-              className="h-6 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] disabled:opacity-40 transition-colors"
+              className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] disabled:opacity-40 transition-colors"
             >
               Разблокировать все
             </button>

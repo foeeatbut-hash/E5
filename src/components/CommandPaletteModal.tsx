@@ -31,7 +31,7 @@ const CategoryIcon: React.FC<{ category: CommandPaletteItem['category'] }> = ({ 
     case 'view':
       return <Grid3X3 className="w-3.5 h-3.5 text-sky-500 shrink-0" />;
     case 'device':
-      return <Cpu className="w-3.5 h-3.5 text-emerald-500 shrink-0" />;
+      return <Cpu className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />;
     case 'sheet':
       return <FileText className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
     default:
@@ -111,18 +111,18 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
-          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4 bg-slate-950/50 backdrop-blur-[1px]"
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] px-4 bg-black/50"
         >
           <motion.div
-            initial={{ opacity: 0, y: -8, scale: 0.99 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.99 }}
-            transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
             style={{ boxShadow: 'var(--flux-popover-shadow)' }}
-            className="w-full max-w-[640px] rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] overflow-hidden flex flex-col"
+            className="w-full max-w-[640px] rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] overflow-hidden flex flex-col"
           >
-            <div className="h-11 px-3 border-b border-[var(--flux-line)] flex items-center gap-2.5 bg-[var(--flux-bg)]">
-              <Search className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
+            <div className="h-9 px-3 border-b border-[var(--flux-line)] flex items-center gap-2 bg-[var(--flux-surface-alt)]">
+              <Search className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
               <input
                 ref={inputRef}
                 type="text"
@@ -133,16 +133,16 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                 onKeyDown={handleKeyDown}
                 placeholder="Команда (WIRE, MOVE, ROTATE, ZOOM, ERC, DXF) или ОУО (-KM1)…"
                 aria-label="Палитра команд CAD"
-                className="flex-1 min-w-0 bg-transparent text-[13px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none"
+                className="flex-1 min-w-0 bg-transparent text-[12.5px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none"
               />
-              <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10px] text-[var(--flux-text-muted)]">
+              <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10px] text-[var(--flux-text-muted)]">
                 Esc
               </kbd>
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Закрыть палитру команд"
-                className="inline-flex items-center justify-center w-6 h-6 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -185,11 +185,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="px-1.5 py-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[10px] text-[var(--flux-text-muted)]">
+                        <span className="px-1.5 py-0.5 rounded-[2px] bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[10px] text-[var(--flux-text-muted)]">
                           {COMMAND_CATEGORY_LABELS[item.category]}
                         </span>
                         {item.shortcut && (
-                          <kbd className="px-1.5 py-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-text)]">
+                          <kbd className="px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-text)]">
                             {item.shortcut}
                           </kbd>
                         )}
@@ -203,7 +203,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               )}
             </div>
 
-            <div className="h-8 px-3 border-t border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-2 text-[10.5px] text-[var(--flux-text-muted)]">
+            <div className="h-7 px-3 border-t border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2 text-[10.5px] text-[var(--flux-text-muted)]">
               <div className="flex items-center gap-3">
                 <span>↑↓ выбор</span>
                 <span>Enter выполнить</span>

@@ -228,9 +228,9 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.99 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-4xl rounded-lg border border-[var(--flux-line)] bg-[var(--flux-bg)] shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
+            className="w-full max-w-4xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[92vh] overflow-hidden"
           >
-            <div className="px-4 py-3 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-3">
+            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <Layers className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
                 <h2
@@ -266,8 +266,8 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
                     </div>
                   </div>
                   <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${
-                      hostStatus.hostedInFlux ? 'bg-emerald-500' : 'bg-[var(--flux-accent)]'
+                    className={`w-2 h-2 rounded-[1px] shrink-0 ${
+                      hostStatus.hostedInFlux ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-[var(--flux-accent)]'
                     }`}
                   />
                 </div>
@@ -454,7 +454,7 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
                     className="inline-flex items-center gap-1 h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[10.5px] text-[var(--flux-text)]"
                   >
                     {copiedManifest ? (
-                      <Check className="w-3 h-3 text-emerald-500" />
+                      <Check className="w-3 h-3 text-[var(--flux-accent)]" />
                     ) : (
                       <Copy className="w-3 h-3 text-[var(--flux-text-muted)]" />
                     )}

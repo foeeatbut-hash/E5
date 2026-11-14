@@ -324,7 +324,17 @@ export function computeViewportSheets(
   const result: string[] = [];
 
   for (let i = 0; i < count; i++) {
-    const existing = i === 0 ? (validIds.has(activeSheetId) ? activeSheetId : currentIds[0]) : currentIds[i];
+    const candidate = currentIds[i];
+    const existing =
+      mode === 'single' && i === 0
+        ? validIds.has(activeSheetId)
+          ? activeSheetId
+          : candidate
+        : candidate && validIds.has(candidate)
+          ? candidate
+          : i === 0 && validIds.has(activeSheetId)
+            ? activeSheetId
+            : undefined;
     if (existing && validIds.has(existing) && !result.includes(existing)) {
       result.push(existing);
       continue;

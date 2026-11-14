@@ -173,16 +173,16 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
-          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
         >
           <motion.div
             initial={{ opacity: 0, y: 8, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.985 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden"
+            className="w-full max-w-2xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden"
           >
-            <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
+            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-[var(--flux-accent)]" />
             <h2 id="portable-build-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
@@ -229,8 +229,8 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
 
           {!building && result?.ok && (
             <div className="space-y-3">
-              <div className="p-3 rounded border border-emerald-500/40 bg-emerald-500/10 flex items-start gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <div className="p-2.5 rounded-[2px] border border-[var(--flux-accent)]/40 bg-[var(--flux-accent-soft)] flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-[var(--flux-accent)] shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="font-semibold text-[var(--flux-text)]">
                     Portable-сборка готова: <span className="font-mono">{result.filename}</span>
@@ -308,7 +308,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                     onClick={handleCopyLogs}
                     className="inline-flex items-center gap-1 text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
                   >
-                    {copiedLogs ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                    {copiedLogs ? <Check className="w-3 h-3 text-[var(--flux-accent)]" /> : <Copy className="w-3 h-3" />}
                     <span>{copiedLogs ? 'Скопировано' : 'Копировать лог'}</span>
                   </button>
                   <button

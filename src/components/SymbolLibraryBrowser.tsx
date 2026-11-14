@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import { Copy, Database, Layers, Plus, Search, Trash2 } from 'lucide-react';
 import type { CustomSymbolShape, E3Pin } from '../core/e3Types';
 import {
@@ -152,54 +151,38 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
       data-testid="symbol-library-browser"
       className="w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0 select-none"
     >
-      {/* Switcher: УГО (Графика) vs Изделия (БД) */}
-      <div className="p-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] space-y-1.5">
-        <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)]">
+      {/* Flush CAD Switcher: УГО (Графика) vs Изделия (БД) */}
+      <div className="border-b border-[var(--flux-line)] bg-[var(--flux-surface)]">
+        <div className="grid grid-cols-2 h-7 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)]">
           <button
             type="button"
             data-testid="sym-lib-tab-symbols"
             onClick={() => setSubTab('symbols')}
-            className={`relative inline-flex items-center justify-center gap-1.5 h-7 rounded text-[11.5px] font-medium whitespace-nowrap transition-colors ${
+            className={`inline-flex items-center justify-center gap-1.5 h-full border-r border-[var(--flux-line)] text-[11.5px] whitespace-nowrap transition-colors ${
               subTab === 'symbols'
-                ? 'text-[var(--flux-text)]'
-                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
+                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
-            {subTab === 'symbols' && (
-              <motion.span
-                layoutId="sym-lib-subtab-pill"
-                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-0 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] shadow-2xs"
-                aria-hidden="true"
-              />
-            )}
-            <Layers className={`relative z-10 w-3.5 h-3.5 ${subTab === 'symbols' ? 'text-[var(--flux-accent)]' : ''}`} />
-            <span className="relative z-10">УГО ({symbolLibrary.length})</span>
+            <Layers className={`w-3.5 h-3.5 ${subTab === 'symbols' ? 'text-[var(--flux-accent)]' : ''}`} />
+            <span>УГО ({symbolLibrary.length})</span>
           </button>
           <button
             type="button"
             data-testid="sym-lib-tab-components"
             onClick={() => setSubTab('components')}
-            className={`relative inline-flex items-center justify-center gap-1.5 h-7 rounded text-[11.5px] font-medium whitespace-nowrap transition-colors ${
+            className={`inline-flex items-center justify-center gap-1.5 h-full text-[11.5px] whitespace-nowrap transition-colors ${
               subTab === 'components'
-                ? 'text-[var(--flux-text)]'
-                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
+                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
-            {subTab === 'components' && (
-              <motion.span
-                layoutId="sym-lib-subtab-pill"
-                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-0 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] shadow-2xs"
-                aria-hidden="true"
-              />
-            )}
-            <Database className={`relative z-10 w-3.5 h-3.5 ${subTab === 'components' ? 'text-[var(--flux-accent)]' : ''}`} />
-            <span className="relative z-10">Изделия ({catalog.length})</span>
+            <Database className={`w-3.5 h-3.5 ${subTab === 'components' ? 'text-[var(--flux-accent)]' : ''}`} />
+            <span>Изделия ({catalog.length})</span>
           </button>
         </div>
 
-        <div className="text-[10.5px] text-[var(--flux-text-muted)] leading-snug">
+        <div className="px-2 py-1 text-[10.5px] text-[var(--flux-text-muted)] leading-snug">
           {subTab === 'symbols'
             ? 'Графические блоки УГО. Выберите блок для правки или клонируйте.'
             : 'Изделия БД E3: привязывают графику УГО к артикулу и атрибутам.'}
@@ -207,13 +190,13 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
       </div>
 
       {/* Actions + Search + Filter */}
-      <div className="p-2 border-b border-[var(--flux-line)] space-y-1.5">
-        <div className="grid grid-cols-2 gap-1.5">
+      <div className="p-1.5 border-b border-[var(--flux-line)] space-y-1.5">
+        <div className="grid grid-cols-2 gap-1">
           <button
             type="button"
             data-testid="sym-lib-new-symbol-btn"
             onClick={workspace.onCreateNewBlankSymbol}
-            className="inline-flex items-center justify-center gap-1 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="inline-flex items-center justify-center gap-1 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
             <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
             <span>Новое УГО</span>
@@ -222,15 +205,15 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             type="button"
             data-testid="sym-lib-new-component-btn"
             onClick={workspace.onCreateNewComponentFromSymbol}
-            className="inline-flex items-center justify-center gap-1 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="inline-flex items-center justify-center gap-1 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
-            <Plus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
             <span>Изделие</span>
           </button>
         </div>
 
         <div className="relative">
-          <Search className="w-3.5 h-3.5 text-[var(--flux-text-muted)] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-3.5 h-3.5 text-[var(--flux-text-muted)] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
             value={query}
@@ -238,14 +221,14 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             spellCheck={false}
             aria-label={subTab === 'symbols' ? 'Поиск блока УГО' : 'Поиск изделия или артикула'}
             placeholder={subTab === 'symbols' ? 'Поиск блока УГО…' : 'Поиск изделия или артикула…'}
-            className="w-full h-7 pl-8 pr-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
+            className="w-full h-6 pl-7 pr-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
           />
         </div>
 
         <div
           role="group"
           aria-label="Фильтр библиотеки УГО"
-          className="grid grid-cols-3 gap-0.5 p-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)]"
+          className="grid grid-cols-3 rounded-[2px] border border-[var(--flux-line)] divide-x divide-[var(--flux-line)] bg-[var(--flux-surface)] overflow-hidden"
         >
           {(
             [
@@ -260,21 +243,13 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                 key={k}
                 type="button"
                 onClick={() => setFilterKind(k)}
-                className={`relative h-6 rounded-xs text-[11px] font-medium transition-colors ${
+                className={`h-6 text-[11px] transition-colors ${
                   active
-                    ? 'text-[var(--flux-text)]'
-                    : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                    ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
+                    : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                 }`}
               >
-                {active && (
-                  <motion.span
-                    layoutId="sym-lib-filter-pill"
-                    transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-                    className="absolute inset-0 rounded-xs bg-[var(--flux-sel)]"
-                    aria-hidden="true"
-                  />
-                )}
-                <span className="relative z-10">{lbl}</span>
+                {lbl}
               </button>
             );
           })}
@@ -282,17 +257,9 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
       </div>
 
       {/* Scrollable Items List */}
-      <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
-        <AnimatePresence mode="wait" initial={false}>
-          {subTab === 'symbols' ? (
-            <motion.div
-              key="sym-list-symbols"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.12 }}
-              className="border border-[var(--flux-line)] rounded bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] overflow-hidden"
-            >
+      <div className="flex-1 overflow-y-auto p-1 space-y-1 bg-[var(--flux-surface)]">
+        {subTab === 'symbols' ? (
+          <div className="border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] overflow-hidden">
               {filteredSymbols.map((sym) => {
                 const active = draft.symbolId === sym.id;
                 return (
@@ -342,16 +309,9 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                   УГО не найдены.
                 </div>
               )}
-            </motion.div>
-          ) : (
-            <motion.div
-              key="sym-list-components"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.12 }}
-              className="border border-[var(--flux-line)] rounded bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] overflow-hidden"
-            >
+              </div>
+            ) : (
+              <div className="border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)] overflow-hidden">
               {filteredCatalog.map((item) => {
                 const active = draft.catalogItemId === item.id;
                 const shapes =
@@ -403,9 +363,8 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                   Изделия не найдены.
                 </div>
               )}
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
       </div>
     </aside>
   );

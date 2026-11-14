@@ -94,9 +94,9 @@ export const PublishModal: React.FC<PublishModalProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.99 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-xl rounded-lg border border-[var(--flux-line)] bg-[var(--flux-bg)] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+            className="w-full max-w-xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[90vh] overflow-hidden"
           >
-            <div className="px-4 py-3 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-3">
+            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <Download className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
                 <h2 id="publish-modal-title" className="text-[14px] font-semibold text-[var(--flux-text)] truncate">

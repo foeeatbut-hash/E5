@@ -19,6 +19,7 @@ export type CommandPaletteAction =
   | { type: 'toggle-crosshair' }
   | { type: 'autoroute' }
   | { type: 'open-erc' }
+  | { type: 'open-health' }
   | { type: 'open-bom' }
   | { type: 'open-terminals' }
   | { type: 'open-autonum' }
@@ -325,6 +326,14 @@ export function buildCommandPaletteItems(
       category: 'action',
       keywords: ['erc', 'audit', 'check', 'диагностика', 'ошибки', 'проверка', 'аудит'],
       action: { type: 'open-erc' },
+    },
+    {
+      id: 'cmd-health',
+      title: 'Монитор здоровья и телеметрия процессов (HEALTH / ТЕЛЕМЕТРИЯ / ЛАГИ)',
+      subtitle: 'График частоты логов, производительность кадров, длительность процессов и трассировка UI',
+      category: 'action',
+      keywords: ['health', 'telemetry', 'logs', 'perf', 'fps', 'здоровье', 'телеметрия', 'логи', 'лаги', 'производительность'],
+      action: { type: 'open-health' },
     },
     {
       id: 'cmd-bom',

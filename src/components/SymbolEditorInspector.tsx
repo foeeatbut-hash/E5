@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowDown,
   ArrowUp,
@@ -106,78 +105,67 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
       data-testid="symbol-editor-inspector"
       className="w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0"
     >
-      <div className="px-3 py-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2">
-        <span className="text-[12px] font-semibold text-[var(--flux-text)]">
+      <div className="h-6 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2 shrink-0">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)] truncate">
           Инспектор УГО и Изделия
         </span>
-        <span className="font-mono tabular-nums text-[10.5px] text-[var(--flux-text-muted)]">
+        <span className="font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)] shrink-0">
           {draft.shapes.length}ф · {draft.pins.length}в · {draft.attributes.length}а
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-4">
-        <AnimatePresence initial={false}>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         {/* 1. Selected Shape Properties */}
         {selectedShape && (
-          <motion.div
-            key={`shape-${selectedShape.id}`}
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-            data-testid="symbol-insp-shape"
-            className="p-2.5 rounded border border-[var(--flux-accent)]/50 bg-[var(--flux-surface)] space-y-2.5"
-          >
-            <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[var(--flux-line)]">
-              <span className="text-[11.5px] font-semibold text-[var(--flux-text)]">
+          <div key={`shape-${selectedShape.id}`} data-testid="symbol-insp-shape">
+            <div className="cad-prop-section">
+              <span className="truncate text-[var(--flux-accent)]">
                 Примитив: {describeShapeType(selectedShape)}
               </span>
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => workspace.onMoveShapeOrder('up')}
                   title="На передний план"
                   aria-label="Переместить примитив на передний план"
-                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] transition-colors"
+                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] transition-colors"
                 >
-                  <ArrowUp className="w-3.5 h-3.5" />
+                  <ArrowUp className="w-3 h-3" />
                 </button>
                 <button
                   type="button"
                   onClick={() => workspace.onMoveShapeOrder('down')}
                   title="На задний план"
                   aria-label="Переместить примитив на задний план"
-                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] transition-colors"
+                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] transition-colors"
                 >
-                  <ArrowDown className="w-3.5 h-3.5" />
+                  <ArrowDown className="w-3 h-3" />
                 </button>
                 <button
                   type="button"
                   onClick={workspace.onDuplicateSelectedShape}
                   title="Дублировать примитив"
                   aria-label="Дублировать примитив"
-                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] transition-colors"
+                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] transition-colors"
                 >
-                  <CopyPlus className="w-3.5 h-3.5" />
+                  <CopyPlus className="w-3 h-3" />
                 </button>
                 <button
                   type="button"
                   onClick={workspace.onDeleteSelection}
                   title="Удалить примитив"
                   aria-label="Удалить примитив"
-                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 transition-colors"
+                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 transition-colors"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3 h-3" />
                 </button>
               </div>
             </div>
 
             {/* Stroke Color Swatches */}
-            <div className="space-y-1">
-              <span className="block text-[10.5px] font-medium text-[var(--flux-text-muted)]">
-                Цвет линии / текста
-              </span>
-              <div className="flex flex-wrap items-center gap-1">
+            <div className="cad-prop-grid">
+              <span className="cad-prop-label">Цвет</span>
+              <div className="cad-prop-cell px-1.5 py-1 flex-wrap gap-1">
                 {SYMBOL_COLOR_PALETTE.map((col) => {
                   const active = (selectedShape.strokeColor || '#111827').toLowerCase() === col.hex;
                   return (
@@ -188,9 +176,9 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                       onClick={() =>
                         updateSelectedShape((s) => ({ ...s, strokeColor: col.hex }))
                       }
-                      className={`w-5 h-5 rounded-xs border transition-transform ${
+                      className={`w-4 h-4 rounded-[1px] border ${
                         active
-                          ? 'border-[var(--flux-accent)] scale-110 ring-1 ring-[var(--flux-accent)]'
+                          ? 'border-[var(--flux-accent)] ring-1 ring-[var(--flux-accent)]'
                           : 'border-[var(--flux-line-strong)]'
                       }`}
                       style={{ backgroundColor: col.hex }}
@@ -204,108 +192,107 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                   onChange={(e) =>
                     updateSelectedShape((s) => ({ ...s, strokeColor: e.target.value }))
                   }
-                  className="w-6 h-5 p-0 border border-[var(--flux-line)] rounded-xs bg-transparent cursor-pointer"
+                  className="w-5 h-4 p-0 border border-[var(--flux-line)] rounded-[1px] bg-transparent cursor-pointer"
                 />
               </div>
-            </div>
 
-            {selectedShape.kind !== 'text' && (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                    Толщина (мм)
-                  </label>
-                  <select
-                    aria-label="Толщина линии примитива"
-                    value={String(selectedShape.strokeWidth ?? 1.8)}
-                    onChange={(e) => {
-                      const n = parseFiniteNum(e.target.value);
-                      if (n === null) return;
-                      updateSelectedShape((s) =>
-                        s.kind !== 'text' ? { ...s, strokeWidth: n } : s
-                      );
-                    }}
-                    className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
-                  >
-                    {[1, 1.2, 1.5, 1.8, 2.2, 2.8, 3.5].map((w) => (
-                      <option key={w} value={String(w)}>
-                        {w.toFixed(1)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                    Тип линии
-                  </label>
-                  <select
-                    aria-label="Тип линии примитива"
-                    value={
-                      selectedShape.strokeStyle ||
-                      (selectedShape.dashed ? 'dashed' : 'solid')
-                    }
-                    onChange={(e) =>
-                      updateSelectedShape((s) =>
-                        s.kind !== 'text'
-                          ? {
-                              ...s,
-                              strokeStyle: e.target.value as CustomSymbolStrokeStyle,
-                              dashed: e.target.value === 'dashed',
-                            }
-                          : s
-                      )
-                    }
-                    className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
-                  >
-                    {STROKE_STYLE_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
+              {selectedShape.kind !== 'text' && (
+                <>
+                  <span className="cad-prop-label">Толщина (мм)</span>
+                  <div className="cad-prop-cell">
+                    <select
+                      aria-label="Толщина линии примитива"
+                      value={String(selectedShape.strokeWidth ?? 1.8)}
+                      onChange={(e) => {
+                        const n = parseFiniteNum(e.target.value);
+                        if (n === null) return;
+                        updateSelectedShape((s) =>
+                          s.kind !== 'text' ? { ...s, strokeWidth: n } : s
+                        );
+                      }}
+                      className="cad-prop-input font-mono"
+                    >
+                      {[1, 1.2, 1.5, 1.8, 2.2, 2.8, 3.5].map((w) => (
+                        <option key={w} value={String(w)}>
+                          {w.toFixed(1)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-            {(selectedShape.kind === 'rect' ||
-              selectedShape.kind === 'circle' ||
-              selectedShape.kind === 'polyline') && (
-              <div className="flex items-center justify-between gap-2 pt-0.5">
-                <label className="inline-flex items-center gap-1.5 text-[11px] text-[var(--flux-text)]">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(selectedShape.filled)}
-                    onChange={(e) =>
-                      updateSelectedShape((s) =>
-                        s.kind === 'rect' || s.kind === 'circle' || s.kind === 'polyline'
-                          ? { ...s, filled: e.target.checked }
-                          : s
-                      )
-                    }
-                  />
-                  <span>Заливка фигуры</span>
-                </label>
-                {selectedShape.kind === 'polyline' && (
-                  <label className="inline-flex items-center gap-1.5 text-[11px] text-[var(--flux-text)]">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedShape.closed)}
+                  <span className="cad-prop-label">Тип линии</span>
+                  <div className="cad-prop-cell">
+                    <select
+                      aria-label="Тип линии примитива"
+                      value={
+                        selectedShape.strokeStyle ||
+                        (selectedShape.dashed ? 'dashed' : 'solid')
+                      }
                       onChange={(e) =>
                         updateSelectedShape((s) =>
-                          s.kind === 'polyline' ? { ...s, closed: e.target.checked } : s
+                          s.kind !== 'text'
+                            ? {
+                                ...s,
+                                strokeStyle: e.target.value as CustomSymbolStrokeStyle,
+                                dashed: e.target.value === 'dashed',
+                              }
+                            : s
                         )
                       }
-                    />
-                    <span>Замкнуть</span>
-                  </label>
-                )}
-              </div>
-            )}
+                      className="cad-prop-input"
+                    >
+                      {STROKE_STYLE_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
 
-            {/* Shape-specific Geometry Fields */}
-            {selectedShape.kind === 'line' && (
-              <div className="grid grid-cols-4 gap-1.5">
-                {(
+              {(selectedShape.kind === 'rect' ||
+                selectedShape.kind === 'circle' ||
+                selectedShape.kind === 'polyline') && (
+                <>
+                  <span className="cad-prop-label">Опции</span>
+                  <div className="cad-prop-cell px-1.5 gap-2 text-[11px] text-[var(--flux-text)]">
+                    <label className="inline-flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedShape.filled)}
+                        onChange={(e) =>
+                          updateSelectedShape((s) =>
+                            s.kind === 'rect' || s.kind === 'circle' || s.kind === 'polyline'
+                              ? { ...s, filled: e.target.checked }
+                              : s
+                          )
+                        }
+                        className="accent-[var(--flux-accent)]"
+                      />
+                      <span>Заливка</span>
+                    </label>
+                    {selectedShape.kind === 'polyline' && (
+                      <label className="inline-flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(selectedShape.closed)}
+                          onChange={(e) =>
+                            updateSelectedShape((s) =>
+                              s.kind === 'polyline' ? { ...s, closed: e.target.checked } : s
+                            )
+                          }
+                          className="accent-[var(--flux-accent)]"
+                        />
+                        <span>Замкнуть</span>
+                      </label>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {selectedShape.kind === 'line' &&
+                (
                   [
                     ['X1', selectedShape.x1, 'x1'],
                     ['Y1', selectedShape.y1, 'y1'],
@@ -313,146 +300,139 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                     ['Y2', selectedShape.y2, 'y2'],
                   ] as const
                 ).map(([lbl, val, field]) => (
-                  <div key={field}>
-                    <span className="block text-[10px] text-[var(--flux-text-muted)]">{lbl}</span>
-                    <input
-                      type="number"
-                      aria-label={`Координата ${lbl} линии`}
-                      value={val}
-                      onChange={(e) => {
-                        const n = parseFiniteNum(e.target.value);
-                        if (n === null) return;
-                        updateSelectedShape((s) =>
-                          s.kind === 'line' ? { ...s, [field]: n } : s
-                        );
-                      }}
-                      className="w-full h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
-                    />
-                  </div>
+                  <React.Fragment key={field}>
+                    <span className="cad-prop-label">{lbl}</span>
+                    <div className="cad-prop-cell">
+                      <input
+                        type="number"
+                        aria-label={`Координата ${lbl} линии`}
+                        value={val}
+                        onChange={(e) => {
+                          const n = parseFiniteNum(e.target.value);
+                          if (n === null) return;
+                          updateSelectedShape((s) =>
+                            s.kind === 'line' ? { ...s, [field]: n } : s
+                          );
+                        }}
+                        className="cad-prop-input font-mono tabular-nums"
+                      />
+                    </div>
+                  </React.Fragment>
                 ))}
-              </div>
-            )}
 
-            {selectedShape.kind === 'rect' && (
-              <div className="grid grid-cols-4 gap-1.5">
-                {(
+              {selectedShape.kind === 'rect' &&
+                (
                   [
                     ['X', selectedShape.x, 'x'],
                     ['Y', selectedShape.y, 'y'],
-                    ['Ш', selectedShape.width, 'width'],
-                    ['В', selectedShape.height, 'height'],
+                    ['Ширина', selectedShape.width, 'width'],
+                    ['Высота', selectedShape.height, 'height'],
                   ] as const
                 ).map(([lbl, val, field]) => (
-                  <div key={field}>
-                    <span className="block text-[10px] text-[var(--flux-text-muted)]">{lbl}</span>
-                    <input
-                      type="number"
-                      min={field === 'width' || field === 'height' ? 1 : undefined}
-                      aria-label={`Параметр ${lbl} прямоугольника`}
-                      value={val}
-                      onChange={(e) => {
-                        const n = parseFiniteNum(e.target.value);
-                        if (n === null) return;
-                        const clamped = field === 'width' || field === 'height' ? Math.max(1, n) : n;
-                        updateSelectedShape((s) =>
-                          s.kind === 'rect' ? { ...s, [field]: clamped } : s
-                        );
-                      }}
-                      className="w-full h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
-                    />
-                  </div>
+                  <React.Fragment key={field}>
+                    <span className="cad-prop-label">{lbl}</span>
+                    <div className="cad-prop-cell">
+                      <input
+                        type="number"
+                        min={field === 'width' || field === 'height' ? 1 : undefined}
+                        aria-label={`Параметр ${lbl} прямоугольника`}
+                        value={val}
+                        onChange={(e) => {
+                          const n = parseFiniteNum(e.target.value);
+                          if (n === null) return;
+                          const clamped = field === 'width' || field === 'height' ? Math.max(1, n) : n;
+                          updateSelectedShape((s) =>
+                            s.kind === 'rect' ? { ...s, [field]: clamped } : s
+                          );
+                        }}
+                        className="cad-prop-input font-mono tabular-nums"
+                      />
+                    </div>
+                  </React.Fragment>
                 ))}
-              </div>
-            )}
 
-            {selectedShape.kind === 'circle' && (
-              <div className="grid grid-cols-3 gap-1.5">
-                {(
+              {selectedShape.kind === 'circle' &&
+                (
                   [
                     ['CX', selectedShape.cx, 'cx'],
                     ['CY', selectedShape.cy, 'cy'],
-                    ['R', selectedShape.r, 'r'],
+                    ['Радиус R', selectedShape.r, 'r'],
                   ] as const
                 ).map(([lbl, val, field]) => (
-                  <div key={field}>
-                    <span className="block text-[10px] text-[var(--flux-text-muted)]">{lbl}</span>
-                    <input
-                      type="number"
-                      min={field === 'r' ? 1 : undefined}
-                      aria-label={`Параметр ${lbl} окружности`}
-                      value={val}
-                      onChange={(e) => {
-                        const n = parseFiniteNum(e.target.value);
-                        if (n === null) return;
-                        const clamped = field === 'r' ? Math.max(1, n) : n;
-                        updateSelectedShape((s) =>
-                          s.kind === 'circle' ? { ...s, [field]: clamped } : s
-                        );
-                      }}
-                      className="w-full h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
-                    />
-                  </div>
+                  <React.Fragment key={field}>
+                    <span className="cad-prop-label">{lbl}</span>
+                    <div className="cad-prop-cell">
+                      <input
+                        type="number"
+                        min={field === 'r' ? 1 : undefined}
+                        aria-label={`Параметр ${lbl} окружности`}
+                        value={val}
+                        onChange={(e) => {
+                          const n = parseFiniteNum(e.target.value);
+                          if (n === null) return;
+                          const clamped = field === 'r' ? Math.max(1, n) : n;
+                          updateSelectedShape((s) =>
+                            s.kind === 'circle' ? { ...s, [field]: clamped } : s
+                          );
+                        }}
+                        className="cad-prop-input font-mono tabular-nums"
+                      />
+                    </div>
+                  </React.Fragment>
                 ))}
-              </div>
-            )}
 
-            {selectedShape.kind === 'arc' && (
-              <div className="grid grid-cols-3 gap-1.5">
-                {(
+              {selectedShape.kind === 'arc' &&
+                (
                   [
                     ['CX', selectedShape.cx, 'cx'],
                     ['CY', selectedShape.cy, 'cy'],
-                    ['R', selectedShape.r, 'r'],
-                    ['Угол1°', selectedShape.startAngle, 'startAngle'],
-                    ['Угол2°', selectedShape.endAngle, 'endAngle'],
+                    ['Радиус R', selectedShape.r, 'r'],
+                    ['Угол 1°', selectedShape.startAngle, 'startAngle'],
+                    ['Угол 2°', selectedShape.endAngle, 'endAngle'],
                   ] as const
                 ).map(([lbl, val, field]) => (
-                  <div key={field}>
-                    <span className="block text-[10px] text-[var(--flux-text-muted)]">{lbl}</span>
+                  <React.Fragment key={field}>
+                    <span className="cad-prop-label">{lbl}</span>
+                    <div className="cad-prop-cell">
+                      <input
+                        type="number"
+                        min={field === 'r' ? 1 : undefined}
+                        aria-label={`Параметр ${lbl} дуги`}
+                        value={val}
+                        onChange={(e) => {
+                          const n = parseFiniteNum(e.target.value);
+                          if (n === null) return;
+                          const clamped = field === 'r' ? Math.max(1, n) : n;
+                          updateSelectedShape((s) =>
+                            s.kind === 'arc' ? { ...s, [field]: clamped } : s
+                          );
+                        }}
+                        className="cad-prop-input font-mono tabular-nums"
+                      />
+                    </div>
+                  </React.Fragment>
+                ))}
+
+              {selectedShape.kind === 'text' && (
+                <>
+                  <span className="cad-prop-label">Текст / Шаблон</span>
+                  <div className="cad-prop-cell">
                     <input
-                      type="number"
-                      min={field === 'r' ? 1 : undefined}
-                      aria-label={`Параметр ${lbl} дуги`}
-                      value={val}
-                      onChange={(e) => {
-                        const n = parseFiniteNum(e.target.value);
-                        if (n === null) return;
-                        const clamped = field === 'r' ? Math.max(1, n) : n;
+                      type="text"
+                      spellCheck={false}
+                      aria-label="Текст или шаблон атрибута"
+                      value={selectedShape.text}
+                      onChange={(e) =>
                         updateSelectedShape((s) =>
-                          s.kind === 'arc' ? { ...s, [field]: clamped } : s
-                        );
-                      }}
-                      className="w-full h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
+                          s.kind === 'text' ? { ...s, text: e.target.value } : s
+                        )
+                      }
+                      className="cad-prop-input font-mono"
                     />
                   </div>
-                ))}
-              </div>
-            )}
 
-            {selectedShape.kind === 'text' && (
-              <div className="space-y-1.5">
-                <div>
-                  <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                    Текст / Шаблон
-                  </label>
-                  <input
-                    type="text"
-                    spellCheck={false}
-                    aria-label="Текст или шаблон атрибута"
-                    value={selectedShape.text}
-                    onChange={(e) =>
-                      updateSelectedShape((s) =>
-                        s.kind === 'text' ? { ...s, text: e.target.value } : s
-                      )
-                    }
-                    className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div>
-                    <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                      Динамич. атрибут
-                    </label>
+                  <span className="cad-prop-label">Динам. атрибут</span>
+                  <div className="cad-prop-cell">
                     <select
                       aria-label="Привязка динамического атрибута"
                       value={selectedShape.attrKey || ''}
@@ -467,7 +447,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                             : s
                         )
                       }
-                      className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
+                      className="cad-prop-input"
                     >
                       <option value="">Статический текст</option>
                       <option value="designation">Обозначение (-K1)</option>
@@ -481,10 +461,9 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                      Кегль (px)
-                    </label>
+
+                  <span className="cad-prop-label">Кегль (px)</span>
+                  <div className="cad-prop-cell">
                     <input
                       type="number"
                       min={6}
@@ -500,28 +479,20 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                             : s
                         );
                       }}
-                      className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
+                      className="cad-prop-input font-mono tabular-nums"
                     />
                   </div>
-                </div>
-              </div>
-            )}
-          </motion.div>
+                </>
+              )}
+            </div>
+          </div>
         )}
 
         {/* 2. Selected Pin Properties */}
         {selectedPin && (
-          <motion.div
-            key={`pin-${draft.selectedPinIndex}`}
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-            data-testid="symbol-insp-pin"
-            className="p-2.5 rounded border border-amber-500/50 bg-[var(--flux-surface)] space-y-2"
-          >
-            <div className="flex items-center justify-between gap-2 pb-1 border-b border-[var(--flux-line)]">
-              <span className="text-[11.5px] font-semibold text-[var(--flux-text)]">
+          <div key={`pin-${draft.selectedPinIndex}`} data-testid="symbol-insp-pin">
+            <div className="cad-prop-section">
+              <span className="text-amber-600 dark:text-amber-400">
                 Вывод E3: {selectedPin.name}
               </span>
               <button
@@ -529,25 +500,26 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                 onClick={workspace.onDeleteSelection}
                 title="Удалить вывод"
                 aria-label="Удалить выбранный вывод"
-                className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 transition-colors"
+                className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 transition-colors"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-3 h-3" />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              <div>
-                <span className="block text-[10px] text-[var(--flux-text-muted)]">Имя</span>
+            <div className="cad-prop-grid">
+              <span className="cad-prop-label">Имя вывода</span>
+              <div className="cad-prop-cell">
                 <input
                   type="text"
                   spellCheck={false}
                   aria-label="Имя вывода"
                   value={selectedPin.name}
                   onChange={(e) => updateSelectedPin({ name: e.target.value })}
-                  className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
+                  className="cad-prop-input font-mono"
                 />
               </div>
-              <div>
-                <span className="block text-[10px] text-[var(--flux-text-muted)]">DX</span>
+
+              <span className="cad-prop-label">Смещение DX</span>
+              <div className="cad-prop-cell">
                 <input
                   type="number"
                   aria-label="Смещение вывода DX"
@@ -556,11 +528,12 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                     const n = parseFiniteNum(e.target.value);
                     if (n !== null) updateSelectedPin({ dx: n });
                   }}
-                  className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
+                  className="cad-prop-input font-mono tabular-nums"
                 />
               </div>
-              <div>
-                <span className="block text-[10px] text-[var(--flux-text-muted)]">DY</span>
+
+              <span className="cad-prop-label">Смещение DY</span>
+              <div className="cad-prop-cell">
                 <input
                   type="number"
                   aria-label="Смещение вывода DY"
@@ -569,64 +542,66 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                     const n = parseFiniteNum(e.target.value);
                     if (n !== null) updateSelectedPin({ dy: n });
                   }}
-                  className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
+                  className="cad-prop-input font-mono tabular-nums"
                 />
               </div>
+
+              <span className="cad-prop-label">Направление</span>
+              <div className="cad-prop-cell">
+                <select
+                  aria-label="Направление вывода"
+                  value={selectedPin.direction}
+                  onChange={(e) => updateSelectedPin({ direction: e.target.value as PinDirection })}
+                  className="cad-prop-input"
+                >
+                  <option value="top">Сверху (top)</option>
+                  <option value="bottom">Снизу (bottom)</option>
+                  <option value="left">Слева (left)</option>
+                  <option value="right">Справа (right)</option>
+                </select>
+              </div>
+
+              <span className="cad-prop-label">Сигнал</span>
+              <div className="cad-prop-cell">
+                <select
+                  aria-label="Тип сигнала вывода"
+                  value={selectedPin.signalType}
+                  onChange={(e) => updateSelectedPin({ signalType: e.target.value as SignalType })}
+                  className="cad-prop-input"
+                >
+                  <option value="power">Силовая (L)</option>
+                  <option value="neutral">Нейтраль (N)</option>
+                  <option value="pe">Заземление (PE)</option>
+                  <option value="dc24">+24V DC</option>
+                  <option value="dc0">0V / GND</option>
+                  <option value="signal">Сигнал (DI/DO/AI)</option>
+                  <option value="bus">Шина (RS485/Eth)</option>
+                </select>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              <select
-                aria-label="Направление вывода"
-                value={selectedPin.direction}
-                onChange={(e) => updateSelectedPin({ direction: e.target.value as PinDirection })}
-                className="h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
-              >
-                <option value="top">Сверху (top)</option>
-                <option value="bottom">Снизу (bottom)</option>
-                <option value="left">Слева (left)</option>
-                <option value="right">Справа (right)</option>
-              </select>
-              <select
-                aria-label="Тип сигнала вывода"
-                value={selectedPin.signalType}
-                onChange={(e) => updateSelectedPin({ signalType: e.target.value as SignalType })}
-                className="h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
-              >
-                <option value="power">Силовая (L)</option>
-                <option value="neutral">Нейтраль (N)</option>
-                <option value="pe">Заземление (PE)</option>
-                <option value="dc24">+24V DC</option>
-                <option value="dc0">0V / GND</option>
-                <option value="signal">Сигнал (DI/DO/AI)</option>
-                <option value="bus">Шина (RS485/Eth)</option>
-              </select>
-            </div>
-          </motion.div>
+          </div>
         )}
-        </AnimatePresence>
 
         {/* 3. УГО (Graphic Block Metadata) */}
-        <div className="space-y-2">
-          <h3 className="text-[11px] font-semibold text-[var(--flux-text)] pb-1 border-b border-[var(--flux-line)]">
-            1. УГО (Графический символ E3)
-          </h3>
-          <div>
-            <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-              Название символа УГО
-            </label>
-            <input
-              type="text"
-              data-testid="sym-insp-name"
-              aria-label="Название символа УГО"
-              value={draft.name}
-              onChange={(e) => workspace.onUpdateDraftMeta({ name: e.target.value })}
-              className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
-            />
+        <div>
+          <div className="cad-prop-section">
+            <span>1. УГО (Графический символ E3)</span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                Имя блока E3 (.e3s)
-              </label>
+          <div className="cad-prop-grid">
+            <span className="cad-prop-label">Название УГО</span>
+            <div className="cad-prop-cell">
+              <input
+                type="text"
+                data-testid="sym-insp-name"
+                aria-label="Название символа УГО"
+                value={draft.name}
+                onChange={(e) => workspace.onUpdateDraftMeta({ name: e.target.value })}
+                className="cad-prop-input"
+              />
+            </div>
+
+            <span className="cad-prop-label">Блок E3 (.e3s)</span>
+            <div className="cad-prop-cell">
               <input
                 type="text"
                 data-testid="sym-insp-blockname"
@@ -634,20 +609,19 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                 aria-label="Имя блока E3"
                 value={draft.e3BlockName}
                 onChange={(e) => workspace.onUpdateDraftMeta({ e3BlockName: e.target.value })}
-                className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+                className="cad-prop-input font-mono"
               />
             </div>
-            <div>
-              <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                Категория
-              </label>
+
+            <span className="cad-prop-label">Категория</span>
+            <div className="cad-prop-cell">
               <select
                 aria-label="Категория УГО"
                 value={draft.category}
                 onChange={(e) =>
                   workspace.onUpdateDraftMeta({ category: e.target.value as DeviceCategory })
                 }
-                className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
+                className="cad-prop-input"
               >
                 {CATEGORIES.map(([cat, lbl]) => (
                   <option key={cat} value={cat}>
@@ -656,12 +630,9 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                 ))}
               </select>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                Ширина (мм)
-              </label>
+
+            <span className="cad-prop-label">Ширина (мм)</span>
+            <div className="cad-prop-cell">
               <input
                 type="number"
                 min={40}
@@ -676,13 +647,12 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                     width: Math.max(40, Math.min(480, n)),
                   });
                 }}
-                className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
+                className="cad-prop-input font-mono tabular-nums"
               />
             </div>
-            <div>
-              <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                Высота (мм)
-              </label>
+
+            <span className="cad-prop-label">Высота (мм)</span>
+            <div className="cad-prop-cell">
               <input
                 type="number"
                 min={40}
@@ -697,35 +667,32 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                     height: Math.max(40, Math.min(480, n)),
                   });
                 }}
-                className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
+                className="cad-prop-input font-mono tabular-nums"
               />
             </div>
           </div>
         </div>
 
         {/* 4. Изделие (E3 Database Component) */}
-        <div className="space-y-2">
-          <h3 className="text-[11px] font-semibold text-[var(--flux-text)] pb-1 border-b border-[var(--flux-line)]">
-            2. Изделие БД (Компонент E3.series)
-          </h3>
-          <div>
-            <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-              Наименование изделия (ПЭ3 / E3)
-            </label>
-            <input
-              type="text"
-              data-testid="sym-insp-compname"
-              aria-label="Наименование изделия"
-              value={draft.componentName}
-              onChange={(e) => workspace.onUpdateDraftMeta({ componentName: e.target.value })}
-              className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
-            />
+        <div>
+          <div className="cad-prop-section">
+            <span>2. Изделие БД (E3.series)</span>
           </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            <div className="col-span-2">
-              <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                Артикул
-              </label>
+          <div className="cad-prop-grid">
+            <span className="cad-prop-label">Наименование</span>
+            <div className="cad-prop-cell">
+              <input
+                type="text"
+                data-testid="sym-insp-compname"
+                aria-label="Наименование изделия"
+                value={draft.componentName}
+                onChange={(e) => workspace.onUpdateDraftMeta({ componentName: e.target.value })}
+                className="cad-prop-input"
+              />
+            </div>
+
+            <span className="cad-prop-label">Артикул</span>
+            <div className="cad-prop-cell">
               <input
                 type="text"
                 data-testid="sym-insp-article"
@@ -733,81 +700,85 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                 aria-label="Артикул изделия"
                 value={draft.article}
                 onChange={(e) => workspace.onUpdateDraftMeta({ article: e.target.value })}
-                className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+                className="cad-prop-input font-mono"
               />
             </div>
-            <div>
-              <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-                Префикс
-              </label>
+
+            <span className="cad-prop-label">Префикс ОУО</span>
+            <div className="cad-prop-cell">
               <input
                 type="text"
                 spellCheck={false}
                 aria-label="Буквенный префикс ОУО"
                 value={draft.defaultPrefix}
                 onChange={(e) => workspace.onUpdateDraftMeta({ defaultPrefix: e.target.value })}
-                className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+                className="cad-prop-input font-mono"
               />
             </div>
-          </div>
-          <div>
-            <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-0.5">
-              Производитель
-            </label>
-            <input
-              type="text"
-              aria-label="Производитель изделия"
-              value={draft.manufacturer}
-              onChange={(e) => workspace.onUpdateDraftMeta({ manufacturer: e.target.value })}
-              className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
-            />
+
+            <span className="cad-prop-label">Производитель</span>
+            <div className="cad-prop-cell">
+              <input
+                type="text"
+                aria-label="Производитель изделия"
+                value={draft.manufacturer}
+                onChange={(e) => workspace.onUpdateDraftMeta({ manufacturer: e.target.value })}
+                className="cad-prop-input"
+              />
+            </div>
           </div>
         </div>
 
         {/* 5. Attribute Templates & E3 Attributes */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2 pb-1 border-b border-[var(--flux-line)]">
-            <h3 className="text-[11px] font-semibold text-[var(--flux-text)]">
-              3. Шаблоны характеристик и Атрибуты
-            </h3>
+        <div>
+          <div className="cad-prop-section">
+            <span>3. Шаблоны и Атрибуты E3</span>
           </div>
+          <div className="p-2 space-y-2 bg-[var(--flux-bg)]">
+            <div className="flex items-center gap-1">
+              <select
+                data-testid="sym-insp-template-select"
+                aria-label="Шаблон характеристик"
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                className="flex-1 min-w-0 h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
+              >
+                {ATTRIBUTE_TEMPLATE_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                data-testid="sym-insp-apply-template-btn"
+                onClick={() => workspace.onApplyAttributeTemplate(selectedTemplateId)}
+                className="inline-flex items-center gap-1 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-sel)] text-[11px] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Применить</span>
+              </button>
+            </div>
 
-          <div className="flex items-center gap-1.5">
-            <select
-              data-testid="sym-insp-template-select"
-              aria-label="Шаблон характеристик"
-              value={selectedTemplateId}
-              onChange={(e) => setSelectedTemplateId(e.target.value)}
-              className="flex-1 min-w-0 h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
-            >
-              {ATTRIBUTE_TEMPLATE_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              data-testid="sym-insp-apply-template-btn"
-              onClick={() => workspace.onApplyAttributeTemplate(selectedTemplateId)}
-              className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-sel)] text-[11px] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
-            >
-              <Sparkles className="w-3 h-3" />
-              <span>Применить</span>
-            </button>
-          </div>
-
-          <div className="border border-[var(--flux-line)] rounded bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)]">
-            {draft.attributes.map((attr, idx) => (
-              <div key={`${attr.name}-${idx}`} className="p-1.5 space-y-1">
-                <div className="flex items-center gap-1">
+            <div className="border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)]">
+              {draft.attributes.map((attr, idx) => (
+                <div key={`${attr.name}-${idx}`} className="flex items-center divide-x divide-[var(--flux-line)]">
                   <input
                     type="text"
                     spellCheck={false}
                     aria-label={`Имя атрибута ${idx + 1}`}
                     value={attr.name}
                     onChange={(e) => updateAttr(idx, { name: e.target.value })}
-                    className="flex-1 min-w-0 h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] font-medium text-[var(--flux-text)]"
+                    className="w-[44%] min-w-0 h-6 px-1.5 bg-[var(--flux-surface-alt)] text-[11px] font-medium text-[var(--flux-text-muted)] focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    spellCheck={false}
+                    aria-label={`Значение атрибута ${attr.name || idx + 1}`}
+                    value={attr.value}
+                    onChange={(e) => updateAttr(idx, { value: e.target.value })}
+                    placeholder="Значение"
+                    className="flex-1 min-w-0 h-6 px-1.5 bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)] focus:outline-none"
                   />
                   <button
                     type="button"
@@ -817,61 +788,52 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                       })
                     }
                     aria-label={`Удалить атрибут ${attr.name || idx + 1}`}
-                    className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 shrink-0 transition-colors"
+                    className="w-6 h-6 inline-flex items-center justify-center text-[var(--flux-text-muted)] hover:text-rose-600 shrink-0 transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
-                <input
-                  type="text"
-                  spellCheck={false}
-                  aria-label={`Значение атрибута ${attr.name || idx + 1}`}
-                  value={attr.value}
-                  onChange={(e) => updateAttr(idx, { value: e.target.value })}
-                  placeholder="Значение"
-                  className="w-full h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
-                />
-              </div>
-            ))}
-            {draft.attributes.length === 0 && (
-              <div className="p-2 text-[11px] text-[var(--flux-text-muted)] text-center">
-                Атрибуты не заданы. Выберите шаблон выше или добавьте вручную.
-              </div>
-            )}
-          </div>
+              ))}
+              {draft.attributes.length === 0 && (
+                <div className="p-2 text-[11px] text-[var(--flux-text-muted)] text-center">
+                  Атрибуты не заданы. Выберите шаблон или добавьте вручную.
+                </div>
+              )}
+            </div>
 
-          <form onSubmit={handleAddAttr} className="flex items-center gap-1.5">
-            <input
-              type="text"
-              data-testid="sym-insp-new-attr-name"
-              spellCheck={false}
-              aria-label="Название нового атрибута"
-              value={newAttrName}
-              onChange={(e) => setNewAttrName(e.target.value)}
-              placeholder="Новый атрибут"
-              className="w-5/12 h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
-            />
-            <input
-              type="text"
-              data-testid="sym-insp-new-attr-val"
-              spellCheck={false}
-              aria-label="Значение нового атрибута"
-              value={newAttrValue}
-              onChange={(e) => setNewAttrValue(e.target.value)}
-              placeholder="Значение"
-              className="flex-1 h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
-            />
-            <button
-              type="submit"
-              disabled={!newAttrName.trim()}
-              data-testid="sym-insp-add-attr-btn"
-              className="inline-flex items-center justify-center w-7 h-7 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] shrink-0 disabled:opacity-40 transition-colors"
-              title="Добавить атрибут"
-              aria-label="Добавить атрибут"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </form>
+            <form onSubmit={handleAddAttr} className="flex items-center gap-1">
+              <input
+                type="text"
+                data-testid="sym-insp-new-attr-name"
+                spellCheck={false}
+                aria-label="Название нового атрибута"
+                value={newAttrName}
+                onChange={(e) => setNewAttrName(e.target.value)}
+                placeholder="Новый атрибут"
+                className="w-5/12 h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
+              />
+              <input
+                type="text"
+                data-testid="sym-insp-new-attr-val"
+                spellCheck={false}
+                aria-label="Значение нового атрибута"
+                value={newAttrValue}
+                onChange={(e) => setNewAttrValue(e.target.value)}
+                placeholder="Значение"
+                className="flex-1 h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
+              />
+              <button
+                type="submit"
+                disabled={!newAttrName.trim()}
+                data-testid="sym-insp-add-attr-btn"
+                className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] shrink-0 disabled:opacity-40 transition-colors"
+                title="Добавить атрибут"
+                aria-label="Добавить атрибут"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </aside>

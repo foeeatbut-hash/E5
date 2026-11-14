@@ -177,16 +177,16 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
           onMouseDown={(e) => {
             if (e.target === e.currentTarget && !busy) onClose();
           }}
-          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
         >
           <motion.div
             initial={{ opacity: 0, y: 8, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.985 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-2xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden"
+            className="w-full max-w-2xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden"
           >
-            <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
+            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between">
           <h2 id="exchange-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
             Совместимость E3.series и Flux Studio
           </h2>
@@ -282,7 +282,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
                   onClick={handleCopyScript}
                   className="inline-flex items-center gap-1 text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
                 >
-                  {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  {copied ? <Check className="w-3 h-3 text-[var(--flux-accent)]" /> : <Copy className="w-3 h-3" />}
                   <span>{copied ? 'Скопировано' : 'Копировать VBScript'}</span>
                 </button>
               )}
@@ -513,16 +513,16 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
-          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
         >
           <motion.div
             initial={{ opacity: 0, y: 8, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.985 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden"
+            className="w-full max-w-xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden"
           >
-            <div className="px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between">
+            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between">
           <h2 id="vis-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
             Настройки и синхронизация визуализации графики
           </h2>
@@ -842,16 +842,16 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
-          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
         >
           <motion.div
             initial={{ opacity: 0, y: 8, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.985 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-4xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
+            className="w-full max-w-4xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl overflow-hidden flex flex-col max-h-[88vh]"
           >
-            <div className="no-print px-4 h-11 border-b border-[var(--flux-line)] flex items-center justify-between shrink-0">
+            <div className="no-print px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between shrink-0">
           <h2 id="report-title" className="text-[14px] font-semibold text-[var(--flux-text)]">
             Перечень элементов ПЭ3 и кабельный журнал — {project.projectCode}
           </h2>

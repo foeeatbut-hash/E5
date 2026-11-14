@@ -8,7 +8,7 @@ export type ServerSubsystem = ProcessLogEntry['subsystem'];
 class ServerDiagLogger {
   private entries: ProcessLogEntry[] = [];
   private listeners = new Set<(entry: ProcessLogEntry) => void>();
-  private readonly maxEntries = 400;
+  private readonly maxEntries = 1200;
   private logFilePath: string | null = null;
 
   constructor() {
@@ -46,7 +46,14 @@ class ServerDiagLogger {
     level: LogLevel,
     subsystem: ServerSubsystem,
     message: string,
-    options?: { durationMs?: number; details?: string }
+    options?: {
+      durationMs?: number;
+      details?: string;
+      cause?: string;
+      outcome?: string;
+      screenState?: string;
+      lagMs?: number;
+    }
   ): ProcessLogEntry {
     const entry: ProcessLogEntry = {
       id: `srv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -56,6 +63,10 @@ class ServerDiagLogger {
       message,
       durationMs: options?.durationMs,
       details: options?.details,
+      cause: options?.cause,
+      outcome: options?.outcome,
+      screenState: options?.screenState,
+      lagMs: options?.lagMs,
     };
 
     this.entries.unshift(entry);

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import { Crosshair, Grid3X3, Layers, Lock, Magnet, Maximize2, Minus, Plus, Ruler, Terminal, X } from 'lucide-react';
 import {
   countSheetLayerEntities,
@@ -366,6 +365,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   const crossVBotRef = useRef<SVGLineElement | null>(null);
   const crossRectRef = useRef<SVGRectElement | null>(null);
   const coordsSpanRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (!coordsSpanRef.current) return;
+    const cur = cursorRef.current;
+    coordsSpanRef.current.textContent = `X:${cur.world.x} Y:${cur.world.y}${isMultiViewport ? '' : ' мм'}`;
+  }, [isMultiViewport]);
   const hoverRafRef = useRef<number | null>(null);
   const lastBreakKeyRef = useRef<string>('');
   const [rubberBandCursor, setRubberBandCursor] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -708,8 +712,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   }, []);
 
   const handleMouseDownBg = (e: React.MouseEvent<SVGSVGElement>) => {
-    onFocusViewport?.();
     if (e.button === 1 || tool === 'pan') {
+      if (e.button === 1) {
+        e.preventDefault();
+      } else {
+        onFocusViewport?.();
+      }
       dragRef.current = {
         kind: 'pan',
         startX: e.clientX,
@@ -720,6 +728,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       };
       return;
     }
+    onFocusViewport?.();
     if (wireStart) {
       if (e.button === 2) {
         e.preventDefault();
@@ -777,9 +786,22 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     if (tool === 'offpage' || tool === 'text' || tool === 'rect' || tool === 'callout') {
       return;
     }
+    if (e.button === 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      dragRef.current = {
+        kind: 'pan',
+        startX: e.clientX,
+        startY: e.clientY,
+        origPanX: pan.x,
+        origPanY: pan.y,
+        moved: false,
+      };
+      return;
+    }
     e.stopPropagation();
     onFocusViewport?.();
-    if (tool === 'pan' || e.button === 1) {
+    if (tool === 'pan') {
       dragRef.current = {
         kind: 'pan',
         startX: e.clientX,
@@ -827,9 +849,22 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   };
 
   const handleAnnotationDown = (e: React.MouseEvent, ann: E3Annotation) => {
+    if (e.button === 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      dragRef.current = {
+        kind: 'pan',
+        startX: e.clientX,
+        startY: e.clientY,
+        origPanX: pan.x,
+        origPanY: pan.y,
+        moved: false,
+      };
+      return;
+    }
     e.stopPropagation();
     onFocusViewport?.();
-    if (tool === 'pan' || e.button === 1) {
+    if (tool === 'pan') {
       dragRef.current = {
         kind: 'pan',
         startX: e.clientX,
@@ -1347,7 +1382,16 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     <section
       aria-label={`Рабочий холст электросхемы ${viewportIndex + 1}`}
       data-testid={`viewport-pane-${viewportIndex}`}
-      onMouseDown={() => onFocusViewport?.()}
+      onMouseDown={(e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          return;
+        }
+        onFocusViewport?.();
+      }}
+      onAuxClick={(e) => {
+        if (e.button === 1) e.preventDefault();
+      }}
       className={`flex-1 w-full h-full min-w-0 min-h-0 flex flex-col bg-[var(--flux-canvas-bg)] relative ${
         isMultiViewport
           ? `border rounded-sm overflow-hidden ${
@@ -1358,13 +1402,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     >
       {/* Sheet Tabs Bar (single) OR Compact Viewport Header (multi-viewport) */}
       {isMultiViewport ? (
-        <div className="no-print h-7 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] px-2 flex items-center justify-between gap-2 relative z-20">
+        <div className="no-print h-6 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] px-1.5 flex items-center justify-between gap-2 relative z-20">
           <div className="flex items-center gap-1.5 min-w-0">
             <span
-              className={`font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
+              className={`font-mono text-[10px] px-1 py-0 rounded-[2px] shrink-0 ${
                 isFocused
                   ? 'bg-[var(--flux-accent-solid)] text-white font-semibold'
-                  : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] border border-[var(--flux-line)]'
+                  : 'bg-[var(--flux-surface)] text-[var(--flux-text-muted)] border border-[var(--flux-line)]'
               }`}
             >
               В{viewportIndex + 1}
@@ -1376,7 +1420,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 onFocusViewport?.();
                 onSelectSheet(e.target.value);
               }}
-              className="h-5 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] font-medium text-[var(--flux-text)] max-w-[230px] truncate"
+              className="h-[18px] px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] font-medium text-[var(--flux-text)] max-w-[230px] truncate"
             >
               {project.sheets.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -1397,10 +1441,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 }}
                 aria-expanded={layerPopoverOpen}
                 title="Слои чертежа (видимость и блокировка)"
-                className={`inline-flex items-center gap-1 h-5 px-1.5 rounded border text-[10px] font-medium transition-colors ${
+                className={`inline-flex items-center gap-1 h-[18px] px-1.5 rounded-[2px] border text-[10px] font-medium transition-colors ${
                   layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
-                    ? 'border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] text-[var(--flux-text)]'
-                    : 'border-[var(--flux-line)] bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                    ? 'border-[var(--flux-accent)] bg-[var(--flux-sel)] text-[var(--flux-text)]'
+                    : 'border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                 }`}
               >
                 <Layers className={`w-3 h-3 ${layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0 ? 'text-[var(--flux-accent)]' : ''}`} />
@@ -1420,8 +1464,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 />
               )}
             </div>
-            <span>{Math.round(zoom * 100)}%</span>
-            <span>Эл:{sheetDevices.length}</span>
+            <span className="inline-block w-9 text-right tabular-nums">{Math.round(zoom * 100)}%</span>
+            <span className="inline-block min-w-[40px] text-right tabular-nums">Эл:{sheetDevices.length}</span>
             {onFitViewport && (
               <button
                 type="button"
@@ -1432,7 +1476,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 }}
                 title="Вписать лист в это окно"
                 aria-label="По размеру окна"
-                className="inline-flex items-center justify-center w-5 h-5 rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+                className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[2px] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
               >
                 <Maximize2 className="w-3 h-3" />
               </button>
@@ -1440,9 +1484,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
           </div>
         </div>
       ) : (
-        <div className="no-print h-8 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] px-2 flex items-center justify-between gap-2 relative z-20">
-          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
-            <div className="flex items-center gap-1 min-w-0 overflow-x-auto no-scrollbar">
+        <div className="no-print h-7 shrink-0 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] pr-2 flex items-center justify-between gap-2 relative z-20">
+          <div className="flex items-center min-w-0 flex-1 overflow-hidden h-full">
+            <div className="flex items-center min-w-0 overflow-x-auto no-scrollbar h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
               {project.sheets.map((s) => {
                 const active = s.id === sheet?.id;
                 return (
@@ -1452,10 +1496,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     data-testid={`sheet-tab-${s.id}`}
                     onClick={() => onSelectSheet(s.id)}
                     title={`Лист ${s.number}: ${s.name} (${s.format})`}
-                    className={`relative h-8 px-2.5 max-w-[200px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                    className={`relative h-full px-2.5 max-w-[200px] text-[11.5px] transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 border-t-2 ${
                       active
-                        ? 'text-[var(--flux-text)]'
-                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                        ? 'bg-[var(--flux-surface)] border-t-[var(--flux-accent)] text-[var(--flux-text)] font-semibold'
+                        : 'bg-[var(--flux-surface-alt)] border-t-transparent text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                     }`}
                   >
                     <span className="truncate">
@@ -1463,23 +1507,15 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     </span>
                     <span
                       data-testid={`sheet-tab-rev-${s.id}`}
-                      className={`font-mono tabular-nums text-[10px] px-1 rounded shrink-0 ${
+                      className={`font-mono tabular-nums text-[10px] shrink-0 ${
                         active
-                          ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
-                          : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)]'
+                          ? 'text-[var(--flux-accent)] font-semibold'
+                          : 'text-[var(--flux-text-muted)]'
                       }`}
                     >
                       {getSheetRevisionLabel(s)}
                       {hasSheetUncommittedChanges(project, s) ? '*' : ''}
                     </span>
-                    {active && (
-                      <motion.span
-                        layoutId={`sheet-tab-accent-${viewportIndex}`}
-                        transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                        aria-hidden="true"
-                        className="absolute bottom-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)]"
-                      />
-                    )}
                   </button>
                 );
               })}
@@ -1488,16 +1524,16 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               type="button"
               onClick={onAddSheet}
               aria-label="Добавить новый лист схемы"
-              className="inline-flex items-center gap-1 h-6 px-2 rounded text-[11px] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap shrink-0 border border-transparent hover:border-[var(--flux-line)]"
+              className="inline-flex items-center gap-1 h-5 px-2 ml-1.5 rounded-[2px] text-[11px] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap shrink-0 border border-transparent hover:border-[var(--flux-line)]"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3 h-3" />
               <span>Лист</span>
             </button>
           </div>
 
-          <div className="flex items-center gap-2.5 text-[11px] text-[var(--flux-text-muted)] shrink-0">
-            <span className="hidden md:inline font-mono tabular-nums">Эл.: {sheetDevices.length}</span>
-            <span className="hidden md:inline font-mono tabular-nums">Связи: {sheetWires.length}</span>
+          <div className="flex items-center gap-2 text-[11px] text-[var(--flux-text-muted)] shrink-0">
+            <span className="hidden md:inline-block min-w-[56px] font-mono tabular-nums">Эл.: {sheetDevices.length}</span>
+            <span className="hidden md:inline-block min-w-[70px] font-mono tabular-nums">Связи: {sheetWires.length}</span>
 
             <div className="relative">
               <button
@@ -1510,13 +1546,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 }}
                 aria-expanded={layerPopoverOpen}
                 title="Диспетчер слоёв чертежа (видимость и блокировка)"
-                className={`inline-flex items-center gap-1.5 h-6 px-2 rounded border text-[11px] font-medium transition-colors whitespace-nowrap shrink-0 ${
+                className={`inline-flex items-center gap-1 h-5 px-2 rounded-[2px] border text-[11px] font-medium transition-colors whitespace-nowrap shrink-0 ${
                   layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
-                    ? 'border-[var(--flux-accent)]/70 bg-[var(--flux-accent-soft)] text-[var(--flux-text)]'
-                    : 'border-[var(--flux-line)] bg-[var(--flux-bg)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                    ? 'border-[var(--flux-accent)] bg-[var(--flux-sel)] text-[var(--flux-text)]'
+                    : 'border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
                 }`}
               >
-                <Layers className={`w-3.5 h-3.5 shrink-0 ${layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0 ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'}`} />
+                <Layers className={`w-3 h-3 shrink-0 ${layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0 ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'}`} />
                 <span>Слои</span>
                 <span className="font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)]">
                   {layerSummary.visibleCount}/{layerSummary.total}
@@ -1876,6 +1912,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                             key={cell.id}
                             data-testid={hasField ? `gost-stamp-cell-${cell.id}` : undefined}
                             onMouseDown={(e) => {
+                              if (e.button === 1) return;
                               if (isEditable) e.stopPropagation();
                             }}
                             onClick={(e) => {
@@ -1951,7 +1988,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                       <g
                         data-testid="gost-stamp-edit-btn"
                         className={`${frameLocked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} no-print`}
-                        onMouseDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => {
+                          if (e.button === 1) return;
+                          e.stopPropagation();
+                        }}
                         onClick={(e) => {
                           e.stopPropagation();
                           onFocusViewport?.();
@@ -2914,7 +2954,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                             textAnchor="middle"
                             fill="#b45309"
                             fontSize={9.5 * inv}
-                            fontFamily="JetBrains Mono, monospace"
+                            fontFamily="IBM Plex Mono, monospace"
                             fontWeight={600}
                           >
                             {labelText}
@@ -2962,7 +3002,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                             textAnchor="middle"
                             fill="#b45309"
                             fontSize={9.5 * inv}
-                            fontFamily="JetBrains Mono, monospace"
+                            fontFamily="IBM Plex Mono, monospace"
                             fontWeight={600}
                           >
                             {labelText}
@@ -3018,7 +3058,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                         y={by + 11.5 * inv}
                         fill="var(--flux-text)"
                         fontSize={9.5 * inv}
-                        fontFamily="JetBrains Mono, monospace"
+                        fontFamily="IBM Plex Mono, monospace"
                         fontWeight={500}
                       >
                         {hudText}
@@ -3102,172 +3142,165 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         </svg>
 
         {/* Floating Potential Signal Trace HUD */}
-        <AnimatePresence>
-          {activeTrace && viewportIndex === 0 && (
-            <motion.div
-              key="potential-trace-hud"
-              initial={{ opacity: 0, y: -6, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.98 }}
-              transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-              data-testid="potential-trace-hud"
-              onMouseDown={(e) => e.stopPropagation()}
-              className="no-print absolute top-2.5 right-2.5 z-20 flex items-center gap-2 px-2.5 py-1.5 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/95 shadow-sm text-[11px] backdrop-blur-xs"
-            >
-              <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: vs.netColors[activeTrace.signalType] || 'var(--flux-accent)' }}
-              />
-              <div className="flex items-center gap-1.5 font-mono">
-                <span className="font-semibold text-[var(--flux-text)]">
-                  {activeTrace.netNames.join(' / ') || 'Цепь'}
-                </span>
-                <span className="text-[var(--flux-text-muted)]">
-                  · {activeTrace.segmentCount} уч. · {activeTrace.totalLengthMm} мм
-                </span>
+        {activeTrace && viewportIndex === 0 && (
+          <div
+            data-testid="potential-trace-hud"
+            onMouseDown={(e) => e.stopPropagation()}
+            className="no-print absolute top-2 right-2 z-20 flex items-center gap-2 px-2 py-1 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-sm text-[11px]"
+          >
+            <span
+              className="w-2 h-2 rounded-[1px] shrink-0"
+              style={{ backgroundColor: vs.netColors[activeTrace.signalType] || 'var(--flux-accent)' }}
+            />
+            <div className="flex items-center gap-1.5 font-mono">
+              <span className="font-semibold text-[var(--flux-text)]">
+                {activeTrace.netNames.join(' / ') || 'Цепь'}
+              </span>
+              <span className="text-[var(--flux-text-muted)]">
+                · {activeTrace.segmentCount} уч. · {activeTrace.totalLengthMm} мм
+              </span>
+            </div>
+            {activeTrace.sheetIds.length > 0 && (
+              <div className="flex items-center gap-1 border-l border-[var(--flux-line)] pl-1.5">
+                {activeTrace.sheetIds.map((sId) => {
+                  const sh = project.sheets.find((s) => s.id === sId);
+                  if (!sh) return null;
+                  const isCurr = sh.id === sheet?.id;
+                  return (
+                    <button
+                      key={sh.id}
+                      type="button"
+                      data-testid={`trace-sheet-chip-${sh.number}`}
+                      onClick={() => onSelectSheet(sh.id)}
+                      className={`h-5 px-1.5 rounded-[2px] font-mono text-[10.5px] font-medium transition-colors ${
+                        isCurr
+                          ? 'bg-[var(--flux-accent-solid)] text-white'
+                          : 'bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                      }`}
+                    >
+                      Л.{sh.number}
+                    </button>
+                  );
+                })}
               </div>
-              {activeTrace.sheetIds.length > 0 && (
-                <div className="flex items-center gap-1 border-l border-[var(--flux-line)] pl-1.5">
-                  {activeTrace.sheetIds.map((sId) => {
-                    const sh = project.sheets.find((s) => s.id === sId);
-                    if (!sh) return null;
-                    const isCurr = sh.id === sheet?.id;
-                    return (
-                      <button
-                        key={sh.id}
-                        type="button"
-                        data-testid={`trace-sheet-chip-${sh.number}`}
-                        onClick={() => onSelectSheet(sh.id)}
-                        className={`h-5 px-1.5 rounded font-mono text-[10.5px] font-medium transition-colors ${
-                          isCurr
-                            ? 'bg-[var(--flux-accent-solid)] text-white'
-                            : 'bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-                        }`}
-                      >
-                        Л.{sh.number}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {onClearPotentialHighlight && !liveHoverTrace && (
-                <button
-                  type="button"
-                  data-testid="clear-potential-trace-btn"
-                  onClick={onClearPotentialHighlight}
-                  title="Снять подсветку потенциала (Esc)"
-                  aria-label="Снять подсветку потенциала"
-                  className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+            )}
+            {onClearPotentialHighlight && !liveHoverTrace && (
+              <button
+                type="button"
+                data-testid="clear-potential-trace-btn"
+                onClick={onClearPotentialHighlight}
+                title="Снять подсветку потенциала (Esc)"
+                aria-label="Снять подсветку потенциала"
+                className="inline-flex items-center justify-center w-5 h-5 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Stage 4.2 In-Place Canvas Text Editor Overlay */}
-        <AnimatePresence>
-          {inPlaceEdit && (() => {
-            const cw = containerRef.current?.clientWidth || 800;
-            const ch = containerRef.current?.clientHeight || 600;
-            const boxW = Math.max(
-              inPlaceEdit.multiline ? 252 : 176,
-              Math.min(380, Math.round(inPlaceEdit.worldW * Math.max(zoom, 0.8)))
-            );
-            const boxH = inPlaceEdit.multiline
-              ? Math.max(58, Math.min(140, Math.round(inPlaceEdit.worldH * Math.max(zoom, 0.85))))
-              : Math.max(28, Math.round(inPlaceEdit.worldH * Math.max(zoom, 0.9)));
-            const rawLeft = pan.x + inPlaceEdit.worldX * zoom;
-            const rawTop = pan.y + inPlaceEdit.worldY * zoom;
-            const left = Math.max(8, Math.min(cw - boxW - 8, rawLeft));
-            const top = Math.max(22, Math.min(ch - boxH - 8, rawTop));
-            const handleEditorKeyDown = (
-              e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>
-            ) => {
-              e.stopPropagation();
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                cancelInPlaceEdit();
-                return;
-              }
-              if (e.key === 'Enter' && (!inPlaceEdit.multiline || !e.shiftKey)) {
-                e.preventDefault();
-                commitInPlaceEdit();
-              }
-            };
-            return (
-              <motion.div
-                key="inplace-text-editor"
-                initial={{ opacity: 0, scale: 0.97 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.97 }}
-                transition={{ duration: 0.11, ease: [0.22, 1, 0.36, 1] }}
-                data-testid="inplace-text-editor"
-                data-kind={inPlaceEdit.kind}
-                style={{ left, top, width: boxW }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
-                onWheel={(e) => e.stopPropagation()}
-                className="no-print absolute z-30 flex flex-col gap-0"
-              >
-                <div className="inline-flex items-center justify-between gap-2 px-1.5 py-0.5 rounded-t border border-b-0 border-[var(--flux-accent)] bg-[var(--flux-surface)] text-[10px] font-medium text-[var(--flux-accent)] shadow-xs">
-                  <span className="truncate">{inPlaceEdit.label}</span>
-                  <span className="font-mono text-[9px] text-[var(--flux-text-muted)] shrink-0">
-                    {inPlaceEdit.multiline ? 'Enter · Shift+↵ · Esc' : 'Enter · Esc'}
-                  </span>
-                </div>
-                {inPlaceEdit.multiline ? (
-                  <textarea
-                    ref={(el) => {
-                      inPlaceInputRef.current = el;
-                    }}
-                    data-testid="inplace-text-input"
-                    aria-label={inPlaceEdit.label}
-                    spellCheck={false}
-                    value={inPlaceEdit.value}
-                    onChange={(e) =>
-                      setInPlaceEdit((prev) => (prev ? { ...prev, value: e.target.value } : null))
-                    }
-                    onKeyDown={handleEditorKeyDown}
-                    onBlur={commitInPlaceEdit}
-                    style={{ minHeight: boxH }}
-                    className="w-full px-2 py-1 rounded-b border border-[var(--flux-accent)] bg-[var(--flux-surface)] text-[12px] font-mono text-[var(--flux-text)] shadow-md focus:outline-none resize-y"
-                  />
-                ) : (
-                  <input
-                    ref={(el) => {
-                      inPlaceInputRef.current = el;
-                    }}
-                    type="text"
-                    data-testid="inplace-text-input"
-                    aria-label={inPlaceEdit.label}
-                    spellCheck={false}
-                    value={inPlaceEdit.value}
-                    onChange={(e) =>
-                      setInPlaceEdit((prev) => (prev ? { ...prev, value: e.target.value } : null))
-                    }
-                    onKeyDown={handleEditorKeyDown}
-                    onBlur={commitInPlaceEdit}
-                    style={{ height: boxH }}
-                    className="w-full px-2 rounded-b border border-[var(--flux-accent)] bg-[var(--flux-surface)] text-[12px] font-mono font-semibold text-[var(--flux-text)] shadow-md focus:outline-none"
-                  />
-                )}
-              </motion.div>
-            );
-          })()}
-        </AnimatePresence>
+        {inPlaceEdit && (() => {
+          const cw = containerRef.current?.clientWidth || 800;
+          const ch = containerRef.current?.clientHeight || 600;
+          const boxW = Math.max(
+            inPlaceEdit.multiline ? 252 : 176,
+            Math.min(380, Math.round(inPlaceEdit.worldW * Math.max(zoom, 0.8)))
+          );
+          const boxH = inPlaceEdit.multiline
+            ? Math.max(58, Math.min(140, Math.round(inPlaceEdit.worldH * Math.max(zoom, 0.85))))
+            : Math.max(28, Math.round(inPlaceEdit.worldH * Math.max(zoom, 0.9)));
+          const rawLeft = pan.x + inPlaceEdit.worldX * zoom;
+          const rawTop = pan.y + inPlaceEdit.worldY * zoom;
+          const left = Math.max(8, Math.min(cw - boxW - 8, rawLeft));
+          const top = Math.max(22, Math.min(ch - boxH - 8, rawTop));
+          const handleEditorKeyDown = (
+            e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>
+          ) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              cancelInPlaceEdit();
+              return;
+            }
+            if (e.key === 'Enter' && (!inPlaceEdit.multiline || !e.shiftKey)) {
+              e.preventDefault();
+              commitInPlaceEdit();
+            }
+          };
+          return (
+            <div
+              data-testid="inplace-text-editor"
+              data-kind={inPlaceEdit.kind}
+              style={{ left, top, width: boxW }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
+              className="no-print absolute z-30 flex flex-col gap-0"
+            >
+              <div className="inline-flex items-center justify-between gap-2 px-1.5 py-0.5 rounded-t-[2px] border border-b-0 border-[var(--flux-accent)] bg-[var(--flux-surface-alt)] text-[10px] font-medium text-[var(--flux-accent)] shadow-xs">
+                <span className="truncate">{inPlaceEdit.label}</span>
+                <span className="font-mono text-[9px] text-[var(--flux-text-muted)] shrink-0">
+                  {inPlaceEdit.multiline ? 'Enter · Shift+↵ · Esc' : 'Enter · Esc'}
+                </span>
+              </div>
+              {inPlaceEdit.multiline ? (
+                <textarea
+                  ref={(el) => {
+                    inPlaceInputRef.current = el;
+                  }}
+                  data-testid="inplace-text-input"
+                  aria-label={inPlaceEdit.label}
+                  spellCheck={false}
+                  value={inPlaceEdit.value}
+                  onChange={(e) =>
+                    setInPlaceEdit((prev) => (prev ? { ...prev, value: e.target.value } : null))
+                  }
+                  onKeyDown={handleEditorKeyDown}
+                  onBlur={commitInPlaceEdit}
+                  style={{ minHeight: boxH }}
+                  className="w-full px-2 py-1 rounded-b-[2px] border border-[var(--flux-accent)] bg-[var(--flux-surface)] text-[12px] font-mono text-[var(--flux-text)] shadow-md focus:outline-none resize-y"
+                />
+              ) : (
+                <input
+                  ref={(el) => {
+                    inPlaceInputRef.current = el;
+                  }}
+                  type="text"
+                  data-testid="inplace-text-input"
+                  aria-label={inPlaceEdit.label}
+                  spellCheck={false}
+                  value={inPlaceEdit.value}
+                  onChange={(e) =>
+                    setInPlaceEdit((prev) => (prev ? { ...prev, value: e.target.value } : null))
+                  }
+                  onKeyDown={handleEditorKeyDown}
+                  onBlur={commitInPlaceEdit}
+                  style={{ height: boxH }}
+                  className="w-full px-2 rounded-b-[2px] border border-[var(--flux-accent)] bg-[var(--flux-surface)] text-[12px] font-mono font-semibold text-[var(--flux-text)] shadow-md focus:outline-none"
+                />
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Compact CAD Canvas Footer Strip */}
-      <div className="no-print relative h-7 px-2 border-t border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-visible select-none text-[11px]">
+      <div className="no-print @container/footer relative h-[26px] px-2 border-t border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1.5 shrink-0 overflow-visible select-none text-[11px]">
         <div className="flex items-center gap-1.5 min-w-0 flex-1 font-mono tabular-nums text-[var(--flux-text-muted)]">
-          <span ref={coordsSpanRef} data-testid="canvas-coords" className="shrink-0">
-            X:0 Y:0{isMultiViewport ? '' : ' мм'}
+          <span
+            data-testid="canvas-coords"
+            className={`inline-block whitespace-nowrap tabular-nums shrink-0 ${
+              isMultiViewport
+                ? 'w-[84px] text-[10.5px]'
+                : 'w-[108px] @[480px]/footer:w-[124px] text-[10.5px] @[480px]/footer:text-[11px]'
+            }`}
+          >
+            <span ref={coordsSpanRef} />
           </span>
           {sheet && !isMultiViewport && (
-            <span className="hidden xl:inline shrink-0">
+            <span className="hidden @[980px]/footer:inline-block w-[132px] whitespace-nowrap truncate shrink-0">
               · {sheet.format} ({sheet.width}×{sheet.height})
             </span>
           )}
@@ -3277,7 +3310,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             <div
               data-testid="cad-command-bar"
               onMouseDown={(e) => e.stopPropagation()}
-              className="relative flex items-center gap-1 flex-1 min-w-[160px] max-w-[360px] h-[22px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] focus-within:border-[var(--flux-accent)] transition-colors"
+              className={`relative items-center gap-1 h-[20px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] focus-within:border-[var(--flux-accent)] transition-colors shrink-0 ${
+                isMultiViewport
+                  ? 'hidden @[340px]/footer:flex w-[92px] @[430px]/footer:w-[144px] @[560px]/footer:w-[210px]'
+                  : 'flex w-[88px] @[480px]/footer:w-[170px] @[640px]/footer:w-[220px] @[840px]/footer:w-[270px] @[1080px]/footer:w-[320px]'
+              }`}
             >
               <button
                 type="button"
@@ -3305,74 +3342,60 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   window.setTimeout(() => setCmdFocused(false), 120);
                 }}
                 onKeyDown={handleCmdKeyDown}
-                placeholder="Команда: НАЙТИ, ПРОВОД, СЕТКА…"
+                placeholder={isMultiViewport ? 'Команда…' : 'Команда: НАЙТИ, ПРОВОД, СЕТКА…'}
                 aria-label="Командная строка САПР"
                 className="w-full min-w-0 bg-transparent text-[11px] font-mono text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)]/70 focus:outline-none select-text"
               />
 
               {/* Command Feedback Echo Toast */}
-              <AnimatePresence>
-                {cmdFeedback && !matchingCmdHints.length && (
-                  <motion.div
-                    key="cad-command-feedback"
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 4 }}
-                    transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
-                    data-testid="cad-command-feedback"
-                    className={`absolute left-0 bottom-full mb-1 z-40 px-2 py-1 rounded border shadow-md text-[11px] font-sans whitespace-nowrap max-w-[380px] truncate ${
-                      cmdFeedback.status === 'ok'
-                        ? 'bg-[var(--flux-surface)] border-[var(--flux-accent)]/60 text-[var(--flux-text)]'
-                        : cmdFeedback.status === 'disabled'
-                          ? 'bg-[var(--flux-surface)] border-amber-500/60 text-amber-700 dark:text-amber-300'
-                          : 'bg-[var(--flux-surface)] border-rose-500/60 text-rose-700 dark:text-rose-300'
-                    }`}
-                  >
-                    {cmdFeedback.text}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {cmdFeedback && !matchingCmdHints.length && (
+                <div
+                  data-testid="cad-command-feedback"
+                  className={`absolute left-0 bottom-full mb-1 z-40 px-2 py-1 rounded-[2px] border shadow-md text-[11px] font-sans whitespace-nowrap max-w-[380px] truncate ${
+                    cmdFeedback.status === 'ok'
+                      ? 'bg-[var(--flux-surface)] border-[var(--flux-accent)]/70 text-[var(--flux-text)]'
+                      : cmdFeedback.status === 'disabled'
+                        ? 'bg-[var(--flux-surface)] border-amber-500/70 text-amber-700 dark:text-amber-300'
+                        : 'bg-[var(--flux-surface)] border-rose-500/70 text-rose-700 dark:text-rose-300'
+                  }`}
+                >
+                  {cmdFeedback.text}
+                </div>
+              )}
 
               {/* Autocomplete Hints Popover */}
-              <AnimatePresence>
-                {matchingCmdHints.length > 0 && (
-                  <motion.div
-                    key="cad-command-suggestions"
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 4 }}
-                    transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
-                    data-testid="cad-command-suggestions"
-                    className="absolute left-0 bottom-full mb-1 z-40 w-[340px] max-w-[90vw] rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-lg overflow-hidden divide-y divide-[var(--flux-line)]/60 font-sans"
-                  >
-                    {matchingCmdHints.map((hint) => (
-                      <button
-                        key={hint.id}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          executeCanvasCommand(hint.keywords[0] || hint.title);
-                        }}
-                        className="w-full px-2.5 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between gap-2 text-[11px]"
-                      >
-                        <span className="text-[var(--flux-text)] truncate">{hint.title}</span>
-                        {hint.shortcut && (
-                          <kbd className="font-mono text-[9.5px] px-1 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text-muted)] shrink-0">
-                            {hint.shortcut}
-                          </kbd>
-                        )}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {matchingCmdHints.length > 0 && (
+                <div
+                  data-testid="cad-command-suggestions"
+                  className="absolute left-0 bottom-full mb-1 z-40 w-[340px] max-w-[90vw] rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-lg overflow-hidden divide-y divide-[var(--flux-line)]/60 font-sans"
+                >
+                  {matchingCmdHints.map((hint) => (
+                    <button
+                      key={hint.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        executeCanvasCommand(hint.keywords[0] || hint.title);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between gap-2 text-[11px]"
+                    >
+                      <span className="text-[var(--flux-text)] truncate">{hint.title}</span>
+                      {hint.shortcut && (
+                        <kbd className="font-mono text-[9.5px] px-1 rounded-[2px] bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text-muted)] shrink-0">
+                          {hint.shortcut}
+                        </kbd>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {totalSelectedCount > 1 && (
             <span
               data-testid="canvas-selection-count"
-              className="inline-flex items-center h-5 px-1.5 rounded bg-[var(--flux-sel)] text-[var(--flux-accent)] font-sans font-semibold whitespace-nowrap shrink-0"
+              className="hidden @[560px]/footer:inline-flex items-center h-5 px-1.5 rounded-[2px] bg-[var(--flux-sel)] text-[var(--flux-accent)] font-sans font-semibold whitespace-nowrap shrink-0"
             >
               Выделено: {totalSelectedCount}
             </span>
@@ -3390,35 +3413,35 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 }
               }}
               title={wireStart ? 'Клик — угол · ПКМ — откат угла · Вывод — соединить · Esc — отмена' : 'Вернуться в режим «Выбор» (Esc)'}
-              className="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] font-sans font-medium whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1 h-5 px-1.5 rounded-[2px] border border-[var(--flux-accent)]/50 bg-[var(--flux-sel)] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] font-sans font-medium whitespace-nowrap shrink-0"
             >
-              <span>
+              <span className="max-w-[110px] @[720px]/footer:max-w-none truncate">
                 {wireStart
                   ? wireAnchors.length > 0
                     ? `Углов: ${wireAnchors.length} · ПКМ откат · Esc`
                     : 'Клик — угол · Вывод — соединить'
                   : `Режим: ${tool}`}
               </span>
-              <X className="w-3 h-3" />
+              <X className="w-3 h-3 shrink-0" />
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-0.5 @[520px]/footer:gap-1 shrink-0">
           {onToggleGrid && (
             <button
               type="button"
               onClick={onToggleGrid}
               title="Показать/скрыть чертёжную сетку"
               aria-label="Переключить сетку"
-              className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center justify-center gap-1 h-5 px-1 @[780px]/footer:px-1.5 rounded-[2px] text-[11px] transition-colors whitespace-nowrap shrink-0 ${
                 vs.showGrid
                   ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
                   : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
               }`}
             >
               <Grid3X3 className={`w-3 h-3 ${vs.showGrid ? 'text-[var(--flux-accent)]' : ''}`} />
-              <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Сетка</span>
+              <span className={isMultiViewport ? 'hidden' : 'hidden @[780px]/footer:inline'}>Сетка</span>
             </button>
           )}
           {onToggleSnapToGrid && (
@@ -3428,14 +3451,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               onClick={onToggleSnapToGrid}
               title="Привязка к чертёжной сетке"
               aria-label="Переключить привязку"
-              className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center justify-center gap-1 h-5 px-1 @[780px]/footer:px-1.5 rounded-[2px] text-[11px] transition-colors whitespace-nowrap shrink-0 ${
                 vs.snapToGrid
                   ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
                   : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
               }`}
             >
               <Magnet className={`w-3 h-3 ${vs.snapToGrid ? 'text-[var(--flux-accent)]' : ''}`} />
-              <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Привязка</span>
+              <span className={isMultiViewport ? 'hidden' : 'hidden @[780px]/footer:inline'}>Привязка</span>
             </button>
           )}
           {onToggleSmartGuides && (
@@ -3445,14 +3468,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               onClick={onToggleSmartGuides}
               title="Магнитные направляющие выравнивания (удерживайте Alt при перетаскивании для свободного хода)"
               aria-label="Переключить магнитные направляющие"
-              className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center justify-center gap-1 h-5 px-1 @[780px]/footer:px-1.5 rounded-[2px] text-[11px] transition-colors whitespace-nowrap shrink-0 ${
                 vs.smartGuides !== false
                   ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
                   : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
               }`}
             >
               <Ruler className={`w-3 h-3 ${vs.smartGuides !== false ? 'text-[var(--flux-accent)]' : ''}`} />
-              <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Направл.</span>
+              <span className={isMultiViewport ? 'hidden' : 'hidden @[780px]/footer:inline'}>Направл.</span>
             </button>
           )}
           {onToggleCrosshair && (
@@ -3463,14 +3486,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               aria-pressed={vs.showCrosshair !== false}
               title="Глобальное перекрестие курсора (Crosshair) для точного выравнивания на листе"
               aria-label="Переключить перекрестие курсора"
-              className={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[11px] transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center justify-center gap-1 h-5 px-1 @[780px]/footer:px-1.5 rounded-[2px] text-[11px] transition-colors whitespace-nowrap shrink-0 ${
                 vs.showCrosshair !== false
                   ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
                   : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
               }`}
             >
               <Crosshair className={`w-3 h-3 ${vs.showCrosshair !== false ? 'text-[var(--flux-accent)]' : ''}`} />
-              <span className={isMultiViewport ? 'hidden' : 'hidden md:inline'}>Прицел</span>
+              <span className={isMultiViewport ? 'hidden' : 'hidden @[780px]/footer:inline'}>Прицел</span>
             </button>
           )}
 
@@ -3480,18 +3503,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             type="button"
             onClick={() => onSetZoom(Math.max(0.16, Math.round((zoom - 0.1) * 100) / 100))}
             aria-label="Уменьшить масштаб холста"
-            className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+            className="inline-flex items-center justify-center w-[18px] @[520px]/footer:w-5 h-5 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] shrink-0"
           >
             <Minus className="w-3 h-3" />
           </button>
-          <span className="w-10 text-center font-mono tabular-nums text-[var(--flux-text)]">
+          <span
+            data-testid={viewportIndex === 0 ? 'canvas-zoom-value' : `canvas-zoom-value-${viewportIndex}`}
+            className={`${isMultiViewport ? 'w-8' : 'w-9 @[520px]/footer:w-10'} text-center font-mono tabular-nums text-[var(--flux-text)] shrink-0`}
+          >
             {Math.round(zoom * 100)}%
           </span>
           <button
             type="button"
             onClick={() => onSetZoom(Math.min(2.5, Math.round((zoom + 0.1) * 100) / 100))}
             aria-label="Увеличить масштаб холста"
-            className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+            className="inline-flex items-center justify-center w-[18px] @[520px]/footer:w-5 h-5 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] shrink-0"
           >
             <Plus className="w-3 h-3" />
           </button>
@@ -3501,7 +3527,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               onClick={onFitViewport}
               title="Вписать лист в окно"
               aria-label="Вписать лист в окно"
-              className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+              className="inline-flex items-center justify-center w-[18px] @[520px]/footer:w-5 h-5 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] shrink-0"
             >
               <Maximize2 className="w-3 h-3" />
             </button>

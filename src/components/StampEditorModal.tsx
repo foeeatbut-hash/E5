@@ -490,15 +490,15 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
             className={`w-full ${
               mode === 'designer' ? 'max-w-5xl' : 'max-w-3xl'
-            } rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-2xl flex flex-col max-h-[92vh] overflow-hidden transition-[max-width] duration-200`}
+            } rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[92vh] overflow-hidden transition-[max-width] duration-200`}
           >
             {/* Header with Mode Switcher */}
-            <div className="px-4 h-12 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
+            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <FileText className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
                 <h2
                   id="stamp-modal-title"
-                  className="text-[14px] font-semibold text-[var(--flux-text)] truncate"
+                  className="text-[13px] font-semibold text-[var(--flux-text)] truncate"
                 >
                   Основная надпись и конструктор штампов
                 </h2>
@@ -508,7 +508,7 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                 <div
                   role="tablist"
                   aria-label="Режим работы со штампами"
-                  className="flex items-center p-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)]"
+                  className="inline-flex divide-x divide-[var(--flux-line)] rounded-[2px] border border-[var(--flux-line)] overflow-hidden bg-[var(--flux-bg)]"
                 >
                   <button
                     type="button"
@@ -516,22 +516,14 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                     data-testid="stamp-tab-values"
                     aria-selected={mode === 'values'}
                     onClick={() => setMode('values')}
-                    className={`relative inline-flex items-center gap-1.5 h-7 px-2.5 rounded-xs text-[12px] font-medium transition-colors whitespace-nowrap ${
+                    className={`inline-flex items-center gap-1.5 h-6 px-2.5 text-[11px] font-medium transition-colors whitespace-nowrap ${
                       mode === 'values'
-                        ? 'text-[var(--flux-text)]'
-                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
                     }`}
                   >
-                    {mode === 'values' && (
-                      <motion.span
-                        layoutId="stamp-mode-pill"
-                        transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                        aria-hidden="true"
-                        className="absolute inset-0 rounded-xs bg-[var(--flux-surface)] shadow-xs"
-                      />
-                    )}
-                    <Layers className="relative z-10 w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                    <span className="relative z-10">Заполнение граф</span>
+                    <Layers className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                    <span>Заполнение граф</span>
                   </button>
                   <button
                     type="button"
@@ -539,22 +531,14 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                     data-testid="stamp-tab-designer"
                     aria-selected={mode === 'designer'}
                     onClick={() => setMode('designer')}
-                    className={`relative inline-flex items-center gap-1.5 h-7 px-2.5 rounded-xs text-[12px] font-medium transition-colors whitespace-nowrap ${
+                    className={`inline-flex items-center gap-1.5 h-6 px-2.5 text-[11px] font-medium transition-colors whitespace-nowrap ${
                       mode === 'designer'
-                        ? 'text-[var(--flux-text)]'
-                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
                     }`}
                   >
-                    {mode === 'designer' && (
-                      <motion.span
-                        layoutId="stamp-mode-pill"
-                        transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                        aria-hidden="true"
-                        className="absolute inset-0 rounded-xs bg-[var(--flux-surface)] shadow-xs"
-                      />
-                    )}
-                    <LayoutTemplate className="relative z-10 w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                    <span className="relative z-10">Создать / настроить штамп</span>
+                    <LayoutTemplate className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                    <span>Создать / настроить штамп</span>
                   </button>
                 </div>
 

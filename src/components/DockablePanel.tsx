@@ -23,9 +23,9 @@ export const CAD_FAST_TRANSITION = {
   ease: [0.22, 1, 0.36, 1] as const,
 };
 
-export const COLLAPSED_SIDE_RAIL_WIDTH = 34;
-export const COLLAPSED_HEADER_HEIGHT = 28;
-export const COLLAPSED_BOTTOM_TABS_HEIGHT = 32;
+export const COLLAPSED_SIDE_RAIL_WIDTH = 28;
+export const COLLAPSED_HEADER_HEIGHT = 24;
+export const COLLAPSED_BOTTOM_TABS_HEIGHT = 28;
 
 export interface ActivePanelDrag {
   panelId: PanelId;
@@ -75,7 +75,7 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
   onToggleCollapse,
 }) => {
   const dockBtnCls = (active: boolean) =>
-    `inline-flex items-center justify-center w-5 h-5 rounded transition-colors ${
+    `inline-flex items-center justify-center w-[18px] h-[18px] rounded-[2px] transition-colors ${
       active
         ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]'
         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -102,11 +102,11 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
         onToggleCollapse(panel.id);
       }}
       title="Перетащите заголовок для закрепления или дважды кликните для сворачивания"
-      className="group/header h-7 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 cursor-grab active:cursor-grabbing select-none"
+      className="group/header h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1.5 shrink-0 cursor-grab active:cursor-grabbing select-none"
     >
       <div className="flex items-center gap-1.5 min-w-0">
-        <GripHorizontal className="w-3.5 h-3.5 text-[var(--flux-text-muted)]/60 group-hover/header:text-[var(--flux-text-muted)] transition-colors shrink-0" />
-        <span className="text-[11.5px] font-semibold tracking-[-0.01em] text-[var(--flux-text)] truncate">
+        <GripHorizontal className="w-3 h-3 text-[var(--flux-text-muted)]/50 group-hover/header:text-[var(--flux-text-muted)] transition-colors shrink-0" />
+        <span className="text-[11px] font-semibold tracking-normal text-[var(--flux-text)] truncate">
           {panel.title}
         </span>
       </div>
@@ -155,7 +155,7 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
           onClick={() => onToggleCollapse(panel.id)}
           title={panel.collapsed ? 'Развернуть панель' : 'Свернуть панель'}
           aria-label={panel.collapsed ? `Развернуть «${panel.title}»` : `Свернуть «${panel.title}»`}
-          className="inline-flex items-center justify-center w-5 h-5 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors ml-0.5"
+          className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors ml-0.5"
         >
           <motion.span
             animate={{ rotate: panel.collapsed ? 180 : 0 }}
@@ -239,7 +239,7 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = React.memo(
               }}
               onDoubleClick={() => onToggleCollapse(panel.id)}
               title={`Развернуть «${panel.title}» (или перетащите для перемещения)`}
-              className="h-full w-[34px] bg-[var(--flux-surface)] flex flex-col items-center py-1.5 gap-1.5 select-none cursor-grab active:cursor-grabbing"
+              className="h-full w-[28px] bg-[var(--flux-surface-alt)] flex flex-col items-center py-1 gap-1 select-none cursor-grab active:cursor-grabbing"
             >
               <button
                 type="button"
@@ -247,7 +247,7 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = React.memo(
                 onClick={() => onToggleCollapse(panel.id)}
                 title={`Развернуть «${panel.title}»`}
                 aria-label={`Развернуть «${panel.title}»`}
-                className="inline-flex items-center justify-center w-6 h-6 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+                className="inline-flex items-center justify-center w-5 h-5 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
               >
                 {edge === 'left' ? (
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -417,7 +417,7 @@ export const FloatingPanelWindow: React.FC<FloatingPanelWindowProps> = React.mem
         width: panel.floating.width,
         boxShadow: 'var(--flux-paper-shadow)',
       }}
-      className="no-print fixed z-40 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] flex flex-col overflow-hidden"
+      className="no-print fixed z-40 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] flex flex-col overflow-hidden"
     >
       <PanelHeaderBar
         panel={panel}

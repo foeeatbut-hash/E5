@@ -98,10 +98,10 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: 4 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-3xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+            className="w-full max-w-3xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[90vh] overflow-hidden"
           >
             {/* Header */}
-            <div className="px-4 h-12 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-3 shrink-0">
+            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <Hash className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
                 <h2
@@ -122,55 +122,41 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
             </div>
 
             {/* Sub-tabs */}
-            <div className="px-4 py-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)]/60 flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                data-testid="autonum-tab-wires"
-                onClick={() => setTab('wires')}
-                className={`relative h-8 px-3 rounded border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors ${
-                  tab === 'wires'
-                    ? 'border-[var(--flux-accent)]/70 text-[var(--flux-text)]'
-                    : 'bg-[var(--flux-bg)] border-[var(--flux-line)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
-                }`}
-              >
-                {tab === 'wires' && (
-                  <motion.span
-                    layoutId="autonum-tab-pill"
-                    transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                    aria-hidden="true"
-                    className="absolute inset-0 rounded bg-[var(--flux-sel)]"
-                  />
-                )}
-                <Spline className="relative z-10 w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                <span className="relative z-10">Цепи и провода</span>
-                <span className="relative z-10 font-mono tabular-nums text-[10.5px] opacity-80">
-                  ({wirePreview.changes.length})
-                </span>
-              </button>
-              <button
-                type="button"
-                data-testid="autonum-tab-devices"
-                onClick={() => setTab('devices')}
-                className={`relative h-8 px-3 rounded border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors ${
-                  tab === 'devices'
-                    ? 'border-[var(--flux-accent)]/70 text-[var(--flux-text)]'
-                    : 'bg-[var(--flux-bg)] border-[var(--flux-line)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
-                }`}
-              >
-                {tab === 'devices' && (
-                  <motion.span
-                    layoutId="autonum-tab-pill"
-                    transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                    aria-hidden="true"
-                    className="absolute inset-0 rounded bg-[var(--flux-sel)]"
-                  />
-                )}
-                <Cpu className="relative z-10 w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                <span className="relative z-10">ОУО изделий (-QF?, -KM?)</span>
-                <span className="relative z-10 font-mono tabular-nums text-[10.5px] opacity-80">
-                  ({devicePreview.changes.length})
-                </span>
-              </button>
+            <div className="px-3 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center shrink-0">
+              <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
+                <button
+                  type="button"
+                  data-testid="autonum-tab-wires"
+                  onClick={() => setTab('wires')}
+                  className={`h-7 px-3 text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors ${
+                    tab === 'wires'
+                      ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
+                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                  }`}
+                >
+                  <Spline className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                  <span>Цепи и провода</span>
+                  <span className="font-mono tabular-nums text-[10.5px] opacity-80">
+                    ({wirePreview.changes.length})
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="autonum-tab-devices"
+                  onClick={() => setTab('devices')}
+                  className={`h-7 px-3 text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors ${
+                    tab === 'devices'
+                      ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
+                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                  }`}
+                >
+                  <Cpu className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                  <span>ОУО изделий (-QF?, -KM?)</span>
+                  <span className="font-mono tabular-nums text-[10.5px] opacity-80">
+                    ({devicePreview.changes.length})
+                  </span>
+                </button>
+              </div>
             </div>
 
             <AnimatePresence mode="wait" initial={false}>

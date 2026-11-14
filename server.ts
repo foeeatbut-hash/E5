@@ -50,6 +50,39 @@ const app = express();
 app.use(express.json({ limit: '25mb' }));
 app.use(express.text({ type: ['application/xml', 'text/xml', 'text/plain'], limit: '25mb' }));
 
+// Maximum HTTP API diagnostic telemetry (timing, cause, client origin, outcome status)
+app.use((req, res, next) => {
+  const reqPath = req.path || '';
+  if (
+    !reqPath.startsWith('/api/') ||
+    reqPath === '/api/sync/stream' ||
+    reqPath === '/api/health' ||
+    reqPath.startsWith('/api/v1/diagnostics')
+  ) {
+    next();
+    return;
+  }
+  const t0 = performance.now();
+  const clientHeader = typeof req.headers['x-flux-client'] === 'string' ? req.headers['x-flux-client'] : 'web-ui';
+  res.on('finish', () => {
+    const durationMs = Math.round((performance.now() - t0) * 100) / 100;
+    const status = res.statusCode;
+    const level = status >= 500 ? 'ERROR' : status >= 400 || durationMs >= 250 ? 'WARN' : 'SYNC';
+    diagLogger.log(level, 'NET-API', `HTTP ${req.method} ${reqPath} → ${status}`, {
+      durationMs,
+      lagMs: durationMs >= 250 ? durationMs : undefined,
+      cause: `Входящий API-запрос от клиента "${clientHeader}" (${req.method} ${req.originalUrl})`,
+      outcome:
+        status >= 400
+          ? `Ответ сервера с кодом ${status} за ${durationMs} мс`
+          : durationMs >= 250
+            ? `Медленный ответ HTTP ${status} (${durationMs} мс — превышен порог 250 мс)`
+            : `Успешный ответ HTTP ${status} за ${durationMs} мс`,
+    });
+  });
+  next();
+});
+
 process.on('uncaughtException', (err) => {
   diagLogger.log('ERROR', 'SERVER', `UncaughtException: ${err.message}`, {
     details: err.stack || String(err),

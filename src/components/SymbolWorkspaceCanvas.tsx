@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   CopyPlus,
@@ -88,6 +87,9 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const coordsHudRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (coordsHudRef.current) coordsHudRef.current.textContent = 'X:0 Y:0';
+  }, []);
   const polyPreviewRef = useRef<SVGPolylineElement | null>(null);
   const cursorLocalRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const moveRafRef = useRef<number | null>(null);
@@ -616,9 +618,9 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
       className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--flux-canvas-bg)] select-none"
     >
       {/* Top Block Editor Context Bar (AutoCAD BEDIT header strip) */}
-      <div className="shrink-0 h-10 px-3 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 z-10">
+      <div className="shrink-0 h-8 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2 z-10">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="px-1.5 py-0.5 rounded-xs border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] font-mono text-[10px] font-semibold tracking-wider text-[var(--flux-accent)] whitespace-nowrap shrink-0">
+          <span className="px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] font-mono text-[10px] font-semibold tracking-wider text-[var(--flux-accent)] whitespace-nowrap shrink-0">
             {draft.targetMode === 'device'
               ? 'УГО ОБЪЕКТА'
               : draft.targetMode === 'component'
@@ -634,12 +636,12 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             data-testid="symbol-ws-save-btn"
             onClick={triggerSaveCurrent}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[11.5px] font-medium whitespace-nowrap transition-colors active:scale-[0.98]"
+            className="inline-flex items-center justify-center gap-1.5 min-w-[94px] h-6 px-2 rounded-[2px] border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[11px] font-medium whitespace-nowrap transition-colors"
           >
             {savedFlash ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
             <span>{savedFlash ? 'Сохранено' : 'Сохранить'}</span>
@@ -649,7 +651,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             type="button"
             data-testid="symbol-ws-save-copy-btn"
             onClick={openSaveAsDialog}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[11.5px] font-medium whitespace-nowrap transition-colors"
+            className="inline-flex items-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[11px] font-medium whitespace-nowrap transition-colors"
           >
             <CopyPlus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
             <span>Копировать как…</span>
@@ -659,9 +661,9 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             type="button"
             data-testid="symbol-ws-place-btn"
             onClick={workspace.onPlaceOnActiveSheet}
-            className="hidden sm:inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[11.5px] font-medium whitespace-nowrap transition-colors"
+            className="hidden sm:inline-flex items-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[11px] font-medium whitespace-nowrap transition-colors"
           >
-            <Plus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
             <span>На схему</span>
           </button>
 
@@ -669,7 +671,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             type="button"
             data-testid="symbol-ws-close-btn"
             onClick={workspace.onCloseWorkspace}
-            className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[11.5px] font-medium whitespace-nowrap transition-colors"
+            className="inline-flex items-center gap-1 h-6 px-2 rounded-[2px] border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[11px] font-medium whitespace-nowrap transition-colors"
           >
             <X className="w-3.5 h-3.5" />
             <span>Закрыть УГО</span>
@@ -678,81 +680,74 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
       </div>
 
       {/* Inline "Save As Copy" Popover Bar */}
-      <AnimatePresence initial={false}>
-        {saveAsOpen && (
-          <motion.div
-            key="symbol-ws-copy-bar"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-            data-testid="symbol-ws-copy-bar"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.stopPropagation();
-                setSaveAsOpen(false);
-              } else if (e.key === 'Enter' && copyName.trim()) {
-                e.preventDefault();
-                confirmCopySave();
-              }
-            }}
-            className="shrink-0 px-3 py-2 border-b border-[var(--flux-accent)]/40 bg-[var(--flux-sel)] flex flex-wrap items-center gap-2 z-10"
-          >
-            <span className="text-[11.5px] font-semibold text-[var(--flux-text)] whitespace-nowrap">
-              Копия в базу:
-            </span>
-            <input
-              ref={copyNameInputRef}
-              type="text"
-              data-testid="symbol-ws-copy-name"
-              aria-label="Название копии УГО или изделия"
-              value={copyName}
-              onChange={(e) => setCopyName(e.target.value)}
-              placeholder="Название УГО / изделия"
-              className="h-7 px-2 min-w-[160px] flex-1 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
-            />
-            <input
-              type="text"
-              data-testid="symbol-ws-copy-block"
-              aria-label="Имя блока E3 для копии"
-              spellCheck={false}
-              value={copyBlockName}
-              onChange={(e) => setCopyBlockName(e.target.value)}
-              placeholder="Блок E3 (GOST_...)"
-              className="h-7 px-2 min-w-[140px] flex-1 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
-            />
-            <input
-              type="text"
-              data-testid="symbol-ws-copy-article"
-              aria-label="Артикул копии изделия"
-              spellCheck={false}
-              value={copyArticle}
-              onChange={(e) => setCopyArticle(e.target.value)}
-              placeholder="Артикул"
-              className="h-7 px-2 w-32 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
-            />
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                data-testid="symbol-ws-copy-confirm"
-                disabled={!copyName.trim()}
-                onClick={confirmCopySave}
-                className="inline-flex items-center gap-1 h-7 px-2.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] disabled:opacity-45 text-white text-[11.5px] font-medium whitespace-nowrap transition-colors"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>Создать копию</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSaveAsOpen(false)}
-                className="h-7 px-2 rounded text-[11.5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap transition-colors"
-              >
-                Отмена
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {saveAsOpen && (
+        <div
+          data-testid="symbol-ws-copy-bar"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              setSaveAsOpen(false);
+            } else if (e.key === 'Enter' && copyName.trim()) {
+              e.preventDefault();
+              confirmCopySave();
+            }
+          }}
+          className="shrink-0 px-2.5 py-1.5 border-b border-[var(--flux-accent)]/40 bg-[var(--flux-sel)] flex flex-wrap items-center gap-2 z-10"
+        >
+          <span className="text-[11px] font-semibold text-[var(--flux-text)] whitespace-nowrap">
+            Копия в базу:
+          </span>
+          <input
+            ref={copyNameInputRef}
+            type="text"
+            data-testid="symbol-ws-copy-name"
+            aria-label="Название копии УГО или изделия"
+            value={copyName}
+            onChange={(e) => setCopyName(e.target.value)}
+            placeholder="Название УГО / изделия"
+            className="h-6 px-2 min-w-[160px] flex-1 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
+          />
+          <input
+            type="text"
+            data-testid="symbol-ws-copy-block"
+            aria-label="Имя блока E3 для копии"
+            spellCheck={false}
+            value={copyBlockName}
+            onChange={(e) => setCopyBlockName(e.target.value)}
+            placeholder="Блок E3 (GOST_...)"
+            className="h-6 px-2 min-w-[140px] flex-1 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+          />
+          <input
+            type="text"
+            data-testid="symbol-ws-copy-article"
+            aria-label="Артикул копии изделия"
+            spellCheck={false}
+            value={copyArticle}
+            onChange={(e) => setCopyArticle(e.target.value)}
+            placeholder="Артикул"
+            className="h-6 px-2 w-32 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+          />
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              data-testid="symbol-ws-copy-confirm"
+              disabled={!copyName.trim()}
+              onClick={confirmCopySave}
+              className="inline-flex items-center gap-1 h-6 px-2.5 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] disabled:opacity-45 text-white text-[11px] font-medium whitespace-nowrap transition-colors"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Создать копию</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSaveAsOpen(false)}
+              className="h-6 px-2 rounded-[2px] text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap transition-colors"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Infinite Sheetless CAD Canvas */}
       <div className="relative flex-1 min-h-0" onWheel={handleWheel}>
@@ -843,7 +838,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               x={4 / zoom}
               y={-5 / zoom}
               fontSize={9 / zoom}
-              fontFamily="JetBrains Mono, monospace"
+              fontFamily="IBM Plex Mono, monospace"
               fill="var(--flux-text-muted)"
             >
               0,0
@@ -1003,7 +998,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
                     fill={strokeCol}
                     fontSize={sh.fontSize || 11}
                     fontWeight={sh.bold ? 700 : 500}
-                    fontFamily="'DM Sans', sans-serif"
+                    fontFamily="'IBM Plex Sans', sans-serif"
                   >
                     {previewVal}
                   </text>
@@ -1143,7 +1138,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
                     y={pin.dy - 5 / zoom}
                     fontSize={9.5 / zoom}
                     fontWeight={600}
-                    fontFamily="JetBrains Mono, monospace"
+                    fontFamily="IBM Plex Mono, monospace"
                     fill={isPinSel ? '#dc2626' : 'var(--flux-text)'}
                   >
                     {pin.name}
@@ -1183,16 +1178,16 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
         {/* Bottom Floating CAD Workspace HUD */}
         <div
           data-testid="symbol-workspace-hud"
-          className="absolute bottom-3 left-3 right-3 pointer-events-none flex items-center justify-between gap-2"
+          className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none flex items-center justify-between gap-2"
         >
-          <div className="pointer-events-auto inline-flex items-center gap-2 px-2.5 h-7 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)]/95 backdrop-blur-xs text-[11px] text-[var(--flux-text-muted)] shadow-xs">
+          <div className="pointer-events-auto inline-flex items-center gap-2 px-2 h-6 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text-muted)] shadow-sm">
             <Crosshair className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
             <span className="truncate">{toolHint}</span>
           </div>
 
-          <div className="pointer-events-auto inline-flex items-center gap-1.5 px-2 h-7 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)]/95 backdrop-blur-xs text-[11px] font-mono tabular-nums text-[var(--flux-text)] shadow-xs shrink-0">
-            <span ref={coordsHudRef} className="text-[var(--flux-text-muted)] min-w-[74px]">
-              X:0 Y:0
+          <div className="pointer-events-auto inline-flex items-center gap-1.5 px-2 h-6 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[11px] font-mono tabular-nums text-[var(--flux-text)] shadow-sm shrink-0">
+            <span className="text-[var(--flux-text-muted)] inline-block w-[112px] whitespace-nowrap tabular-nums">
+              <span ref={coordsHudRef} />
             </span>
             <span className="h-3.5 w-px bg-[var(--flux-line)]" />
             <button
@@ -1200,17 +1195,17 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               onClick={() => setZoom((z) => Math.max(0.4, Number((z * 0.85).toFixed(2))))}
               title="Отдалить"
               aria-label="Отдалить"
-              className="w-5 h-5 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] transition-colors"
+              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-[var(--flux-hover)] transition-colors"
             >
               <ZoomOut className="w-3 h-3" />
             </button>
-            <span>{Math.round(zoom * 100)}%</span>
+            <span className="inline-block w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
             <button
               type="button"
               onClick={() => setZoom((z) => Math.min(5, Number((z * 1.18).toFixed(2))))}
               title="Приблизить"
               aria-label="Приблизить"
-              className="w-5 h-5 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] transition-colors"
+              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-[var(--flux-hover)] transition-colors"
             >
               <ZoomIn className="w-3 h-3" />
             </button>
@@ -1219,7 +1214,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               onClick={fitSymbolView}
               title="По центру УГО"
               aria-label="Центрировать УГО"
-              className="w-5 h-5 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] transition-colors"
+              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-[var(--flux-hover)] transition-colors"
             >
               <Maximize2 className="w-3 h-3" />
             </button>

@@ -167,10 +167,10 @@ export const TerminalStripModal: React.FC<TerminalStripModalProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: 4 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-5xl rounded-md border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+            className="w-full max-w-5xl rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] shadow-xl flex flex-col max-h-[90vh] overflow-hidden"
           >
             {/* Header */}
-            <div className="px-4 h-12 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-3 shrink-0">
+            <div className="px-3 h-9 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <Cable className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
                 <h2
@@ -297,19 +297,19 @@ export const TerminalStripModal: React.FC<TerminalStripModalProps> = ({
                       data-testid="xt-poles-table"
                       className="w-full border-collapse text-[12px]"
                     >
-                      <thead className="sticky top-0 z-10 bg-[var(--flux-bg)] border-b border-[var(--flux-line)] text-[11px] text-[var(--flux-text-muted)]">
-                        <tr>
-                          <th className="w-9 px-2 py-2 text-center">Выб.</th>
-                          <th className="px-2.5 py-2 text-left whitespace-nowrap">Клемма</th>
-                          <th className="px-2.5 py-2 text-left whitespace-nowrap">
+                      <thead className="sticky top-0 z-10 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] text-[10.5px] uppercase tracking-wider text-[var(--flux-text-muted)]">
+                        <tr className="divide-x divide-[var(--flux-line)]/60">
+                          <th className="w-9 px-2 py-1.5 text-center font-semibold">Выб.</th>
+                          <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">Клемма</th>
+                          <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                             Внутренняя сторона (Шкаф)
                           </th>
-                          <th className="px-2.5 py-2 text-center whitespace-nowrap">Мостик</th>
-                          <th className="px-2.5 py-2 text-left whitespace-nowrap">
+                          <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">Мостик</th>
+                          <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                             Внешняя сторона (Поле)
                           </th>
-                          <th className="px-2.5 py-2 text-center whitespace-nowrap">Статус</th>
-                          <th className="px-2.5 py-2 text-left whitespace-nowrap">
+                          <th className="px-2 py-1.5 text-center font-semibold whitespace-nowrap">Статус</th>
+                          <th className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">
                             Примечание / Функция
                           </th>
                         </tr>
@@ -326,7 +326,7 @@ export const TerminalStripModal: React.FC<TerminalStripModalProps> = ({
                             <tr
                               key={row.poleKey}
                               data-testid={`xt-row-${row.poleKey}`}
-                              className={`transition-colors ${
+                              className={`divide-x divide-[var(--flux-line)]/50 transition-colors ${
                                 checked
                                   ? 'bg-[var(--flux-sel)]/60'
                                   : row.isSpare
@@ -425,10 +425,10 @@ export const TerminalStripModal: React.FC<TerminalStripModalProps> = ({
                                   type="button"
                                   data-testid={`xt-spare-toggle-${row.poleKey}`}
                                   onClick={() => handleToggleSpare(row.poleKey, !row.isSpare)}
-                                  className={`h-6 px-2 rounded border text-[10.5px] font-medium transition-colors ${
+                                  className={`h-6 px-2 rounded-[2px] border text-[10.5px] font-medium transition-colors ${
                                     row.isSpare
                                       ? 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                      : 'border-[var(--flux-line-strong)] bg-[var(--flux-bg)] text-[var(--flux-text)]'
                                   }`}
                                 >
                                   {row.isSpare ? 'Резерв' : 'Рабочая'}

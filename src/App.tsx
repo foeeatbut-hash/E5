@@ -31,6 +31,7 @@ import { StampEditorModal, type StampModalMode } from './components/StampEditorM
 import { TerminalStripModal } from './components/TerminalStripModal';
 import { AutoNumberingModal } from './components/AutoNumberingModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { SystemHealthDashboard } from './components/SystemHealthDashboard';
 import { SymbolWorkspaceCanvas } from './components/SymbolWorkspaceCanvas';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
 import {
@@ -99,6 +100,11 @@ import {
   runErc,
 } from './core/e3Engine';
 import { createSeedProject } from './core/e3Seed';
+import {
+  describeInteractiveTarget,
+  formatScreenSnapshot,
+  type PerfSnapshot,
+} from './core/diagTelemetry';
 import {
   createOffPageConnectorDevice,
   getOffPageMeta,
@@ -305,7 +311,7 @@ export default function App() {
     },
     []
   );
-  const [tool, setTool] = useState<CadTool>('select');
+  const [tool, setToolState] = useState<CadTool>('select');
 
   const highlightedTrace = useMemo<PotentialTraceResult | null>(() => {
     if (!highlightedPotentialSeed) return null;
@@ -402,6 +408,18 @@ export default function App() {
   const [autoNumberModalOpen, setAutoNumberModalOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteInitialQuery, setCommandPaletteInitialQuery] = useState('');
+  const [healthOpen, setHealthOpen] = useState(false);
+  const [perfSnapshot, setPerfSnapshot] = useState<PerfSnapshot>({
+    fps: 60,
+    lastFrameDeltaMs: 16.7,
+    maxFrameDeltaMs: 16.7,
+    longTaskCount: 0,
+    jankFramesCount: 0,
+    memoryUsedMb: null,
+    memoryLimitMb: null,
+  });
+  const perfRef = useRef<PerfSnapshot>(perfSnapshot);
+  const screenSnapshotRef = useRef<string>('');
   const fluxHostStatus = useMemo(() => detectFluxHost(), []);
   const [stampModalState, setStampModalState] = useState<{
     open: boolean;
@@ -499,8 +517,15 @@ export default function App() {
       subsystem: ProcessLogEntry['subsystem'],
       message: string,
       durationMs?: number,
-      details?: string
+      details?: string,
+      meta?: {
+        cause?: string;
+        outcome?: string;
+        screenState?: string;
+        lagMs?: number;
+      }
     ) => {
+      const screenState = meta?.screenState ?? (screenSnapshotRef.current || undefined);
       setLogs((prev) => [
         {
           id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -509,13 +534,372 @@ export default function App() {
           subsystem,
           message,
           durationMs,
+          lagMs: meta?.lagMs,
+          cause: meta?.cause,
+          outcome: meta?.outcome,
+          screenState,
           details,
         },
-        ...prev.slice(0, 399),
+        ...prev.slice(0, 1199),
       ]);
     },
     []
   );
+
+  const setTool = useCallback(
+    (nextOrUpdater: CadTool | ((prev: CadTool) => CadTool)) => {
+      setToolState((prev) => {
+        const next = typeof nextOrUpdater === 'function' ? nextOrUpdater(prev) : nextOrUpdater;
+        if (next !== prev) {
+          appendLog(
+            'INFO',
+            'UI-INTERACT',
+            `Смена инструмента САПР: ${prev} → ${next}.`,
+            undefined,
+            undefined,
+            {
+              cause: 'Переключение активного режима чертежа',
+              outcome: `Активен инструмент "${next}"`,
+            }
+          );
+        }
+        return next;
+      });
+    },
+    [appendLog]
+  );
+
+  // Maximum diagnostic collectors: Frame FPS / lag watchdog, LongTasks, UI interactions, fetch RTT/errors, runtime exceptions
+  useEffect(() => {
+    let rafId = 0;
+    let lastFrameAt = performance.now();
+    const mountWarmUntil = lastFrameAt + 1800;
+    let fpsCounter = 0;
+    let fpsWindowStart = lastFrameAt;
+    let lastLagLogAt = 0;
+    let lastLongTaskLogAt = 0;
+    let visibleResumedAt = lastFrameAt;
+
+    const readMemory = () => {
+      const mem = (performance as Performance & {
+        memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
+      }).memory;
+      if (!mem) return { memoryUsedMb: null, memoryLimitMb: null };
+      return {
+        memoryUsedMb: Math.round((mem.usedJSHeapSize / (1024 * 1024)) * 10) / 10,
+        memoryLimitMb: Math.round((mem.jsHeapSizeLimit / (1024 * 1024)) * 10) / 10,
+      };
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        visibleResumedAt = performance.now();
+        lastFrameAt = visibleResumedAt;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    const tick = (now: number) => {
+      const delta = now - lastFrameAt;
+      lastFrameAt = now;
+      fpsCounter += 1;
+
+      const cur = perfRef.current;
+      const isWarm = now >= mountWarmUntil && now - visibleResumedAt > 800;
+      const saneDelta = isWarm ? Math.min(delta, 5000) : 16.7;
+      cur.lastFrameDeltaMs = Math.round(saneDelta * 10) / 10;
+      if (isWarm && saneDelta > cur.maxFrameDeltaMs) {
+        cur.maxFrameDeltaMs = Math.round(saneDelta * 10) / 10;
+      }
+      if (isWarm && saneDelta > 50) {
+        cur.jankFramesCount += 1;
+        if (saneDelta >= 100 && now - lastLagLogAt > 2500) {
+          lastLagLogAt = now;
+          appendLog(
+            'WARN',
+            'PERF-DIAG',
+            `Зафиксирован лаг кадра интерфейса (${saneDelta.toFixed(1)} мс).`,
+            Math.round(saneDelta * 10) / 10,
+            undefined,
+            {
+              lagMs: Math.round(saneDelta * 10) / 10,
+              cause: 'Задержка основного UI-потока между кадрами requestAnimationFrame',
+              outcome: `Мгновенный FPS снизился до ${Math.max(1, Math.round(1000 / saneDelta))} к/с`,
+            }
+          );
+        }
+      }
+
+      if (now - fpsWindowStart >= 1000) {
+        const elapsedSec = (now - fpsWindowStart) / 1000;
+        const measuredFps = Math.max(1, Math.round(fpsCounter / Math.max(0.25, elapsedSec)));
+        const memInfo = readMemory();
+        cur.fps = Math.min(240, measuredFps);
+        cur.memoryUsedMb = memInfo.memoryUsedMb;
+        cur.memoryLimitMb = memInfo.memoryLimitMb;
+        fpsCounter = 0;
+        fpsWindowStart = now;
+      }
+      rafId = window.requestAnimationFrame(tick);
+    };
+    rafId = window.requestAnimationFrame(tick);
+
+    let longTaskObs: PerformanceObserver | null = null;
+    if (typeof PerformanceObserver !== 'undefined') {
+      try {
+        if (PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
+          longTaskObs = new PerformanceObserver((list) => {
+            const now = performance.now();
+            if (now < mountWarmUntil) return;
+            for (const entry of list.getEntries()) {
+              perfRef.current.longTaskCount += 1;
+              if (entry.duration >= 120 && now - lastLongTaskLogAt > 2500) {
+                lastLongTaskLogAt = now;
+                const d = Math.round(entry.duration * 10) / 10;
+                appendLog(
+                  'WARN',
+                  'PERF-DIAG',
+                  `Обнаружена долгая задача главного потока (LongTask ${d} мс).`,
+                  d,
+                  undefined,
+                  {
+                    lagMs: d,
+                    cause: `Блокировка UI-потока (${entry.name || 'self'})`,
+                    outcome: `Задержка отклика интерфейса на ${d} мс`,
+                  }
+                );
+              }
+            }
+          });
+          longTaskObs.observe({ entryTypes: ['longtask'] });
+        }
+      } catch {
+        // LongTask observer unsupported
+      }
+    }
+
+    const onCaptureClick = (e: MouseEvent) => {
+      const targetInfo = describeInteractiveTarget(e.target);
+      if (!targetInfo) return;
+      const isControl =
+        targetInfo.tag === 'button' ||
+        targetInfo.tag === 'a' ||
+        targetInfo.tag === 'select' ||
+        targetInfo.tag === 'input' ||
+        targetInfo.tag === 'textarea' ||
+        targetInfo.role === 'button' ||
+        targetInfo.role === 'tab' ||
+        targetInfo.role === 'menuitem' ||
+        Boolean(targetInfo.testId);
+      if (!isControl) return;
+      const btnName = e.button === 1 ? 'СКМ' : e.button === 2 ? 'ПКМ' : 'ЛКМ';
+      appendLog(
+        'INFO',
+        'UI-INTERACT',
+        `Нажатие [${btnName}]: «${targetInfo.label}»`,
+        undefined,
+        undefined,
+        {
+          cause: `Взаимодействие с <${targetInfo.tag}>${targetInfo.testId ? ` [data-testid="${targetInfo.testId}"]` : ''}`,
+          outcome: `Координаты клика: (${Math.round(e.clientX)}, ${Math.round(e.clientY)})`,
+        }
+      );
+    };
+
+    const onCaptureChange = (e: Event) => {
+      const target = e.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
+      if (!target) return;
+      const info = describeInteractiveTarget(target);
+      if (!info) return;
+      const valPreview =
+        target instanceof HTMLInputElement && target.type === 'checkbox'
+          ? String(target.checked)
+          : String((target as HTMLInputElement).value ?? '').slice(0, 64);
+      appendLog(
+        'INFO',
+        'UI-INTERACT',
+        `Изменено значение «${info.label}» → "${valPreview}"`,
+        undefined,
+        undefined,
+        {
+          cause: `Событие change на <${info.tag}>${info.testId ? ` [data-testid="${info.testId}"]` : ''}`,
+          outcome: `Новое значение: "${valPreview}"`,
+        }
+      );
+    };
+
+    const onCaptureKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const inText =
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      const hasModifier = e.ctrlKey || e.metaKey || e.altKey;
+      const isSpecial =
+        e.key === 'Escape' ||
+        e.key === 'Delete' ||
+        e.key === 'Enter' ||
+        /^F\d{1,2}$/.test(e.key);
+      if (!hasModifier && !isSpecial) {
+        if (inText || e.key.length > 1) return;
+      }
+      if (inText && !hasModifier && !isSpecial) return;
+      const parts = [
+        e.ctrlKey ? 'Ctrl' : '',
+        e.metaKey ? 'Cmd' : '',
+        e.altKey ? 'Alt' : '',
+        e.shiftKey ? 'Shift' : '',
+        e.key === ' ' ? 'Space' : e.key,
+      ].filter(Boolean);
+      appendLog(
+        'INFO',
+        'UI-INTERACT',
+        `Клавиша: ${parts.join('+')}`,
+        undefined,
+        undefined,
+        {
+          cause: `Нажатие клавиатуры${inText ? ' в поле ввода' : ' на рабочей области'}`,
+          outcome: 'Передано обработчику горячих клавиш / элемента',
+        }
+      );
+    };
+
+    const onWindowError = (ev: ErrorEvent) => {
+      appendLog(
+        'ERROR',
+        'E3-CORE',
+        `Неперехваченная ошибка UI: ${ev.message || 'Unknown Error'}`,
+        undefined,
+        ev.error instanceof Error ? ev.error.stack || ev.error.message : `${ev.filename}:${ev.lineno}:${ev.colno}`,
+        {
+          cause: `Исключение в ${ev.filename || 'runtime'}:${ev.lineno || 0}`,
+          outcome: 'Выполнение обработчика прервано',
+        }
+      );
+    };
+
+    const onUnhandledRejection = (ev: PromiseRejectionEvent) => {
+      const msg = ev.reason instanceof Error ? ev.reason.message : String(ev.reason);
+      const stack = ev.reason instanceof Error ? ev.reason.stack || msg : String(ev.reason);
+      appendLog(
+        'ERROR',
+        'E3-CORE',
+        `Необработанный Promise rejection: ${msg}`,
+        undefined,
+        stack,
+        {
+          cause: 'Асинхронная операция завершилась отклонением без catch()',
+          outcome: `Ошибка: ${msg}`,
+        }
+      );
+    };
+
+    const origFetch = window.fetch.bind(window);
+    const wrappedFetch: typeof window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const shouldTrace =
+        urlStr.includes('/api/') &&
+        !urlStr.includes('/api/v1/diagnostics') &&
+        !urlStr.includes('/api/sync/stream');
+      if (!shouldTrace) {
+        return origFetch(input, init);
+      }
+      const method = (init?.method || (typeof input !== 'string' && !(input instanceof URL) ? input.method : 'GET') || 'GET').toUpperCase();
+      const t0 = performance.now();
+      try {
+        const res = await origFetch(input, init);
+        const dt = Math.round((performance.now() - t0) * 100) / 100;
+        if (!res.ok || dt >= 250) {
+          appendLog(
+            res.status >= 500 ? 'ERROR' : 'WARN',
+            'NET-API',
+            `Клиент fetch ${method} ${urlStr} → HTTP ${res.status} (${dt} мс)`,
+            dt,
+            undefined,
+            {
+              lagMs: dt >= 250 ? dt : undefined,
+              cause: `Клиентский HTTP-запрос ${method} ${urlStr}`,
+              outcome: !res.ok
+                ? `Сервер вернул ошибку HTTP ${res.status} за ${dt} мс`
+                : `Высокая задержка сети (${dt} мс)`,
+            }
+          );
+        }
+        return res;
+      } catch (err) {
+        const dt = Math.round((performance.now() - t0) * 100) / 100;
+        const msg = err instanceof Error ? err.message : String(err);
+        appendLog(
+          'ERROR',
+          'NET-API',
+          `Сбой сети fetch ${method} ${urlStr}: ${msg}`,
+          dt,
+          err instanceof Error ? err.stack : undefined,
+          {
+            lagMs: dt,
+            cause: `Сетевой вызов ${method} ${urlStr}`,
+            outcome: `Соединение прервано (${msg})`,
+          }
+        );
+        throw err;
+      }
+    };
+
+    const prevFetchDesc = Object.getOwnPropertyDescriptor(window, 'fetch');
+    let fetchPatched = false;
+    try {
+      if (!prevFetchDesc || prevFetchDesc.configurable) {
+        Object.defineProperty(window, 'fetch', {
+          value: wrappedFetch,
+          configurable: true,
+          writable: true,
+        });
+        fetchPatched = window.fetch === wrappedFetch;
+      } else if (prevFetchDesc.writable) {
+        window.fetch = wrappedFetch;
+        fetchPatched = window.fetch === wrappedFetch;
+      }
+    } catch {
+      fetchPatched = false;
+    }
+
+    document.addEventListener('click', onCaptureClick, true);
+    document.addEventListener('change', onCaptureChange, true);
+    document.addEventListener('keydown', onCaptureKey, true);
+    window.addEventListener('error', onWindowError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      longTaskObs?.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      document.removeEventListener('click', onCaptureClick, true);
+      document.removeEventListener('change', onCaptureChange, true);
+      document.removeEventListener('keydown', onCaptureKey, true);
+      window.removeEventListener('error', onWindowError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+      if (fetchPatched) {
+        try {
+          if (prevFetchDesc) {
+            Object.defineProperty(window, 'fetch', prevFetchDesc);
+          } else {
+            delete (window as unknown as { fetch?: typeof window.fetch }).fetch;
+          }
+        } catch {
+          // ignore if host environment locked fetch
+        }
+      }
+    };
+  }, [appendLog]);
+
+  // Publish FPS/PerfSnapshot to React state only while SystemHealthDashboard is open
+  useEffect(() => {
+    if (!healthOpen) return;
+    setPerfSnapshot({ ...perfRef.current });
+    const id = window.setInterval(() => {
+      setPerfSnapshot({ ...perfRef.current });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [healthOpen]);
 
   // Sync theme class on <html>
   useEffect(() => {
@@ -647,7 +1031,7 @@ export default function App() {
             const srvEntry = payload.entry as ProcessLogEntry;
             setLogs((prev) => {
               if (prev.some((p) => p.id === srvEntry.id)) return prev;
-              return [srvEntry, ...prev.slice(0, 399)];
+              return [srvEntry, ...prev.slice(0, 1199)];
             });
           } else if (payload.type === 'flux-bus-event') {
             setFluxBusMessages((prev) => [
@@ -788,17 +1172,22 @@ export default function App() {
     sheets?: E3Sheet[]
   ): E3Wire[] => rerouteAttachedWires(dev.id, allDevices, wires, 20, sheets);
 
-  const dragSnapshotRef = useRef<E3Project | null>(null);
+  const dragSnapshotRef = useRef<{ project: E3Project; startedAt: number } | null>(null);
 
   const handleBeginDrag = useCallback(() => {
-    dragSnapshotRef.current = docStateRef.current.present;
+    dragSnapshotRef.current = {
+      project: docStateRef.current.present,
+      startedAt: performance.now(),
+    };
   }, []);
 
   const handleCommitDrag = useCallback(
     (moved: boolean, opts?: { tryWireBreakDeviceId?: string }) => {
-      const snap = dragSnapshotRef.current;
+      const dragSnap = dragSnapshotRef.current;
       dragSnapshotRef.current = null;
-      if (!snap) return;
+      if (!dragSnap) return;
+      const snap = dragSnap.project;
+      const dragDurationMs = Math.round((performance.now() - dragSnap.startedAt) * 10) / 10;
 
       const cur = docStateRef.current.present;
       let nextProject = cur;
@@ -846,6 +1235,19 @@ export default function App() {
         future: [],
       }));
       pushSync(committed);
+      if (moved && !didBreak) {
+        appendLog(
+          'INFO',
+          'E3-CORE',
+          `Перемещение/правка графики зафиксированы (rev ${committed.revision}).`,
+          dragDurationMs,
+          undefined,
+          {
+            cause: 'Перетаскивание объекта/узла на схеме мышью',
+            outcome: `Обновлены координаты и перемаршрутизация за ${dragDurationMs} мс`,
+          }
+        );
+      }
     },
     [pushSync, appendLog]
   );
@@ -2716,7 +3118,11 @@ export default function App() {
 
   const handleSetViewportLayout = useCallback(
     (mode: ViewportLayoutMode) => {
-      const nextSheetIds = computeViewportSheets(mode, project.sheets, viewportSheetIds, activeSheetId);
+      const seededIds =
+        viewportLayout === 'single' && mode !== 'single'
+          ? [activeSheetId, ...viewportSheetIds.filter((id) => id !== activeSheetId)]
+          : viewportSheetIds;
+      const nextSheetIds = computeViewportSheets(mode, project.sheets, seededIds, activeSheetId);
       setViewportLayout(mode);
       setViewportSheetIds(nextSheetIds);
       setActiveViewportIdx(0);
@@ -2728,9 +3134,19 @@ export default function App() {
           if (sh) fitSheetToViewport(sh, i);
         }
       });
-      appendLog('INFO', 'E3-CORE', `Режим просмотра листов: ${viewportCountForMode(mode)} в центре.`);
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Режим просмотра листов: ${viewportCountForMode(mode)} в центре (${nextSheetIds.join(', ')}).`,
+        undefined,
+        undefined,
+        {
+          cause: `Переключение раскладки холста → "${mode}"`,
+          outcome: `Отображены листы: ${nextSheetIds.join(', ')}`,
+        }
+      );
     },
-    [project.sheets, viewportSheetIds, activeSheetId, fitSheetToViewport, appendLog]
+    [viewportLayout, project.sheets, viewportSheetIds, activeSheetId, fitSheetToViewport, appendLog]
   );
 
   const handleDuplicateSheet = useCallback(
@@ -3403,6 +3819,7 @@ export default function App() {
     terminalEditorOpen ||
     autoNumberModalOpen ||
     fluxPublishOpen ||
+    healthOpen ||
     stampModalState.open;
 
   // Export & Import handlers (.e3s OLE2 + XML + Flux Bridge)
@@ -3865,6 +4282,9 @@ export default function App() {
         case 'open-erc':
           setConsoleTab('erc');
           setConsoleCollapsed(false);
+          break;
+        case 'open-health':
+          setHealthOpen(true);
           break;
         case 'open-bom':
           setConsoleTab('bom');
@@ -4335,7 +4755,7 @@ export default function App() {
             for (const entry of data.entries as ProcessLogEntry[]) {
               if (!existing.has(entry.id)) merged.push(entry);
             }
-            return merged.slice(0, 400);
+            return merged.slice(0, 1200);
           });
         }
       })
@@ -4653,6 +5073,7 @@ export default function App() {
         onOpenFluxPublishModal={() => setFluxPublishOpen(true)}
         onOpenTerminalEditor={() => setTerminalEditorOpen(true)}
         onClearLogs={() => setLogs([])}
+        onOpenHealthDashboard={() => setHealthOpen(true)}
         onTestApiSyncPush={handleTestApiSyncPush}
       />
     );
@@ -4761,6 +5182,90 @@ export default function App() {
     project.sheets,
     viewportSheetIds,
     activeSheetId
+  );
+  const effectiveViewportSheetsRef = useRef<string[]>(effectiveViewportSheets);
+  effectiveViewportSheetsRef.current = effectiveViewportSheets;
+
+  const currentScreenSnapshot = useMemo(
+    () =>
+      formatScreenSnapshot({
+        projectCode: project.projectCode,
+        revision: project.revision,
+        sheetNumber: activeSheet?.number,
+        sheetName: activeSheet?.name,
+        viewportIdx: activeViewportIdx,
+        viewportLayout,
+        zoom,
+        pan,
+        tool,
+        selectedDevices: selectedDeviceIds.length,
+        selectedWires: selectedWireIds.length,
+        selectedAnnotations: selectedAnnotationIds.length,
+        openModal: healthOpen
+          ? 'SystemHealthDashboard'
+          : exchangeOpen
+            ? 'ExchangeModal'
+            : visualOpen
+              ? 'VisualSettingsModal'
+              : reportOpen
+                ? 'ReportModal'
+                : portableOpen
+                  ? 'PortableBuildModal'
+                  : hvacWizardOpen
+                    ? 'HvacWizardModal'
+                    : catalogModalOpen
+                      ? 'CatalogItemModal'
+                      : publishModalOpen
+                        ? 'PublishModal'
+                        : fluxPublishOpen
+                          ? 'FluxStudioPublishModal'
+                          : terminalEditorOpen
+                            ? 'TerminalStripModal'
+                            : autoNumberModalOpen
+                              ? 'AutoNumberingModal'
+                              : commandPaletteOpen
+                                ? 'CommandPaletteModal'
+                                : stampModalState.open
+                                  ? 'StampEditorModal'
+                                  : null,
+        theme: project.visualSettings.theme,
+        symbolEditorOpen: symbolDraft.open,
+      }),
+    [
+      project.projectCode,
+      project.revision,
+      project.visualSettings.theme,
+      activeSheet?.number,
+      activeSheet?.name,
+      activeViewportIdx,
+      viewportLayout,
+      zoom,
+      pan,
+      tool,
+      selectedDeviceIds.length,
+      selectedWireIds.length,
+      selectedAnnotationIds.length,
+      healthOpen,
+      exchangeOpen,
+      visualOpen,
+      reportOpen,
+      portableOpen,
+      hvacWizardOpen,
+      catalogModalOpen,
+      publishModalOpen,
+      fluxPublishOpen,
+      terminalEditorOpen,
+      autoNumberModalOpen,
+      commandPaletteOpen,
+      stampModalState.open,
+      symbolDraft.open,
+    ]
+  );
+  screenSnapshotRef.current = currentScreenSnapshot;
+
+  const errorLogCount = useMemo(
+    () => logs.reduce((acc, l) => acc + (l.level === 'ERROR' ? 1 : 0), 0),
+    [logs]
   );
 
   const centerGridClass =
@@ -4888,18 +5393,25 @@ export default function App() {
       Array.from({ length: 4 }, (_, idx) => ({
         onFocusViewport: () => {
           setActiveViewportIdx(idx);
-          const shId = viewportSheetIds[idx] || activeSheetId;
+          const shId = effectiveViewportSheetsRef.current[idx] || viewportSheetIds[idx] || activeSheetId;
           setActiveSheetId(shId);
         },
         onFitViewport: () => {
-          const shId = viewportSheetIds[idx] || activeSheetId;
+          const shId = effectiveViewportSheetsRef.current[idx] || viewportSheetIds[idx] || activeSheetId;
           const sh = docStateRef.current.present.sheets.find((s) => s.id === shId);
           if (sh) fitSheetToViewport(sh, idx, true);
         },
         onSelectSheet: (id: string) => {
           setActiveViewportIdx(idx);
           setActiveSheetId(id);
-          setViewportSheetIds((prev) => prev.map((sId, sIdx) => (sIdx === idx ? id : sId)));
+          setViewportSheetIds((prev) => {
+            const base = effectiveViewportSheetsRef.current.length >= 4
+              ? effectiveViewportSheetsRef.current
+              : prev;
+            const next = [...base];
+            next[idx] = id;
+            return next;
+          });
           const target = docStateRef.current.present.sheets.find((s) => s.id === id);
           if (target) fitSheetToViewport(target, idx, true);
         },
@@ -5145,6 +5657,8 @@ export default function App() {
           setCommandPaletteInitialQuery('');
           setCommandPaletteOpen(true);
         }}
+        onOpenHealthDashboard={() => setHealthOpen(true)}
+        errorLogCount={errorLogCount}
         onOpenSymbolDesigner={openBlockEditorWorkspace}
         symbolWorkspace={symbolWorkspaceActions}
         onInsertGostTable={handleInsertGostTable}
@@ -5477,6 +5991,38 @@ export default function App() {
           setCommandPaletteInitialQuery('');
         }}
         onExecute={handleExecuteCommandPaletteItem}
+      />
+
+      <SystemHealthDashboard
+        open={healthOpen}
+        logs={logs}
+        perf={perfSnapshot}
+        screenSnapshot={currentScreenSnapshot}
+        onClose={() => setHealthOpen(false)}
+        onClearLogs={() => setLogs([])}
+        onDownloadLogsJson={() => {
+          downloadText(
+            `e3promax-logs-${Date.now()}.json`,
+            JSON.stringify(logs, null, 2),
+            'application/json;charset=utf-8'
+          );
+        }}
+        onRunWorkerSelfCheck={() => {
+          void (async () => {
+            const res = await ecadAsync.analyzeProject(docStateRef.current.present);
+            appendLog(
+              'INFO',
+              'WORKER',
+              `Диагностический прогон модели (ПЭ3 + ERC): ${res.bom.length} поз., ${res.erc.length} замеч.`,
+              res.durationMs,
+              undefined,
+              {
+                cause: 'Ручной запуск проверки отклика из Монитора здоровья',
+                outcome: `Успешно за ${res.durationMs.toFixed(1)} мс (${res.viaWorker ? 'Web Worker' : 'Main Thread'})`,
+              }
+            );
+          })();
+        }}
       />
     </div>
     </MotionConfig>
