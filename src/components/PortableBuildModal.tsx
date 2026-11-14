@@ -170,16 +170,16 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
       icon={<Package className="w-4 h-4 text-[var(--flux-accent)]" />}
       closeAriaLabel="Закрыть окно сборки Portable"
     >
-        <div className="flex-1 min-h-0 p-4 space-y-4 overflow-y-auto text-[12px]">
+        <div className="flex-1 min-h-0 p-4 space-y-4 overflow-y-auto text-[length:calc(12px*var(--flux-ui-scale))]">
           <div className="p-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="font-medium text-[var(--flux-text)] truncate">{project.name}</div>
-              <div className="text-[11px] font-mono text-[var(--flux-text-muted)]">
+              <div className="text-[length:calc(11px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)]">
                 {project.projectCode} · Rev {project.revision} · {project.devices.length} изд. ·{' '}
                 {project.wires.length} цепей
               </div>
             </div>
-            <span className="px-2 py-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text-muted)] shrink-0">
+            <span className="px-2 py-0.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
               Win64 Portable
             </span>
           </div>
@@ -190,7 +190,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                 <Loader2 className="w-4 h-4 text-[var(--flux-accent)] animate-spin shrink-0" />
                 <span>Идёт живая сборка актуального кода проекта...</span>
               </div>
-              <div className="text-[11px] text-[var(--flux-text-muted)] space-y-1 pl-6">
+              <div className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] space-y-1 pl-6">
                 <div>1. Компиляция интерфейса React + Tailwind (Vite SPA)</div>
                 <div>2. Бандлинг сервера, API и COM-моста в автономный server.cjs (без node_modules)</div>
                 <div>3. Вшивание текущей схемы, .e3s, .vbs, логов и лаунчера E3ProMax_Portable.cmd</div>
@@ -206,7 +206,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                   <div className="font-semibold text-[var(--flux-text)]">
                     Portable-сборка готова: <span className="font-mono">{result.filename}</span>
                   </div>
-                  <div className="text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+                  <div className="text-[length:calc(11px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)]">
                     Собрано за {result.durationMs} мс · Архив {Math.round((result.zipBytes || 0) / 1024)} КБ ·{' '}
                     server.cjs {Math.round((result.serverBytes || 0) / 1024)} КБ · {result.uiFilesCount} UI-файлов
                   </div>
@@ -216,7 +216,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
               {result.stages && result.stages.length > 0 && (
                 <div className="rounded border border-[var(--flux-line)] divide-y divide-[var(--flux-line)] bg-[var(--flux-bg)]">
                   {result.stages.map((st, idx) => (
-                    <div key={idx} className="px-3 py-2 flex items-center justify-between gap-2 text-[11px]">
+                    <div key={idx} className="px-3 py-2 flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))]">
                       <div>
                         <span className="font-medium text-[var(--flux-text)]">{st.name}</span>
                         <span className="text-[var(--flux-text-muted)] ml-2">{st.detail}</span>
@@ -229,7 +229,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                 </div>
               )}
 
-              <div className="p-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-1.5 text-[11px] text-[var(--flux-text-muted)]">
+              <div className="p-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-1.5 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                 <div className="flex items-center gap-1.5 font-semibold text-[var(--flux-text)]">
                   <Terminal className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                   <span>Запуск и диагностика на Windows-ПК</span>
@@ -252,7 +252,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
           )}
 
           {!building && result && !result.ok && (
-            <div className="p-3 rounded border border-rose-500/40 bg-rose-500/10 flex items-start gap-2.5 text-[12px]">
+            <div className="p-3 rounded border border-rose-500/40 bg-rose-500/10 flex items-start gap-2.5 text-[length:calc(12px*var(--flux-ui-scale))]">
               <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
               <div className="text-[var(--flux-text)] font-medium">{result.error}</div>
             </div>
@@ -264,7 +264,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowBuildLogs((v) => !v)}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--flux-accent)] hover:underline"
+                  className="inline-flex items-center gap-1 text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] hover:underline"
                 >
                   {showBuildLogs ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   <span>
@@ -277,7 +277,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                   <button
                     type="button"
                     onClick={handleCopyLogs}
-                    className="inline-flex items-center gap-1 text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+                    className="inline-flex items-center gap-1 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
                   >
                     {copiedLogs ? <Check className="w-3 h-3 text-[var(--flux-accent)]" /> : <Copy className="w-3 h-3" />}
                     <span>{copiedLogs ? 'Скопировано' : 'Копировать лог'}</span>
@@ -285,7 +285,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
                   <button
                     type="button"
                     onClick={handleDownloadBuildLog}
-                    className="inline-flex items-center gap-1 text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+                    className="inline-flex items-center gap-1 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
                   >
                     <Download className="w-3 h-3" />
                     <span>Скачать build.log</span>
@@ -294,7 +294,7 @@ export const PortableBuildModal: React.FC<PortableBuildModalProps> = ({
               </div>
 
               {showBuildLogs && (
-                <pre className="p-2.5 max-h-48 overflow-auto rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-text)] leading-relaxed whitespace-pre-wrap">
+                <pre className="p-2.5 max-h-48 overflow-auto rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text)] leading-relaxed whitespace-pre-wrap">
                   {fullBuildLogText}
                 </pre>
               )}

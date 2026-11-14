@@ -106,10 +106,10 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
       className="w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0"
     >
       <div className="h-6 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2 shrink-0">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)] truncate">
+        <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)] truncate">
           Инспектор УГО и Изделия
         </span>
-        <span className="font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)] shrink-0">
+        <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
           {draft.shapes.length}ф · {draft.pins.length}в · {draft.attributes.length}а
         </span>
       </div>
@@ -256,7 +256,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                 selectedShape.kind === 'polyline') && (
                 <>
                   <span className="cad-prop-label">Опции</span>
-                  <div className="cad-prop-cell px-1.5 gap-2 text-[11px] text-[var(--flux-text)]">
+                  <div className="cad-prop-cell px-1.5 gap-2 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]">
                     <label className="inline-flex items-center gap-1 cursor-pointer">
                       <input
                         type="checkbox"
@@ -741,7 +741,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                 aria-label="Шаблон характеристик"
                 value={selectedTemplateId}
                 onChange={(e) => setSelectedTemplateId(e.target.value)}
-                className="flex-1 min-w-0 h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)]"
+                className="flex-1 min-w-0 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
               >
                 {ATTRIBUTE_TEMPLATE_PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -753,7 +753,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                 type="button"
                 data-testid="sym-insp-apply-template-btn"
                 onClick={() => workspace.onApplyAttributeTemplate(selectedTemplateId)}
-                className="inline-flex items-center gap-1 h-[22px] px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-sel)] text-[10.5px] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
+                className="inline-flex items-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-sel)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
               >
                 <Sparkles className="w-3 h-3" />
                 <span>Применить</span>
@@ -769,7 +769,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                     aria-label={`Имя атрибута ${idx + 1}`}
                     value={attr.name}
                     onChange={(e) => updateAttr(idx, { name: e.target.value })}
-                    className="w-[44%] min-w-0 h-[21px] px-1.5 bg-[var(--flux-surface-alt)] text-[11px] font-medium text-[var(--flux-text-muted)] focus:outline-none"
+                    className="w-[44%] min-w-0 h-[calc(21px*var(--flux-ui-scale))] px-1.5 bg-[var(--flux-surface-alt)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] focus:outline-none"
                   />
                   <input
                     type="text"
@@ -778,7 +778,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                     value={attr.value}
                     onChange={(e) => updateAttr(idx, { value: e.target.value })}
                     placeholder="Значение"
-                    className="flex-1 min-w-0 h-[21px] px-1.5 bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)] focus:outline-none"
+                    className="flex-1 min-w-0 h-[calc(21px*var(--flux-ui-scale))] px-1.5 bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
                   />
                   <button
                     type="button"
@@ -788,14 +788,14 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                       })
                     }
                     aria-label={`Удалить атрибут ${attr.name || idx + 1}`}
-                    className="w-[21px] h-[21px] inline-flex items-center justify-center text-[var(--flux-text-muted)] hover:text-rose-600 shrink-0 transition-colors"
+                    className="w-[calc(21px*var(--flux-ui-scale))] h-[calc(21px*var(--flux-ui-scale))] inline-flex items-center justify-center text-[var(--flux-text-muted)] hover:text-rose-600 shrink-0 transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
               ))}
               {draft.attributes.length === 0 && (
-                <div className="p-2 text-[10.5px] text-[var(--flux-text-muted)] text-center">
+                <div className="p-2 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] text-center">
                   Атрибуты не заданы. Выберите шаблон или добавьте вручную.
                 </div>
               )}
@@ -810,7 +810,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                 value={newAttrName}
                 onChange={(e) => setNewAttrName(e.target.value)}
                 placeholder="Новый атрибут"
-                className="w-5/12 h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)]"
+                className="w-5/12 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
               />
               <input
                 type="text"
@@ -820,13 +820,13 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                 value={newAttrValue}
                 onChange={(e) => setNewAttrValue(e.target.value)}
                 placeholder="Значение"
-                className="flex-1 h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)]"
+                className="flex-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
               />
               <button
                 type="submit"
                 disabled={!newAttrName.trim()}
                 data-testid="sym-insp-add-attr-btn"
-                className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] shrink-0 disabled:opacity-40 transition-colors"
+                className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] shrink-0 disabled:opacity-40 transition-colors"
                 title="Добавить атрибут"
                 aria-label="Добавить атрибут"
               >

@@ -242,10 +242,10 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
         icon={<PenTool className="w-4 h-4 text-[var(--flux-accent)]" />}
         closeAriaLabel="Закрыть окно изделия"
       >
-        <form onSubmit={handleSubmit} className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4 text-[12px]">
+        <form onSubmit={handleSubmit} className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4 text-[length:calc(12px*var(--flux-ui-scale))]">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label htmlFor="cat-role" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="cat-role" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Назначение в ФСА (для автоподбора)
               </label>
               <select
@@ -262,7 +262,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               </select>
             </div>
             <div>
-              <label htmlFor="cat-type" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="cat-type" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Графическое УГО
               </label>
               <select
@@ -290,13 +290,13 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
           </div>
 
           <div className="px-3 py-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] flex flex-wrap items-center justify-between gap-2">
-            <div className="space-y-0.5 text-[11px]">
+            <div className="space-y-0.5 text-[length:calc(11px*var(--flux-ui-scale))]">
               <div className="font-medium text-[var(--flux-text)]">
                 {customSymbol
                   ? `Собственная векторная графика УГО (${customSymbol.shapes.length} прим.)`
                   : 'Используется стандартное УГО выбранной категории'}
               </div>
-              <div className="font-mono text-[10.5px] text-[var(--flux-text-muted)]">
+              <div className="font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                 Размер {symWidth}×{symHeight} мм · Выводов: {pins.length}
               </div>
             </div>
@@ -305,7 +305,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setCustomSymbol(undefined)}
-                  className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-line)] text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                  className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-line)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>Сбросить</span>
@@ -339,7 +339,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                     setSymbolEditorOpen(true);
                   }
                 }}
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[11px] font-medium text-[var(--flux-text)] transition-colors"
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors"
               >
                 <PenTool className="w-3 h-3" />
                 <span>Нарисовать УГО и выводы…</span>
@@ -349,7 +349,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
-              <label htmlFor="cat-name" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="cat-name" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Наименование изделия
               </label>
               <input
@@ -363,7 +363,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="cat-prefix" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="cat-prefix" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Префикс (BL, DW, THT)
               </label>
               <input
@@ -379,7 +379,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label htmlFor="cat-art" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="cat-art" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Артикул / Тип
               </label>
               <input
@@ -393,7 +393,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="cat-mfr" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="cat-mfr" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Производитель
               </label>
               <input
@@ -405,7 +405,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="cat-block" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="cat-block" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Имя блока E3.series
               </label>
               <input
@@ -421,12 +421,12 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
 
           {/* Flux Matching & Cable */}
           <div className="p-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-3">
-            <div className="text-[11px] font-semibold text-[var(--flux-text)]">
+            <div className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
               Параметры подбора из Flux / проекта и матрица сигналов I/O
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div>
-                <label htmlFor="cat-power" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Мощность, кВт</label>
+                <label htmlFor="cat-power" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">Мощность, кВт</label>
                 <input
                   id="cat-power"
                   type="text"
@@ -438,7 +438,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 />
               </div>
               <div>
-                <label htmlFor="cat-voltage" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Напряжение</label>
+                <label htmlFor="cat-voltage" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">Напряжение</label>
                 <select
                   id="cat-voltage"
                   value={voltage}
@@ -451,7 +451,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 </select>
               </div>
               <div>
-                <label htmlFor="cat-exzone" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Исполнение</label>
+                <label htmlFor="cat-exzone" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">Исполнение</label>
                 <select
                   id="cat-exzone"
                   value={exZone}
@@ -463,14 +463,14 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 </select>
               </div>
               <div>
-                <label htmlFor="cat-cable" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Кабель (Внешка)</label>
+                <label htmlFor="cat-cable" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">Кабель (Внешка)</label>
                 <input
                   id="cat-cable"
                   type="text"
                   spellCheck={false}
                   value={defaultCable}
                   onChange={(e) => setDefaultCable(e.target.value)}
-                  className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+                  className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                 />
               </div>
             </div>
@@ -485,7 +485,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 ] as const
               ).map(([lbl, val, setter]) => (
                 <div key={lbl}>
-                  <label htmlFor={`cat-io-${lbl}`} className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Кол-во {lbl}</label>
+                  <label htmlFor={`cat-io-${lbl}`} className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">Кол-во {lbl}</label>
                   <input
                     id={`cat-io-${lbl}`}
                     type="number"
@@ -502,7 +502,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
 
           {/* Default Attributes */}
           <div className="space-y-2">
-            <div className="text-[11px] font-semibold text-[var(--flux-text)]">
+            <div className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
               Атрибуты изделия (заполняются автоматически при размещении)
             </div>
             <div className="space-y-1.5">

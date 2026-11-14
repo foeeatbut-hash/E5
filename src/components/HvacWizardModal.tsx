@@ -124,11 +124,11 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
       icon={<Cpu className="w-4 h-4 text-[var(--flux-accent)]" />}
       closeAriaLabel="Закрыть мастер ФСА"
     >
-        <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4 text-[12px]">
+        <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4 text-[length:calc(12px*var(--flux-ui-scale))]">
           {/* Top Configuration */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label htmlFor="wiz-tpl" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="wiz-tpl" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Тип установки
               </label>
               <select
@@ -143,7 +143,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
               </select>
             </div>
             <div>
-              <label htmlFor="wiz-systag" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="wiz-systag" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Шифр установки / системы
               </label>
               <input
@@ -156,7 +156,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="wiz-cabtag" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="wiz-cabtag" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Шкаф управления (для матрицы I/O и XT)
               </label>
               <input
@@ -173,7 +173,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
           {/* Sheet format, Font, Mode Switch */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label htmlFor="wiz-fmt" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="wiz-fmt" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Формат листа
               </label>
               <select
@@ -190,7 +190,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
               </select>
             </div>
             <div>
-              <label htmlFor="wiz-font" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="wiz-font" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Шрифт чертежа и таблиц
               </label>
               <select
@@ -226,7 +226,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectionMode('flux')}
-                  className={`inline-flex items-center gap-1.5 h-7 px-3 text-[11.5px] font-medium transition-colors ${
+                  className={`inline-flex items-center gap-1.5 h-7 px-3 text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium transition-colors ${
                     selectionMode === 'flux'
                       ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
                       : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -238,7 +238,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectionMode('manual')}
-                  className={`inline-flex items-center gap-1.5 h-7 px-3 text-[11.5px] font-medium transition-colors ${
+                  className={`inline-flex items-center gap-1.5 h-7 px-3 text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium transition-colors ${
                     selectionMode === 'manual'
                       ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
                       : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -264,7 +264,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
             {selectionMode === 'flux' && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
                 <div>
-                  <label htmlFor="wiz-fan-power" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">
+                  <label htmlFor="wiz-fan-power" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">
                     Мощность вентилятора (кВт)
                   </label>
                   <input
@@ -284,7 +284,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label htmlFor="wiz-heating" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Нагрев</label>
+                  <label htmlFor="wiz-heating" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">Нагрев</label>
                   <select
                     id="wiz-heating"
                     value={specs.heatingType}
@@ -301,7 +301,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="wiz-voltage" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Напряжение приводов</label>
+                  <label htmlFor="wiz-voltage" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">Напряжение приводов</label>
                   <select
                     id="wiz-voltage"
                     value={specs.voltage}
@@ -314,7 +314,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="wiz-exzone" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Зона / Исполнение</label>
+                  <label htmlFor="wiz-exzone" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">Зона / Исполнение</label>
                   <select
                     id="wiz-exzone"
                     value={specs.exZone}
@@ -332,10 +332,10 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
           {/* Ordered Stages List */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-[12px] font-semibold text-[var(--flux-text)]">
+              <h3 className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
                 Порядок секций и изделий на схеме слева направо ({stages.length})
               </h3>
-              <div className="font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)]">
+              <div className="font-mono tabular-nums text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                 Итого I/O: DI {ioSummary.di} · DO {ioSummary.do} · AI {ioSummary.ai} · AO {ioSummary.ao}
               </div>
             </div>
@@ -345,10 +345,10 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                 const selectedItem = catalog.find((c) => c.id === stg.catalogItemId);
                 return (
                   <div key={stg.id} className="p-2 flex flex-wrap sm:flex-nowrap items-center gap-2">
-                    <span className="w-6 text-center font-mono tabular-nums text-[11px] text-[var(--flux-text-muted)] shrink-0">
+                    <span className="w-6 text-center font-mono tabular-nums text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
                       {idx + 1}.
                     </span>
-                    <div className="w-44 shrink-0 text-[11px] font-medium text-[var(--flux-text)] truncate">
+                    <div className="w-44 shrink-0 text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
                       {HVAC_ROLE_LABELS[stg.role]}
                     </div>
                     <select
@@ -359,7 +359,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                         )
                       }
                       aria-label={`Изделие для секции ${idx + 1}`}
-                      className="flex-1 min-w-[180px] h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
+                      className="flex-1 min-w-[calc(180px*var(--flux-ui-scale))] h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       {catalog.map((item) => (
                         <option key={item.id} value={item.id}>
@@ -378,10 +378,10 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                       }
                       placeholder="Автотег"
                       aria-label={`Позиционное обозначение секции ${idx + 1}`}
-                      className="w-28 h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)] shrink-0"
+                      className="w-28 h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] shrink-0"
                     />
                     {selectedItem?.ioProfile && (
-                      <span className="font-mono text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
+                      <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
                         DI:{selectedItem.ioProfile.di} DO:{selectedItem.ioProfile.do} AI:{selectedItem.ioProfile.ai} AO:{selectedItem.ioProfile.ao}
                       </span>
                     )}
@@ -424,7 +424,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                 aria-label="Тип добавляемой секции ФСА"
                 value={addRole}
                 onChange={(e) => setAddRole(e.target.value as HvacStageRole)}
-                className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[12px] text-[var(--flux-text)]"
+                className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]"
               >
                 {(Object.keys(HVAC_ROLE_LABELS) as HvacStageRole[]).map((r) => (
                   <option key={r} value={r}>
@@ -435,7 +435,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
               <button
                 type="button"
                 onClick={addStage}
-                className="inline-flex items-center gap-1 h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] font-medium text-[var(--flux-text)]"
+                className="inline-flex items-center gap-1 h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(12px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]"
               >
                 <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                 <span>Добавить секцию в порядок</span>
@@ -445,7 +445,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
         </div>
 
         <div className="px-4 py-3 border-t border-[var(--flux-line)] bg-[var(--flux-bg)] flex items-center justify-between gap-3 shrink-0">
-          <span className="text-[11px] text-[var(--flux-text-muted)]">
+          <span className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
             Схема и таблица сигналов I/O ПЛК расставятся по порядку с ровной ортогональной трассировкой.
           </span>
           <div className="flex items-center gap-2 shrink-0">

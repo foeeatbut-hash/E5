@@ -122,9 +122,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onKeyDown={handleKeyDown}
           placeholder="Команда (WIRE, MOVE, ROTATE, ZOOM, ERC, DXF) или ОУО (-KM1)…"
           aria-label="Палитра команд CAD"
-          className="flex-1 min-w-0 bg-transparent text-[13px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none"
+          className="flex-1 min-w-0 bg-transparent text-[length:calc(13px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none"
         />
-        <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 font-mono text-[10px] text-[var(--flux-text-muted)]">
+        <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
           Esc
         </kbd>
         <button
@@ -143,7 +143,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         className="max-h-[380px] overflow-y-auto divide-y divide-[var(--flux-line)]/60"
       >
         {filtered.length === 0 ? (
-          <div className="px-4 py-8 text-center text-[12px] text-[var(--flux-text-muted)]">
+          <div className="px-4 py-8 text-center text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
             По запросу «{query}» команды или аппараты не найдены.
           </div>
         ) : (
@@ -165,20 +165,20 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                 <div className="flex items-center gap-2.5 min-w-0">
                   <CategoryIcon category={item.category} />
                   <div className="min-w-0">
-                    <div className="text-[12.5px] font-medium text-[var(--flux-text)] truncate">
+                    <div className="text-[length:calc(12.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
                       {item.title}
                     </div>
-                    <div className="text-[11px] text-[var(--flux-text-muted)] truncate">
+                    <div className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate">
                       {item.subtitle}
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="px-1.5 py-0.5 rounded-md bg-[var(--flux-bg)]/80 border border-[var(--flux-line)] text-[10px] text-[var(--flux-text-muted)]">
+                  <span className="px-1.5 py-0.5 rounded-md bg-[var(--flux-bg)]/80 border border-[var(--flux-line)] text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                     {COMMAND_CATEGORY_LABELS[item.category]}
                   </span>
                   {item.shortcut && (
-                    <kbd className="px-1.5 py-0.5 rounded-md border border-[var(--flux-line)] bg-[var(--flux-bg)]/80 font-mono text-[10px] text-[var(--flux-text)]">
+                    <kbd className="px-1.5 py-0.5 rounded-md border border-[var(--flux-line)] bg-[var(--flux-bg)]/80 font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text)]">
                       {item.shortcut}
                     </kbd>
                   )}
@@ -192,7 +192,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         )}
       </div>
 
-      <div className="h-7 px-3.5 border-t border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 text-[10.5px] text-[var(--flux-text-muted)]">
+      <div className="h-7 px-3.5 border-t border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
         <div className="flex items-center gap-3">
           <span>↑↓ выбор</span>
           <span>Enter выполнить</span>

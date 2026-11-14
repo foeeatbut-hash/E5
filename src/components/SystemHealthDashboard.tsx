@@ -135,7 +135,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
       closeAriaLabel="Закрыть монитор здоровья"
       subtitle={
         <span
-          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10.5px] font-mono tabular-nums shrink-0 ${
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums shrink-0 ${
             healthGood
               ? 'border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/80 text-emerald-600 dark:text-emerald-400'
               : 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300'
@@ -155,7 +155,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
             type="button"
             onClick={() => setNowTick(Date.now())}
             title="Обновить временной срез графика"
-            className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[11px] font-medium transition-colors"
+            className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors"
           >
             <RefreshCw className="w-3 h-3 text-[var(--flux-text-muted)]" />
             <span className="hidden sm:inline">Обновить</span>
@@ -166,7 +166,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
               data-testid="health-worker-check-btn"
               onClick={onRunWorkerSelfCheck}
               title="Запустить внеочередной расчёт модели и ERC для замера производительности"
-              className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[11px] font-medium transition-colors"
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors"
             >
               <Zap className="w-3 h-3 text-[var(--flux-accent)]" />
               <span className="hidden sm:inline">Тест отклика</span>
@@ -175,7 +175,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
           <a
             href="/api/v1/diagnostics/logs/download"
             download="e3promax-diag.log"
-            className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[11px] font-medium transition-colors"
+            className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors"
           >
             <Terminal className="w-3 h-3 text-[var(--flux-text-muted)]" />
             <span className="hidden md:inline">diag.log</span>
@@ -183,7 +183,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
           <button
             type="button"
             onClick={onDownloadLogsJson}
-            className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[11px] font-medium transition-colors"
+            className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors"
           >
             <Download className="w-3 h-3 text-[var(--flux-text-muted)]" />
             <span className="hidden md:inline">JSON</span>
@@ -192,7 +192,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
             type="button"
             onClick={onClearLogs}
             disabled={logs.length === 0}
-            className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[11px] text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-40 transition-colors"
+            className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-40 transition-colors"
           >
             <Trash2 className="w-3 h-3" />
             <span className="hidden lg:inline">Очистить</span>
@@ -206,7 +206,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
           {/* Active Screen Snapshot Strip */}
           <div
             data-testid="health-screen-snapshot"
-            className="px-2.5 py-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center gap-2 text-[11px]"
+            className="px-2.5 py-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center gap-2 text-[length:calc(11px*var(--flux-ui-scale))]"
           >
             <Monitor className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
             <span className="font-semibold text-[var(--flux-text-muted)] shrink-0">Экран сейчас:</span>
@@ -216,25 +216,25 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
           {/* Unified CAD Telemetry Strip */}
           <div className="rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-[var(--flux-line)]">
             <div className="p-2.5 space-y-0.5">
-              <div className="flex items-center justify-between text-[10.5px] font-medium uppercase tracking-[0.03em] text-[var(--flux-text-muted)]">
+              <div className="flex items-center justify-between text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium uppercase tracking-[0.03em] text-[var(--flux-text-muted)]">
                 <span>Плавность UI (FPS)</span>
                 <Gauge className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-[18px] font-semibold font-mono tabular-nums">
+                <span className="text-[length:calc(18px*var(--flux-ui-scale))] font-semibold font-mono tabular-nums">
                   {perf.fps}
                 </span>
-                <span className="text-[10.5px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+                <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)]">
                   кадр {perf.lastFrameDeltaMs.toFixed(0)} мс (пик {perf.maxFrameDeltaMs.toFixed(0)} мс)
                 </span>
               </div>
-              <div className="text-[10px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+              <div className="text-[length:calc(10px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)]">
                 Лаг (&gt;50мс): {perf.jankFramesCount} · LongTask: {perf.longTaskCount}
               </div>
             </div>
 
             <div className="p-2.5 space-y-0.5">
-              <div className="flex items-center justify-between text-[10.5px] font-medium uppercase tracking-[0.03em] text-[var(--flux-text-muted)]">
+              <div className="flex items-center justify-between text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium uppercase tracking-[0.03em] text-[var(--flux-text-muted)]">
                 <span>События и Сбои</span>
                 <AlertTriangle
                   className={`w-3.5 h-3.5 ${
@@ -243,55 +243,55 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                 />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-[18px] font-semibold font-mono tabular-nums">
+                <span className="text-[length:calc(18px*var(--flux-ui-scale))] font-semibold font-mono tabular-nums">
                   {metrics.totalLogs}
                 </span>
-                <span className="text-[10.5px] font-mono tabular-nums text-rose-600 dark:text-rose-400">
+                <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-rose-600 dark:text-rose-400">
                   {metrics.errorCount} ERR
                 </span>
-                <span className="text-[10.5px] font-mono tabular-nums text-amber-600 dark:text-amber-400">
+                <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-amber-600 dark:text-amber-400">
                   {metrics.warnCount} WARN
                 </span>
               </div>
-              <div className="text-[10px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+              <div className="text-[length:calc(10px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)]">
                 INFO: {metrics.infoCount} · SYNC: {metrics.syncCount} · Ошибок: {metrics.errorRatePct}%
               </div>
             </div>
 
             <div className="p-2.5 space-y-0.5">
-              <div className="flex items-center justify-between text-[10.5px] font-medium uppercase tracking-[0.03em] text-[var(--flux-text-muted)]">
+              <div className="flex items-center justify-between text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium uppercase tracking-[0.03em] text-[var(--flux-text-muted)]">
                 <span>Время процессов</span>
                 <Clock className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-[18px] font-semibold font-mono tabular-nums">
+                <span className="text-[length:calc(18px*var(--flux-ui-scale))] font-semibold font-mono tabular-nums">
                   {metrics.avgDurationMs.toFixed(1)} мс
                 </span>
-                <span className="text-[10.5px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+                <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)]">
                   P95: {metrics.p95DurationMs.toFixed(1)} мс
                 </span>
               </div>
-              <div className="text-[10px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+              <div className="text-[length:calc(10px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)]">
                 Макс: {metrics.maxDurationMs.toFixed(1)} мс · Медленных (&ge;50мс): {metrics.slowOpsCount}
               </div>
             </div>
 
             <div className="p-2.5 space-y-0.5">
-              <div className="flex items-center justify-between text-[10.5px] font-medium uppercase tracking-[0.03em] text-[var(--flux-text-muted)]">
+              <div className="flex items-center justify-between text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium uppercase tracking-[0.03em] text-[var(--flux-text-muted)]">
                 <span>Память и Модули</span>
                 <Cpu className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-[18px] font-semibold font-mono tabular-nums">
+                <span className="text-[length:calc(18px*var(--flux-ui-scale))] font-semibold font-mono tabular-nums">
                   {perf.memoryUsedMb !== null ? `${perf.memoryUsedMb} МБ` : `${metrics.subsystems.length} мод.`}
                 </span>
                 {perf.memoryLimitMb !== null && (
-                  <span className="text-[10.5px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+                  <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)]">
                     / {perf.memoryLimitMb} МБ
                   </span>
                 )}
               </div>
-              <div className="text-[10px] font-mono tabular-nums text-[var(--flux-text-muted)] truncate">
+              <div className="text-[length:calc(10px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] truncate">
                 Топ:{' '}
                 {metrics.subsystems
                   .slice(0, 3)
@@ -305,12 +305,12 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
           <div className="rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] overflow-hidden">
             <div className="px-3 py-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="text-[12px] font-semibold text-[var(--flux-text)]">
+                <h3 className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
                   {chartMode === 'frequency'
                     ? 'Частота логов и событий по времени'
                     : 'Время выполнения процессов и лаги UI по времени (мс)'}
                 </h3>
-                <p className="text-[10.5px] text-[var(--flux-text-muted)]">
+                <p className="text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                   {chartMode === 'frequency'
                     ? 'Интенсивность операций, API-синхронизации, предупреждений и ошибок по временным интервалам'
                     : 'Средняя и пиковая длительность зафиксированных операций и задержек интерфейса'}
@@ -323,7 +323,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                     type="button"
                     data-testid="health-mode-frequency"
                     onClick={() => setChartMode('frequency')}
-                    className={`h-6 px-2 text-[11px] font-medium transition-colors ${
+                    className={`h-6 px-2 text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors ${
                       chartMode === 'frequency'
                         ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
@@ -335,7 +335,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                     type="button"
                     data-testid="health-mode-latency"
                     onClick={() => setChartMode('latency')}
-                    className={`h-6 px-2 text-[11px] font-medium transition-colors ${
+                    className={`h-6 px-2 text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors ${
                       chartMode === 'latency'
                         ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
@@ -351,7 +351,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                       key={w.seconds}
                       type="button"
                       onClick={() => setWindowSeconds(w.seconds)}
-                      className={`h-6 px-2 font-mono text-[10.5px] transition-colors ${
+                      className={`h-6 px-2 font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
                         windowSeconds === w.seconds
                           ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                           : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
@@ -485,14 +485,14 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
           {/* Subsystems & Slowest Operations */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
             <div className="rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] overflow-hidden">
-              <div className="px-2.5 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] text-[11px] font-semibold flex items-center justify-between">
+              <div className="px-2.5 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold flex items-center justify-between">
                 <span>Нагрузка по подсистемам</span>
-                <span className="font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)]">
+                <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                   {metrics.subsystems.length} подсистем
                 </span>
               </div>
               <div className="max-h-44 overflow-auto">
-                <table className="w-full text-[11px] font-mono tabular-nums">
+                <table className="w-full text-[length:calc(11px*var(--flux-ui-scale))] font-mono tabular-nums">
                   <thead className="bg-[var(--flux-bg)] text-[var(--flux-text-muted)] border-b border-[var(--flux-line)]">
                     <tr className="divide-x divide-[var(--flux-line)]/60">
                       <th className="text-left font-medium px-2 py-1">Модуль</th>
@@ -526,37 +526,37 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
             </div>
 
             <div className="rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] overflow-hidden">
-              <div className="px-2.5 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] text-[11px] font-semibold flex items-center justify-between">
+              <div className="px-2.5 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold flex items-center justify-between">
                 <span>Самые долгие операции и задержки</span>
-                <span className="font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)]">
+                <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                   Топ-{metrics.slowestEntries.length}
                 </span>
               </div>
               <div className="max-h-44 overflow-auto divide-y divide-[var(--flux-line)]">
                 {metrics.slowestEntries.length === 0 ? (
-                  <div className="px-3 py-4 text-[11px] text-[var(--flux-text-muted)] text-center">
+                  <div className="px-3 py-4 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] text-center">
                     Замеров длительности пока нет.
                   </div>
                 ) : (
                   metrics.slowestEntries.map((item) => {
                     const dur = item.durationMs ?? item.lagMs ?? 0;
                     return (
-                      <div key={item.id} className="px-2.5 py-1.5 flex items-center justify-between gap-2 text-[11px] hover:bg-[var(--flux-hover)]">
+                      <div key={item.id} className="px-2.5 py-1.5 flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))] hover:bg-[var(--flux-hover)]">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">
+                            <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                               [{item.subsystem}]
                             </span>
                             <span className="truncate text-[var(--flux-text)]">{item.message}</span>
                           </div>
                           {item.cause && (
-                            <div className="text-[10px] text-[var(--flux-text-muted)] truncate">
+                            <div className="text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate">
                               От чего: {item.cause}
                             </div>
                           )}
                         </div>
                         <span
-                          className={`font-mono tabular-nums text-[11px] font-semibold shrink-0 ${
+                          className={`font-mono tabular-nums text-[length:calc(11px*var(--flux-ui-scale))] font-semibold shrink-0 ${
                             dur >= 100
                               ? 'text-rose-600 dark:text-rose-400'
                               : dur >= 40
@@ -578,7 +578,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
           <div className="rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] overflow-hidden">
             <div className="px-2.5 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-semibold mr-1">
+                <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold mr-1">
                   Детальная трасса ({filteredLogs.length}/{logs.length})
                 </span>
                 <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
@@ -587,7 +587,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                       key={lvl}
                       type="button"
                       onClick={() => setLevelFilter(lvl)}
-                      className={`h-5 px-1.5 font-mono text-[10px] transition-colors ${
+                      className={`h-5 px-1.5 font-mono text-[length:calc(10px*var(--flux-ui-scale))] transition-colors ${
                         levelFilter === lvl
                           ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                           : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
@@ -601,7 +601,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                   aria-label="Фильтр по подсистеме"
                   value={subsystemFilter}
                   onChange={(e) => setSubsystemFilter(e.target.value)}
-                  className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10.5px] text-[var(--flux-text)]"
+                  className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                 >
                   {subsystemNames.map((sub) => (
                     <option key={sub} value={sub}>
@@ -620,14 +620,14 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Поиск по причине, итогу, экрану…"
                   aria-label="Поиск по детальной трассе"
-                  className="w-60 h-6 pl-6 pr-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
+                  className="w-60 h-6 pl-6 pr-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                 />
               </div>
             </div>
 
-            <div className="max-h-60 overflow-auto divide-y divide-[var(--flux-line)] font-mono text-[10.5px]">
+            <div className="max-h-60 overflow-auto divide-y divide-[var(--flux-line)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))]">
               {filteredLogs.length === 0 ? (
-                <div className="px-3 py-5 text-center font-sans text-[11.5px] text-[var(--flux-text-muted)]">
+                <div className="px-3 py-5 text-center font-sans text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                   События по заданным фильтрам отсутствуют.
                 </div>
               ) : (
@@ -655,10 +655,10 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                         >
                           {entry.level}
                         </span>
-                        <span className="w-[92px] shrink-0 text-[var(--flux-text-muted)] whitespace-nowrap">
+                        <span className="w-[calc(92px*var(--flux-ui-scale))] shrink-0 text-[var(--flux-text-muted)] whitespace-nowrap">
                           [{entry.subsystem}]
                         </span>
-                        <span className="flex-1 min-w-0 font-sans text-[11px] text-[var(--flux-text)] break-words">
+                        <span className="flex-1 min-w-0 font-sans text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] break-words">
                           {entry.message}
                         </span>
                         {(entry.durationMs !== undefined || entry.lagMs !== undefined) && (
@@ -670,7 +670,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                           <button
                             type="button"
                             onClick={() => setExpandedId(isOpen ? null : entry.id)}
-                            className="font-sans text-[10.5px] text-[var(--flux-accent)] hover:underline shrink-0"
+                            className="font-sans text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-accent)] hover:underline shrink-0"
                           >
                             {isOpen ? 'Свернуть' : 'Контекст'}
                           </button>
@@ -678,7 +678,7 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                       </div>
 
                       {hasRich && isOpen && (
-                        <div className="mt-1.5 ml-14 p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-1 font-sans text-[11px]">
+                        <div className="mt-1.5 ml-14 p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-1 font-sans text-[length:calc(11px*var(--flux-ui-scale))]">
                           {entry.cause && (
                             <div>
                               <span className="font-semibold text-[var(--flux-text-muted)]">Причина: </span>
@@ -692,13 +692,13 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({
                             </div>
                           )}
                           {entry.screenState && (
-                            <div className="font-mono text-[10px] text-[var(--flux-text-muted)]">
+                            <div className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                               <span className="font-sans font-semibold">Экран: </span>
                               {entry.screenState}
                             </div>
                           )}
                           {entry.details && (
-                            <pre className="pt-1 border-t border-[var(--flux-line)] font-mono text-[10px] text-[var(--flux-text-muted)] whitespace-pre-wrap overflow-x-auto max-h-28">
+                            <pre className="pt-1 border-t border-[var(--flux-line)] font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] whitespace-pre-wrap overflow-x-auto max-h-28">
                               {entry.details}
                             </pre>
                           )}

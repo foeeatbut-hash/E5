@@ -158,7 +158,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             type="button"
             data-testid="sym-lib-tab-symbols"
             onClick={() => setSubTab('symbols')}
-            className={`inline-flex items-center justify-center gap-1 h-full border-r border-[var(--flux-line)] text-[11px] whitespace-nowrap transition-colors ${
+            className={`inline-flex items-center justify-center gap-1 h-full border-r border-[var(--flux-line)] text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap transition-colors ${
               subTab === 'symbols'
                 ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
                 : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
@@ -171,7 +171,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             type="button"
             data-testid="sym-lib-tab-components"
             onClick={() => setSubTab('components')}
-            className={`inline-flex items-center justify-center gap-1 h-full text-[11px] whitespace-nowrap transition-colors ${
+            className={`inline-flex items-center justify-center gap-1 h-full text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap transition-colors ${
               subTab === 'components'
                 ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
                 : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
@@ -182,7 +182,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
           </button>
         </div>
 
-        <div className="px-2 py-1 text-[10px] text-[var(--flux-text-muted)] leading-snug">
+        <div className="px-2 py-1 text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] leading-snug">
           {subTab === 'symbols'
             ? 'Графические блоки УГО. Выберите блок для правки или клонируйте.'
             : 'Изделия БД E3: привязывают графику УГО к артикулу и атрибутам.'}
@@ -196,7 +196,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             type="button"
             data-testid="sym-lib-new-symbol-btn"
             onClick={workspace.onCreateNewBlankSymbol}
-            className="inline-flex items-center justify-center gap-1 h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="inline-flex items-center justify-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
             <Plus className="w-3 h-3 text-[var(--flux-accent)]" />
             <span>Новое УГО</span>
@@ -205,7 +205,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             type="button"
             data-testid="sym-lib-new-component-btn"
             onClick={workspace.onCreateNewComponentFromSymbol}
-            className="inline-flex items-center justify-center gap-1 h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="inline-flex items-center justify-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
             <Plus className="w-3 h-3 text-[var(--flux-accent)]" />
             <span>Изделие</span>
@@ -221,7 +221,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             spellCheck={false}
             aria-label={subTab === 'symbols' ? 'Поиск блока УГО' : 'Поиск изделия или артикула'}
             placeholder={subTab === 'symbols' ? 'Поиск блока УГО…' : 'Поиск изделия или артикула…'}
-            className="w-full h-[22px] pl-6 pr-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
+            className="w-full h-[calc(22px*var(--flux-ui-scale))] pl-6 pr-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
           />
         </div>
 
@@ -243,7 +243,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                 key={k}
                 type="button"
                 onClick={() => setFilterKind(k)}
-                className={`h-[21px] text-[10.5px] transition-colors ${
+                className={`h-[calc(21px*var(--flux-ui-scale))] text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
                   active
                     ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
                     : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
@@ -279,7 +279,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[11.5px] font-medium text-[var(--flux-text)] truncate">
+                        <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
                           {sym.name}
                         </span>
                         {sym.isCustom && (
@@ -297,7 +297,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                           </button>
                         )}
                       </div>
-                      <div className="text-[10.5px] font-mono tabular-nums text-[var(--flux-text-muted)] truncate">
+                      <div className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] truncate">
                         {sym.e3BlockName} · {sym.width}×{sym.height} · {sym.shapes.length}ф · {sym.defaultPins.length}в
                       </div>
                     </div>
@@ -305,7 +305,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                 );
               })}
               {filteredSymbols.length === 0 && (
-                <div className="p-3 text-center text-[11.5px] text-[var(--flux-text-muted)]">
+                <div className="p-3 text-center text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                   УГО не найдены.
                 </div>
               )}
@@ -335,7 +335,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-[11.5px] font-medium text-[var(--flux-text)] truncate">
+                        <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
                           {item.componentName}
                         </span>
                         <button
@@ -351,7 +351,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                           <Copy className="w-3 h-3" />
                         </button>
                       </div>
-                      <div className="text-[10.5px] font-mono tabular-nums text-[var(--flux-text-muted)] truncate">
+                      <div className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] truncate">
                         -{item.defaultPrefix}? · {item.article} · {item.defaultAttributes.length} атр.
                       </div>
                     </div>
@@ -359,7 +359,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                 );
               })}
               {filteredCatalog.length === 0 && (
-                <div className="p-3 text-center text-[var(--flux-text-muted)] text-[11.5px]">
+                <div className="p-3 text-center text-[var(--flux-text-muted)] text-[length:calc(11.5px*var(--flux-ui-scale))]">
                   Изделия не найдены.
                 </div>
               )}

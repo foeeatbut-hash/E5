@@ -19,6 +19,7 @@ import type {
   SchematicFontFamily,
   SignalType,
 } from '../core/e3Types';
+import { UI_SCALE_OPTIONS, type UiScalePercent } from '../core/uiScale';
 
 export interface E3BridgeStatusInfo {
   isWin32: boolean;
@@ -175,14 +176,14 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
       closeDisabled={busy}
       closeAriaLabel="Закрыть окно обмена данными"
     >
-        <div className="flex-1 min-h-0 p-4 space-y-5 overflow-y-auto text-[12px]">
+        <div className="flex-1 min-h-0 p-4 space-y-5 overflow-y-auto text-[length:calc(12px*var(--flux-ui-scale))]">
           {/* Embedded Bridge section */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-[13px] font-semibold text-[var(--flux-text)]">
+              <h3 className="text-[length:calc(13px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
                 Встроенный COM-мост с E³.series 2022 SP2
               </h3>
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-[var(--flux-text-muted)]">
+              <span className="inline-flex items-center gap-1.5 text-[length:calc(11px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)]">
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
                     bridgeStatus.isWin32 || bridgeStatus.bridgeConnected ? 'bg-emerald-500' : 'bg-amber-500'
@@ -196,7 +197,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
               </span>
             </div>
 
-            <div className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] leading-relaxed text-[var(--flux-text-muted)]">
+            <div className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(11px*var(--flux-ui-scale))] leading-relaxed text-[var(--flux-text-muted)]">
               Скрипт уже встроен в программу. При локальном запуске на Windows (или при запущенном{' '}
               <span className="font-mono text-[var(--flux-text)]">E3ProMax_Connector.cmd</span> в облачном режиме) нажатие кнопки ниже автоматически создаёт листы, изделия, кабели и открывает проект в <span className="font-medium text-[var(--flux-text)]">E³.series</span>.
             </div>
@@ -238,7 +239,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
             </div>
 
             {bridgeMsg && (
-              <div className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-accent-soft)] text-[11px] text-[var(--flux-text)]">
+              <div className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-accent-soft)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]">
                 {bridgeMsg}
               </div>
             )}
@@ -247,7 +248,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowScript((s) => !s)}
-                className="text-[11px] font-medium text-[var(--flux-accent)] hover:underline"
+                className="text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] hover:underline"
               >
                 {showScript ? 'Скрыть код встроенного COM-скрипта' : 'Показать код встроенного COM-скрипта (.vbs)'}
               </button>
@@ -255,7 +256,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
                 <button
                   type="button"
                   onClick={handleCopyScript}
-                  className="inline-flex items-center gap-1 text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+                  className="inline-flex items-center gap-1 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
                 >
                   {copied ? <Check className="w-3 h-3 text-[var(--flux-accent)]" /> : <Copy className="w-3 h-3" />}
                   <span>{copied ? 'Скопировано' : 'Копировать VBScript'}</span>
@@ -264,7 +265,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
             </div>
 
             {showScript && (
-              <pre className="p-2.5 max-h-44 overflow-auto rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10px] text-[var(--flux-text)] leading-relaxed">
+              <pre className="p-2.5 max-h-44 overflow-auto rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text)] leading-relaxed">
                 {embeddedScript}
               </pre>
             )}
@@ -272,7 +273,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
 
           {/* File formats */}
           <div className="pt-4 border-t border-[var(--flux-line)] space-y-2">
-            <h3 className="text-[13px] font-semibold text-[var(--flux-text)]">
+            <h3 className="text-[length:calc(13px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
               Файловый обмен (.e3s / .json / .dxf)
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -313,7 +314,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
 
           {/* Flux Studio & Full Codebase */}
           <div className="pt-4 border-t border-[var(--flux-line)] space-y-2">
-            <h3 className="text-[13px] font-semibold text-[var(--flux-text)]">
+            <h3 className="text-[length:calc(13px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
               Выпуск подпрограммы через Flux Studio и база кода
             </h3>
             <p className="text-[var(--flux-text-muted)]">
@@ -352,7 +353,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
 
           {/* Import section */}
           <div className="pt-4 border-t border-[var(--flux-line)] space-y-2.5">
-            <h3 className="text-[13px] font-semibold text-[var(--flux-text)]">
+            <h3 className="text-[length:calc(13px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
               Импорт из E3.series (.e3s OLE2 / ZIP / XML) или Flux Bridge (.json)
             </h3>
             <label className="inline-flex items-center gap-2 h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium cursor-pointer">
@@ -369,7 +370,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
             <div>
               <label
                 htmlFor="import-paste"
-                className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1"
               >
                 Или вставьте содержимое E3 XML / Flux JSON:
               </label>
@@ -380,11 +381,11 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
                 placeholder="<?xml version='1.0'?> <E3Project ...> или { 'format': 'flux-e3-bridge/v1', ... }"
-                className="w-full p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
+                className="w-full p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
               />
             </div>
 
-            {error && <div className="text-[12px] text-rose-600 dark:text-rose-400">{error}</div>}
+            {error && <div className="text-[length:calc(12px*var(--flux-ui-scale))] text-rose-600 dark:text-rose-400">{error}</div>}
 
             <div className="flex justify-end gap-2">
               <button
@@ -412,6 +413,8 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
 interface VisualSettingsModalProps {
   open: boolean;
   settings: E3VisualSettings;
+  uiScale?: UiScalePercent;
+  onChangeUiScale?: (scale: UiScalePercent) => void;
   onClose: () => void;
   onApply: (next: E3VisualSettings) => void;
 }
@@ -429,6 +432,8 @@ const SIGNAL_LABELS: Record<SignalType, string> = {
 export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
   open,
   settings,
+  uiScale = 100,
+  onChangeUiScale,
   onClose,
   onApply,
 }) => {
@@ -482,10 +487,43 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
       icon={<SlidersHorizontal className="w-4 h-4 text-[var(--flux-accent)]" />}
       closeAriaLabel="Закрыть настройки визуализации"
     >
-        <div className="flex-1 min-h-0 p-4 space-y-4 overflow-y-auto text-[12px]">
+        <div className="flex-1 min-h-0 p-4 space-y-4 overflow-y-auto text-[length:calc(12px*var(--flux-ui-scale))]">
+          {onChangeUiScale && (
+            <div className="p-2.5 rounded-lg border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
+                  Масштаб интерфейса (кнопки, панели, текст)
+                </span>
+                <span className="font-mono tabular-nums text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-accent)]">
+                  {uiScale}%
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {UI_SCALE_OPTIONS.map((opt) => {
+                  const active = uiScale === opt;
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      data-testid={`vs-ui-scale-${opt}`}
+                      aria-pressed={active}
+                      onClick={() => onChangeUiScale(opt)}
+                      className={`h-7 rounded border font-mono text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors ${
+                        active
+                          ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)] text-[var(--flux-text)] font-semibold'
+                          : 'border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                      }`}
+                    >
+                      {opt}%
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="vs-preset" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="vs-preset" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Название профиля
               </label>
               <input
@@ -497,7 +535,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="vs-grid" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="vs-grid" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Шаг сетки (мм)
               </label>
               <select
@@ -513,7 +551,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               </select>
             </div>
             <div>
-              <label htmlFor="vs-sw" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="vs-sw" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Толщина линий изделий (px)
               </label>
               <input
@@ -533,7 +571,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="vs-ww" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="vs-ww" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Толщина линий цепей (px)
               </label>
               <input
@@ -553,7 +591,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="vs-fw" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="vs-fw" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Толщина границ и рамки ГОСТ (px)
               </label>
               <input
@@ -573,7 +611,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="vs-aw" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="vs-aw" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Толщина линий аннотаций (px)
               </label>
               <input
@@ -598,7 +636,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="vs-fs" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="vs-fs" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Масштаб шрифта подписей
               </label>
               <input
@@ -618,7 +656,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
               />
             </div>
             <div>
-              <label htmlFor="vs-font" className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1">
+              <label htmlFor="vs-font" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Шрифт обозначений и штампа
               </label>
               <select
@@ -670,13 +708,13 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
           </div>
 
           <div className="pt-3 border-t border-[var(--flux-line)] space-y-2">
-            <h3 className="text-[12px] font-semibold text-[var(--flux-text)]">
+            <h3 className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
               Цветовая кодировка потенциалов
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {(Object.keys(SIGNAL_LABELS) as SignalType[]).map((sig) => (
                 <label key={sig} className="flex items-center justify-between gap-2 px-2 py-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)]">
-                  <span className="text-[11px] text-[var(--flux-text)]">{SIGNAL_LABELS[sig]}</span>
+                  <span className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]">{SIGNAL_LABELS[sig]}</span>
                   <input
                     type="color"
                     value={draft.netColors[sig]}
@@ -786,17 +824,17 @@ export const ReportModal: React.FC<ReportModalProps> = ({
         <button
           type="button"
           onClick={() => window.print()}
-          className="no-print inline-flex items-center gap-1.5 h-7 px-3 rounded-lg bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium"
+          className="no-print inline-flex items-center gap-1.5 h-7 px-3 rounded-lg bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(12px*var(--flux-ui-scale))] font-medium"
         >
           <Printer className="w-3.5 h-3.5" />
           <span>Печать / PDF</span>
         </button>
       }
     >
-        <div className="flex-1 min-h-0 p-6 overflow-y-auto space-y-6 text-[12px] text-[var(--flux-text)]">
+        <div className="flex-1 min-h-0 p-6 overflow-y-auto space-y-6 text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]">
           <div className="flex items-start justify-between border-b border-[var(--flux-line)] pb-4">
             <div>
-              <h3 className="text-[16px] font-semibold">{project.name}</h3>
+              <h3 className="text-[length:calc(16px*var(--flux-ui-scale))] font-semibold">{project.name}</h3>
               <p className="text-[var(--flux-text-muted)] mt-0.5">
                 Документ: <span className="font-mono">{project.projectCode}-ПЭ3</span> · Ревизия {project.revision} · Ключ Flux:{' '}
                 <span className="font-mono">{project.fluxProjectKey}</span>
@@ -809,7 +847,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           </div>
 
           <div>
-            <h4 className="text-[13px] font-semibold mb-2">1. Перечень элементов (ГОСТ 2.701 / 2.106)</h4>
+            <h4 className="text-[length:calc(13px*var(--flux-ui-scale))] font-semibold mb-2">1. Перечень элементов (ГОСТ 2.701 / 2.106)</h4>
             <table className="w-full border border-[var(--flux-line)] border-collapse">
               <thead className="bg-[var(--flux-bg)]">
                 <tr>
@@ -839,7 +877,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           </div>
 
           <div>
-            <h4 className="text-[13px] font-semibold mb-2">2. Кабельный журнал</h4>
+            <h4 className="text-[length:calc(13px*var(--flux-ui-scale))] font-semibold mb-2">2. Кабельный журнал</h4>
             <table className="w-full border border-[var(--flux-line)] border-collapse">
               <thead className="bg-[var(--flux-bg)]">
                 <tr>
@@ -875,7 +913,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
             {resolvedNetLengths.length > 0 && (
               <div className="mt-4">
-                <h5 className="text-[12px] font-semibold mb-1.5">
+                <h5 className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold mb-1.5">
                   Суммарная длина проводов по цепям (E3-CORE)
                 </h5>
                 <table className="w-full border border-[var(--flux-line)] border-collapse">
@@ -918,7 +956,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             )}
           </div>
 
-          <div className="text-[11px] text-[var(--flux-text-muted)]">
+          <div className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
             Статус проверки ERC: {erc.filter((i) => i.severity === 'error').length} ошибок,{' '}
             {erc.filter((i) => i.severity === 'warning').length} предупреждений.
           </div>

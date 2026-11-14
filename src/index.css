@@ -35,6 +35,7 @@
 
 :root {
   color-scheme: light;
+  --flux-ui-scale: 1;
   --flux-surface: #ffffff;
   --flux-surface-alt: #f3f7f5;
   --flux-bg: #ebf0ed;
@@ -99,15 +100,22 @@
   --flux-window-shadow: 0 28px 72px -12px rgba(0, 0, 0, 0.76), 0 10px 28px -6px rgba(0, 0, 0, 0.48);
 }
 
-html, body, #root {
+html {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-size: calc(16px * var(--flux-ui-scale));
+}
+
+body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
   background-color: var(--flux-bg);
   color: var(--flux-text);
   font-family: var(--font-sans);
-  font-size: 11.5px;
-  line-height: 16px;
+  font-size: calc(11.5px * var(--flux-ui-scale));
+  line-height: calc(16px * var(--flux-ui-scale));
   -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-user-select: none;
@@ -222,34 +230,34 @@ svg.lucide {
   display: none;
 }
 
-/* Authentic 2-column CAD Property Grid */
+/* Authentic 2-column CAD Property Grid (scales cleanly with --flux-ui-scale) */
 .cad-prop-section {
   background-color: var(--flux-glass-surface-alt);
   border-top: 1px solid var(--flux-line);
   border-bottom: 1px solid var(--flux-line);
-  padding: 2px 8px;
-  min-height: 21px;
-  font-size: 10.5px;
-  line-height: 15px;
+  padding: calc(2px * var(--flux-ui-scale)) calc(8px * var(--flux-ui-scale));
+  min-height: calc(21px * var(--flux-ui-scale));
+  font-size: calc(10.5px * var(--flux-ui-scale));
+  line-height: calc(15px * var(--flux-ui-scale));
   font-weight: 600;
   color: var(--flux-text);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: calc(6px * var(--flux-ui-scale));
 }
 
 .cad-prop-grid {
   display: grid;
-  grid-template-columns: minmax(90px, 43%) minmax(0, 1fr);
+  grid-template-columns: minmax(calc(90px * var(--flux-ui-scale)), 43%) minmax(0, 1fr);
   background-color: var(--flux-glass-surface);
 }
 
 .cad-prop-label {
-  padding: 2px 6px 2px 8px;
-  font-size: 11px;
-  line-height: 16px;
-  min-height: 21px;
+  padding: calc(2px * var(--flux-ui-scale)) calc(6px * var(--flux-ui-scale)) calc(2px * var(--flux-ui-scale)) calc(8px * var(--flux-ui-scale));
+  font-size: calc(11px * var(--flux-ui-scale));
+  line-height: calc(16px * var(--flux-ui-scale));
+  min-height: calc(21px * var(--flux-ui-scale));
   color: var(--flux-text-muted);
   background-color: var(--flux-glass-surface-alt);
   border-right: 1px solid var(--flux-line);
@@ -266,7 +274,7 @@ svg.lucide {
   background-color: var(--flux-glass-surface);
   border-bottom: 1px solid var(--flux-line);
   min-width: 0;
-  min-height: 21px;
+  min-height: calc(21px * var(--flux-ui-scale));
   display: flex;
   align-items: center;
 }
@@ -277,11 +285,11 @@ svg.lucide {
 
 .cad-prop-input {
   width: 100%;
-  height: 21px;
-  padding: 0 6px;
+  height: calc(21px * var(--flux-ui-scale));
+  padding: 0 calc(6px * var(--flux-ui-scale));
   background: transparent;
   color: var(--flux-text);
-  font-size: 11px;
+  font-size: calc(11px * var(--flux-ui-scale));
   border: 0;
   outline: none;
   min-width: 0;
@@ -356,8 +364,8 @@ textarea:focus-visible,
 
 /* Crisp engineering CAD scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: calc(6px * var(--flux-ui-scale));
+  height: calc(6px * var(--flux-ui-scale));
 }
 ::-webkit-scrollbar-track {
   background: transparent;

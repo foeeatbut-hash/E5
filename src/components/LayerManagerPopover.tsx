@@ -84,7 +84,7 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -4, scale: 0.985 }}
           transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          className={`absolute top-full mt-1.5 z-50 w-[332px] max-w-[calc(100vw-16px)] rounded-2xl border border-[var(--flux-line-strong)] flux-glass-popover overflow-hidden select-none text-[11.5px] ${
+          className={`absolute top-full mt-1.5 z-50 w-[calc(332px*var(--flux-ui-scale))] max-w-[calc(100vw-16px)] rounded-2xl border border-[var(--flux-line-strong)] flux-glass-popover overflow-hidden select-none text-[length:calc(11.5px*var(--flux-ui-scale))] ${
             align === 'right' ? 'right-0' : 'left-0'
           }`}
         >
@@ -96,14 +96,14 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
                 Диспетчер слоёв чертежа
               </span>
             </div>
-            <span className="font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)] shrink-0">
+            <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
               {summary.visibleCount}/{summary.total} вид.
               {summary.lockedCount > 0 ? ` · ${summary.lockedCount} забл.` : ''}
             </span>
           </div>
 
           {/* Column Headers */}
-          <div className="px-2.5 py-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] grid grid-cols-[28px_1fr_38px_28px] items-center gap-1.5 text-[10px] font-medium text-[var(--flux-text-muted)] tracking-wide">
+          <div className="px-2.5 py-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] grid grid-cols-[calc(28px*var(--flux-ui-scale))_1fr_calc(38px*var(--flux-ui-scale))_calc(28px*var(--flux-ui-scale))] items-center gap-1.5 text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] tracking-wide">
             <span className="text-center" title="Видимость (Вкл / Выкл)">Вид.</span>
             <span>Слой / DXF</span>
             <span className="text-right" title="Объектов на активном листе">Эл.</span>
@@ -120,7 +120,7 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
                 <div
                   key={id}
                   data-testid={`layer-row-${id}`}
-                  className={`px-2.5 py-1.5 grid grid-cols-[28px_1fr_38px_28px] items-center gap-1.5 transition-colors hover:bg-[var(--flux-hover)] ${
+                  className={`px-2.5 py-1.5 grid grid-cols-[calc(28px*var(--flux-ui-scale))_1fr_calc(38px*var(--flux-ui-scale))_calc(28px*var(--flux-ui-scale))] items-center gap-1.5 transition-colors hover:bg-[var(--flux-hover)] ${
                     !state.visible ? 'opacity-60' : ''
                   }`}
                 >
@@ -157,10 +157,10 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
                       style={{ backgroundColor: state.visible ? meta.swatch : 'transparent' }}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[12px] font-medium text-[var(--flux-text)] truncate leading-tight">
+                      <div className="text-[length:calc(12px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate leading-tight">
                         {meta.name}
                       </div>
-                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-[var(--flux-text-muted)] leading-tight mt-0.5">
+                      <div className="flex items-center gap-1.5 text-[length:calc(10px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)] leading-tight mt-0.5">
                         <span className="truncate">{meta.dxfPrimary}</span>
                         {state.locked && (
                           <span className="text-amber-600 dark:text-amber-400 font-sans font-medium">
@@ -175,7 +175,7 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
                   </div>
 
                   {/* Count */}
-                  <span className="font-mono tabular-nums text-[11px] text-right text-[var(--flux-text-muted)]">
+                  <span className="font-mono tabular-nums text-[length:calc(11px*var(--flux-ui-scale))] text-right text-[var(--flux-text-muted)]">
                     {count ?? '—'}
                   </span>
 
@@ -219,7 +219,7 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
               data-testid="layers-show-all-btn"
               disabled={summary.hiddenCount === 0}
               onClick={onShowAll}
-              className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] disabled:opacity-40 transition-colors"
+              className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] disabled:opacity-40 transition-colors"
             >
               Показать все
             </button>
@@ -228,7 +228,7 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
               data-testid="layers-unlock-all-btn"
               disabled={summary.lockedCount === 0}
               onClick={onUnlockAll}
-              className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] disabled:opacity-40 transition-colors"
+              className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] disabled:opacity-40 transition-colors"
             >
               Разблокировать все
             </button>

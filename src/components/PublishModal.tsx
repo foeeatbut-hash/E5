@@ -88,7 +88,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
             <div className="flex-1 min-h-0 p-4 overflow-y-auto space-y-4">
               {/* Format Picker */}
               <div className="space-y-2">
-                <div className="text-[12px] font-semibold text-[var(--flux-text)]">
+                <div className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
                   Формат пакета
                 </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -102,11 +102,11 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                     : 'border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                 }`}
               >
-                <div className="flex items-center gap-1.5 font-semibold text-[12px] text-[var(--flux-text)]">
+                <div className="flex items-center gap-1.5 font-semibold text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]">
                   <FileText className="w-4 h-4 text-[var(--flux-accent)]" />
                   <span>PDF пакет (.pdf)</span>
                 </div>
-                <p className="text-[11px] mt-1 leading-snug">
+                <p className="text-[length:calc(11px*var(--flux-ui-scale))] mt-1 leading-snug">
                   Многостраничный векторный PDF с рамками ГОСТ и кириллицей
                 </p>
               </button>
@@ -121,11 +121,11 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                     : 'border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                 }`}
               >
-                <div className="flex items-center gap-1.5 font-semibold text-[12px] text-[var(--flux-text)]">
+                <div className="flex items-center gap-1.5 font-semibold text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]">
                   <FileCode2 className="w-4 h-4 text-[var(--flux-accent)]" />
                   <span>AutoCAD (.dxf)</span>
                 </div>
-                <p className="text-[11px] mt-1 leading-snug">
+                <p className="text-[length:calc(11px*var(--flux-ui-scale))] mt-1 leading-snug">
                   Все выбранные листы в одном файле + слои и блоки с атрибутами
                 </p>
               </button>
@@ -140,11 +140,11 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                     : 'border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                 }`}
               >
-                <div className="flex items-center gap-1.5 font-semibold text-[12px] text-[var(--flux-text)]">
+                <div className="flex items-center gap-1.5 font-semibold text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]">
                   <Archive className="w-4 h-4 text-[var(--flux-accent)]" />
                   <span>DXF по листам (.zip)</span>
                 </div>
-                <p className="text-[11px] mt-1 leading-snug">
+                <p className="text-[length:calc(11px*var(--flux-ui-scale))] mt-1 leading-snug">
                   Отдельный редактируемый .dxf на каждый лист + сводный чертёж
                 </p>
               </button>
@@ -154,10 +154,10 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           {/* Sheet Selector */}
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] font-semibold text-[var(--flux-text)]">
+              <span className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
                 Листы в пакете ({selectedIds.length} из {project.sheets.length})
               </span>
-              <div className="flex items-center gap-2 text-[11px]">
+              <div className="flex items-center gap-2 text-[length:calc(11px*var(--flux-ui-scale))]">
                 <button
                   type="button"
                   onClick={() => setSelectedIds(project.sheets.map((s) => s.id))}
@@ -188,7 +188,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                 return (
                   <label
                     key={sheet.id}
-                    className="px-3 py-2 flex items-center justify-between gap-2 cursor-pointer hover:bg-[var(--flux-hover)] text-[12px]"
+                    className="px-3 py-2 flex items-center justify-between gap-2 cursor-pointer hover:bg-[var(--flux-hover)] text-[length:calc(12px*var(--flux-ui-scale))]"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <input
@@ -197,12 +197,12 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                         onChange={() => toggleSheet(sheet.id)}
                         className="rounded border-[var(--flux-line)]"
                       />
-                      <span className="font-mono text-[11px] text-[var(--flux-text-muted)] shrink-0">
+                      <span className="font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
                         Л.{sheet.number}
                       </span>
                       <span className="text-[var(--flux-text)] truncate">{sheet.name}</span>
                     </div>
-                    <span className="font-mono text-[11px] text-[var(--flux-text-muted)] shrink-0">
+                    <span className="font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
                       {sheet.format} · {formLabel}
                     </span>
                   </label>
@@ -212,7 +212,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           </div>
 
           {/* Options */}
-          <div className="space-y-2 p-3 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px]">
+          <div className="space-y-2 p-3 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(12px*var(--flux-ui-scale))]">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -255,14 +255,14 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           </div>
 
           {errorMsg && (
-            <div className="p-2.5 rounded border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 text-[12px] text-rose-700 dark:text-rose-300">
+            <div className="p-2.5 rounded border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 text-[length:calc(12px*var(--flux-ui-scale))] text-rose-700 dark:text-rose-300">
               {errorMsg}
             </div>
           )}
         </div>
 
         <div className="px-4 py-3 border-t border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-3">
-          <span className="text-[11px] text-[var(--flux-text-muted)] flex items-center gap-1.5">
+          <span className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] flex items-center gap-1.5">
             <CheckSquare className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
             <span>{project.projectCode} · Rev {project.revision}</span>
           </span>
@@ -271,7 +271,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
               type="button"
               disabled={busy}
               onClick={onClose}
-              className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] text-[var(--flux-text)] disabled:opacity-40"
+              className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)] disabled:opacity-40"
             >
               Отмена
             </button>
@@ -280,7 +280,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
               data-testid="publish-submit-btn"
               disabled={busy}
               onClick={handleSubmit}
-              className="inline-flex items-center gap-1.5 h-8 px-4 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 h-8 px-4 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(12px*var(--flux-ui-scale))] font-medium disabled:opacity-50"
             >
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               <span>

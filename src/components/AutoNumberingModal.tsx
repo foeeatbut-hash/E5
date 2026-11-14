@@ -98,7 +98,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                   type="button"
                   data-testid="autonum-tab-wires"
                   onClick={() => setTab('wires')}
-                  className={`h-7 px-3 text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors ${
+                  className={`h-7 px-3 text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium inline-flex items-center gap-1.5 transition-colors ${
                     tab === 'wires'
                       ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
                       : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -106,7 +106,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                 >
                   <Spline className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                   <span>Цепи и провода</span>
-                  <span className="font-mono tabular-nums text-[10.5px] opacity-80">
+                  <span className="font-mono tabular-nums text-[length:calc(10.5px*var(--flux-ui-scale))] opacity-80">
                     ({wirePreview.changes.length})
                   </span>
                 </button>
@@ -114,7 +114,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                   type="button"
                   data-testid="autonum-tab-devices"
                   onClick={() => setTab('devices')}
-                  className={`h-7 px-3 text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors ${
+                  className={`h-7 px-3 text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium inline-flex items-center gap-1.5 transition-colors ${
                     tab === 'devices'
                       ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
                       : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -122,7 +122,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                 >
                   <Cpu className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                   <span>ОУО изделий (-QF?, -KM?)</span>
-                  <span className="font-mono tabular-nums text-[10.5px] opacity-80">
+                  <span className="font-mono tabular-nums text-[length:calc(10.5px*var(--flux-ui-scale))] opacity-80">
                     ({devicePreview.changes.length})
                   </span>
                 </button>
@@ -144,7 +144,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                     <div>
                       <label
                         htmlFor="autonum-wire-scope"
-                        className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                        className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1"
                       >
                         Область нумерации
                       </label>
@@ -153,7 +153,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                         data-testid="autonum-wire-scope"
                         value={wireScope}
                         onChange={(e) => setWireScope(e.target.value as NumberingScope)}
-                        className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                        className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                       >
                         <option value="active-sheet">Только активный лист</option>
                         <option value="all-sheets">Все листы проекта ({project.sheets.length})</option>
@@ -162,7 +162,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                     <div>
                       <label
                         htmlFor="autonum-wire-mode"
-                        className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                        className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1"
                       >
                         Формат маркировки по ГОСТ
                       </label>
@@ -171,7 +171,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                         data-testid="autonum-wire-mode"
                         value={wireMode}
                         onChange={(e) => setWireMode(e.target.value as WireNumberingMode)}
-                        className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                        className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                       >
                         <option value="sheet-seq">{wireModeLabels['sheet-seq']}</option>
                         <option value="zone-seq">{wireModeLabels['zone-seq']}</option>
@@ -180,7 +180,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                     </div>
                   </div>
 
-                  <label className="inline-flex items-center gap-2 text-[12px] text-[var(--flux-text)] cursor-pointer select-none">
+                  <label className="inline-flex items-center gap-2 text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)] cursor-pointer select-none">
                     <input
                       type="checkbox"
                       data-testid="autonum-preserve-phases"
@@ -192,7 +192,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                   </label>
                 </div>
 
-                <div className="px-4 py-2 bg-[var(--flux-surface)] border-b border-[var(--flux-line)] flex items-center justify-between text-[11.5px] shrink-0">
+                <div className="px-4 py-2 bg-[var(--flux-surface)] border-b border-[var(--flux-line)] flex items-center justify-between text-[length:calc(11.5px*var(--flux-ui-scale))] shrink-0">
                   <span className="font-medium text-[var(--flux-text)]">
                     Предпросмотр изменений маркировки проводов
                   </span>
@@ -206,13 +206,13 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
 
                 <div className="flex-1 min-h-0 overflow-auto bg-[var(--flux-surface)]">
                   {wirePreview.changes.length === 0 ? (
-                    <div className="p-6 text-center text-[12px] text-[var(--flux-text-muted)]">
+                    <div className="p-6 text-center text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                       Все провода в выбранной области уже соответствуют выбранному формату ГОСТ.
                     </div>
                   ) : (
                     <table
                       data-testid="autonum-wire-preview-table"
-                      className="w-full border-collapse text-[11.5px]"
+                      className="w-full border-collapse text-[length:calc(11.5px*var(--flux-ui-scale))]"
                     >
                       <thead className="sticky top-0 z-10 bg-[var(--flux-bg)] border-b border-[var(--flux-line)] text-[var(--flux-text-muted)]">
                         <tr>
@@ -252,7 +252,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] text-[var(--flux-text)]"
+                    className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                   >
                     Отмена
                   </button>
@@ -268,7 +268,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                       );
                       onClose();
                     }}
-                    className="h-8 px-3.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium inline-flex items-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none"
+                    className="h-8 px-3.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(12px*var(--flux-ui-scale))] font-medium inline-flex items-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none"
                   >
                     <Check className="w-3.5 h-3.5" />
                     <span>Применить нумерацию цепей ({wirePreview.changes.length})</span>
@@ -288,7 +288,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                   <div>
                     <label
                       htmlFor="autonum-dev-scope"
-                      className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                      className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1"
                     >
                       Область переиндексации
                     </label>
@@ -297,7 +297,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                       data-testid="autonum-dev-scope"
                       value={devScope}
                       onChange={(e) => setDevScope(e.target.value as NumberingScope)}
-                      className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                      className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       <option value="active-sheet">Только активный лист</option>
                       <option value="all-sheets">Все листы проекта ({project.sheets.length})</option>
@@ -306,7 +306,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                   <div>
                     <label
                       htmlFor="autonum-dev-order"
-                      className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                      className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1"
                     >
                       Порядок обхода по ГОСТ
                     </label>
@@ -315,7 +315,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                       data-testid="autonum-dev-order"
                       value={devOrder}
                       onChange={(e) => setDevOrder(e.target.value as DeviceScanOrder)}
-                      className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[12px] text-[var(--flux-text)]"
+                      className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       <option value="top-to-bottom">Сверху вниз → слева направо</option>
                       <option value="left-to-right">Слева направо → сверху вниз</option>
@@ -324,7 +324,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                   <div>
                     <label
                       htmlFor="autonum-dev-prefix"
-                      className="block text-[11px] font-medium text-[var(--flux-text-muted)] mb-1"
+                      className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1"
                     >
                       Фильтр буквенного кода
                     </label>
@@ -336,12 +336,12 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                       value={prefixFilter}
                       onChange={(e) => setPrefixFilter(e.target.value)}
                       placeholder="Все (или QF, KM, XT…)"
-                      className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                      className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
                     />
                   </div>
                 </div>
 
-                <div className="px-4 py-2 bg-[var(--flux-surface)] border-b border-[var(--flux-line)] flex items-center justify-between text-[11.5px] shrink-0">
+                <div className="px-4 py-2 bg-[var(--flux-surface)] border-b border-[var(--flux-line)] flex items-center justify-between text-[length:calc(11.5px*var(--flux-ui-scale))] shrink-0">
                   <span className="font-medium text-[var(--flux-text)]">
                     Предпросмотр переиндексации ОУО (с обновлением кабельного журнала)
                   </span>
@@ -355,13 +355,13 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
 
                 <div className="flex-1 min-h-0 overflow-auto bg-[var(--flux-surface)]">
                   {devicePreview.changes.length === 0 ? (
-                    <div className="p-6 text-center text-[12px] text-[var(--flux-text-muted)]">
+                    <div className="p-6 text-center text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                       Порядок позиционных обозначений (ОУО) уже упорядочен по выбранному направлению.
                     </div>
                   ) : (
                     <table
                       data-testid="autonum-device-preview-table"
-                      className="w-full border-collapse text-[11.5px]"
+                      className="w-full border-collapse text-[length:calc(11.5px*var(--flux-ui-scale))]"
                     >
                       <thead className="sticky top-0 z-10 bg-[var(--flux-bg)] border-b border-[var(--flux-line)] text-[var(--flux-text-muted)]">
                         <tr>
@@ -401,7 +401,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] text-[var(--flux-text)]"
+                    className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                   >
                     Отмена
                   </button>
@@ -417,7 +417,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                       );
                       onClose();
                     }}
-                    className="h-8 px-3.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium inline-flex items-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none"
+                    className="h-8 px-3.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(12px*var(--flux-ui-scale))] font-medium inline-flex items-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none"
                   >
                     <Check className="w-3.5 h-3.5" />
                     <span>Переиндексировать ОУО ({devicePreview.changes.length})</span>

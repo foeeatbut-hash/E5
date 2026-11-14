@@ -620,18 +620,18 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
       {/* Top Block Editor Context Bar (AutoCAD BEDIT header strip) */}
       <div className="shrink-0 h-8 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 z-10">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] font-mono text-[10px] font-semibold tracking-wider text-[var(--flux-accent)] whitespace-nowrap shrink-0">
+          <span className="px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] font-mono text-[length:calc(10px*var(--flux-ui-scale))] font-semibold tracking-wider text-[var(--flux-accent)] whitespace-nowrap shrink-0">
             {draft.targetMode === 'device'
               ? 'УГО ОБЪЕКТА'
               : draft.targetMode === 'component'
                 ? 'УГО + ИЗДЕЛИЕ'
                 : 'БЛОК УГО'}
           </span>
-          <span className="text-[12px] font-semibold text-[var(--flux-text)] truncate min-w-0">
+          <span className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] truncate min-w-0">
             {draft.name || draft.e3BlockName}
             {draft.dirty ? ' *' : ''}
           </span>
-          <span className="hidden xl:inline font-mono text-[11px] tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
+          <span className="hidden xl:inline font-mono text-[length:calc(11px*var(--flux-ui-scale))] tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
             {renderedWidth}×{renderedHeight} мм
           </span>
         </div>
@@ -641,7 +641,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             type="button"
             data-testid="symbol-ws-save-btn"
             onClick={triggerSaveCurrent}
-            className="inline-flex items-center justify-center gap-1.5 min-w-[94px] h-6 px-2 rounded-[2px] border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[11px] font-medium whitespace-nowrap transition-colors"
+            className="inline-flex items-center justify-center gap-1.5 min-w-[calc(94px*var(--flux-ui-scale))] h-6 px-2 rounded-[2px] border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
           >
             {savedFlash ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
             <span>{savedFlash ? 'Сохранено' : 'Сохранить'}</span>
@@ -651,7 +651,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             type="button"
             data-testid="symbol-ws-save-copy-btn"
             onClick={openSaveAsDialog}
-            className="inline-flex items-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[11px] font-medium whitespace-nowrap transition-colors"
+            className="inline-flex items-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
           >
             <CopyPlus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
             <span>Копировать как…</span>
@@ -661,7 +661,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             type="button"
             data-testid="symbol-ws-place-btn"
             onClick={workspace.onPlaceOnActiveSheet}
-            className="hidden sm:inline-flex items-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[11px] font-medium whitespace-nowrap transition-colors"
+            className="hidden sm:inline-flex items-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
           >
             <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
             <span>На схему</span>
@@ -671,7 +671,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             type="button"
             data-testid="symbol-ws-close-btn"
             onClick={workspace.onCloseWorkspace}
-            className="inline-flex items-center gap-1 h-6 px-2 rounded-[2px] border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[11px] font-medium whitespace-nowrap transition-colors"
+            className="inline-flex items-center gap-1 h-6 px-2 rounded-[2px] border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
           >
             <X className="w-3.5 h-3.5" />
             <span>Закрыть УГО</span>
@@ -694,7 +694,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
           }}
           className="shrink-0 px-2.5 py-1.5 border-b border-[var(--flux-accent)]/40 bg-[var(--flux-sel)] flex flex-wrap items-center gap-2 z-10"
         >
-          <span className="text-[11px] font-semibold text-[var(--flux-text)] whitespace-nowrap">
+          <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] whitespace-nowrap">
             Копия в базу:
           </span>
           <input
@@ -705,7 +705,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             value={copyName}
             onChange={(e) => setCopyName(e.target.value)}
             placeholder="Название УГО / изделия"
-            className="h-6 px-2 min-w-[160px] flex-1 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
+            className="h-6 px-2 min-w-[calc(160px*var(--flux-ui-scale))] flex-1 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
           />
           <input
             type="text"
@@ -715,7 +715,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             value={copyBlockName}
             onChange={(e) => setCopyBlockName(e.target.value)}
             placeholder="Блок E3 (GOST_...)"
-            className="h-6 px-2 min-w-[140px] flex-1 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+            className="h-6 px-2 min-w-[calc(140px*var(--flux-ui-scale))] flex-1 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
           />
           <input
             type="text"
@@ -725,7 +725,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             value={copyArticle}
             onChange={(e) => setCopyArticle(e.target.value)}
             placeholder="Артикул"
-            className="h-6 px-2 w-32 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+            className="h-6 px-2 w-32 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
           />
           <div className="flex items-center gap-1 shrink-0">
             <button
@@ -733,7 +733,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               data-testid="symbol-ws-copy-confirm"
               disabled={!copyName.trim()}
               onClick={confirmCopySave}
-              className="inline-flex items-center gap-1 h-6 px-2.5 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] disabled:opacity-45 text-white text-[11px] font-medium whitespace-nowrap transition-colors"
+              className="inline-flex items-center gap-1 h-6 px-2.5 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] disabled:opacity-45 text-white text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Создать копию</span>
@@ -741,7 +741,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             <button
               type="button"
               onClick={() => setSaveAsOpen(false)}
-              className="h-6 px-2 rounded-[2px] text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap transition-colors"
+              className="h-6 px-2 rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap transition-colors"
             >
               Отмена
             </button>
@@ -1180,13 +1180,13 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
           data-testid="symbol-workspace-hud"
           className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none flex items-center justify-between gap-2"
         >
-          <div className="pointer-events-auto inline-flex items-center gap-2 px-2.5 h-7 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover text-[11px] text-[var(--flux-text-muted)]">
+          <div className="pointer-events-auto inline-flex items-center gap-2 px-2.5 h-7 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
             <Crosshair className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
             <span className="truncate">{toolHint}</span>
           </div>
 
-          <div className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 h-7 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover text-[11px] font-mono tabular-nums text-[var(--flux-text)] shrink-0">
-            <span className="text-[var(--flux-text-muted)] inline-block w-[112px] whitespace-nowrap tabular-nums">
+          <div className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 h-7 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover text-[length:calc(11px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text)] shrink-0">
+            <span className="text-[var(--flux-text-muted)] inline-block w-[calc(112px*var(--flux-ui-scale))] whitespace-nowrap tabular-nums">
               <span ref={coordsHudRef} />
             </span>
             <span className="h-3.5 w-px bg-[var(--flux-line)]" />

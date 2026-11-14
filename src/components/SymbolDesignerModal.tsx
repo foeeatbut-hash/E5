@@ -339,7 +339,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
       titleId="symbol-designer-title"
       icon={<Cpu className="w-4 h-4 text-[var(--flux-accent)]" />}
       subtitle={
-        <span className="text-[11px] font-mono text-[var(--flux-text-muted)]">
+        <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)]">
           · сетка 10 мм · {width}×{height}
         </span>
       }
@@ -351,7 +351,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
               {/* Left Tool + Drawing Canvas */}
               <div className="flex-1 flex flex-col min-w-0 bg-[var(--flux-bg)] border-b lg:border-b-0 lg:border-r border-[var(--flux-line)]">
                 {/* Tool Strip */}
-                <div className="px-3 py-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex flex-wrap items-center gap-1.5 text-[11px]">
+                <div className="px-3 py-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex flex-wrap items-center gap-1.5 text-[length:calc(11px*var(--flux-ui-scale))]">
                   {(
                     [
                       { id: 'select', label: 'Выбор', icon: <MousePointer2 className="w-3.5 h-3.5" /> },
@@ -386,7 +386,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                       value={newTextLabel}
                       onChange={(e) => setNewTextLabel(e.target.value)}
                       placeholder="Текст метки"
-                      className="h-7 w-24 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
+                      className="h-7 w-24 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     />
                   )}
                   {tool === 'pin' && (
@@ -394,7 +394,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                       aria-label="Тип сигнала нового вывода"
                       value={pinSignalType}
                       onChange={(e) => setPinSignalType(e.target.value as SignalType)}
-                      className="h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
+                      className="h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       {SIGNAL_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
@@ -405,7 +405,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                   )}
 
                   <div className="ml-auto flex items-center gap-1">
-                    <span className="text-[10px] text-[var(--flux-text-muted)] mr-1">Шаблон:</span>
+                    <span className="text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mr-1">Шаблон:</span>
                     {(
                       [
                         ['blank_box', 'Блок'],
@@ -419,7 +419,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                         type="button"
                         data-testid={`symbol-preset-${pid}`}
                         onClick={() => applyPreset(pid)}
-                        className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[10.5px] text-[var(--flux-text)]"
+                        className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                       >
                         {lbl}
                       </button>
@@ -669,10 +669,10 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
               </div>
 
               {/* Right Sidebar: Metadata, Shapes & Pins */}
-              <div className="w-full lg:w-[340px] shrink-0 overflow-y-auto p-3 space-y-3 text-[12px]">
+              <div className="w-full lg:w-[min(42vw,calc(340px*var(--flux-ui-scale)))] shrink-0 overflow-y-auto p-3 space-y-3 text-[length:calc(12px*var(--flux-ui-scale))]">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label htmlFor="sd-width" className="block text-[10.5px] text-[var(--flux-text-muted)] mb-1">
+                    <label htmlFor="sd-width" className="block text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">
                       Ширина блока (мм)
                     </label>
                     <input
@@ -687,7 +687,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label htmlFor="sd-height" className="block text-[10.5px] text-[var(--flux-text-muted)] mb-1">
+                    <label htmlFor="sd-height" className="block text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-1">
                       Высота блока (мм)
                     </label>
                     <input
@@ -705,11 +705,11 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
 
                 {mode === 'catalog' && (
                   <div className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-2">
-                    <div className="text-[11px] font-semibold text-[var(--flux-text)]">
+                    <div className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
                       Карточка элемента базы
                     </div>
                     <div>
-                      <label htmlFor="sd-comp-name" className="block text-[10px] text-[var(--flux-text-muted)] mb-0.5">
+                      <label htmlFor="sd-comp-name" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-0.5">
                         Наименование
                       </label>
                       <input
@@ -718,12 +718,12 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                         data-testid="symbol-designer-name-input"
                         value={componentName}
                         onChange={(e) => setComponentName(e.target.value)}
-                        className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
+                        className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
                       <div>
-                        <label htmlFor="sd-prefix" className="block text-[10px] text-[var(--flux-text-muted)] mb-0.5">
+                        <label htmlFor="sd-prefix" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-0.5">
                           Префикс ОУО
                         </label>
                         <input
@@ -732,11 +732,11 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                           spellCheck={false}
                           value={defaultPrefix}
                           onChange={(e) => setDefaultPrefix(e.target.value.toUpperCase())}
-                          className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+                          className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                         />
                       </div>
                       <div>
-                        <label htmlFor="sd-article" className="block text-[10px] text-[var(--flux-text-muted)] mb-0.5">
+                        <label htmlFor="sd-article" className="block text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] mb-0.5">
                           Артикул
                         </label>
                         <input
@@ -745,7 +745,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                           spellCheck={false}
                           value={article}
                           onChange={(e) => setArticle(e.target.value)}
-                          className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+                          className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                         />
                       </div>
                     </div>
@@ -755,14 +755,14 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                 {/* Shapes list */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-[var(--flux-text)]">
+                    <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
                       Контуры УГО ({shapes.length})
                     </span>
                     {shapes.length > 0 && (
                       <button
                         type="button"
                         onClick={() => setShapes([])}
-                        className="text-[10.5px] text-rose-600 hover:underline"
+                        className="text-[length:calc(10.5px*var(--flux-ui-scale))] text-rose-600 hover:underline"
                       >
                         Очистить
                       </button>
@@ -772,7 +772,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                     {shapes.map((sh, i) => (
                       <div
                         key={sh.id}
-                        className={`flex items-center justify-between gap-2 px-2 py-1 rounded border text-[11px] ${
+                        className={`flex items-center justify-between gap-2 px-2 py-1 rounded border text-[length:calc(11px*var(--flux-ui-scale))] ${
                           selectedShapeId === sh.id
                             ? 'border-[var(--flux-accent)] bg-[var(--flux-sel)]'
                             : 'border-[var(--flux-line)] bg-[var(--flux-bg)]'
@@ -808,7 +808,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                 {/* Pins list */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-[var(--flux-text)]">
+                    <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
                       Выводы / Пины ({pins.length})
                     </span>
                     <button
@@ -826,7 +826,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                           },
                         ])
                       }
-                      className="inline-flex items-center gap-0.5 text-[10.5px] text-[var(--flux-accent)] hover:underline"
+                      className="inline-flex items-center gap-0.5 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-accent)] hover:underline"
                     >
                       <Plus className="w-3 h-3" /> Добавить вывод
                     </button>
@@ -835,7 +835,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                     {pins.map((p, idx) => (
                       <div
                         key={`pin-row-${idx}`}
-                        className={`flex items-center gap-1.5 px-1.5 py-1 rounded border text-[11px] ${
+                        className={`flex items-center gap-1.5 px-1.5 py-1 rounded border text-[length:calc(11px*var(--flux-ui-scale))] ${
                           selectedPinIdx === idx
                             ? 'border-[var(--flux-accent)] bg-[var(--flux-sel)]'
                             : 'border-[var(--flux-line)] bg-[var(--flux-bg)]'
@@ -851,9 +851,9 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                             )
                           }
                           aria-label={`Имя вывода ${idx + 1}`}
-                          className="w-12 h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px]"
+                          className="w-12 h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))]"
                         />
-                        <span className="font-mono text-[10px] text-[var(--flux-text-muted)] shrink-0">
+                        <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
                           {p.dx},{p.dy}
                         </span>
                         <select
@@ -866,7 +866,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                               )
                             )
                           }
-                          className="h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px]"
+                          className="h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))]"
                         >
                           {(Object.keys(DIR_LABELS) as PinDirection[]).map((d) => (
                             <option key={d} value={d}>
@@ -884,7 +884,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                               )
                             )
                           }
-                          className="flex-1 min-w-0 h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px]"
+                          className="flex-1 min-w-0 h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))]"
                         >
                           {SIGNAL_OPTIONS.map((o) => (
                             <option key={o.value} value={o.value}>
@@ -909,14 +909,14 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
 
             {/* Footer */}
             <div className="px-4 h-12 border-t border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
-              <div className="text-[11px] text-[var(--flux-text-muted)]">
+              <div className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                 ЛКМ: выберите «Линия / Прямоуг. / Круг» и протяните на сетке, или кликните «+ Вывод».
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="h-8 px-3 rounded border border-[var(--flux-line)] text-[12px] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                  className="h-8 px-3 rounded border border-[var(--flux-line)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
                 >
                   Отмена
                 </button>
@@ -924,7 +924,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                   type="button"
                   data-testid="symbol-designer-save-btn"
                   onClick={handleCommit}
-                  className="h-8 px-4 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[12px] font-medium"
+                  className="h-8 px-4 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(12px*var(--flux-ui-scale))] font-medium"
                 >
                   {mode === 'geometry' ? 'Применить графику УГО' : 'Сохранить УГО в базу'}
                 </button>

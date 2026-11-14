@@ -5,9 +5,6 @@ import { CatalogItemModal } from './components/CatalogItemModal';
 import {
   type ActivePanelDrag,
   CAD_PANEL_TRANSITION,
-  COLLAPSED_BOTTOM_TABS_HEIGHT,
-  COLLAPSED_HEADER_HEIGHT,
-  COLLAPSED_SIDE_RAIL_WIDTH,
   DockDropOverlay,
   DockResizeHandle,
   DockablePanelFrame,
@@ -51,6 +48,7 @@ import {
   getPanelsByDock,
   loadDockLayout,
   movePanelDock,
+  rescaleDockLayoutForUiScale,
   resizeDockEdge,
   saveDockLayout,
   syncOpenSheetIds,
@@ -58,6 +56,14 @@ import {
   updateFloatingRect,
   viewportCountForMode,
 } from './core/dockLayout';
+import {
+  applyUiScaleToDocument,
+  getScaledChromeMetrics,
+  loadUiScale,
+  saveUiScale,
+  uiScaleFactor,
+  type UiScalePercent,
+} from './core/uiScale';
 import {
   CAD_LAYER_DEFS,
   isLayerLocked,
@@ -350,17 +356,45 @@ export default function App() {
   viewportTransformsRef.current = viewportTransforms;
   const cameraAnimRef = useRef<Record<number, number>>({});
 
-  // Dockable & resizable panel layout (clamped to real viewport on mount & resize)
+  // UI Scale (100% / 120% / 140% / 160% / 180%)
+  const [uiScale, setUiScale] = useState<UiScalePercent>(() => loadUiScale());
+  const uiScaleRef = useRef<UiScalePercent>(uiScale);
+  uiScaleRef.current = uiScale;
+
+  useEffect(() => {
+    applyUiScaleToDocument(uiScale);
+    saveUiScale(uiScale);
+  }, [uiScale]);
+
+  // Dockable & resizable panel layout (clamped to real viewport & UI scale on mount & resize)
   const [dockLayout, setDockLayout] = useState<DockLayoutState>(() => {
-    const loaded = loadDockLayout();
+    const factor = uiScaleFactor(loadUiScale());
+    const loaded = loadDockLayout(undefined, undefined, undefined, factor);
     if (typeof window !== 'undefined') {
-      return clampDockLayoutToViewport(loaded, window.innerWidth, window.innerHeight);
+      return clampDockLayoutToViewport(loaded, window.innerWidth, window.innerHeight, factor);
     }
     return loaded;
   });
   const [panelDrag, setPanelDrag] = useState<ActivePanelDrag | null>(null);
   const [resizingDockEdge, setResizingDockEdge] = useState<DockEdge | 'floating' | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
+
+  const handleChangeUiScale = useCallback((nextScale: UiScalePercent) => {
+    setUiScale((prevScale) => {
+      if (prevScale === nextScale) return prevScale;
+      applyUiScaleToDocument(nextScale);
+      setDockLayout((prevLayout) =>
+        rescaleDockLayoutForUiScale(
+          prevLayout,
+          prevScale,
+          nextScale,
+          typeof window !== 'undefined' ? window.innerWidth : 1440,
+          typeof window !== 'undefined' ? window.innerHeight : 900
+        )
+      );
+      return nextScale;
+    });
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -371,7 +405,8 @@ export default function App() {
 
   useEffect(() => {
     const onResize = () => {
-      setDockLayout((prev) => clampDockLayoutToViewport(prev, window.innerWidth, window.innerHeight));
+      const factor = uiScaleFactor(uiScaleRef.current);
+      setDockLayout((prev) => clampDockLayoutToViewport(prev, window.innerWidth, window.innerHeight, factor));
     };
     onResize();
     window.addEventListener('resize', onResize);
@@ -3281,11 +3316,28 @@ export default function App() {
     [project, commitProject, appendLog]
   );
 
-  // Panel dock dragging & edge resizing handlers (RAF-coalesced for high-refresh responsiveness)
+  // Panel dock dragging & edge resizing handlers (GPU translate3d for zero-jitter floating moves)
   const handleStartPanelDrag = useCallback(
     (panelId: PanelId, e: React.PointerEvent) => {
+      if (e.button !== 0) return;
       e.preventDefault();
       const panel = dockLayout.panels[panelId];
+      const floatingEl =
+        panel.dock === 'floating'
+          ? document.querySelector<HTMLElement>(`[data-testid="floating-panel-${panelId}"]`)
+          : null;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const factor = uiScaleFactor(uiScaleRef.current);
+      const chrome = getScaledChromeMetrics(uiScaleRef.current);
+      const panelW = floatingEl?.offsetWidth || panel.floating.width;
+      const panelH =
+        floatingEl?.offsetHeight ||
+        (panel.collapsed ? chrome.collapsedHeaderHeight : panel.floating.height);
+      const minY = Math.round(40 * Math.min(factor, 1.5));
+      const maxX = Math.max(8, vw - panelW - 8);
+      const maxY = Math.max(minY, vh - panelH - 8);
+
       const dragState: ActivePanelDrag = {
         panelId,
         startX: e.clientX,
@@ -3301,42 +3353,41 @@ export default function App() {
 
       let dragRafId: number | null = null;
       let latestEv: { clientX: number; clientY: number } | null = null;
+      let lastHover: DockSide | null = null;
+
+      const computeClampedFloating = (dx: number, dy: number) => ({
+        x: Math.max(8, Math.min(maxX, Math.round(dragState.origFloatingX + dx))),
+        y: Math.max(minY, Math.min(maxY, Math.round(dragState.origFloatingY + dy))),
+      });
 
       const applyMove = (clientX: number, clientY: number) => {
         const dx = clientX - dragState.startX;
         const dy = clientY - dragState.startY;
-        const movedEnough = Math.hypot(dx, dy) > 8;
+        const movedEnough = Math.hypot(dx, dy) > 6;
         const bounds = workspaceRef.current?.getBoundingClientRect();
-        const hover =
-          movedEnough && bounds
-            ? resolveDropTarget(clientX, clientY, bounds)
-            : null;
+        const hover = movedEnough && bounds ? resolveDropTarget(clientX, clientY, bounds) : null;
 
-        if (panel.dock === 'floating' && movedEnough) {
-          setDockLayout((prev) =>
-            updateFloatingRect(
-              prev,
-              panelId,
-              {
-                x: dragState.origFloatingX + dx,
-                y: dragState.origFloatingY + dy,
-              },
-              window.innerWidth,
-              window.innerHeight
-            )
-          );
+        if (panel.dock === 'floating' && floatingEl && movedEnough) {
+          const nextPos = computeClampedFloating(dx, dy);
+          floatingEl.style.willChange = 'transform';
+          floatingEl.style.transform = `translate3d(${nextPos.x - dragState.origFloatingX}px, ${
+            nextPos.y - dragState.origFloatingY
+          }px, 0)`;
         }
 
-        setPanelDrag((curr) =>
-          curr
-            ? {
-                ...curr,
-                currentX: clientX,
-                currentY: clientY,
-                hoverTarget: hover,
-              }
-            : null
-        );
+        if (!dragState.wasFloating || hover !== lastHover) {
+          lastHover = hover;
+          setPanelDrag((curr) =>
+            curr
+              ? {
+                  ...curr,
+                  currentX: clientX,
+                  currentY: clientY,
+                  hoverTarget: hover,
+                }
+              : null
+          );
+        }
       };
 
       const onMove = (ev: PointerEvent) => {
@@ -3356,32 +3407,56 @@ export default function App() {
         }
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+
+        if (floatingEl) {
+          floatingEl.style.transform = '';
+          floatingEl.style.willChange = '';
+        }
+
         const dx = ev.clientX - dragState.startX;
         const dy = ev.clientY - dragState.startY;
-        if (Math.hypot(dx, dy) > 8) {
+        const curFactor = uiScaleFactor(uiScaleRef.current);
+        if (Math.hypot(dx, dy) > 6) {
           const bounds = workspaceRef.current?.getBoundingClientRect();
           const target = bounds ? resolveDropTarget(ev.clientX, ev.clientY, bounds) : 'floating';
-          setDockLayout((prev) =>
-            movePanelDock(
-              prev,
-              panelId,
-              target,
-              target === 'floating'
-                ? {
-                    x: ev.clientX - Math.round(prev.panels[panelId].floating.width / 2),
-                    y: ev.clientY - 14,
-                  }
-                : undefined,
-              window.innerWidth,
-              window.innerHeight
-            )
-          );
+          if (dragState.wasFloating && target === 'floating') {
+            const nextPos = computeClampedFloating(dx, dy);
+            setDockLayout((prev) =>
+              updateFloatingRect(
+                prev,
+                panelId,
+                nextPos,
+                window.innerWidth,
+                window.innerHeight,
+                curFactor
+              )
+            );
+          } else {
+            setDockLayout((prev) =>
+              movePanelDock(
+                prev,
+                panelId,
+                target,
+                target === 'floating'
+                  ? {
+                      x: ev.clientX - Math.round(prev.panels[panelId].floating.width / 2),
+                      y: ev.clientY - 14,
+                    }
+                  : undefined,
+                window.innerWidth,
+                window.innerHeight,
+                curFactor
+              )
+            );
+          }
         }
         setPanelDrag(null);
       };
 
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
     },
     [dockLayout.panels]
   );
@@ -3407,8 +3482,9 @@ export default function App() {
           resizeRafId = window.requestAnimationFrame(() => {
             resizeRafId = null;
             const targetSize = latestNext;
+            const factor = uiScaleFactor(uiScaleRef.current);
             setDockLayout((prev) =>
-              resizeDockEdge(prev, edge, targetSize, window.innerWidth, window.innerHeight)
+              resizeDockEdge(prev, edge, targetSize, window.innerWidth, window.innerHeight, factor)
             );
           });
         }
@@ -3419,16 +3495,19 @@ export default function App() {
           window.cancelAnimationFrame(resizeRafId);
           resizeRafId = null;
         }
+        const factor = uiScaleFactor(uiScaleRef.current);
         setDockLayout((prev) =>
-          resizeDockEdge(prev, edge, latestNext, window.innerWidth, window.innerHeight)
+          resizeDockEdge(prev, edge, latestNext, window.innerWidth, window.innerHeight, factor)
         );
         setResizingDockEdge(null);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
       };
 
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
     },
     [dockLayout.sizes]
   );
@@ -3454,13 +3533,15 @@ export default function App() {
             floatRafId = null;
             const w = latestW;
             const h = latestH;
+            const factor = uiScaleFactor(uiScaleRef.current);
             setDockLayout((prev) =>
               updateFloatingRect(
                 prev,
                 panelId,
                 { width: w, height: h },
                 window.innerWidth,
-                window.innerHeight
+                window.innerHeight,
+                factor
               )
             );
           });
@@ -3472,22 +3553,26 @@ export default function App() {
           window.cancelAnimationFrame(floatRafId);
           floatRafId = null;
         }
+        const factor = uiScaleFactor(uiScaleRef.current);
         setDockLayout((prev) =>
           updateFloatingRect(
             prev,
             panelId,
             { width: latestW, height: latestH },
             window.innerWidth,
-            window.innerHeight
+            window.innerHeight,
+            factor
           )
         );
         setResizingDockEdge(null);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
       };
 
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
     },
     [dockLayout.panels]
   );
@@ -5186,7 +5271,15 @@ export default function App() {
           isConsoleBottomSingle
             ? (side: DockSide) =>
                 setDockLayout((prev) =>
-                  movePanelDock(prev, 'console', side, undefined, window.innerWidth, window.innerHeight)
+                  movePanelDock(
+                    prev,
+                    'console',
+                    side,
+                    undefined,
+                    window.innerWidth,
+                    window.innerHeight,
+                    uiScaleFactor(uiScaleRef.current)
+                  )
                 )
             : undefined
         }
@@ -5252,6 +5345,8 @@ export default function App() {
   const bottomPanels = getPanelsByDock(dockLayout, 'bottom');
   const floatingPanels = getPanelsByDock(dockLayout, 'floating');
 
+  const chromeMetrics = getScaledChromeMetrics(uiScale);
+
   const renderDockBand = (panels: PanelConfig[], edge: DockEdge) => {
     if (panels.length === 0) return null;
     const isHorizBand = edge === 'bottom' || edge === 'top';
@@ -5263,11 +5358,11 @@ export default function App() {
     const targetBandSize = allCollapsed
       ? isHorizBand
         ? isBottomConsoleOnly
-          ? COLLAPSED_BOTTOM_TABS_HEIGHT
-          : COLLAPSED_HEADER_HEIGHT
+          ? chromeMetrics.collapsedBottomHeight
+          : chromeMetrics.collapsedHeaderHeight
         : useSideRail
-          ? COLLAPSED_SIDE_RAIL_WIDTH
-          : 196
+          ? chromeMetrics.collapsedSideRailWidth
+          : Math.round(196 * chromeMetrics.factor)
       : rawBandSize;
     const isResizingThis = resizingDockEdge === edge;
 
@@ -5299,6 +5394,7 @@ export default function App() {
             panel={p}
             edge={edge}
             bandSize={rawBandSize}
+            uiScale={uiScale}
             useSideRail={useSideRail}
             multiPanelInBand={panels.length > 1}
             hideHeaderBar={isBottomConsoleOnly && p.id === 'console'}
@@ -5439,7 +5535,15 @@ export default function App() {
 
   const handleMoveDockPanel = useCallback((id: PanelId, side: DockSide) => {
     setDockLayout((prev) =>
-      movePanelDock(prev, id, side, undefined, window.innerWidth, window.innerHeight)
+      movePanelDock(
+        prev,
+        id,
+        side,
+        undefined,
+        window.innerWidth,
+        window.innerHeight,
+        uiScaleFactor(uiScaleRef.current)
+      )
     );
   }, []);
 
@@ -5630,6 +5734,7 @@ export default function App() {
         activeSheet={activeSheet}
         tool={tool}
         zoom={zoom}
+        uiScale={uiScale}
         viewportLayout={viewportLayout}
         canUndo={history.length > 0}
         canRedo={future.length > 0}
@@ -5640,11 +5745,14 @@ export default function App() {
         e3BridgeHost={bridgeStatus.isWin32 ? 'Windows' : bridgeStatus.bridgeConnected ? bridgeStatus.bridgeHost : null}
         fluxHosted={fluxHostStatus.hostedInFlux}
         onSetTool={setTool}
+        onChangeUiScale={handleChangeUiScale}
         onSetViewportLayout={handleSetViewportLayout}
         onResetDockLayout={() => {
           setDockLayout(
-            clampDockLayoutToViewport(
+            rescaleDockLayoutForUiScale(
               createDefaultDockLayout(),
+              100,
+              uiScaleRef.current,
               typeof window !== 'undefined' ? window.innerWidth : 1440,
               typeof window !== 'undefined' ? window.innerHeight : 900
             )
@@ -5974,7 +6082,9 @@ export default function App() {
             <FloatingPanelWindow
               key={fp.id}
               panel={fp}
+              uiScale={uiScale}
               isResizing={resizingDockEdge === 'floating'}
+              isMoving={panelDrag?.panelId === fp.id}
               onStartDrag={handleStartPanelDrag}
               onResizeFloatingStart={handleResizeFloatingStart}
               onMoveDock={handleMoveDockPanel}
@@ -5988,6 +6098,7 @@ export default function App() {
         {/* Live Dock Drop Targets while dragging panel headers */}
         <DockDropOverlay
           drag={panelDrag}
+          uiScale={uiScale}
           bounds={
             workspaceBoundsRect
               ? {
@@ -6031,6 +6142,8 @@ export default function App() {
       <VisualSettingsModal
         open={visualOpen}
         settings={project.visualSettings}
+        uiScale={uiScale}
+        onChangeUiScale={handleChangeUiScale}
         onClose={() => setVisualOpen(false)}
         onApply={handleApplyVisualSettings}
       />

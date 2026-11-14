@@ -73,29 +73,41 @@ export function clampDockSize(
   edge: DockEdge,
   px: number,
   viewportW = 1440,
-  viewportH = 900
+  viewportH = 900,
+  uiScale = 1
 ): number {
+  const safeScale = Math.max(1, Math.min(1.8, uiScale));
   if (edge === 'left' || edge === 'right') {
-    const maxW = Math.max(240, Math.round(viewportW * 0.42));
-    return Math.max(210, Math.min(maxW, Math.round(px)));
+    const minW = Math.round(210 * Math.min(safeScale, 1.45));
+    const maxW = Math.max(minW + 30, Math.round(viewportW * 0.42));
+    return Math.max(minW, Math.min(maxW, Math.round(px)));
   }
-  const maxH = Math.max(160, Math.round(viewportH * 0.48));
-  return Math.max(120, Math.min(maxH, Math.round(px)));
+  const minH = Math.round(120 * Math.min(safeScale, 1.45));
+  const estHeaderH = Math.round(126 * safeScale);
+  const minCenterH = Math.max(180, Math.round((viewportH - estHeaderH) * 0.36));
+  const budgetH = Math.max(minH, viewportH - estHeaderH - minCenterH);
+  const maxH = Math.min(Math.max(160, Math.round(viewportH * 0.48)), budgetH);
+  return Math.max(minH, Math.min(maxH, Math.round(px)));
 }
 
 export function clampFloatingRect(
   rect: FloatingRect,
   viewportW = 1440,
-  viewportH = 900
+  viewportH = 900,
+  uiScale = 1
 ): FloatingRect {
+  const safeScale = Math.max(1, Math.min(1.8, uiScale));
+  const minY = Math.round(40 * Math.min(safeScale, 1.5));
   const maxW = Math.max(260, viewportW - 24);
-  const maxH = Math.max(180, viewportH - 80);
-  const width = Math.max(240, Math.min(maxW, Math.round(rect.width)));
-  const height = Math.max(160, Math.min(maxH, Math.round(rect.height)));
+  const maxH = Math.max(180, viewportH - minY - 16);
+  const minW = Math.min(maxW, Math.round(240 * Math.min(safeScale, 1.4)));
+  const minH = Math.min(maxH, Math.round(160 * Math.min(safeScale, 1.4)));
+  const width = Math.max(minW, Math.min(maxW, Math.round(rect.width)));
+  const height = Math.max(minH, Math.min(maxH, Math.round(rect.height)));
   const maxX = Math.max(8, viewportW - width - 8);
-  const maxY = Math.max(40, viewportH - height - 8);
+  const maxY = Math.max(minY, viewportH - height - 8);
   const x = Math.max(8, Math.min(maxX, Math.round(rect.x)));
-  const y = Math.max(40, Math.min(maxY, Math.round(rect.y)));
+  const y = Math.max(minY, Math.min(maxY, Math.round(rect.y)));
   return { x, y, width, height };
 }
 
@@ -111,14 +123,15 @@ export function movePanelDock(
   targetDock: DockSide,
   floatingOverride?: Partial<FloatingRect>,
   viewportW = 1440,
-  viewportH = 900
+  viewportH = 900,
+  uiScale = 1
 ): DockLayoutState {
   const current = state.panels[panelId];
   if (!current) return state;
   const peers = getPanelsByDock(state, targetDock).filter((p) => p.id !== panelId);
   const nextOrder = peers.length > 0 ? Math.max(...peers.map((p) => p.order)) + 1 : 0;
   const nextFloating = floatingOverride
-    ? clampFloatingRect({ ...current.floating, ...floatingOverride }, viewportW, viewportH)
+    ? clampFloatingRect({ ...current.floating, ...floatingOverride }, viewportW, viewportH, uiScale)
     : current.floating;
 
   return {
@@ -156,13 +169,14 @@ export function resizeDockEdge(
   edge: DockEdge,
   px: number,
   viewportW = 1440,
-  viewportH = 900
+  viewportH = 900,
+  uiScale = 1
 ): DockLayoutState {
   return {
     ...state,
     sizes: {
       ...state.sizes,
-      [edge]: clampDockSize(edge, px, viewportW, viewportH),
+      [edge]: clampDockSize(edge, px, viewportW, viewportH, uiScale),
     },
   };
 }
@@ -172,7 +186,8 @@ export function updateFloatingRect(
   panelId: PanelId,
   patch: Partial<FloatingRect>,
   viewportW = 1440,
-  viewportH = 900
+  viewportH = 900,
+  uiScale = 1
 ): DockLayoutState {
   const current = state.panels[panelId];
   if (!current) return state;
@@ -182,7 +197,7 @@ export function updateFloatingRect(
       ...state.panels,
       [panelId]: {
         ...current,
-        floating: clampFloatingRect({ ...current.floating, ...patch }, viewportW, viewportH),
+        floating: clampFloatingRect({ ...current.floating, ...patch }, viewportW, viewportH, uiScale),
       },
     },
   };
@@ -191,22 +206,24 @@ export function updateFloatingRect(
 export function clampDockLayoutToViewport(
   state: DockLayoutState,
   viewportW = 1440,
-  viewportH = 900
+  viewportH = 900,
+  uiScale = 1
 ): DockLayoutState {
   const safeW = Math.max(640, Math.round(viewportW));
   const safeH = Math.max(480, Math.round(viewportH));
+  const safeScale = Math.max(1, Math.min(1.8, uiScale));
 
   const leftActive = getPanelsByDock(state, 'left').some((p) => !p.collapsed);
   const rightActive = getPanelsByDock(state, 'right').some((p) => !p.collapsed);
 
-  // Reserve a minimum usable center canvas width so side docks never clip off-screen
-  const minCenterW = safeW >= 1200 ? 440 : safeW >= 960 ? 360 : 280;
+  // Reserve a minimum usable center canvas width so side docks and footer controls never clip off-screen
+  const minCenterW = safeW >= 1360 ? Math.max(520, safeW - 760) : safeW >= 1200 ? Math.max(440, safeW - 640) : safeW >= 960 ? 360 : 280;
   const maxSideBudget = Math.max(360, safeW - minCenterW);
 
-  let nextLeft = clampDockSize('left', state.sizes.left, safeW, safeH);
-  let nextRight = clampDockSize('right', state.sizes.right, safeW, safeH);
+  let nextLeft = clampDockSize('left', state.sizes.left, safeW, safeH, safeScale);
+  let nextRight = clampDockSize('right', state.sizes.right, safeW, safeH, safeScale);
 
-  // Proportional clamping on narrower viewports so neither left nor right clips
+  // Proportional clamping on narrower viewports or large UI scales so neither left nor right clips
   if (leftActive && rightActive && nextLeft + nextRight > maxSideBudget) {
     const ratio = maxSideBudget / (nextLeft + nextRight);
     nextLeft = Math.max(190, Math.floor(nextLeft * ratio));
@@ -217,8 +234,8 @@ export function clampDockLayoutToViewport(
     nextRight = Math.max(220, maxSideBudget);
   }
 
-  const nextBottom = clampDockSize('bottom', state.sizes.bottom, safeW, safeH);
-  const nextTop = clampDockSize('top', state.sizes.top, safeW, safeH);
+  const nextBottom = clampDockSize('bottom', state.sizes.bottom, safeW, safeH, safeScale);
+  const nextTop = clampDockSize('top', state.sizes.top, safeW, safeH, safeScale);
 
   const clampedPanels = { ...state.panels };
   for (const id of ['explorer', 'inspector', 'console'] as PanelId[]) {
@@ -226,7 +243,7 @@ export function clampDockLayoutToViewport(
     if (p) {
       clampedPanels[id] = {
         ...p,
-        floating: clampFloatingRect(p.floating, safeW, safeH),
+        floating: clampFloatingRect(p.floating, safeW, safeH, safeScale),
       };
     }
   }
@@ -243,10 +260,57 @@ export function clampDockLayoutToViewport(
   };
 }
 
+export function rescaleDockLayoutForUiScale(
+  state: DockLayoutState,
+  fromScalePercent: number,
+  toScalePercent: number,
+  viewportW = 1440,
+  viewportH = 900
+): DockLayoutState {
+  const fromFactor = Math.max(1, fromScalePercent / 100);
+  const toFactor = Math.max(1, toScalePercent / 100);
+  const dockCurve = (f: number) => 1 + (f - 1) * 0.55;
+  const ratio = dockCurve(toFactor) / dockCurve(fromFactor);
+  if (Math.abs(ratio - 1) < 0.001) {
+    return clampDockLayoutToViewport(state, viewportW, viewportH, toFactor);
+  }
+  const scaledPanels = { ...state.panels };
+  for (const id of ['explorer', 'inspector', 'console'] as PanelId[]) {
+    const p = scaledPanels[id];
+    if (p) {
+      scaledPanels[id] = {
+        ...p,
+        floating: {
+          ...p.floating,
+          y: Math.round(p.floating.y * (toFactor / fromFactor)),
+          width: Math.round(p.floating.width * ratio),
+          height: Math.round(p.floating.height * ratio),
+        },
+      };
+    }
+  }
+  return clampDockLayoutToViewport(
+    {
+      ...state,
+      panels: scaledPanels,
+      sizes: {
+        left: Math.round(state.sizes.left * ratio),
+        right: Math.round(state.sizes.right * ratio),
+        bottom: Math.round(state.sizes.bottom * ratio),
+        top: Math.round(state.sizes.top * ratio),
+      },
+    },
+    viewportW,
+    viewportH,
+    toFactor
+  );
+}
+
 export function loadDockLayout(
   storage?: Pick<Storage, 'getItem'>,
   viewportW?: number,
-  viewportH?: number
+  viewportH?: number,
+  uiScale = 1
 ): DockLayoutState {
   const def = createDefaultDockLayout();
   const vw = viewportW ?? (typeof window !== 'undefined' ? window.innerWidth : 1440);
@@ -254,7 +318,7 @@ export function loadDockLayout(
   try {
     const store = storage || (typeof window !== 'undefined' ? window.localStorage : undefined);
     const raw = store?.getItem(DOCK_LAYOUT_STORAGE_KEY);
-    if (!raw) return clampDockLayoutToViewport(def, vw, vh);
+    if (!raw) return clampDockLayoutToViewport(def, vw, vh, uiScale);
     const parsed = JSON.parse(raw) as Partial<DockLayoutState>;
     if (!parsed || typeof parsed !== 'object' || !parsed.panels || !parsed.sizes) {
       return clampDockLayoutToViewport(def, vw, vh);
@@ -268,7 +332,7 @@ export function loadDockLayout(
           ...def.panels[id],
           ...candidate,
           id,
-          floating: clampFloatingRect(candidate.floating || def.panels[id].floating, vw, vh),
+          floating: clampFloatingRect(candidate.floating || def.panels[id].floating, vw, vh, uiScale),
         };
       }
     }
@@ -285,10 +349,11 @@ export function loadDockLayout(
         },
       },
       vw,
-      vh
+      vh,
+      uiScale
     );
   } catch {
-    return clampDockLayoutToViewport(def, vw, vh);
+    return clampDockLayoutToViewport(def, vw, vh, uiScale);
   }
 }
 
