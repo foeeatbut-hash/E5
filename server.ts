@@ -1364,21 +1364,29 @@ app.get('/api/export/codebase', async (_req, res) => {
       'index.html',
       'metadata.json',
       'server.ts',
+      '.env.example',
+      '.gitignore',
+      'ROADMAP.md',
+      'START_HERE.txt',
+      'Start_E3ProMax.cmd',
+      'Start_E3ProMax.sh',
+      'Start_E3ProMax.command',
     ];
     for (const f of includeFiles) {
       const full = path.join(root, f);
       if (fs.existsSync(full)) zip.file(f, fs.readFileSync(full));
     }
 
-    const walkSrc = (dir: string, prefix: string) => {
+    const walkDir = (dir: string, prefix: string) => {
       if (!fs.existsSync(dir)) return;
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walkSrc(full, `${prefix}${entry.name}/`);
+        if (entry.isDirectory()) walkDir(full, `${prefix}${entry.name}/`);
         else zip.file(`${prefix}${entry.name}`, fs.readFileSync(full));
       }
     };
-    walkSrc(path.join(root, 'src'), 'src/');
+    walkDir(path.join(root, 'src'), 'src/');
+    walkDir(path.join(root, 'public', 'fonts'), 'public/fonts/');
 
     const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
     res.setHeader('Content-Type', 'application/zip');
@@ -1494,7 +1502,7 @@ function resolveDistDir(): string {
 }
 
 function listenWithFallback(preferredPort: number): Promise<number> {
-  const maxOffset = process.env.FLUX_PORTABLE === '1' ? 20 : 0;
+  const maxOffset = process.env.FLUX_PORTABLE === '1' || process.env.FLUX_AUTO_PORT === '1' ? 20 : 0;
   return new Promise((resolve, reject) => {
     const tryListen = (offset: number) => {
       const candidate = preferredPort + offset;
@@ -1545,12 +1553,19 @@ async function start() {
   });
   console.log(`E3ProMax server running on http://0.0.0.0:${actualPort} (${localUrl})`);
 
-  if (process.env.FLUX_OPEN_BROWSER === '1' && process.platform === 'win32') {
-    execFile('cmd.exe', ['/c', 'start', '', localUrl], (err) => {
+  if (process.env.FLUX_OPEN_BROWSER === '1') {
+    const openBrowserErrCb = (err: Error | null) => {
       if (err) {
         diagLogger.log('WARN', 'PORTABLE', `Не удалось автооткрыть браузер: ${err.message}`);
       }
-    });
+    };
+    if (process.platform === 'win32') {
+      execFile('cmd.exe', ['/c', 'start', '', localUrl], openBrowserErrCb);
+    } else if (process.platform === 'darwin') {
+      execFile('open', [localUrl], openBrowserErrCb);
+    } else if (process.platform === 'linux') {
+      execFile('xdg-open', [localUrl], openBrowserErrCb);
+    }
   }
 }
 
