@@ -414,7 +414,13 @@ const AppMenuActionRow: React.FC<AppMenuActionRowProps> = ({
   );
 };
 
-export const TopToolbar: React.FC<TopToolbarProps> = ({
+const parseFiniteNum = (raw: string): number | null => {
+  if (raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+};
+
+export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   project,
   activeSheet,
   tool,
@@ -1658,8 +1664,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                               max="6"
                               value={vs.symbolStrokeWidth}
                               onChange={(e) => {
-                                const val = Math.max(0.5, Math.min(6, Number(e.target.value) || 1.8));
-                                onUpdateVisualSettings?.({ symbolStrokeWidth: val });
+                                const parsed = parseFiniteNum(e.target.value);
+                                if (parsed === null) return;
+                                onUpdateVisualSettings?.({ symbolStrokeWidth: Math.max(0.5, Math.min(6, parsed)) });
                               }}
                               className="h-[22px] w-14 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)] text-right"
                             />
@@ -1675,8 +1682,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                               max="6"
                               value={vs.wireWidth}
                               onChange={(e) => {
-                                const val = Math.max(0.5, Math.min(6, Number(e.target.value) || 2));
-                                onUpdateVisualSettings?.({ wireWidth: val });
+                                const parsed = parseFiniteNum(e.target.value);
+                                if (parsed === null) return;
+                                onUpdateVisualSettings?.({ wireWidth: Math.max(0.5, Math.min(6, parsed)) });
                               }}
                               className="h-[22px] w-14 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)] text-right"
                             />
@@ -1692,8 +1700,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                               max="6"
                               value={vs.frameStrokeWidth ?? 1.6}
                               onChange={(e) => {
-                                const val = Math.max(0.5, Math.min(6, Number(e.target.value) || 1.6));
-                                onUpdateVisualSettings?.({ frameStrokeWidth: val });
+                                const parsed = parseFiniteNum(e.target.value);
+                                if (parsed === null) return;
+                                onUpdateVisualSettings?.({ frameStrokeWidth: Math.max(0.5, Math.min(6, parsed)) });
                               }}
                               className="h-[22px] w-14 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)] text-right"
                             />
@@ -1709,8 +1718,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                               max="6"
                               value={vs.annotationStrokeWidth ?? 1.4}
                               onChange={(e) => {
-                                const val = Math.max(0.5, Math.min(6, Number(e.target.value) || 1.4));
-                                onUpdateVisualSettings?.({ annotationStrokeWidth: val });
+                                const parsed = parseFiniteNum(e.target.value);
+                                if (parsed === null) return;
+                                onUpdateVisualSettings?.({ annotationStrokeWidth: Math.max(0.5, Math.min(6, parsed)) });
                               }}
                               className="h-[22px] w-14 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)] text-right"
                             />
@@ -2281,11 +2291,12 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                             <select
                               aria-label="Толщина линии примитива"
                               value={symbolWorkspace.draft.activeStyle.strokeWidth}
-                              onChange={(e) =>
-                                symbolWorkspace.onUpdateStyle({
-                                  strokeWidth: Number(e.target.value) || 1.8,
-                                })
-                              }
+                              onChange={(e) => {
+                                const parsed = parseFiniteNum(e.target.value);
+                                if (parsed !== null) {
+                                  symbolWorkspace.onUpdateStyle({ strokeWidth: parsed });
+                                }
+                              }}
                               className="h-[22px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10.5px] text-[var(--flux-text)]"
                             >
                               <option value={1}>1.0 мм</option>
@@ -2486,4 +2497,5 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
       </div>
     </header>
   );
-};
+});
+TopToolbar.displayName = 'TopToolbar';

@@ -33,6 +33,15 @@ export const PublishModal: React.FC<PublishModalProps> = ({
     setErrorMsg(null);
   }, [open, project.sheets]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, busy, onClose]);
+
   const toggleSheet = (id: string) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -96,9 +105,10 @@ export const PublishModal: React.FC<PublishModalProps> = ({
               </div>
               <button
                 type="button"
+                disabled={busy}
                 onClick={onClose}
                 aria-label="Закрыть окно публикации"
-                className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-40"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -288,8 +298,9 @@ export const PublishModal: React.FC<PublishModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              disabled={busy}
               onClick={onClose}
-              className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] text-[var(--flux-text)]"
+              className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] text-[var(--flux-text)] disabled:opacity-40"
             >
               Отмена
             </button>

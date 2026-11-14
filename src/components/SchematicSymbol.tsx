@@ -28,7 +28,7 @@ interface SchematicSymbolProps {
   onPinHover?: (device: E3Device, pinId: string | null) => void;
 }
 
-export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
+export const SchematicSymbol: React.FC<SchematicSymbolProps> = React.memo(({
   device,
   selected,
   locked = false,
@@ -1018,4 +1018,6 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
       )}
     </g>
   );
-};
+});
+
+SchematicSymbol.displayName = 'SchematicSymbol';

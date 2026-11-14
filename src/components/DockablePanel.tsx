@@ -185,7 +185,7 @@ interface DockablePanelFrameProps {
   children: React.ReactNode;
 }
 
-export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = ({
+export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = React.memo(({
   panel,
   edge,
   bandSize,
@@ -348,14 +348,15 @@ export const DockablePanelFrame: React.FC<DockablePanelFrameProps> = ({
       </AnimatePresence>
     </motion.div>
   );
-};
+});
+DockablePanelFrame.displayName = 'DockablePanelFrame';
 
 interface DockResizeHandleProps {
   edge: DockEdge;
   onResizeStart: (edge: DockEdge, e: React.PointerEvent) => void;
 }
 
-export const DockResizeHandle: React.FC<DockResizeHandleProps> = ({ edge, onResizeStart }) => {
+export const DockResizeHandle: React.FC<DockResizeHandleProps> = React.memo(({ edge, onResizeStart }) => {
   const isVertical = edge === 'left' || edge === 'right';
   return (
     <motion.div
@@ -379,7 +380,8 @@ export const DockResizeHandle: React.FC<DockResizeHandleProps> = ({ edge, onResi
       />
     </motion.div>
   );
-};
+});
+DockResizeHandle.displayName = 'DockResizeHandle';
 
 interface FloatingPanelWindowProps {
   panel: PanelConfig;
@@ -391,7 +393,7 @@ interface FloatingPanelWindowProps {
   children: React.ReactNode;
 }
 
-export const FloatingPanelWindow: React.FC<FloatingPanelWindowProps> = ({
+export const FloatingPanelWindow: React.FC<FloatingPanelWindowProps> = React.memo(({
   panel,
   isResizing = false,
   onStartDrag,
@@ -451,12 +453,13 @@ export const FloatingPanelWindow: React.FC<FloatingPanelWindowProps> = ({
       </AnimatePresence>
     </motion.div>
   );
-};
+});
+FloatingPanelWindow.displayName = 'FloatingPanelWindow';
 
 export const DockDropOverlay: React.FC<{
   drag: ActivePanelDrag | null;
   bounds: { left: number; top: number; width: number; height: number } | null;
-}> = ({ drag, bounds }) => (
+}> = React.memo(({ drag, bounds }) => (
   <AnimatePresence>
     {drag && bounds && (
       <motion.div
@@ -468,44 +471,55 @@ export const DockDropOverlay: React.FC<{
         className="no-print fixed z-50 pointer-events-none"
         style={{ left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }}
       >
-        <div
-          className={`absolute flex items-center justify-center border-2 rounded transition-all pointer-events-none text-[11px] font-semibold tracking-wide left-2 top-16 bottom-16 w-20 ${
+        <motion.div
+          animate={{ scale: drag.hoverTarget === 'left' ? 1.02 : 1 }}
+          transition={CAD_FAST_TRANSITION}
+          className={`absolute flex items-center justify-center border-2 rounded transition-colors pointer-events-none text-[11px] font-semibold tracking-wide left-2 top-16 bottom-16 w-20 ${
             drag.hoverTarget === 'left'
               ? 'border-[var(--flux-accent)] bg-[var(--flux-accent)]/20 text-[var(--flux-text)]'
               : 'border-dashed border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/45 text-[var(--flux-text-muted)]'
           }`}
         >
           <span className="-rotate-90 whitespace-nowrap">Слева</span>
-        </div>
-        <div
-          className={`absolute flex items-center justify-center border-2 rounded transition-all pointer-events-none text-[11px] font-semibold tracking-wide right-2 top-16 bottom-16 w-20 ${
+        </motion.div>
+        <motion.div
+          animate={{ scale: drag.hoverTarget === 'right' ? 1.02 : 1 }}
+          transition={CAD_FAST_TRANSITION}
+          className={`absolute flex items-center justify-center border-2 rounded transition-colors pointer-events-none text-[11px] font-semibold tracking-wide right-2 top-16 bottom-16 w-20 ${
             drag.hoverTarget === 'right'
               ? 'border-[var(--flux-accent)] bg-[var(--flux-accent)]/20 text-[var(--flux-text)]'
               : 'border-dashed border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/45 text-[var(--flux-text-muted)]'
           }`}
         >
           <span className="rotate-90 whitespace-nowrap">Справа</span>
-        </div>
-        <div
-          className={`absolute flex items-center justify-center border-2 rounded transition-all pointer-events-none text-[11px] font-semibold tracking-wide top-2 left-24 right-24 h-12 ${
+        </motion.div>
+        <motion.div
+          animate={{ scale: drag.hoverTarget === 'top' ? 1.015 : 1 }}
+          transition={CAD_FAST_TRANSITION}
+          className={`absolute flex items-center justify-center border-2 rounded transition-colors pointer-events-none text-[11px] font-semibold tracking-wide top-2 left-24 right-24 h-12 ${
             drag.hoverTarget === 'top'
               ? 'border-[var(--flux-accent)] bg-[var(--flux-accent)]/20 text-[var(--flux-text)]'
               : 'border-dashed border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/45 text-[var(--flux-text-muted)]'
           }`}
         >
           <span>Сверху</span>
-        </div>
-        <div
-          className={`absolute flex items-center justify-center border-2 rounded transition-all pointer-events-none text-[11px] font-semibold tracking-wide bottom-2 left-24 right-24 h-14 ${
+        </motion.div>
+        <motion.div
+          animate={{ scale: drag.hoverTarget === 'bottom' ? 1.015 : 1 }}
+          transition={CAD_FAST_TRANSITION}
+          className={`absolute flex items-center justify-center border-2 rounded transition-colors pointer-events-none text-[11px] font-semibold tracking-wide bottom-2 left-24 right-24 h-14 ${
             drag.hoverTarget === 'bottom'
               ? 'border-[var(--flux-accent)] bg-[var(--flux-accent)]/20 text-[var(--flux-text)]'
               : 'border-dashed border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/45 text-[var(--flux-text-muted)]'
           }`}
         >
           <span>Снизу</span>
-        </div>
+        </motion.div>
         {!drag.wasFloating && drag.hoverTarget === 'floating' && (
-          <div
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={CAD_FAST_TRANSITION}
             className="fixed border-2 border-[var(--flux-accent)] bg-[var(--flux-accent)]/10 rounded pointer-events-none shadow-lg flex items-center justify-center text-[11px] font-semibold text-[var(--flux-text)]"
             style={{
               left: Math.max(12, drag.currentX - 140),
@@ -515,10 +529,11 @@ export const DockDropOverlay: React.FC<{
             }}
           >
             Плавающее окно
-          </div>
+          </motion.div>
         )}
       </motion.div>
     )}
   </AnimatePresence>
-);
+));
+DockDropOverlay.displayName = 'DockDropOverlay';
 

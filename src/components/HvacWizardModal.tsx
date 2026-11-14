@@ -177,6 +177,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
               <input
                 id="wiz-systag"
                 type="text"
+                spellCheck={false}
                 value={specs.systemTag}
                 onChange={(e) => setSpecs({ ...specs, systemTag: e.target.value })}
                 className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
@@ -189,6 +190,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
               <input
                 id="wiz-cabtag"
                 type="text"
+                spellCheck={false}
                 value={specs.cabinetTag}
                 onChange={(e) => setSpecs({ ...specs, cabinetTag: e.target.value })}
                 className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
@@ -306,21 +308,29 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
             {selectionMode === 'flux' && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
                 <div>
-                  <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">
+                  <label htmlFor="wiz-fan-power" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">
                     Мощность вентилятора (кВт)
                   </label>
                   <input
+                    id="wiz-fan-power"
                     type="number"
                     step="0.1"
                     min="0.1"
                     value={specs.fanPowerKw}
-                    onChange={(e) => setSpecs({ ...specs, fanPowerKw: Number(e.target.value) || 2.2 })}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      setSpecs({
+                        ...specs,
+                        fanPowerKw: Number.isFinite(n) ? Math.max(0.1, n) : specs.fanPowerKw,
+                      });
+                    }}
                     className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[var(--flux-text)]"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Нагрев</label>
+                  <label htmlFor="wiz-heating" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Нагрев</label>
                   <select
+                    id="wiz-heating"
                     value={specs.heatingType}
                     onChange={(e) => {
                       const nextSpecs = { ...specs, heatingType: e.target.value as FluxHvacSpecs['heatingType'] };
@@ -335,8 +345,9 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Напряжение приводов</label>
+                  <label htmlFor="wiz-voltage" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Напряжение приводов</label>
                   <select
+                    id="wiz-voltage"
                     value={specs.voltage}
                     onChange={(e) => setSpecs({ ...specs, voltage: e.target.value as FluxHvacSpecs['voltage'] })}
                     className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text)]"
@@ -347,8 +358,9 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Зона / Исполнение</label>
+                  <label htmlFor="wiz-exzone" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Зона / Исполнение</label>
                   <select
+                    id="wiz-exzone"
                     value={specs.exZone}
                     onChange={(e) => setSpecs({ ...specs, exZone: e.target.value as 'non-Ex' | 'Exd' })}
                     className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text)]"
@@ -401,6 +413,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                     </select>
                     <input
                       type="text"
+                      spellCheck={false}
                       value={stg.tagOverride || ''}
                       onChange={(e) =>
                         setStages((prev) =>
@@ -452,6 +465,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
             {/* Add Stage Row */}
             <div className="flex items-center gap-2 pt-1">
               <select
+                aria-label="Тип добавляемой секции ФСА"
                 value={addRole}
                 onChange={(e) => setAddRole(e.target.value as HvacStageRole)}
                 className="h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[12px] text-[var(--flux-text)]"

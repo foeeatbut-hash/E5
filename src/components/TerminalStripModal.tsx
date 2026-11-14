@@ -437,6 +437,8 @@ export const TerminalStripModal: React.FC<TerminalStripModalProps> = ({
                               <td className="px-2.5 py-1.5 min-w-[150px]">
                                 <input
                                   type="text"
+                                  spellCheck={false}
+                                  aria-label={`Примечание для клеммы ${row.poleKey}`}
                                   data-testid={`xt-pole-label-${row.poleKey}`}
                                   value={labelVal}
                                   placeholder="Напр. +24В / Пуск"

@@ -76,6 +76,15 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
       });
   }, [open, project.author, project.fluxProjectKey, project.id]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busyZip && !busyPush) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, busyZip, busyPush, onClose]);
+
   const manifestPreview = useMemo(
     () =>
       buildFluxStudioManifest(project, {
@@ -233,9 +242,10 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
               </div>
               <button
                 type="button"
+                disabled={busyZip || busyPush}
                 onClick={onClose}
                 aria-label="Закрыть окно публикации во Flux Studio"
-                className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-40"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -264,11 +274,13 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
 
                 <div className="grid grid-cols-2 gap-2.5">
                   <div>
-                    <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                    <label htmlFor="flux-pub-id" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                       ID подпрограммы
                     </label>
                     <input
+                      id="flux-pub-id"
                       type="text"
+                      spellCheck={false}
                       value={moduleId}
                       onChange={(e) => setModuleId(e.target.value)}
                       className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11.5px] text-[var(--flux-text)]"
@@ -281,6 +293,7 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
                     <div className="grid grid-cols-2 gap-1.5">
                       <input
                         type="text"
+                        spellCheck={false}
                         value={version}
                         onChange={(e) => setVersion(e.target.value)}
                         aria-label="Версия модуля"
@@ -288,6 +301,7 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
                       />
                       <input
                         type="text"
+                        spellCheck={false}
                         value={fluxMinVersion}
                         onChange={(e) => setFluxMinVersion(e.target.value)}
                         aria-label="Минимальная версия Flux"
@@ -298,10 +312,11 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                  <label htmlFor="flux-pub-name" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                     Название в каталоге Flux Studio
                   </label>
                   <input
+                    id="flux-pub-name"
                     type="text"
                     value={moduleName}
                     onChange={(e) => setModuleName(e.target.value)}
@@ -311,10 +326,11 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
 
                 <div className="grid grid-cols-2 gap-2.5">
                   <div>
-                    <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                    <label htmlFor="flux-pub-uimode" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                       Режим UI в Flux
                     </label>
                     <select
+                      id="flux-pub-uimode"
                       value={uiMode}
                       onChange={(e) => setUiMode(e.target.value as FluxUiMode)}
                       className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11.5px] text-[var(--flux-text)]"
@@ -324,11 +340,13 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                    <label htmlFor="flux-pub-key" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                       Ключ проекта Flux
                     </label>
                     <input
+                      id="flux-pub-key"
                       type="text"
+                      spellCheck={false}
                       value={fluxProjectKey}
                       onChange={(e) => setFluxProjectKey(e.target.value)}
                       data-testid="flux-project-key-input"
@@ -339,10 +357,11 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
 
                 <div className="grid grid-cols-12 gap-2.5">
                   <div className="col-span-5">
-                    <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                    <label htmlFor="flux-pub-author" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                       Автор / Отдел
                     </label>
                     <input
+                      id="flux-pub-author"
                       type="text"
                       value={author}
                       onChange={(e) => setAuthor(e.target.value)}
@@ -350,11 +369,13 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                    <label htmlFor="flux-pub-cat" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                       Раздел
                     </label>
                     <input
+                      id="flux-pub-cat"
                       type="text"
+                      spellCheck={false}
                       value={category}
                       onChange={(e) => setCategory(e.target.value)}
                       aria-label="Категория в Flux Studio"
@@ -376,10 +397,11 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                  <label htmlFor="flux-pub-summary" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                     Описание для магазина / реестра Flux Studio
                   </label>
                   <textarea
+                    id="flux-pub-summary"
                     rows={2}
                     value={summary}
                     onChange={(e) => setSummary(e.target.value)}
@@ -471,8 +493,9 @@ export const FluxStudioPublishModal: React.FC<FluxStudioPublishModalProps> = ({
             <div className="px-4 py-3 border-t border-[var(--flux-line)] bg-[var(--flux-surface)] flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
+                disabled={busyZip || busyPush}
                 onClick={onClose}
-                className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] text-[var(--flux-text)]"
+                className="h-8 px-3 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[12px] text-[var(--flux-text)] disabled:opacity-40"
               >
                 Закрыть
               </button>

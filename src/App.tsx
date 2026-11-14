@@ -325,6 +325,9 @@ export default function App() {
     2: { zoom: 0.36, pan: { x: 20, y: 12 } },
     3: { zoom: 0.36, pan: { x: 20, y: 12 } },
   });
+  const viewportTransformsRef = useRef(viewportTransforms);
+  viewportTransformsRef.current = viewportTransforms;
+  const cameraAnimRef = useRef<Record<number, number>>({});
 
   // Dockable & resizable panel layout (clamped to real viewport on mount & resize)
   const [dockLayout, setDockLayout] = useState<DockLayoutState>(() => {
@@ -468,6 +471,12 @@ export default function App() {
     selectedPinIndex: null,
     dirty: false,
   }));
+  const symbolDraftRef = useRef(symbolDraft);
+  symbolDraftRef.current = symbolDraft;
+  const symbolUndoRef = useRef(symbolUndoStack);
+  symbolUndoRef.current = symbolUndoStack;
+  const symbolRedoRef = useRef(symbolRedoStack);
+  symbolRedoRef.current = symbolRedoStack;
 
   const [logs, setLogs] = useState<ProcessLogEntry[]>(() => [
     {
@@ -1617,6 +1626,8 @@ export default function App() {
               sym.e3BlockName,
               sym.defaultPins
             );
+      symbolUndoRef.current = [];
+      symbolRedoRef.current = [];
       setSymbolUndoStack([]);
       setSymbolRedoStack([]);
       setSymbolDraft((prev) => ({
@@ -1658,6 +1669,8 @@ export default function App() {
         ? mergedSymbolLibrary.find((s) => s.id === item.symbolId)
         : mergedSymbolLibrary.find((s) => s.e3BlockName === item.e3BlockName);
       const sym = linkedSym && !item.customSymbol?.shapes.length ? linkedSym : buildSymbolDefFromCatalogItem(item);
+      symbolUndoRef.current = [];
+      symbolRedoRef.current = [];
       setSymbolUndoStack([]);
       setSymbolRedoStack([]);
       setSymbolDraft((prev) => ({
@@ -1711,6 +1724,8 @@ export default function App() {
       const matchingCat = mergedCatalog.find(
         (c) => (dev.symbolId && c.symbolId === dev.symbolId) || c.e3BlockName === dev.e3BlockName
       );
+      symbolUndoRef.current = [];
+      symbolRedoRef.current = [];
       setSymbolUndoStack([]);
       setSymbolRedoStack([]);
       setSymbolDraft((prev) => ({
@@ -1775,6 +1790,8 @@ export default function App() {
               seed.e3BlockName,
               seed.pins
             );
+      symbolUndoRef.current = [];
+      symbolRedoRef.current = [];
       setSymbolUndoStack([]);
       setSymbolRedoStack([]);
       setSymbolDraft((prev) => ({
@@ -1810,6 +1827,8 @@ export default function App() {
   const createNewBlankSymbolInWorkspace = useCallback(() => {
     const preset = buildSymbolDesignerPreset('blank_box');
     const suffix = Date.now().toString(36).slice(-4).toUpperCase();
+    symbolUndoRef.current = [];
+    symbolRedoRef.current = [];
     setSymbolUndoStack([]);
     setSymbolRedoStack([]);
     setSymbolDraft((prev) => ({
@@ -1864,86 +1883,92 @@ export default function App() {
       nextPins: Omit<E3Pin, 'id'>[],
       bounds?: { width?: number; height?: number }
     ) => {
-      setSymbolDraft((prev) => {
-        setSymbolUndoStack((u) => [
-          ...u.slice(-29),
-          {
-            width: prev.width,
-            height: prev.height,
-            shapes: structuredClone(prev.shapes),
-            pins: structuredClone(prev.pins),
-          },
-        ]);
-        setSymbolRedoStack([]);
-        return {
-          ...prev,
-          width: bounds?.width ?? prev.width,
-          height: bounds?.height ?? prev.height,
-          shapes: nextShapes,
-          pins: nextPins,
-          dirty: true,
-        };
-      });
+      const prev = symbolDraftRef.current;
+      const snap: SymbolGeoSnapshot = {
+        width: prev.width,
+        height: prev.height,
+        shapes: structuredClone(prev.shapes),
+        pins: structuredClone(prev.pins),
+      };
+      const nextUndo = [...symbolUndoRef.current.slice(-29), snap];
+      const nextDraft: SymbolWorkspaceDraft = {
+        ...prev,
+        width: bounds?.width ?? prev.width,
+        height: bounds?.height ?? prev.height,
+        shapes: nextShapes,
+        pins: nextPins,
+        dirty: true,
+      };
+      symbolUndoRef.current = nextUndo;
+      symbolRedoRef.current = [];
+      symbolDraftRef.current = nextDraft;
+      setSymbolUndoStack(nextUndo);
+      setSymbolRedoStack([]);
+      setSymbolDraft(nextDraft);
     },
     []
   );
 
   const undoSymbolEditor = useCallback(() => {
-    setSymbolUndoStack((past) => {
-      if (past.length === 0) return past;
-      const prevSnap = past[past.length - 1];
-      setSymbolDraft((curr) => {
-        setSymbolRedoStack((r) => [
-          {
-            width: curr.width,
-            height: curr.height,
-            shapes: structuredClone(curr.shapes),
-            pins: structuredClone(curr.pins),
-          },
-          ...r.slice(0, 29),
-        ]);
-        return {
-          ...curr,
-          width: prevSnap.width,
-          height: prevSnap.height,
-          shapes: prevSnap.shapes,
-          pins: prevSnap.pins,
-          selectedShapeId: null,
-          selectedPinIndex: null,
-          dirty: true,
-        };
-      });
-      return past.slice(0, -1);
-    });
+    const past = symbolUndoRef.current;
+    if (past.length === 0) return;
+    const prevSnap = past[past.length - 1];
+    const curr = symbolDraftRef.current;
+    const redoEntry: SymbolGeoSnapshot = {
+      width: curr.width,
+      height: curr.height,
+      shapes: structuredClone(curr.shapes),
+      pins: structuredClone(curr.pins),
+    };
+    const nextPast = past.slice(0, -1);
+    const nextRedo = [redoEntry, ...symbolRedoRef.current.slice(0, 29)];
+    const nextDraft: SymbolWorkspaceDraft = {
+      ...curr,
+      width: prevSnap.width,
+      height: prevSnap.height,
+      shapes: prevSnap.shapes,
+      pins: prevSnap.pins,
+      selectedShapeId: null,
+      selectedPinIndex: null,
+      dirty: true,
+    };
+    symbolUndoRef.current = nextPast;
+    symbolRedoRef.current = nextRedo;
+    symbolDraftRef.current = nextDraft;
+    setSymbolUndoStack(nextPast);
+    setSymbolRedoStack(nextRedo);
+    setSymbolDraft(nextDraft);
   }, []);
 
   const redoSymbolEditor = useCallback(() => {
-    setSymbolRedoStack((fut) => {
-      if (fut.length === 0) return fut;
-      const nextSnap = fut[0];
-      setSymbolDraft((curr) => {
-        setSymbolUndoStack((u) => [
-          ...u.slice(-29),
-          {
-            width: curr.width,
-            height: curr.height,
-            shapes: structuredClone(curr.shapes),
-            pins: structuredClone(curr.pins),
-          },
-        ]);
-        return {
-          ...curr,
-          width: nextSnap.width,
-          height: nextSnap.height,
-          shapes: nextSnap.shapes,
-          pins: nextSnap.pins,
-          selectedShapeId: null,
-          selectedPinIndex: null,
-          dirty: true,
-        };
-      });
-      return fut.slice(1);
-    });
+    const fut = symbolRedoRef.current;
+    if (fut.length === 0) return;
+    const nextSnap = fut[0];
+    const curr = symbolDraftRef.current;
+    const undoEntry: SymbolGeoSnapshot = {
+      width: curr.width,
+      height: curr.height,
+      shapes: structuredClone(curr.shapes),
+      pins: structuredClone(curr.pins),
+    };
+    const nextUndo = [...symbolUndoRef.current.slice(-29), undoEntry];
+    const nextFut = fut.slice(1);
+    const nextDraft: SymbolWorkspaceDraft = {
+      ...curr,
+      width: nextSnap.width,
+      height: nextSnap.height,
+      shapes: nextSnap.shapes,
+      pins: nextSnap.pins,
+      selectedShapeId: null,
+      selectedPinIndex: null,
+      dirty: true,
+    };
+    symbolUndoRef.current = nextUndo;
+    symbolRedoRef.current = nextFut;
+    symbolDraftRef.current = nextDraft;
+    setSymbolUndoStack(nextUndo);
+    setSymbolRedoStack(nextFut);
+    setSymbolDraft(nextDraft);
   }, []);
 
   const saveSymbolWorkspace = useCallback(
@@ -2130,6 +2155,8 @@ export default function App() {
         symbolLibrary: [...(prev.symbolLibrary || []), newSym],
       }));
 
+      symbolUndoRef.current = [];
+      symbolRedoRef.current = [];
       setSymbolUndoStack([]);
       setSymbolRedoStack([]);
       setSymbolDraft((prev) => ({
@@ -2197,24 +2224,26 @@ export default function App() {
           selectedShapeId: pinIndex !== null ? null : prev.selectedShapeId,
         })),
       onDeleteSelection: () => {
-        if (symbolDraft.selectedShapeId) {
-          const id = symbolDraft.selectedShapeId;
+        const cur = symbolDraftRef.current;
+        if (cur.selectedShapeId) {
+          const id = cur.selectedShapeId;
           commitSymbolGeometry(
-            symbolDraft.shapes.filter((s) => s.id !== id),
-            symbolDraft.pins
+            cur.shapes.filter((s) => s.id !== id),
+            cur.pins
           );
           setSymbolDraft((prev) => ({ ...prev, selectedShapeId: null }));
-        } else if (symbolDraft.selectedPinIndex !== null) {
-          const pIdx = symbolDraft.selectedPinIndex;
+        } else if (cur.selectedPinIndex !== null) {
+          const pIdx = cur.selectedPinIndex;
           commitSymbolGeometry(
-            symbolDraft.shapes,
-            symbolDraft.pins.filter((_, idx) => idx !== pIdx)
+            cur.shapes,
+            cur.pins.filter((_, idx) => idx !== pIdx)
           );
           setSymbolDraft((prev) => ({ ...prev, selectedPinIndex: null }));
         }
       },
       onDuplicateSelectedShape: () => {
-        const sh = symbolDraft.shapes.find((s) => s.id === symbolDraft.selectedShapeId);
+        const cur = symbolDraftRef.current;
+        const sh = cur.shapes.find((s) => s.id === cur.selectedShapeId);
         if (!sh) return;
         const copyId = `sh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
         let cloned: CustomSymbolShape = { ...structuredClone(sh), id: copyId };
@@ -2227,34 +2256,33 @@ export default function App() {
         } else {
           cloned = { ...cloned, x: cloned.x + 10, y: cloned.y + 10 };
         }
-        commitSymbolGeometry([...symbolDraft.shapes, cloned], symbolDraft.pins);
+        commitSymbolGeometry([...cur.shapes, cloned], cur.pins);
         setSymbolDraft((prev) => ({ ...prev, selectedShapeId: copyId }));
       },
       onMoveShapeOrder: (dir) => {
-        const idx = symbolDraft.shapes.findIndex((s) => s.id === symbolDraft.selectedShapeId);
+        const cur = symbolDraftRef.current;
+        const idx = cur.shapes.findIndex((s) => s.id === cur.selectedShapeId);
         if (idx < 0) return;
         const nextIdx = dir === 'up' ? idx + 1 : idx - 1;
-        if (nextIdx < 0 || nextIdx >= symbolDraft.shapes.length) return;
-        const next = [...symbolDraft.shapes];
+        if (nextIdx < 0 || nextIdx >= cur.shapes.length) return;
+        const next = [...cur.shapes];
         const [item] = next.splice(idx, 1);
         next.splice(nextIdx, 0, item);
-        commitSymbolGeometry(next, symbolDraft.pins);
+        commitSymbolGeometry(next, cur.pins);
       },
       onRotateBlockCW: () => {
-        const rot = rotateSymbolGeometryCW(
-          symbolDraft.width,
-          symbolDraft.height,
-          symbolDraft.shapes,
-          symbolDraft.pins
-        );
+        const cur = symbolDraftRef.current;
+        const rot = rotateSymbolGeometryCW(cur.width, cur.height, cur.shapes, cur.pins);
         commitSymbolGeometry(rot.shapes, rot.pins, { width: rot.width, height: rot.height });
       },
       onMirrorBlockX: () => {
-        const mir = mirrorSymbolGeometryX(symbolDraft.width, symbolDraft.shapes, symbolDraft.pins);
+        const cur = symbolDraftRef.current;
+        const mir = mirrorSymbolGeometryX(cur.width, cur.shapes, cur.pins);
         commitSymbolGeometry(mir.shapes, mir.pins);
       },
       onMirrorBlockY: () => {
-        const mir = mirrorSymbolGeometryY(symbolDraft.height, symbolDraft.shapes, symbolDraft.pins);
+        const cur = symbolDraftRef.current;
+        const mir = mirrorSymbolGeometryY(cur.height, cur.shapes, cur.pins);
         commitSymbolGeometry(mir.shapes, mir.pins);
       },
       onApplyAttributeTemplate: (presetId) => {
@@ -2275,11 +2303,12 @@ export default function App() {
       onOpenCatalogItemInEditor: openCatalogItemInWorkspace,
       onCreateNewBlankSymbol: createNewBlankSymbolInWorkspace,
       onCreateNewComponentFromSymbol: () => {
+        const cur = symbolDraftRef.current;
         const suffix = Date.now().toString(36).slice(-4).toUpperCase();
         saveSymbolAsCopyWorkspace(
-          `${symbolDraft.componentName || symbolDraft.name} (изделие ${suffix})`,
-          `${symbolDraft.e3BlockName}_${suffix}`,
-          `${symbolDraft.article || 'E3'}-${suffix}`
+          `${cur.componentName || cur.name} (изделие ${suffix})`,
+          `${cur.e3BlockName}_${suffix}`,
+          `${cur.article || 'E3'}-${suffix}`
         );
       },
       onSaveCurrent: () => {
@@ -2325,8 +2354,61 @@ export default function App() {
     ]
   );
 
+  const cancelCameraAnim = useCallback((vpIdx: number) => {
+    const raf = cameraAnimRef.current[vpIdx];
+    if (raf) {
+      window.cancelAnimationFrame(raf);
+      delete cameraAnimRef.current[vpIdx];
+    }
+  }, []);
+
+  const animateCameraTo = useCallback(
+    (vpIdx: number, targetZoom: number, targetPan: { x: number; y: number }, animate = true) => {
+      cancelCameraAnim(vpIdx);
+      const cur = viewportTransformsRef.current[vpIdx] || { zoom: 0.56, pan: { x: 24, y: 12 } };
+      if (
+        !animate ||
+        (Math.abs(cur.zoom - targetZoom) < 0.002 &&
+          Math.abs(cur.pan.x - targetPan.x) < 1 &&
+          Math.abs(cur.pan.y - targetPan.y) < 1)
+      ) {
+        setViewportTransforms((prev) => ({
+          ...prev,
+          [vpIdx]: { zoom: targetZoom, pan: targetPan },
+        }));
+        return;
+      }
+      const startZoom = cur.zoom;
+      const startPanX = cur.pan.x;
+      const startPanY = cur.pan.y;
+      const startTime = performance.now();
+      const durationMs = 175;
+      const step = (now: number) => {
+        const t = Math.min(1, (now - startTime) / durationMs);
+        const eased = 1 - Math.pow(1 - t, 3);
+        const z = startZoom + (targetZoom - startZoom) * eased;
+        const px = startPanX + (targetPan.x - startPanX) * eased;
+        const py = startPanY + (targetPan.y - startPanY) * eased;
+        setViewportTransforms((prev) => ({
+          ...prev,
+          [vpIdx]: {
+            zoom: t >= 1 ? targetZoom : z,
+            pan: t >= 1 ? targetPan : { x: px, y: py },
+          },
+        }));
+        if (t < 1) {
+          cameraAnimRef.current[vpIdx] = window.requestAnimationFrame(step);
+        } else {
+          delete cameraAnimRef.current[vpIdx];
+        }
+      };
+      cameraAnimRef.current[vpIdx] = window.requestAnimationFrame(step);
+    },
+    [cancelCameraAnim]
+  );
+
   const fitSheetToViewport = useCallback(
-    (sheetObj?: E3Sheet, vpIdx = activeViewportIdx) => {
+    (sheetObj?: E3Sheet, vpIdx = activeViewportIdx, animate = false) => {
       const target =
         sheetObj || project.sheets.find((s) => s.id === activeSheetId) || project.sheets[0];
       if (!target) return;
@@ -2339,16 +2421,13 @@ export default function App() {
       const clampedZ = Math.min(1.2, Math.max(0.14, Math.floor(fitZ * 100) / 100));
       const panX = Math.max(8, Math.round((vw - target.width * clampedZ) / 2));
       const panY = Math.max(6, Math.round((vh - target.height * clampedZ) / 2));
-      setViewportTransforms((prev) => ({
-        ...prev,
-        [vpIdx]: { zoom: clampedZ, pan: { x: panX, y: panY } },
-      }));
+      animateCameraTo(vpIdx, clampedZ, { x: panX, y: panY }, animate);
     },
-    [project.sheets, activeSheetId, activeViewportIdx]
+    [project.sheets, activeSheetId, activeViewportIdx, animateCameraTo]
   );
 
   const centerCameraOnCoords = useCallback(
-    (sheetId: string, worldX: number, worldY: number, vpIdx = activeViewportIdx) => {
+    (sheetId: string, worldX: number, worldY: number, vpIdx = activeViewportIdx, animate = true) => {
       setActiveSheetId(sheetId);
       setViewportSheetIds((prev) => prev.map((sId, idx) => (idx === vpIdx ? sheetId : sId)));
       window.requestAnimationFrame(() => {
@@ -2357,23 +2436,20 @@ export default function App() {
         const rect = el?.getBoundingClientRect();
         const vw = rect?.width && rect.width > 100 ? rect.width : 820;
         const vh = rect?.height && rect.height > 100 ? rect.height : 500;
-        setViewportTransforms((prev) => {
-          const curZoom = prev[vpIdx]?.zoom ?? 0.56;
-          const nextZ = Math.min(1.35, Math.max(0.68, curZoom));
-          return {
-            ...prev,
-            [vpIdx]: {
-              zoom: nextZ,
-              pan: {
-                x: Math.round(vw / 2 - worldX * nextZ),
-                y: Math.round(vh / 2 - worldY * nextZ),
-              },
-            },
-          };
-        });
+        const curZoom = viewportTransformsRef.current[vpIdx]?.zoom ?? 0.56;
+        const nextZ = Math.min(1.35, Math.max(0.68, curZoom));
+        animateCameraTo(
+          vpIdx,
+          nextZ,
+          {
+            x: Math.round(vw / 2 - worldX * nextZ),
+            y: Math.round(vh / 2 - worldY * nextZ),
+          },
+          animate
+        );
       });
     },
-    [activeViewportIdx]
+    [activeViewportIdx, animateCameraTo]
   );
 
   const handleJumpToIssue = useCallback(
@@ -3188,7 +3264,15 @@ export default function App() {
         onAddDevice: (payload) => {
           const des = String(payload.designation || nextUniqueDesignation(docStateRef.current.present.devices, 'K'));
           const cat = mergedCatalog[0];
-          if (cat) handlePlaceCatalogItem({ ...cat, componentName: String(payload.componentName || cat.componentName) }, Number(payload.x) || 260, Number(payload.y) || 240);
+          const px = Number(payload.x);
+          const py = Number(payload.y);
+          if (cat) {
+            handlePlaceCatalogItem(
+              { ...cat, componentName: String(payload.componentName || cat.componentName) },
+              Number.isFinite(px) ? px : 260,
+              Number.isFinite(py) ? py : 240
+            );
+          }
           return { designation: des };
         },
         onRerouteWires: () => handleAutoRouteActiveSheetWires(),
@@ -4633,12 +4717,8 @@ export default function App() {
             isResizing={isResizingThis}
             className="flex-1"
             onStartDrag={handleStartPanelDrag}
-            onMoveDock={(id, side: DockSide) =>
-              setDockLayout((prev) =>
-                movePanelDock(prev, id, side, undefined, window.innerWidth, window.innerHeight)
-              )
-            }
-            onToggleCollapse={(id) => setDockLayout((prev) => togglePanelCollapse(prev, id))}
+            onMoveDock={handleMoveDockPanel}
+            onToggleCollapse={handleToggleDockCollapse}
           >
             {renderPanelContent(p.id)}
           </DockablePanelFrame>
@@ -4690,6 +4770,164 @@ export default function App() {
         ? 'flex-1 min-w-0 min-h-0 grid grid-cols-2 gap-1.5 p-1.5 bg-[var(--flux-line)]/40'
         : 'flex-1 min-w-0 min-h-0 grid grid-cols-2 grid-rows-2 gap-1.5 p-1.5 bg-[var(--flux-line)]/40';
 
+  const handleMoveDockPanel = useCallback((id: PanelId, side: DockSide) => {
+    setDockLayout((prev) =>
+      movePanelDock(prev, id, side, undefined, window.innerWidth, window.innerHeight)
+    );
+  }, []);
+
+  const handleToggleDockCollapse = useCallback((id: PanelId) => {
+    setDockLayout((prev) => togglePanelCollapse(prev, id));
+  }, []);
+
+  const handleCanvasToggleGrid = useCallback(() => {
+    const vs = docStateRef.current.present.visualSettings;
+    handleApplyVisualSettings({ ...vs, showGrid: !vs.showGrid });
+  }, [handleApplyVisualSettings]);
+
+  const handleCanvasToggleSnap = useCallback(() => {
+    const vs = docStateRef.current.present.visualSettings;
+    handleApplyVisualSettings({ ...vs, snapToGrid: !vs.snapToGrid });
+  }, [handleApplyVisualSettings]);
+
+  const handleCanvasToggleSmartGuides = useCallback(() => {
+    const vs = docStateRef.current.present.visualSettings;
+    handleApplyVisualSettings({ ...vs, smartGuides: !(vs.smartGuides !== false) });
+  }, [handleApplyVisualSettings]);
+
+  const handleCanvasToggleCrosshair = useCallback(() => {
+    const vs = docStateRef.current.present.visualSettings;
+    handleApplyVisualSettings({ ...vs, showCrosshair: !(vs.showCrosshair !== false) });
+  }, [handleApplyVisualSettings]);
+
+  const handleCanvasSelectDevice = useCallback(
+    (id: string | null, opts?: { toggle?: boolean }) => {
+      if (!id) {
+        applySelection({});
+        return;
+      }
+      if (opts?.toggle) {
+        setSelectedDeviceIds((prev) => toggleIdInSelection(prev, id));
+      } else {
+        applySelection({ deviceIds: [id] });
+      }
+    },
+    [applySelection]
+  );
+
+  const handleCanvasSelectWire = useCallback(
+    (id: string | null, opts?: { toggle?: boolean }) => {
+      if (!id) {
+        applySelection({});
+        return;
+      }
+      if (opts?.toggle) {
+        setSelectedWireIds((prev) => toggleIdInSelection(prev, id));
+      } else {
+        applySelection({ wireIds: [id] });
+      }
+    },
+    [applySelection]
+  );
+
+  const handleCanvasSelectAnnotation = useCallback(
+    (id: string | null, opts?: { toggle?: boolean }) => {
+      if (!id) {
+        applySelection({});
+        return;
+      }
+      if (opts?.toggle) {
+        setSelectedAnnotationIds((prev) => toggleIdInSelection(prev, id));
+      } else {
+        applySelection({ annotationIds: [id] });
+      }
+    },
+    [applySelection]
+  );
+
+  const handleCanvasSetSelection = useCallback(
+    (next: { deviceIds: string[]; wireIds: string[]; annotationIds: string[] }, additive?: boolean) => {
+      if (additive) {
+        setSelectedDeviceIds((prev) => Array.from(new Set([...prev, ...next.deviceIds])));
+        setSelectedWireIds((prev) => Array.from(new Set([...prev, ...next.wireIds])));
+        setSelectedAnnotationIds((prev) => Array.from(new Set([...prev, ...next.annotationIds])));
+      } else {
+        applySelection(next);
+      }
+    },
+    [applySelection]
+  );
+
+  const handleCanvasHighlightPotential = useCallback(
+    (seed: { wireId?: string; netName?: string; deviceId?: string; pinId?: string }) =>
+      setHighlightedPotentialSeed(seed),
+    []
+  );
+
+  const handleCanvasClearPotentialHighlight = useCallback(
+    () => setHighlightedPotentialSeed(null),
+    []
+  );
+
+  const handleCanvasDropCatalogItem = useCallback(
+    (item: CatalogItem, x: number, y: number, shId: string) =>
+      handlePlaceCatalogItem(item, x, y, shId),
+    [handlePlaceCatalogItem]
+  );
+
+  const handleCanvasOpenStampEditor = useCallback(
+    (sheetId: string, fieldKey?: StampFieldKey) => {
+      if (isLayerLocked(docStateRef.current.present.layers, 'frame')) return;
+      setStampModalState({ open: true, sheetId, mode: 'values', field: fieldKey || null });
+    },
+    []
+  );
+
+  const viewportHandlers = useMemo(
+    () =>
+      Array.from({ length: 4 }, (_, idx) => ({
+        onFocusViewport: () => {
+          setActiveViewportIdx(idx);
+          const shId = viewportSheetIds[idx] || activeSheetId;
+          setActiveSheetId(shId);
+        },
+        onFitViewport: () => {
+          const shId = viewportSheetIds[idx] || activeSheetId;
+          const sh = docStateRef.current.present.sheets.find((s) => s.id === shId);
+          if (sh) fitSheetToViewport(sh, idx, true);
+        },
+        onSelectSheet: (id: string) => {
+          setActiveViewportIdx(idx);
+          setActiveSheetId(id);
+          setViewportSheetIds((prev) => prev.map((sId, sIdx) => (sIdx === idx ? id : sId)));
+          const target = docStateRef.current.present.sheets.find((s) => s.id === id);
+          if (target) fitSheetToViewport(target, idx, true);
+        },
+        onSetZoom: (nextZ: number) => {
+          cancelCameraAnim(idx);
+          setViewportTransforms((prev) => ({
+            ...prev,
+            [idx]: { zoom: nextZ, pan: prev[idx]?.pan || { x: 20, y: 12 } },
+          }));
+        },
+        onSetPan: (nextPan: { x: number; y: number }) => {
+          cancelCameraAnim(idx);
+          setViewportTransforms((prev) => ({
+            ...prev,
+            [idx]: { zoom: prev[idx]?.zoom ?? 0.45, pan: nextPan },
+          }));
+        },
+        onSetTransform: (nextZ: number, nextPan: { x: number; y: number }) => {
+          cancelCameraAnim(idx);
+          setViewportTransforms((prev) => ({
+            ...prev,
+            [idx]: { zoom: nextZ, pan: nextPan },
+          }));
+        },
+      })),
+    [viewportSheetIds, activeSheetId, fitSheetToViewport, cancelCameraAnim]
+  );
+
   const workspaceBoundsRect = workspaceRef.current?.getBoundingClientRect();
 
   return (
@@ -4732,7 +4970,7 @@ export default function App() {
         onRotateSelected={handleRotateSelected}
         onDeleteSelected={handleDeleteSelected}
         onZoomChange={setZoom}
-        onFitView={() => fitSheetToViewport(undefined, activeViewportIdx)}
+        onFitView={() => fitSheetToViewport(undefined, activeViewportIdx, true)}
         onToggleGrid={() =>
           handleApplyVisualSettings({
             ...project.visualSettings,
@@ -4926,16 +5164,36 @@ export default function App() {
           {renderDockBand(leftPanels, 'left')}
 
           {/* Center Area: Sheetless Block Editor (BEDIT) OR Multi-Viewport Schematics */}
+          <AnimatePresence mode="wait" initial={false}>
           {symbolDraft.open ? (
-            <SymbolWorkspaceCanvas
-              workspace={symbolWorkspaceActions}
-              isDark={project.visualSettings.theme === 'dark'}
-            />
+            <motion.div
+              key="symbol-workspace-pane"
+              initial={{ opacity: 0, scale: 0.994 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.996 }}
+              transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+              className="flex-1 min-w-0 min-h-0 flex"
+            >
+              <SymbolWorkspaceCanvas
+                workspace={symbolWorkspaceActions}
+                isDark={project.visualSettings.theme === 'dark'}
+              />
+            </motion.div>
           ) : (
-            <div data-testid="center-viewports" data-layout={viewportLayout} className={centerGridClass}>
+            <motion.div
+              key="center-viewports-pane"
+              initial={{ opacity: 0, scale: 0.994 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.996 }}
+              transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+              data-testid="center-viewports"
+              data-layout={viewportLayout}
+              className={centerGridClass}
+            >
             {Array.from({ length: vpCount }, (_, idx) => {
               const vpSheetId = effectiveViewportSheets[idx] || activeSheetId;
               const vpTr = viewportTransforms[idx] || { zoom: 0.42, pan: { x: 20, y: 12 } };
+              const vpH = viewportHandlers[idx] || viewportHandlers[0];
               const spanClass =
                 viewportLayout === 'single'
                   ? 'flex-1 w-full h-full flex min-h-0 min-w-0'
@@ -4961,124 +5219,31 @@ export default function App() {
                     selectedDeviceIds={selectedDeviceIds}
                     selectedWireIds={selectedWireIds}
                     selectedAnnotationIds={selectedAnnotationIds}
-                    onFocusViewport={() => {
-                      setActiveViewportIdx(idx);
-                      setActiveSheetId(vpSheetId);
-                    }}
-                    onFitViewport={() => {
-                      const sh = project.sheets.find((s) => s.id === vpSheetId);
-                      if (sh) fitSheetToViewport(sh, idx);
-                    }}
-                    onSelectSheet={(id) => {
-                      setActiveViewportIdx(idx);
-                      setActiveSheetId(id);
-                      setViewportSheetIds((prev) =>
-                        prev.map((sId, sIdx) => (sIdx === idx ? id : sId))
-                      );
-                      const target = project.sheets.find((s) => s.id === id);
-                      if (target) fitSheetToViewport(target, idx);
-                    }}
+                    onFocusViewport={vpH.onFocusViewport}
+                    onFitViewport={vpH.onFitViewport}
+                    onSelectSheet={vpH.onSelectSheet}
                     onAddSheet={handleAddSheet}
                     onSetTool={setTool}
-                    onSetZoom={(nextZ) =>
-                      setViewportTransforms((prev) => ({
-                        ...prev,
-                        [idx]: { zoom: nextZ, pan: prev[idx]?.pan || { x: 20, y: 12 } },
-                      }))
-                    }
-                    onSetPan={(nextPan) =>
-                      setViewportTransforms((prev) => ({
-                        ...prev,
-                        [idx]: { zoom: prev[idx]?.zoom ?? 0.45, pan: nextPan },
-                      }))
-                    }
-                    onSetTransform={(nextZ, nextPan) =>
-                      setViewportTransforms((prev) => ({
-                        ...prev,
-                        [idx]: { zoom: nextZ, pan: nextPan },
-                      }))
-                    }
-                    onToggleGrid={() =>
-                      handleApplyVisualSettings({
-                        ...project.visualSettings,
-                        showGrid: !project.visualSettings.showGrid,
-                      })
-                    }
-                    onToggleSnapToGrid={() =>
-                      handleApplyVisualSettings({
-                        ...project.visualSettings,
-                        snapToGrid: !project.visualSettings.snapToGrid,
-                      })
-                    }
-                    onToggleSmartGuides={() =>
-                      handleApplyVisualSettings({
-                        ...project.visualSettings,
-                        smartGuides: !(project.visualSettings.smartGuides !== false),
-                      })
-                    }
-                    onToggleCrosshair={() =>
-                      handleApplyVisualSettings({
-                        ...project.visualSettings,
-                        showCrosshair: !(project.visualSettings.showCrosshair !== false),
-                      })
-                    }
+                    onSetZoom={vpH.onSetZoom}
+                    onSetPan={vpH.onSetPan}
+                    onSetTransform={vpH.onSetTransform}
+                    onToggleGrid={handleCanvasToggleGrid}
+                    onToggleSnapToGrid={handleCanvasToggleSnap}
+                    onToggleSmartGuides={handleCanvasToggleSmartGuides}
+                    onToggleCrosshair={handleCanvasToggleCrosshair}
                     onToggleLayerVisibility={handleToggleLayerVisibility}
                     onToggleLayerLock={handleToggleLayerLock}
                     onShowAllLayers={handleShowAllLayers}
                     onUnlockAllLayers={handleUnlockAllLayers}
-                    onSelectDevice={(id, opts) => {
-                      if (!id) {
-                        applySelection({});
-                        return;
-                      }
-                      if (opts?.toggle) {
-                        setSelectedDeviceIds((prev) => toggleIdInSelection(prev, id));
-                      } else {
-                        applySelection({ deviceIds: [id] });
-                      }
-                    }}
-                    onSelectWire={(id, opts) => {
-                      if (!id) {
-                        applySelection({});
-                        return;
-                      }
-                      if (opts?.toggle) {
-                        setSelectedWireIds((prev) => toggleIdInSelection(prev, id));
-                      } else {
-                        applySelection({ wireIds: [id] });
-                      }
-                    }}
-                    onSelectAnnotation={(id, opts) => {
-                      if (!id) {
-                        applySelection({});
-                        return;
-                      }
-                      if (opts?.toggle) {
-                        setSelectedAnnotationIds((prev) => toggleIdInSelection(prev, id));
-                      } else {
-                        applySelection({ annotationIds: [id] });
-                      }
-                    }}
-                    onSetSelection={(next, additive) => {
-                      if (additive) {
-                        setSelectedDeviceIds((prev) =>
-                          Array.from(new Set([...prev, ...next.deviceIds]))
-                        );
-                        setSelectedWireIds((prev) =>
-                          Array.from(new Set([...prev, ...next.wireIds]))
-                        );
-                        setSelectedAnnotationIds((prev) =>
-                          Array.from(new Set([...prev, ...next.annotationIds]))
-                        );
-                      } else {
-                        applySelection(next);
-                      }
-                    }}
+                    onSelectDevice={handleCanvasSelectDevice}
+                    onSelectWire={handleCanvasSelectWire}
+                    onSelectAnnotation={handleCanvasSelectAnnotation}
+                    onSetSelection={handleCanvasSetSelection}
                     onBeginDrag={handleBeginDrag}
                     onCommitDrag={handleCommitDrag}
                     highlightedTrace={highlightedTrace}
-                    onHighlightPotential={(seed) => setHighlightedPotentialSeed(seed)}
-                    onClearPotentialHighlight={() => setHighlightedPotentialSeed(null)}
+                    onHighlightPotential={handleCanvasHighlightPotential}
+                    onClearPotentialHighlight={handleCanvasClearPotentialHighlight}
                     onNavigateOffPage={handleNavigateOffPage}
                     onCreateOffPageAt={handleCreateOffPageAt}
                     onCreateAnnotation={handleCreateAnnotation}
@@ -5086,11 +5251,8 @@ export default function App() {
                     onMoveDevice={handleMoveDevice}
                     onPreviewWireWaypoints={handlePreviewWireWaypoints}
                     onCreateWire={handleCreateWire}
-                    onDropCatalogItem={(item, x, y, shId) => handlePlaceCatalogItem(item, x, y, shId)}
-                    onOpenStampEditor={(sheetId, fieldKey) => {
-                      if (isLayerLocked(docStateRef.current.present.layers, 'frame')) return;
-                      setStampModalState({ open: true, sheetId, mode: 'values', field: fieldKey || null });
-                    }}
+                    onDropCatalogItem={handleCanvasDropCatalogItem}
+                    onOpenStampEditor={handleCanvasOpenStampEditor}
                     onCommitInPlaceDeviceDesignation={handleCommitInPlaceDeviceDesignation}
                     onCommitInPlaceWireNumber={handleCommitInPlaceWireNumber}
                     onCommitInPlaceAnnotationText={handleCommitInPlaceAnnotationText}
@@ -5101,8 +5263,9 @@ export default function App() {
                 </div>
               );
             })}
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
 
           {renderDockBand(rightPanels, 'right')}
         </main>
@@ -5118,12 +5281,8 @@ export default function App() {
               isResizing={resizingDockEdge === 'floating'}
               onStartDrag={handleStartPanelDrag}
               onResizeFloatingStart={handleResizeFloatingStart}
-              onMoveDock={(id, side) =>
-                setDockLayout((prev) =>
-                  movePanelDock(prev, id, side, undefined, window.innerWidth, window.innerHeight)
-                )
-              }
-              onToggleCollapse={(id) => setDockLayout((prev) => togglePanelCollapse(prev, id))}
+              onMoveDock={handleMoveDockPanel}
+              onToggleCollapse={handleToggleDockCollapse}
             >
               {renderPanelContent(fp.id)}
             </FloatingPanelWindow>

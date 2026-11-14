@@ -33,6 +33,7 @@
 }
 
 :root {
+  color-scheme: light;
   --flux-surface: #ffffff;
   --flux-bg: oklch(97.8% 0.004 163);
   --flux-hover: oklch(95.5% 0.005 163);
@@ -54,6 +55,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --flux-surface: oklch(21.0% 0.011 163);
   --flux-bg: oklch(16.0% 0.009 163);
   --flux-hover: oklch(25.2% 0.013 163);
@@ -108,6 +110,19 @@ input,
 select,
 textarea {
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+select option,
+select optgroup {
+  background-color: var(--flux-surface);
+  color: var(--flux-text);
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
 }
 
 button:focus-visible,

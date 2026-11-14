@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Check,
   CopyPlus,
@@ -59,11 +60,15 @@ type DragInteraction =
       shapeId: string;
       vertexIdx: number;
       origPoints: Array<{ x: number; y: number }>;
+      curX: number;
+      curY: number;
     }
   | {
       kind: 'move_pin';
       pinIdx: number;
       origPin: Omit<E3Pin, 'id'>;
+      curX: number;
+      curY: number;
     }
   | {
       kind: 'resize_bounds';
@@ -71,25 +76,40 @@ type DragInteraction =
       startY: number;
       origW: number;
       origH: number;
+      curW: number;
+      curH: number;
     };
 
-export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
+export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React.memo(({
   workspace,
   isDark = false,
 }) => {
   const { draft } = workspace;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const coordsHudRef = useRef<HTMLSpanElement | null>(null);
+  const polyPreviewRef = useRef<SVGPolylineElement | null>(null);
+  const cursorLocalRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const moveRafRef = useRef<number | null>(null);
+  const copyNameInputRef = useRef<HTMLInputElement | null>(null);
 
   const [zoom, setZoom] = useState(2.2);
   const [pan, setPan] = useState({ x: 260, y: 140 });
-  const [cursorLocal, setCursorLocal] = useState({ x: 0, y: 0 });
   const [polyDraftPoints, setPolyDraftPoints] = useState<Array<{ x: number; y: number }>>([]);
   const [dragState, setDragState] = useState<DragInteraction | null>(null);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [copyName, setCopyName] = useState('');
   const [copyBlockName, setCopyBlockName] = useState('');
   const [copyArticle, setCopyArticle] = useState('');
+  const [savedFlash, setSavedFlash] = useState(false);
+  const savedFlashTimerRef = useRef<number | null>(null);
+
+  const triggerSaveCurrent = useCallback(() => {
+    workspace.onSaveCurrent();
+    setSavedFlash(true);
+    if (savedFlashTimerRef.current) window.clearTimeout(savedFlashTimerRef.current);
+    savedFlashTimerRef.current = window.setTimeout(() => setSavedFlash(false), 1300);
+  }, [workspace]);
 
   const fitSymbolView = useCallback(() => {
     const el = containerRef.current;
@@ -105,11 +125,21 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
     });
   }, [draft.width, draft.height]);
 
-  // Fit on opening or switching target symbol
+  const fitSymbolViewRef = useRef(fitSymbolView);
+  fitSymbolViewRef.current = fitSymbolView;
+
+  // Fit ONLY on opening or switching target symbol/catalog item (never on bounds resize)
   useEffect(() => {
-    const raf = requestAnimationFrame(() => fitSymbolView());
+    const raf = requestAnimationFrame(() => fitSymbolViewRef.current());
     return () => cancelAnimationFrame(raf);
-  }, [draft.symbolId, draft.catalogItemId, fitSymbolView]);
+  }, [draft.open, draft.symbolId, draft.catalogItemId]);
+
+  useEffect(() => {
+    return () => {
+      if (moveRafRef.current) cancelAnimationFrame(moveRafRef.current);
+      if (savedFlashTimerRef.current) window.clearTimeout(savedFlashTimerRef.current);
+    };
+  }, []);
 
   // Clear polyline draft if tool changes
   useEffect(() => {
@@ -186,7 +216,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        workspace.onSaveCurrent();
+        triggerSaveCurrent();
         return;
       }
       if (e.key === 'Enter' && draft.tool === 'polyline' && polyDraftPoints.length >= 2) {
@@ -214,7 +244,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [draft.tool, draft.selectedShapeId, draft.selectedPinIndex, polyDraftPoints, finalizePolyline, workspace]);
+  }, [draft.tool, draft.selectedShapeId, draft.selectedPinIndex, polyDraftPoints, finalizePolyline, triggerSaveCurrent, workspace]);
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -333,14 +363,28 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const pt = toSymbolCoords(e.clientX, e.clientY, true);
-    setCursorLocal(pt);
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    const pt = toSymbolCoords(clientX, clientY, true);
+    cursorLocalRef.current = pt;
+
+    if (moveRafRef.current) cancelAnimationFrame(moveRafRef.current);
+    moveRafRef.current = requestAnimationFrame(() => {
+      moveRafRef.current = null;
+      if (coordsHudRef.current) {
+        coordsHudRef.current.textContent = `X:${pt.x} Y:${pt.y}`;
+      }
+      if (polyPreviewRef.current && polyDraftPoints.length > 0) {
+        const ptsStr = [...polyDraftPoints, pt].map((p) => `${p.x},${p.y}`).join(' ');
+        polyPreviewRef.current.setAttribute('points', ptsStr);
+      }
+    });
 
     if (!dragState) return;
     if (dragState.kind === 'pan') {
       setPan({
-        x: dragState.origPanX + (e.clientX - dragState.startScreenX),
-        y: dragState.origPanY + (e.clientY - dragState.startScreenY),
+        x: dragState.origPanX + (clientX - dragState.startScreenX),
+        y: dragState.origPanY + (clientY - dragState.startScreenY),
       });
       return;
     }
@@ -355,36 +399,19 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
       return;
     }
     if (dragState.kind === 'move_vertex') {
-      const nextShapes = draft.shapes.map((sh) => {
-        if (sh.id !== dragState.shapeId || sh.kind !== 'polyline') return sh;
-        const pts = dragState.origPoints.map((p, idx) =>
-          idx === dragState.vertexIdx ? { x: pt.x, y: pt.y } : p
-        );
-        return { ...sh, points: pts };
-      });
-      workspace.onCommitGeometry(nextShapes, draft.pins);
+      setDragState({ ...dragState, curX: pt.x, curY: pt.y });
       return;
     }
     if (dragState.kind === 'move_pin') {
       const dx = Math.max(0, Math.min(draft.width, pt.x));
       const dy = Math.max(0, Math.min(draft.height, pt.y));
-      const nextPins = draft.pins.map((p, idx) =>
-        idx === dragState.pinIdx
-          ? {
-              ...p,
-              dx,
-              dy,
-              direction: inferPinDirection(dx, dy, draft.width, draft.height),
-            }
-          : p
-      );
-      workspace.onCommitGeometry(draft.shapes, nextPins);
+      setDragState({ ...dragState, curX: dx, curY: dy });
       return;
     }
     if (dragState.kind === 'resize_bounds') {
       const nextW = Math.max(40, Math.min(480, snapSymbolCoord(dragState.origW + (pt.x - dragState.startX), 10)));
       const nextH = Math.max(40, Math.min(480, snapSymbolCoord(dragState.origH + (pt.y - dragState.startY), 10)));
-      workspace.onUpdateDraftMeta({ width: nextW, height: nextH });
+      setDragState({ ...dragState, curW: nextW, curH: nextH });
     }
   };
 
@@ -450,9 +477,45 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
         const nextShapes = draft.shapes.map((s) => (s.id === dragState.shapeId ? moved : s));
         workspace.onCommitGeometry(nextShapes, draft.pins);
       }
+    } else if (dragState.kind === 'move_vertex') {
+      const origPt = dragState.origPoints[dragState.vertexIdx];
+      if (!origPt || origPt.x !== dragState.curX || origPt.y !== dragState.curY) {
+        const nextShapes = draft.shapes.map((sh) => {
+          if (sh.id !== dragState.shapeId || sh.kind !== 'polyline') return sh;
+          const pts = dragState.origPoints.map((p, idx) =>
+            idx === dragState.vertexIdx ? { x: dragState.curX, y: dragState.curY } : p
+          );
+          return { ...sh, points: pts };
+        });
+        workspace.onCommitGeometry(nextShapes, draft.pins);
+      }
+    } else if (dragState.kind === 'move_pin') {
+      if (dragState.origPin.dx !== dragState.curX || dragState.origPin.dy !== dragState.curY) {
+        const nextPins = draft.pins.map((p, idx) =>
+          idx === dragState.pinIdx
+            ? {
+                ...p,
+                dx: dragState.curX,
+                dy: dragState.curY,
+                direction: inferPinDirection(dragState.curX, dragState.curY, draft.width, draft.height),
+              }
+            : p
+        );
+        workspace.onCommitGeometry(draft.shapes, nextPins);
+      }
+    } else if (dragState.kind === 'resize_bounds') {
+      if (dragState.curW !== dragState.origW || dragState.curH !== dragState.origH) {
+        workspace.onCommitGeometry(draft.shapes, draft.pins, {
+          width: dragState.curW,
+          height: dragState.curH,
+        });
+      }
     }
     setDragState(null);
   };
+
+  const renderedWidth = dragState?.kind === 'resize_bounds' ? dragState.curW : draft.width;
+  const renderedHeight = dragState?.kind === 'resize_bounds' ? dragState.curH : draft.height;
 
   const renderedShapes = useMemo(() => {
     if (dragState?.kind === 'move_shape') {
@@ -460,8 +523,35 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
         sh.id === dragState.shapeId ? moveSymbolShape(dragState.origShape, dragState.curDx, dragState.curDy) : sh
       );
     }
+    if (dragState?.kind === 'move_vertex') {
+      return draft.shapes.map((sh) => {
+        if (sh.id !== dragState.shapeId || sh.kind !== 'polyline') return sh;
+        return {
+          ...sh,
+          points: dragState.origPoints.map((p, idx) =>
+            idx === dragState.vertexIdx ? { x: dragState.curX, y: dragState.curY } : p
+          ),
+        };
+      });
+    }
     return draft.shapes;
   }, [draft.shapes, dragState]);
+
+  const renderedPins = useMemo(() => {
+    if (dragState?.kind === 'move_pin') {
+      return draft.pins.map((p, idx) =>
+        idx === dragState.pinIdx
+          ? {
+              ...p,
+              dx: dragState.curX,
+              dy: dragState.curY,
+              direction: inferPinDirection(dragState.curX, dragState.curY, renderedWidth, renderedHeight),
+            }
+          : p
+      );
+    }
+    return draft.pins;
+  }, [draft.pins, dragState, renderedWidth, renderedHeight]);
 
   const previewTextCtx = useMemo(
     () => ({
@@ -510,6 +600,13 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
     setCopyBlockName(`${draft.e3BlockName}_COPY`);
     setCopyArticle(draft.article ? `${draft.article}-MOD` : '');
     setSaveAsOpen(true);
+    requestAnimationFrame(() => copyNameInputRef.current?.focus());
+  };
+
+  const confirmCopySave = () => {
+    if (!copyName.trim()) return;
+    workspace.onSaveAsCopy(copyName.trim(), copyBlockName.trim(), copyArticle.trim());
+    setSaveAsOpen(false);
   };
 
   return (
@@ -532,8 +629,8 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
             {draft.name || draft.e3BlockName}
             {draft.dirty ? ' *' : ''}
           </span>
-          <span className="hidden xl:inline font-mono text-[11px] text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
-            {draft.width}×{draft.height} мм
+          <span className="hidden xl:inline font-mono text-[11px] tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
+            {renderedWidth}×{renderedHeight} мм
           </span>
         </div>
 
@@ -541,11 +638,11 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
           <button
             type="button"
             data-testid="symbol-ws-save-btn"
-            onClick={workspace.onSaveCurrent}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[11.5px] font-medium whitespace-nowrap transition-colors"
+            onClick={triggerSaveCurrent}
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[11.5px] font-medium whitespace-nowrap transition-colors active:scale-[0.98]"
           >
-            <Save className="w-3.5 h-3.5" />
-            <span>Сохранить</span>
+            {savedFlash ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+            <span>{savedFlash ? 'Сохранено' : 'Сохранить'}</span>
           </button>
 
           <button
@@ -581,61 +678,81 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
       </div>
 
       {/* Inline "Save As Copy" Popover Bar */}
-      {saveAsOpen && (
-        <div
-          data-testid="symbol-ws-copy-bar"
-          className="shrink-0 px-3 py-2 border-b border-[var(--flux-accent)]/40 bg-[var(--flux-sel)] flex flex-wrap items-center gap-2 z-10"
-        >
-          <span className="text-[11.5px] font-semibold text-[var(--flux-text)] whitespace-nowrap">
-            Копия в базу:
-          </span>
-          <input
-            type="text"
-            data-testid="symbol-ws-copy-name"
-            value={copyName}
-            onChange={(e) => setCopyName(e.target.value)}
-            placeholder="Название УГО / изделия"
-            className="h-7 px-2 min-w-[160px] flex-1 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
-          />
-          <input
-            type="text"
-            data-testid="symbol-ws-copy-block"
-            value={copyBlockName}
-            onChange={(e) => setCopyBlockName(e.target.value)}
-            placeholder="Блок E3 (GOST_...)"
-            className="h-7 px-2 min-w-[140px] flex-1 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
-          />
-          <input
-            type="text"
-            data-testid="symbol-ws-copy-article"
-            value={copyArticle}
-            onChange={(e) => setCopyArticle(e.target.value)}
-            placeholder="Артикул"
-            className="h-7 px-2 w-32 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
-          />
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              data-testid="symbol-ws-copy-confirm"
-              onClick={() => {
-                workspace.onSaveAsCopy(copyName, copyBlockName, copyArticle);
+      <AnimatePresence initial={false}>
+        {saveAsOpen && (
+          <motion.div
+            key="symbol-ws-copy-bar"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+            data-testid="symbol-ws-copy-bar"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
                 setSaveAsOpen(false);
-              }}
-              className="inline-flex items-center gap-1 h-7 px-2.5 rounded bg-[var(--flux-accent-solid)] text-white text-[11.5px] font-medium whitespace-nowrap"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>Создать копию</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSaveAsOpen(false)}
-              className="h-7 px-2 rounded text-[11.5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] whitespace-nowrap"
-            >
-              Отмена
-            </button>
-          </div>
-        </div>
-      )}
+              } else if (e.key === 'Enter' && copyName.trim()) {
+                e.preventDefault();
+                confirmCopySave();
+              }
+            }}
+            className="shrink-0 px-3 py-2 border-b border-[var(--flux-accent)]/40 bg-[var(--flux-sel)] flex flex-wrap items-center gap-2 z-10"
+          >
+            <span className="text-[11.5px] font-semibold text-[var(--flux-text)] whitespace-nowrap">
+              Копия в базу:
+            </span>
+            <input
+              ref={copyNameInputRef}
+              type="text"
+              data-testid="symbol-ws-copy-name"
+              aria-label="Название копии УГО или изделия"
+              value={copyName}
+              onChange={(e) => setCopyName(e.target.value)}
+              placeholder="Название УГО / изделия"
+              className="h-7 px-2 min-w-[160px] flex-1 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
+            />
+            <input
+              type="text"
+              data-testid="symbol-ws-copy-block"
+              aria-label="Имя блока E3 для копии"
+              spellCheck={false}
+              value={copyBlockName}
+              onChange={(e) => setCopyBlockName(e.target.value)}
+              placeholder="Блок E3 (GOST_...)"
+              className="h-7 px-2 min-w-[140px] flex-1 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+            />
+            <input
+              type="text"
+              data-testid="symbol-ws-copy-article"
+              aria-label="Артикул копии изделия"
+              spellCheck={false}
+              value={copyArticle}
+              onChange={(e) => setCopyArticle(e.target.value)}
+              placeholder="Артикул"
+              className="h-7 px-2 w-32 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+            />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                data-testid="symbol-ws-copy-confirm"
+                disabled={!copyName.trim()}
+                onClick={confirmCopySave}
+                className="inline-flex items-center gap-1 h-7 px-2.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] disabled:opacity-45 text-white text-[11.5px] font-medium whitespace-nowrap transition-colors"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Создать копию</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSaveAsOpen(false)}
+                className="h-7 px-2 rounded text-[11.5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Infinite Sheetless CAD Canvas */}
       <div className="relative flex-1 min-h-0" onWheel={handleWheel}>
@@ -736,8 +853,8 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
             <rect
               x={0}
               y={0}
-              width={draft.width}
-              height={draft.height}
+              width={renderedWidth}
+              height={renderedHeight}
               fill={isDark ? 'rgba(15, 23, 42, 0.36)' : 'rgba(255, 255, 255, 0.58)'}
               stroke="var(--flux-accent)"
               strokeOpacity={0.55}
@@ -918,6 +1035,8 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
                       shapeId: selectedPolyline.id,
                       vertexIdx: vIdx,
                       origPoints: selectedPolyline.points,
+                      curX: pt.x,
+                      curY: pt.y,
                     });
                   }}
                 />
@@ -927,7 +1046,8 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
             {polyDraftPoints.length > 0 && (
               <g pointerEvents="none">
                 <polyline
-                  points={[...polyDraftPoints, cursorLocal].map((p) => `${p.x},${p.y}`).join(' ')}
+                  ref={polyPreviewRef}
+                  points={[...polyDraftPoints, cursorLocalRef.current].map((p) => `${p.x},${p.y}`).join(' ')}
                   fill="none"
                   stroke="var(--flux-accent)"
                   strokeWidth={draft.activeStyle.strokeWidth}
@@ -995,7 +1115,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
             )}
 
             {/* Pins (E3 Terminal Connection Points) */}
-            {draft.pins.map((pin, idx) => {
+            {renderedPins.map((pin, idx) => {
               const isPinSel = draft.selectedPinIndex === idx;
               return (
                 <g
@@ -1006,7 +1126,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
                     if (draft.tool !== 'select') return;
                     e.stopPropagation();
                     workspace.onSelectPin(idx);
-                    setDragState({ kind: 'move_pin', pinIdx: idx, origPin: pin });
+                    setDragState({ kind: 'move_pin', pinIdx: idx, origPin: pin, curX: pin.dx, curY: pin.dy });
                   }}
                 >
                   <circle cx={pin.dx} cy={pin.dy} r={7 / zoom} fill="transparent" />
@@ -1034,8 +1154,9 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
 
             {/* Bounds Resize Grip Handle at bottom-right */}
             <rect
-              x={draft.width - 4 / zoom}
-              y={draft.height - 4 / zoom}
+              data-testid="symbol-ws-resize-handle"
+              x={renderedWidth - 4 / zoom}
+              y={renderedHeight - 4 / zoom}
               width={8 / zoom}
               height={8 / zoom}
               fill="var(--flux-accent)"
@@ -1051,6 +1172,8 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
                   startY: pt.y,
                   origW: draft.width,
                   origH: draft.height,
+                  curW: draft.width,
+                  curH: draft.height,
                 });
               }}
             />
@@ -1068,8 +1191,8 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
           </div>
 
           <div className="pointer-events-auto inline-flex items-center gap-1.5 px-2 h-7 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)]/95 backdrop-blur-xs text-[11px] font-mono tabular-nums text-[var(--flux-text)] shadow-xs shrink-0">
-            <span className="text-[var(--flux-text-muted)]">
-              X:{cursorLocal.x} Y:{cursorLocal.y}
+            <span ref={coordsHudRef} className="text-[var(--flux-text-muted)] min-w-[74px]">
+              X:0 Y:0
             </span>
             <span className="h-3.5 w-px bg-[var(--flux-line)]" />
             <button
@@ -1077,7 +1200,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
               onClick={() => setZoom((z) => Math.max(0.4, Number((z * 0.85).toFixed(2))))}
               title="Отдалить"
               aria-label="Отдалить"
-              className="w-5 h-5 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)]"
+              className="w-5 h-5 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] transition-colors"
             >
               <ZoomOut className="w-3 h-3" />
             </button>
@@ -1087,7 +1210,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
               onClick={() => setZoom((z) => Math.min(5, Number((z * 1.18).toFixed(2))))}
               title="Приблизить"
               aria-label="Приблизить"
-              className="w-5 h-5 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)]"
+              className="w-5 h-5 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] transition-colors"
             >
               <ZoomIn className="w-3 h-3" />
             </button>
@@ -1096,7 +1219,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
               onClick={fitSymbolView}
               title="По центру УГО"
               aria-label="Центрировать УГО"
-              className="w-5 h-5 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)]"
+              className="w-5 h-5 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] transition-colors"
             >
               <Maximize2 className="w-3 h-3" />
             </button>
@@ -1105,4 +1228,6 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = ({
       </div>
     </div>
   );
-};
+});
+
+SymbolWorkspaceCanvas.displayName = 'SymbolWorkspaceCanvas';

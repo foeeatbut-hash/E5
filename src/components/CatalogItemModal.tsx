@@ -12,6 +12,12 @@ import type {
 import { HVAC_ROLE_LABELS } from '../core/hvacBuilder';
 import { SymbolDesignerModal, type SymbolGeometryResult } from './SymbolDesignerModal';
 
+function parseFiniteClamped(raw: string, fallback: number, min: number, max: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
 interface CatalogItemModalProps {
   open: boolean;
   editingItem?: CatalogItem | null;
@@ -388,6 +394,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               <input
                 id="cat-prefix"
                 type="text"
+                spellCheck={false}
                 value={defaultPrefix}
                 onChange={(e) => setDefaultPrefix(e.target.value.toUpperCase())}
                 className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
@@ -403,6 +410,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               <input
                 id="cat-art"
                 type="text"
+                spellCheck={false}
                 value={article}
                 onChange={(e) => setArticle(e.target.value)}
                 placeholder="ВРАН9-7.5-4"
@@ -428,6 +436,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               <input
                 id="cat-block"
                 type="text"
+                spellCheck={false}
                 value={e3BlockName}
                 onChange={(e) => setE3BlockName(e.target.value)}
                 className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
@@ -442,9 +451,11 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div>
-                <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Мощность, кВт</label>
+                <label htmlFor="cat-power" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Мощность, кВт</label>
                 <input
+                  id="cat-power"
                   type="text"
+                  spellCheck={false}
                   value={powerKw}
                   onChange={(e) => setPowerKw(e.target.value)}
                   placeholder="7.5"
@@ -452,8 +463,9 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Напряжение</label>
+                <label htmlFor="cat-voltage" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Напряжение</label>
                 <select
+                  id="cat-voltage"
                   value={voltage}
                   onChange={(e) => setVoltage(e.target.value)}
                   className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text)]"
@@ -464,8 +476,9 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Исполнение</label>
+                <label htmlFor="cat-exzone" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Исполнение</label>
                 <select
+                  id="cat-exzone"
                   value={exZone}
                   onChange={(e) => setExZone(e.target.value as 'non-Ex' | 'Exd')}
                   className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text)]"
@@ -475,9 +488,11 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Кабель (Внешка)</label>
+                <label htmlFor="cat-cable" className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Кабель (Внешка)</label>
                 <input
+                  id="cat-cable"
                   type="text"
+                  spellCheck={false}
                   value={defaultCable}
                   onChange={(e) => setDefaultCable(e.target.value)}
                   className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
@@ -495,13 +510,14 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 ] as const
               ).map(([lbl, val, setter]) => (
                 <div key={lbl}>
-                  <label className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Кол-во {lbl}</label>
+                  <label htmlFor={`cat-io-${lbl}`} className="block text-[10px] text-[var(--flux-text-muted)] mb-1">Кол-во {lbl}</label>
                   <input
+                    id={`cat-io-${lbl}`}
                     type="number"
                     min={0}
                     max={32}
                     value={val}
-                    onChange={(e) => setter(Math.max(0, Number(e.target.value) || 0))}
+                    onChange={(e) => setter(parseFiniteClamped(e.target.value, val, 0, 32))}
                     className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[var(--flux-text)]"
                   />
                 </div>
@@ -519,6 +535,8 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                 <div key={idx} className="flex items-center gap-2">
                   <input
                     type="text"
+                    spellCheck={false}
+                    aria-label={`Имя атрибута ${idx + 1}`}
                     value={attr.name}
                     onChange={(e) =>
                       setAttributes((prev) =>
@@ -529,6 +547,8 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                   />
                   <input
                     type="text"
+                    spellCheck={false}
+                    aria-label={`Значение атрибута ${attr.name || idx + 1}`}
                     value={attr.value}
                     onChange={(e) =>
                       setAttributes((prev) =>
@@ -551,6 +571,8 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
             <div className="flex items-center gap-2">
               <input
                 type="text"
+                spellCheck={false}
+                aria-label="Имя нового атрибута"
                 placeholder="Имя атрибута"
                 value={newAttrName}
                 onChange={(e) => setNewAttrName(e.target.value)}
@@ -558,6 +580,8 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               />
               <input
                 type="text"
+                spellCheck={false}
+                aria-label="Значение нового атрибута"
                 placeholder="Значение"
                 value={newAttrValue}
                 onChange={(e) => setNewAttrValue(e.target.value)}
@@ -565,6 +589,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               />
               <button
                 type="button"
+                disabled={!newAttrName.trim()}
                 onClick={() => {
                   if (!newAttrName.trim()) return;
                   setAttributes((prev) => [
@@ -574,7 +599,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                   setNewAttrName('');
                   setNewAttrValue('');
                 }}
-                className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]"
+                className="inline-flex items-center gap-1 h-7 px-2.5 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] disabled:opacity-40"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Атрибут</span>

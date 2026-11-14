@@ -127,15 +127,23 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                 type="button"
                 data-testid="autonum-tab-wires"
                 onClick={() => setTab('wires')}
-                className={`h-8 px-3 rounded border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors ${
+                className={`relative h-8 px-3 rounded border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors ${
                   tab === 'wires'
-                    ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)]/70 text-[var(--flux-text)]'
+                    ? 'border-[var(--flux-accent)]/70 text-[var(--flux-text)]'
                     : 'bg-[var(--flux-bg)] border-[var(--flux-line)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                 }`}
               >
-                <Spline className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                <span>Цепи и провода</span>
-                <span className="font-mono tabular-nums text-[10.5px] opacity-80">
+                {tab === 'wires' && (
+                  <motion.span
+                    layoutId="autonum-tab-pill"
+                    transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                    aria-hidden="true"
+                    className="absolute inset-0 rounded bg-[var(--flux-sel)]"
+                  />
+                )}
+                <Spline className="relative z-10 w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                <span className="relative z-10">Цепи и провода</span>
+                <span className="relative z-10 font-mono tabular-nums text-[10.5px] opacity-80">
                   ({wirePreview.changes.length})
                 </span>
               </button>
@@ -143,22 +151,38 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                 type="button"
                 data-testid="autonum-tab-devices"
                 onClick={() => setTab('devices')}
-                className={`h-8 px-3 rounded border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors ${
+                className={`relative h-8 px-3 rounded border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors ${
                   tab === 'devices'
-                    ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)]/70 text-[var(--flux-text)]'
+                    ? 'border-[var(--flux-accent)]/70 text-[var(--flux-text)]'
                     : 'bg-[var(--flux-bg)] border-[var(--flux-line)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                 }`}
               >
-                <Cpu className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                <span>ОУО изделий (-QF?, -KM?)</span>
-                <span className="font-mono tabular-nums text-[10.5px] opacity-80">
+                {tab === 'devices' && (
+                  <motion.span
+                    layoutId="autonum-tab-pill"
+                    transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                    aria-hidden="true"
+                    className="absolute inset-0 rounded bg-[var(--flux-sel)]"
+                  />
+                )}
+                <Cpu className="relative z-10 w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                <span className="relative z-10">ОУО изделий (-QF?, -KM?)</span>
+                <span className="relative z-10 font-mono tabular-nums text-[10.5px] opacity-80">
                   ({devicePreview.changes.length})
                 </span>
               </button>
             </div>
 
+            <AnimatePresence mode="wait" initial={false}>
             {tab === 'wires' ? (
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <motion.div
+                key="autonum-wires"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.14 }}
+                className="flex-1 min-h-0 flex flex-col overflow-hidden"
+              >
                 <div className="p-4 border-b border-[var(--flux-line)] space-y-3 shrink-0">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -294,9 +318,16 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                     <span>Применить нумерацию цепей ({wirePreview.changes.length})</span>
                   </button>
                 </div>
-              </div>
+              </motion.div>
             ) : (
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <motion.div
+                key="autonum-devices"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.14 }}
+                className="flex-1 min-h-0 flex flex-col overflow-hidden"
+              >
                 <div className="p-4 border-b border-[var(--flux-line)] grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
                   <div>
                     <label
@@ -345,6 +376,7 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                       id="autonum-dev-prefix"
                       data-testid="autonum-dev-prefix"
                       type="text"
+                      spellCheck={false}
                       value={prefixFilter}
                       onChange={(e) => setPrefixFilter(e.target.value)}
                       placeholder="Все (или QF, KM, XT…)"
@@ -435,8 +467,9 @@ export const AutoNumberingModal: React.FC<AutoNumberingModalProps> = ({
                     <span>Переиндексировать ОУО ({devicePreview.changes.length})</span>
                   </button>
                 </div>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </motion.div>
         </motion.div>
       )}

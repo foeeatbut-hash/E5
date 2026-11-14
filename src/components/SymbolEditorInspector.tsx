@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowDown,
   ArrowUp,
@@ -51,7 +52,13 @@ const CATEGORIES: Array<[DeviceCategory, string]> = [
   ['offpage_ref', 'Межлистовая ссылка'],
 ];
 
-export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ workspace }) => {
+const parseFiniteNum = (raw: string): number | null => {
+  if (raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+};
+
+export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React.memo(({ workspace }) => {
   const { draft } = workspace;
   const [selectedTemplateId, setSelectedTemplateId] = useState(ATTRIBUTE_TEMPLATE_PRESETS[0].id);
   const [newAttrName, setNewAttrName] = useState('');
@@ -109,9 +116,15 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
+        <AnimatePresence initial={false}>
         {/* 1. Selected Shape Properties */}
         {selectedShape && (
-          <div
+          <motion.div
+            key={`shape-${selectedShape.id}`}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
             data-testid="symbol-insp-shape"
             className="p-2.5 rounded border border-[var(--flux-accent)]/50 bg-[var(--flux-surface)] space-y-2.5"
           >
@@ -124,7 +137,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                   type="button"
                   onClick={() => workspace.onMoveShapeOrder('up')}
                   title="На передний план"
-                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)]"
+                  aria-label="Переместить примитив на передний план"
+                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] transition-colors"
                 >
                   <ArrowUp className="w-3.5 h-3.5" />
                 </button>
@@ -132,7 +146,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                   type="button"
                   onClick={() => workspace.onMoveShapeOrder('down')}
                   title="На задний план"
-                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)]"
+                  aria-label="Переместить примитив на задний план"
+                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] transition-colors"
                 >
                   <ArrowDown className="w-3.5 h-3.5" />
                 </button>
@@ -140,7 +155,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                   type="button"
                   onClick={workspace.onDuplicateSelectedShape}
                   title="Дублировать примитив"
-                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)]"
+                  aria-label="Дублировать примитив"
+                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] transition-colors"
                 >
                   <CopyPlus className="w-3.5 h-3.5" />
                 </button>
@@ -148,7 +164,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                   type="button"
                   onClick={workspace.onDeleteSelection}
                   title="Удалить примитив"
-                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                  aria-label="Удалить примитив"
+                  className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -199,12 +216,15 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                     Толщина (мм)
                   </label>
                   <select
+                    aria-label="Толщина линии примитива"
                     value={String(selectedShape.strokeWidth ?? 1.8)}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n === null) return;
                       updateSelectedShape((s) =>
-                        s.kind !== 'text' ? { ...s, strokeWidth: Number(e.target.value) } : s
-                      )
-                    }
+                        s.kind !== 'text' ? { ...s, strokeWidth: n } : s
+                      );
+                    }}
                     className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
                   >
                     {[1, 1.2, 1.5, 1.8, 2.2, 2.8, 3.5].map((w) => (
@@ -219,6 +239,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                     Тип линии
                   </label>
                   <select
+                    aria-label="Тип линии примитива"
                     value={
                       selectedShape.strokeStyle ||
                       (selectedShape.dashed ? 'dashed' : 'solid')
@@ -296,12 +317,15 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                     <span className="block text-[10px] text-[var(--flux-text-muted)]">{lbl}</span>
                     <input
                       type="number"
+                      aria-label={`Координата ${lbl} линии`}
                       value={val}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const n = parseFiniteNum(e.target.value);
+                        if (n === null) return;
                         updateSelectedShape((s) =>
-                          s.kind === 'line' ? { ...s, [field]: Number(e.target.value) || 0 } : s
-                        )
-                      }
+                          s.kind === 'line' ? { ...s, [field]: n } : s
+                        );
+                      }}
                       className="w-full h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
                     />
                   </div>
@@ -323,12 +347,17 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                     <span className="block text-[10px] text-[var(--flux-text-muted)]">{lbl}</span>
                     <input
                       type="number"
+                      min={field === 'width' || field === 'height' ? 1 : undefined}
+                      aria-label={`Параметр ${lbl} прямоугольника`}
                       value={val}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const n = parseFiniteNum(e.target.value);
+                        if (n === null) return;
+                        const clamped = field === 'width' || field === 'height' ? Math.max(1, n) : n;
                         updateSelectedShape((s) =>
-                          s.kind === 'rect' ? { ...s, [field]: Number(e.target.value) || 0 } : s
-                        )
-                      }
+                          s.kind === 'rect' ? { ...s, [field]: clamped } : s
+                        );
+                      }}
                       className="w-full h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
                     />
                   </div>
@@ -349,12 +378,17 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                     <span className="block text-[10px] text-[var(--flux-text-muted)]">{lbl}</span>
                     <input
                       type="number"
+                      min={field === 'r' ? 1 : undefined}
+                      aria-label={`Параметр ${lbl} окружности`}
                       value={val}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const n = parseFiniteNum(e.target.value);
+                        if (n === null) return;
+                        const clamped = field === 'r' ? Math.max(1, n) : n;
                         updateSelectedShape((s) =>
-                          s.kind === 'circle' ? { ...s, [field]: Number(e.target.value) || 0 } : s
-                        )
-                      }
+                          s.kind === 'circle' ? { ...s, [field]: clamped } : s
+                        );
+                      }}
                       className="w-full h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
                     />
                   </div>
@@ -377,12 +411,17 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                     <span className="block text-[10px] text-[var(--flux-text-muted)]">{lbl}</span>
                     <input
                       type="number"
+                      min={field === 'r' ? 1 : undefined}
+                      aria-label={`Параметр ${lbl} дуги`}
                       value={val}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const n = parseFiniteNum(e.target.value);
+                        if (n === null) return;
+                        const clamped = field === 'r' ? Math.max(1, n) : n;
                         updateSelectedShape((s) =>
-                          s.kind === 'arc' ? { ...s, [field]: Number(e.target.value) || 0 } : s
-                        )
-                      }
+                          s.kind === 'arc' ? { ...s, [field]: clamped } : s
+                        );
+                      }}
                       className="w-full h-6 px-1 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
                     />
                   </div>
@@ -398,6 +437,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                   </label>
                   <input
                     type="text"
+                    spellCheck={false}
+                    aria-label="Текст или шаблон атрибута"
                     value={selectedShape.text}
                     onChange={(e) =>
                       updateSelectedShape((s) =>
@@ -413,6 +454,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                       Динамич. атрибут
                     </label>
                     <select
+                      aria-label="Привязка динамического атрибута"
                       value={selectedShape.attrKey || ''}
                       onChange={(e) =>
                         updateSelectedShape((s) =>
@@ -447,26 +489,34 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                       type="number"
                       min={6}
                       max={32}
+                      aria-label="Размер шрифта текста"
                       value={selectedShape.fontSize || 11}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const n = parseFiniteNum(e.target.value);
+                        if (n === null) return;
                         updateSelectedShape((s) =>
                           s.kind === 'text'
-                            ? { ...s, fontSize: Math.max(6, Number(e.target.value) || 11) }
+                            ? { ...s, fontSize: Math.max(6, Math.min(32, n)) }
                             : s
-                        )
-                      }
+                        );
+                      }}
                       className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
                     />
                   </div>
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
         )}
 
         {/* 2. Selected Pin Properties */}
         {selectedPin && (
-          <div
+          <motion.div
+            key={`pin-${draft.selectedPinIndex}`}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
             data-testid="symbol-insp-pin"
             className="p-2.5 rounded border border-amber-500/50 bg-[var(--flux-surface)] space-y-2"
           >
@@ -478,7 +528,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 type="button"
                 onClick={workspace.onDeleteSelection}
                 title="Удалить вывод"
-                className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                aria-label="Удалить выбранный вывод"
+                className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -488,6 +539,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 <span className="block text-[10px] text-[var(--flux-text-muted)]">Имя</span>
                 <input
                   type="text"
+                  spellCheck={false}
+                  aria-label="Имя вывода"
                   value={selectedPin.name}
                   onChange={(e) => updateSelectedPin({ name: e.target.value })}
                   className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11px] text-[var(--flux-text)]"
@@ -497,8 +550,12 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 <span className="block text-[10px] text-[var(--flux-text-muted)]">DX</span>
                 <input
                   type="number"
+                  aria-label="Смещение вывода DX"
                   value={selectedPin.dx}
-                  onChange={(e) => updateSelectedPin({ dx: Number(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const n = parseFiniteNum(e.target.value);
+                    if (n !== null) updateSelectedPin({ dx: n });
+                  }}
                   className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
                 />
               </div>
@@ -506,14 +563,19 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 <span className="block text-[10px] text-[var(--flux-text-muted)]">DY</span>
                 <input
                   type="number"
+                  aria-label="Смещение вывода DY"
                   value={selectedPin.dy}
-                  onChange={(e) => updateSelectedPin({ dy: Number(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const n = parseFiniteNum(e.target.value);
+                    if (n !== null) updateSelectedPin({ dy: n });
+                  }}
                   className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               <select
+                aria-label="Направление вывода"
                 value={selectedPin.direction}
                 onChange={(e) => updateSelectedPin({ direction: e.target.value as PinDirection })}
                 className="h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
@@ -524,6 +586,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 <option value="right">Справа (right)</option>
               </select>
               <select
+                aria-label="Тип сигнала вывода"
                 value={selectedPin.signalType}
                 onChange={(e) => updateSelectedPin({ signalType: e.target.value as SignalType })}
                 className="h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
@@ -537,8 +600,9 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 <option value="bus">Шина (RS485/Eth)</option>
               </select>
             </div>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         {/* 3. УГО (Graphic Block Metadata) */}
         <div className="space-y-2">
@@ -552,6 +616,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
             <input
               type="text"
               data-testid="sym-insp-name"
+              aria-label="Название символа УГО"
               value={draft.name}
               onChange={(e) => workspace.onUpdateDraftMeta({ name: e.target.value })}
               className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
@@ -565,6 +630,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
               <input
                 type="text"
                 data-testid="sym-insp-blockname"
+                spellCheck={false}
+                aria-label="Имя блока E3"
                 value={draft.e3BlockName}
                 onChange={(e) => workspace.onUpdateDraftMeta({ e3BlockName: e.target.value })}
                 className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
@@ -575,6 +642,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 Категория
               </label>
               <select
+                aria-label="Категория УГО"
                 value={draft.category}
                 onChange={(e) =>
                   workspace.onUpdateDraftMeta({ category: e.target.value as DeviceCategory })
@@ -599,12 +667,15 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 min={40}
                 max={480}
                 step={10}
+                aria-label="Ширина блока УГО в миллиметрах"
                 value={draft.width}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const n = parseFiniteNum(e.target.value);
+                  if (n === null) return;
                   workspace.onUpdateDraftMeta({
-                    width: Math.max(40, Math.min(480, Number(e.target.value) || 100)),
-                  })
-                }
+                    width: Math.max(40, Math.min(480, n)),
+                  });
+                }}
                 className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
               />
             </div>
@@ -617,12 +688,15 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 min={40}
                 max={480}
                 step={10}
+                aria-label="Высота блока УГО в миллиметрах"
                 value={draft.height}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const n = parseFiniteNum(e.target.value);
+                  if (n === null) return;
                   workspace.onUpdateDraftMeta({
-                    height: Math.max(40, Math.min(480, Number(e.target.value) || 100)),
-                  })
-                }
+                    height: Math.max(40, Math.min(480, n)),
+                  });
+                }}
                 className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[11px] text-[var(--flux-text)]"
               />
             </div>
@@ -641,6 +715,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
             <input
               type="text"
               data-testid="sym-insp-compname"
+              aria-label="Наименование изделия"
               value={draft.componentName}
               onChange={(e) => workspace.onUpdateDraftMeta({ componentName: e.target.value })}
               className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
@@ -654,6 +729,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
               <input
                 type="text"
                 data-testid="sym-insp-article"
+                spellCheck={false}
+                aria-label="Артикул изделия"
                 value={draft.article}
                 onChange={(e) => workspace.onUpdateDraftMeta({ article: e.target.value })}
                 className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
@@ -665,6 +742,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
               </label>
               <input
                 type="text"
+                spellCheck={false}
+                aria-label="Буквенный префикс ОУО"
                 value={draft.defaultPrefix}
                 onChange={(e) => workspace.onUpdateDraftMeta({ defaultPrefix: e.target.value })}
                 className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
@@ -677,6 +756,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
             </label>
             <input
               type="text"
+              aria-label="Производитель изделия"
               value={draft.manufacturer}
               onChange={(e) => workspace.onUpdateDraftMeta({ manufacturer: e.target.value })}
               className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)]"
@@ -695,6 +775,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
           <div className="flex items-center gap-1.5">
             <select
               data-testid="sym-insp-template-select"
+              aria-label="Шаблон характеристик"
               value={selectedTemplateId}
               onChange={(e) => setSelectedTemplateId(e.target.value)}
               className="flex-1 min-w-0 h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)]"
@@ -709,7 +790,7 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
               type="button"
               data-testid="sym-insp-apply-template-btn"
               onClick={() => workspace.onApplyAttributeTemplate(selectedTemplateId)}
-              className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-sel)] text-[11px] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-sel)] text-[11px] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
             >
               <Sparkles className="w-3 h-3" />
               <span>Применить</span>
@@ -722,6 +803,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                 <div className="flex items-center gap-1">
                   <input
                     type="text"
+                    spellCheck={false}
+                    aria-label={`Имя атрибута ${idx + 1}`}
                     value={attr.name}
                     onChange={(e) => updateAttr(idx, { name: e.target.value })}
                     className="flex-1 min-w-0 h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] font-medium text-[var(--flux-text)]"
@@ -733,14 +816,16 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
                         attributes: draft.attributes.filter((_, i) => i !== idx),
                       })
                     }
-                    aria-label="Удалить атрибут"
-                    className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 shrink-0"
+                    aria-label={`Удалить атрибут ${attr.name || idx + 1}`}
+                    className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 shrink-0 transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
                 <input
                   type="text"
+                  spellCheck={false}
+                  aria-label={`Значение атрибута ${attr.name || idx + 1}`}
                   value={attr.value}
                   onChange={(e) => updateAttr(idx, { value: e.target.value })}
                   placeholder="Значение"
@@ -759,6 +844,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
             <input
               type="text"
               data-testid="sym-insp-new-attr-name"
+              spellCheck={false}
+              aria-label="Название нового атрибута"
               value={newAttrName}
               onChange={(e) => setNewAttrName(e.target.value)}
               placeholder="Новый атрибут"
@@ -767,6 +854,8 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
             <input
               type="text"
               data-testid="sym-insp-new-attr-val"
+              spellCheck={false}
+              aria-label="Значение нового атрибута"
               value={newAttrValue}
               onChange={(e) => setNewAttrValue(e.target.value)}
               placeholder="Значение"
@@ -774,9 +863,11 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
             />
             <button
               type="submit"
+              disabled={!newAttrName.trim()}
               data-testid="sym-insp-add-attr-btn"
-              className="inline-flex items-center justify-center w-7 h-7 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] shrink-0"
+              className="inline-flex items-center justify-center w-7 h-7 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] shrink-0 disabled:opacity-40 transition-colors"
               title="Добавить атрибут"
+              aria-label="Добавить атрибут"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
@@ -785,4 +876,5 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = ({ wo
       </div>
     </aside>
   );
-};
+});
+SymbolEditorInspector.displayName = 'SymbolEditorInspector';

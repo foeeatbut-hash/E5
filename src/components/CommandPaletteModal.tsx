@@ -126,6 +126,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
               <input
                 ref={inputRef}
                 type="text"
+                spellCheck={false}
                 data-testid="command-palette-input"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}

@@ -26,6 +26,12 @@ export interface E3BridgeStatusInfo {
   bridgeHost: string | null;
 }
 
+function parseFiniteClamped(raw: string, fallback: number, min: number, max: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
 interface ExchangeModalProps {
   open: boolean;
   project: E3Project;
@@ -395,6 +401,7 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
               <textarea
                 id="import-paste"
                 rows={4}
+                spellCheck={false}
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
                 placeholder="<?xml version='1.0'?> <E3Project ...> или { 'format': 'flux-e3-bridge/v1', ... }"
@@ -570,7 +577,12 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                 min="0.5"
                 max="6"
                 value={draft.symbolStrokeWidth}
-                onChange={(e) => setDraft({ ...draft, symbolStrokeWidth: Math.max(0.5, Number(e.target.value) || 1.8) })}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    symbolStrokeWidth: parseFiniteClamped(e.target.value, draft.symbolStrokeWidth, 0.5, 6),
+                  })
+                }
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
               />
             </div>
@@ -585,7 +597,12 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                 min="0.5"
                 max="6"
                 value={draft.wireWidth}
-                onChange={(e) => setDraft({ ...draft, wireWidth: Math.max(0.5, Number(e.target.value) || 2) })}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    wireWidth: parseFiniteClamped(e.target.value, draft.wireWidth, 0.5, 6),
+                  })
+                }
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
               />
             </div>
@@ -600,7 +617,12 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                 min="0.5"
                 max="6"
                 value={draft.frameStrokeWidth ?? 1.6}
-                onChange={(e) => setDraft({ ...draft, frameStrokeWidth: Math.max(0.5, Number(e.target.value) || 1.6) })}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    frameStrokeWidth: parseFiniteClamped(e.target.value, draft.frameStrokeWidth ?? 1.6, 0.5, 6),
+                  })
+                }
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
               />
             </div>
@@ -615,7 +637,17 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                 min="0.5"
                 max="6"
                 value={draft.annotationStrokeWidth ?? 1.4}
-                onChange={(e) => setDraft({ ...draft, annotationStrokeWidth: Math.max(0.5, Number(e.target.value) || 1.4) })}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    annotationStrokeWidth: parseFiniteClamped(
+                      e.target.value,
+                      draft.annotationStrokeWidth ?? 1.4,
+                      0.5,
+                      6
+                    ),
+                  })
+                }
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
               />
             </div>
@@ -630,7 +662,12 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                 min="0.7"
                 max="1.5"
                 value={draft.fontScale}
-                onChange={(e) => setDraft({ ...draft, fontScale: Number(e.target.value) || 1 })}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    fontScale: parseFiniteClamped(e.target.value, draft.fontScale, 0.7, 1.5),
+                  })
+                }
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
               />
             </div>

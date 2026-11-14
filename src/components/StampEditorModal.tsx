@@ -30,6 +30,12 @@ import {
 
 export type StampModalMode = 'values' | 'designer';
 
+function parseFiniteClamped(raw: string, fallback: number, min: number, max: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
 interface StampEditorModalProps {
   open: boolean;
   project: E3Project;
@@ -444,6 +450,7 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
           id={`stamp-${key}`}
           data-testid={`stamp-input-${key}`}
           type="text"
+          spellCheck={opts?.mono ? false : undefined}
           value={String(draft[key] ?? '')}
           placeholder={opts?.placeholder}
           onChange={(e) => setField(key, e.target.value)}
@@ -509,14 +516,22 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                     data-testid="stamp-tab-values"
                     aria-selected={mode === 'values'}
                     onClick={() => setMode('values')}
-                    className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-xs text-[12px] font-medium transition-colors whitespace-nowrap ${
+                    className={`relative inline-flex items-center gap-1.5 h-7 px-2.5 rounded-xs text-[12px] font-medium transition-colors whitespace-nowrap ${
                       mode === 'values'
-                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] shadow-xs'
+                        ? 'text-[var(--flux-text)]'
                         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                     }`}
                   >
-                    <Layers className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                    <span>Заполнение граф</span>
+                    {mode === 'values' && (
+                      <motion.span
+                        layoutId="stamp-mode-pill"
+                        transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-xs bg-[var(--flux-surface)] shadow-xs"
+                      />
+                    )}
+                    <Layers className="relative z-10 w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                    <span className="relative z-10">Заполнение граф</span>
                   </button>
                   <button
                     type="button"
@@ -524,14 +539,22 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                     data-testid="stamp-tab-designer"
                     aria-selected={mode === 'designer'}
                     onClick={() => setMode('designer')}
-                    className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-xs text-[12px] font-medium transition-colors whitespace-nowrap ${
+                    className={`relative inline-flex items-center gap-1.5 h-7 px-2.5 rounded-xs text-[12px] font-medium transition-colors whitespace-nowrap ${
                       mode === 'designer'
-                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] shadow-xs'
+                        ? 'text-[var(--flux-text)]'
                         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                     }`}
                   >
-                    <LayoutTemplate className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                    <span>Создать / настроить штамп</span>
+                    {mode === 'designer' && (
+                      <motion.span
+                        layoutId="stamp-mode-pill"
+                        transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-xs bg-[var(--flux-surface)] shadow-xs"
+                      />
+                    )}
+                    <LayoutTemplate className="relative z-10 w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                    <span className="relative z-10">Создать / настроить штамп</span>
                   </button>
                 </div>
 
@@ -898,7 +921,7 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                           onChange={(e) =>
                             setDesignerDraft((prev) => ({
                               ...prev,
-                              width: Math.max(200, Math.min(640, Number(e.target.value) || 540)),
+                              width: parseFiniteClamped(e.target.value, prev.width, 200, 640),
                             }))
                           }
                           className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[12px] text-[var(--flux-text)]"
@@ -921,7 +944,7 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                           onChange={(e) =>
                             setDesignerDraft((prev) => ({
                               ...prev,
-                              height: Math.max(40, Math.min(240, Number(e.target.value) || 120)),
+                              height: parseFiniteClamped(e.target.value, prev.height, 40, 240),
                             }))
                           }
                           className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[12px] text-[var(--flux-text)]"
@@ -1080,68 +1103,72 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
 
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                           <div>
-                            <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                            <label htmlFor="cell-xpct" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                               X позиция (%)
                             </label>
                             <input
+                              id="cell-xpct"
                               type="number"
                               min={0}
                               max={95}
                               value={Math.round(selectedCell.xPct)}
                               onChange={(e) =>
                                 updateSelectedCell({
-                                  xPct: Math.max(0, Math.min(95, Number(e.target.value) || 0)),
+                                  xPct: parseFiniteClamped(e.target.value, selectedCell.xPct, 0, 95),
                                 })
                               }
                               className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[12px]"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                            <label htmlFor="cell-ypct" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                               Y позиция (%)
                             </label>
                             <input
+                              id="cell-ypct"
                               type="number"
                               min={0}
                               max={95}
                               value={Math.round(selectedCell.yPct)}
                               onChange={(e) =>
                                 updateSelectedCell({
-                                  yPct: Math.max(0, Math.min(95, Number(e.target.value) || 0)),
+                                  yPct: parseFiniteClamped(e.target.value, selectedCell.yPct, 0, 95),
                                 })
                               }
                               className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[12px]"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                            <label htmlFor="cell-wpct" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                               Ширина (%)
                             </label>
                             <input
+                              id="cell-wpct"
                               type="number"
                               min={5}
                               max={100}
                               value={Math.round(selectedCell.wPct)}
                               onChange={(e) =>
                                 updateSelectedCell({
-                                  wPct: Math.max(5, Math.min(100, Number(e.target.value) || 20)),
+                                  wPct: parseFiniteClamped(e.target.value, selectedCell.wPct, 5, 100),
                                 })
                               }
                               className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[12px]"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                            <label htmlFor="cell-hpct" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                               Высота (%)
                             </label>
                             <input
+                              id="cell-hpct"
                               type="number"
                               min={8}
                               max={100}
                               value={Math.round(selectedCell.hPct)}
                               onChange={(e) =>
                                 updateSelectedCell({
-                                  hPct: Math.max(8, Math.min(100, Number(e.target.value) || 20)),
+                                  hPct: parseFiniteClamped(e.target.value, selectedCell.hPct, 8, 100),
                                 })
                               }
                               className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[12px]"
@@ -1151,10 +1178,11 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
 
                         <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
                           <div className="sm:col-span-5">
-                            <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                            <label htmlFor="cell-binding" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                               Привязка к полю или статичный текст
                             </label>
                             <select
+                              id="cell-binding"
                               value={selectedCell.fieldKey ? `field:${selectedCell.fieldKey}` : 'static'}
                               onChange={(e) => {
                                 const v = e.target.value;
@@ -1185,11 +1213,13 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                           </div>
 
                           <div className="sm:col-span-3">
-                            <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                            <label htmlFor="cell-text" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                               {selectedCell.fieldKey ? 'Подпись ячейки' : 'Текст ячейки'}
                             </label>
                             <input
+                              id="cell-text"
                               type="text"
+                              spellCheck={selectedCell.fieldKey ? undefined : false}
                               value={
                                 selectedCell.fieldKey
                                   ? selectedCell.label || ''
@@ -1205,10 +1235,11 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                           </div>
 
                           <div className="sm:col-span-2">
-                            <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                            <label htmlFor="cell-align" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                               Выравнивание
                             </label>
                             <select
+                              id="cell-align"
                               value={selectedCell.align || 'center'}
                               onChange={(e) =>
                                 updateSelectedCell({ align: e.target.value as 'left' | 'center' })
@@ -1222,10 +1253,11 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
 
                           <div className="sm:col-span-2 flex items-center gap-2">
                             <div className="flex-1">
-                              <label className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
+                              <label htmlFor="cell-fontsize" className="block text-[11px] text-[var(--flux-text-muted)] mb-1">
                                 Кегль
                               </label>
                               <input
+                                id="cell-fontsize"
                                 type="number"
                                 min={6}
                                 max={16}
@@ -1233,7 +1265,7 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                                 value={selectedCell.fontSize || 8.5}
                                 onChange={(e) =>
                                   updateSelectedCell({
-                                    fontSize: Math.max(6, Math.min(16, Number(e.target.value) || 8.5)),
+                                    fontSize: parseFiniteClamped(e.target.value, selectedCell.fontSize || 8.5, 6, 16),
                                   })
                                 }
                                 className="w-full h-8 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[12px]"
@@ -1241,6 +1273,8 @@ export const StampEditorModal: React.FC<StampEditorModalProps> = ({
                             </div>
                             <button
                               type="button"
+                              aria-label="Полужирное начертание"
+                              aria-pressed={Boolean(selectedCell.bold)}
                               onClick={() => updateSelectedCell({ bold: !selectedCell.bold })}
                               title="Полужирное начертание"
                               className={`mt-5 w-8 h-8 rounded border font-bold text-[12px] ${

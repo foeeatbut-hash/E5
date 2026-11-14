@@ -77,7 +77,7 @@ interface BottomConsoleProps {
   onTestApiSyncPush: () => Promise<void>;
 }
 
-export const BottomConsole: React.FC<BottomConsoleProps> = ({
+export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
   project,
   activeTab,
   collapsed,
@@ -490,6 +490,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <input
                         type="search"
+                        spellCheck={false}
                         value={bomQuery}
                         onChange={(e) => setBomQuery(e.target.value)}
                         placeholder="Поиск по ПЭ3 (позиция, артикул, завод)…"
@@ -911,27 +912,38 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
               {activeTab === 'erc' && (
                 <>
                   <div className="h-8 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5 p-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)]">
                       {(
                         [
                           ['all', `Все (${erc.length})`],
                           ['error', `Ошибки (${errorCount})`],
                           ['warning', `Предупреждения (${warningCount})`],
                         ] as const
-                      ).map(([fId, label]) => (
-                        <button
-                          key={fId}
-                          type="button"
-                          onClick={() => setErcFilter(fId)}
-                          className={`h-6 px-2 rounded text-[11px] font-medium transition-colors ${
-                            ercFilter === fId
-                              ? 'bg-[var(--flux-sel)] text-[var(--flux-text)]'
-                              : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                      ).map(([fId, label]) => {
+                        const active = ercFilter === fId;
+                        return (
+                          <button
+                            key={fId}
+                            type="button"
+                            onClick={() => setErcFilter(fId)}
+                            className={`relative h-5 px-2 rounded text-[11px] font-medium transition-colors ${
+                              active
+                                ? 'text-[var(--flux-text)]'
+                                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                            }`}
+                          >
+                            {active && (
+                              <motion.span
+                                layoutId="console-erc-filter-pill"
+                                transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+                                aria-hidden="true"
+                                className="absolute inset-0 rounded-xs bg-[var(--flux-surface)] border border-[var(--flux-line)]"
+                              />
+                            )}
+                            <span className="relative z-10">{label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                     <span
                       className={`text-[11px] font-mono ${
@@ -1004,22 +1016,36 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                 <>
                   <div className="h-8 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
                     <div className="flex items-center gap-1 min-w-0">
-                      {(['ALL', 'INFO', 'SYNC', 'WARN', 'ERROR'] as const).map((lvl) => (
-                        <button
-                          key={lvl}
-                          type="button"
-                          onClick={() => setLogLevelFilter(lvl)}
-                          className={`h-6 px-1.5 rounded text-[10.5px] font-mono transition-colors ${
-                            logLevelFilter === lvl
-                              ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
-                              : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
-                          }`}
-                        >
-                          {lvl}
-                        </button>
-                      ))}
+                      <div className="flex items-center gap-0.5 p-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)]">
+                        {(['ALL', 'INFO', 'SYNC', 'WARN', 'ERROR'] as const).map((lvl) => {
+                          const active = logLevelFilter === lvl;
+                          return (
+                            <button
+                              key={lvl}
+                              type="button"
+                              onClick={() => setLogLevelFilter(lvl)}
+                              className={`relative h-5 px-1.5 rounded text-[10.5px] font-mono transition-colors ${
+                                active
+                                  ? 'text-[var(--flux-text)] font-medium'
+                                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                              }`}
+                            >
+                              {active && (
+                                <motion.span
+                                  layoutId="console-log-level-pill"
+                                  transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+                                  aria-hidden="true"
+                                  className="absolute inset-0 rounded-xs bg-[var(--flux-surface)] border border-[var(--flux-line)]"
+                                />
+                              )}
+                              <span className="relative z-10">{lvl}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                       <input
                         type="search"
+                        spellCheck={false}
                         value={logQuery}
                         onChange={(e) => setLogQuery(e.target.value)}
                         placeholder="Поиск по логам…"
@@ -1261,6 +1287,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                             onClick={async () => {
                               try {
                                 const r = await fetch('/api/v1/openapi.json');
+                                if (!r.ok) {
+                                  throw new Error(`HTTP ${r.status}`);
+                                }
                                 const data = await r.json();
                                 setOpenApiPreview(JSON.stringify(data, null, 2));
                               } catch (err) {
@@ -1419,17 +1448,29 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                         <form
                           onSubmit={async (e) => {
                             e.preventDefault();
-                            const r = await fetch('/api/v1/integrations/webhooks', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ name: newWhName, url: newWhUrl, enabled: true }),
-                            });
-                            const data = await r.json();
-                            if (!r.ok) {
-                              setExtStatusMsg(data.error || 'Ошибка регистрации');
-                            } else {
-                              setExtStatusMsg(`Зарегистрирован Webhook: ${data.webhook?.name}`);
-                              await loadWebhooks();
+                            if (!newWhName.trim() || !newWhUrl.trim()) {
+                              setExtStatusMsg('Укажите название и URL системы');
+                              return;
+                            }
+                            try {
+                              const r = await fetch('/api/v1/integrations/webhooks', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  name: newWhName.trim(),
+                                  url: newWhUrl.trim(),
+                                  enabled: true,
+                                }),
+                              });
+                              const data = await r.json().catch(() => ({}));
+                              if (!r.ok) {
+                                setExtStatusMsg(data.error || `Ошибка регистрации (HTTP ${r.status})`);
+                              } else {
+                                setExtStatusMsg(`Зарегистрирован Webhook: ${data.webhook?.name}`);
+                                await loadWebhooks();
+                              }
+                            } catch (err) {
+                              setExtStatusMsg(`Ошибка сети: ${err instanceof Error ? err.message : String(err)}`);
                             }
                           }}
                           className="flex items-center gap-1.5"
@@ -1443,6 +1484,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                           />
                           <input
                             type="url"
+                            spellCheck={false}
                             value={newWhUrl}
                             onChange={(e) => setNewWhUrl(e.target.value)}
                             aria-label="URL внешнего Webhook"
@@ -1450,8 +1492,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                           />
                           <button
                             type="submit"
+                            disabled={!newWhName.trim() || !newWhUrl.trim()}
                             data-testid="add-webhook-btn"
-                            className="inline-flex items-center gap-1 h-6 px-2 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[10.5px] font-medium shrink-0"
+                            className="inline-flex items-center gap-1 h-6 px-2 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[10.5px] font-medium shrink-0 disabled:opacity-40 transition-colors"
                           >
                             <Plus className="w-3 h-3" />
                             <span>Добавить</span>
@@ -1471,27 +1514,44 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                                     type="button"
                                     data-testid={`test-webhook-${wh.id}`}
                                     onClick={async () => {
-                                      const r = await fetch(`/api/v1/integrations/webhooks/${wh.id}/test`, {
-                                        method: 'POST',
-                                      });
-                                      const d = await r.json();
-                                      setExtStatusMsg(
-                                        `Доставка "${wh.name}": HTTP ${d.status ?? 0} (${d.ok ? 'OK' : d.error})`
-                                      );
-                                      await loadWebhooks();
+                                      try {
+                                        const r = await fetch(`/api/v1/integrations/webhooks/${wh.id}/test`, {
+                                          method: 'POST',
+                                        });
+                                        const d = await r.json().catch(() => ({}));
+                                        setExtStatusMsg(
+                                          `Доставка "${wh.name}": HTTP ${d.status ?? r.status} (${d.ok ? 'OK' : d.error || 'Ошибка'})`
+                                        );
+                                        await loadWebhooks();
+                                      } catch (err) {
+                                        setExtStatusMsg(
+                                          `Сбой доставки "${wh.name}": ${err instanceof Error ? err.message : String(err)}`
+                                        );
+                                      }
                                     }}
-                                    className="h-5 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[10px]"
+                                    className="h-5 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[10px] transition-colors"
                                   >
                                     Тест
                                   </button>
                                   <button
                                     type="button"
                                     onClick={async () => {
-                                      await fetch(`/api/v1/integrations/webhooks/${wh.id}`, { method: 'DELETE' });
-                                      await loadWebhooks();
+                                      try {
+                                        const r = await fetch(`/api/v1/integrations/webhooks/${wh.id}`, {
+                                          method: 'DELETE',
+                                        });
+                                        if (!r.ok) {
+                                          setExtStatusMsg(`Не удалось удалить Webhook (HTTP ${r.status})`);
+                                        }
+                                        await loadWebhooks();
+                                      } catch (err) {
+                                        setExtStatusMsg(
+                                          `Ошибка удаления: ${err instanceof Error ? err.message : String(err)}`
+                                        );
+                                      }
                                     }}
                                     aria-label={`Удалить ${wh.name}`}
-                                    className="w-5 h-5 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600"
+                                    className="w-5 h-5 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 transition-colors"
                                   >
                                     <Trash2 className="w-3 h-3" />
                                   </button>
@@ -1508,37 +1568,53 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
                         </span>
                         <div className="flex items-center gap-1.5">
                           <select
+                            aria-label="HTTP-метод внешнего вызова"
                             value={extCallMethod}
                             onChange={(e) => setExtCallMethod(e.target.value as 'POST' | 'GET')}
-                            className="h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10.5px]"
+                            className="h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10.5px] text-[var(--flux-text)]"
                           >
                             <option value="POST">POST</option>
                             <option value="GET">GET</option>
                           </select>
                           <input
                             type="url"
+                            spellCheck={false}
+                            aria-label="URL внешнего API для отправки ПЭ3"
                             value={extCallUrl}
                             onChange={(e) => setExtCallUrl(e.target.value)}
-                            className="flex-1 min-w-0 h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10.5px]"
+                            className="flex-1 min-w-0 h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[10.5px] text-[var(--flux-text)]"
                           />
                           <button
                             type="button"
+                            disabled={!extCallUrl.trim()}
                             data-testid="external-call-btn"
                             onClick={async () => {
-                              const r = await fetch('/api/v1/integrations/external-call', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  method: extCallMethod,
-                                  url: extCallUrl,
-                                  body: { projectCode: project.projectCode, bomCount: bom.length },
-                                }),
-                              });
-                              const d = await r.json();
-                              setExtStatusMsg(`HTTP ${d.status}: ${JSON.stringify(d.data).slice(0, 100)}`);
-                              await loadWebhooks();
+                              if (!extCallUrl.trim()) {
+                                setExtStatusMsg('Укажите URL внешнего API');
+                                return;
+                              }
+                              try {
+                                const r = await fetch('/api/v1/integrations/external-call', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    method: extCallMethod,
+                                    url: extCallUrl.trim(),
+                                    body: { projectCode: project.projectCode, bomCount: bom.length },
+                                  }),
+                                });
+                                const d = await r.json().catch(() => ({}));
+                                setExtStatusMsg(
+                                  `HTTP ${d.status ?? r.status}: ${JSON.stringify(d.data ?? d.error ?? {}).slice(0, 100)}`
+                                );
+                                await loadWebhooks();
+                              } catch (err) {
+                                setExtStatusMsg(
+                                  `Ошибка вызова: ${err instanceof Error ? err.message : String(err)}`
+                                );
+                              }
                             }}
-                            className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium shrink-0"
+                            className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium shrink-0 disabled:opacity-40 transition-colors"
                           >
                             Отправить ПЭ3
                           </button>
@@ -1598,4 +1674,5 @@ export const BottomConsole: React.FC<BottomConsoleProps> = ({
       )}
     </section>
   );
-};
+});
+BottomConsole.displayName = 'BottomConsole';

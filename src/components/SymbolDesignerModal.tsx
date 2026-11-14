@@ -68,6 +68,12 @@ const DIR_LABELS: Record<PinDirection, string> = {
   right: 'Право',
 };
 
+function parseFiniteClamped(raw: string, fallback: number, min: number, max: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
 export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
   open,
   initialItem,
@@ -403,6 +409,8 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                   {tool === 'text' && (
                     <input
                       type="text"
+                      spellCheck={false}
+                      aria-label="Текст метки УГО"
                       value={newTextLabel}
                       onChange={(e) => setNewTextLabel(e.target.value)}
                       placeholder="Текст метки"
@@ -411,6 +419,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                   )}
                   {tool === 'pin' && (
                     <select
+                      aria-label="Тип сигнала нового вывода"
                       value={pinSignalType}
                       onChange={(e) => setPinSignalType(e.target.value as SignalType)}
                       className="h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
@@ -691,30 +700,32 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
               <div className="w-full lg:w-[340px] shrink-0 overflow-y-auto p-3 space-y-3 text-[12px]">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-1">
+                    <label htmlFor="sd-width" className="block text-[10.5px] text-[var(--flux-text-muted)] mb-1">
                       Ширина блока (мм)
                     </label>
                     <input
+                      id="sd-width"
                       type="number"
                       min={40}
                       max={400}
                       step={10}
                       value={width}
-                      onChange={(e) => setWidth(Math.max(40, Math.min(400, Number(e.target.value) || 120)))}
+                      onChange={(e) => setWidth(parseFiniteClamped(e.target.value, width, 40, 400))}
                       className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10.5px] text-[var(--flux-text-muted)] mb-1">
+                    <label htmlFor="sd-height" className="block text-[10.5px] text-[var(--flux-text-muted)] mb-1">
                       Высота блока (мм)
                     </label>
                     <input
+                      id="sd-height"
                       type="number"
                       min={40}
                       max={400}
                       step={10}
                       value={height}
-                      onChange={(e) => setHeight(Math.max(40, Math.min(400, Number(e.target.value) || 100)))}
+                      onChange={(e) => setHeight(parseFiniteClamped(e.target.value, height, 40, 400))}
                       className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[var(--flux-text)]"
                     />
                   </div>
@@ -726,10 +737,11 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                       Карточка элемента базы
                     </div>
                     <div>
-                      <label className="block text-[10px] text-[var(--flux-text-muted)] mb-0.5">
+                      <label htmlFor="sd-comp-name" className="block text-[10px] text-[var(--flux-text-muted)] mb-0.5">
                         Наименование
                       </label>
                       <input
+                        id="sd-comp-name"
                         type="text"
                         data-testid="symbol-designer-name-input"
                         value={componentName}
@@ -739,22 +751,26 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
                       <div>
-                        <label className="block text-[10px] text-[var(--flux-text-muted)] mb-0.5">
+                        <label htmlFor="sd-prefix" className="block text-[10px] text-[var(--flux-text-muted)] mb-0.5">
                           Префикс ОУО
                         </label>
                         <input
+                          id="sd-prefix"
                           type="text"
+                          spellCheck={false}
                           value={defaultPrefix}
                           onChange={(e) => setDefaultPrefix(e.target.value.toUpperCase())}
                           className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-[var(--flux-text-muted)] mb-0.5">
+                        <label htmlFor="sd-article" className="block text-[10px] text-[var(--flux-text-muted)] mb-0.5">
                           Артикул
                         </label>
                         <input
+                          id="sd-article"
                           type="text"
+                          spellCheck={false}
                           value={article}
                           onChange={(e) => setArticle(e.target.value)}
                           className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
@@ -855,6 +871,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                       >
                         <input
                           type="text"
+                          spellCheck={false}
                           value={p.name}
                           onChange={(e) =>
                             setPins((prev) =>
@@ -868,6 +885,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                           {p.dx},{p.dy}
                         </span>
                         <select
+                          aria-label={`Направление вывода ${p.name}`}
                           value={p.direction}
                           onChange={(e) =>
                             setPins((prev) =>
@@ -885,6 +903,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                           ))}
                         </select>
                         <select
+                          aria-label={`Сигнал вывода ${p.name}`}
                           value={p.signalType}
                           onChange={(e) =>
                             setPins((prev) =>

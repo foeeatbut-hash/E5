@@ -40,7 +40,7 @@ interface LeftExplorerProps {
 
 const TREE_TRANSITION = { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const };
 
-export const LeftExplorer: React.FC<LeftExplorerProps> = ({
+export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   project,
   catalog,
   activeSheetId,
@@ -176,6 +176,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
           <Search className="w-3.5 h-3.5 text-[var(--flux-text-muted)] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
+            spellCheck={false}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={tab === 'project' ? 'Поиск тега, артикула…' : 'Поиск символа или ГОСТ…'}
@@ -626,4 +627,5 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
       </div>
     </aside>
   );
-};
+});
+LeftExplorer.displayName = 'LeftExplorer';

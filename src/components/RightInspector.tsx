@@ -102,7 +102,13 @@ interface RightInspectorProps {
   ) => void;
 }
 
-export const RightInspector: React.FC<RightInspectorProps> = ({
+const parseFiniteNum = (raw: string): number | null => {
+  if (raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+};
+
+export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   project,
   activeSheet,
   customTemplates = [],
@@ -534,6 +540,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 <input
                   id="insp-designation"
                   type="text"
+                  spellCheck={false}
                   value={selectedDevice.designation}
                   onChange={(e) => onUpdateDevice(selectedDevice.id, { designation: e.target.value })}
                   className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
@@ -567,6 +574,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   <input
                     id="insp-article"
                     type="text"
+                    spellCheck={false}
                     value={selectedDevice.article}
                     onChange={(e) => onUpdateDevice(selectedDevice.id, { article: e.target.value })}
                     className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
@@ -601,9 +609,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                     id="insp-x"
                     type="number"
                     value={selectedDevice.x}
-                    onChange={(e) =>
-                      onUpdateDevice(selectedDevice.id, { x: Number(e.target.value) || 0 })
-                    }
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null) onUpdateDevice(selectedDevice.id, { x: n });
+                    }}
                     className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[12px] text-[var(--flux-text)]"
                   />
                 </div>
@@ -618,9 +627,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                     id="insp-y"
                     type="number"
                     value={selectedDevice.y}
-                    onChange={(e) =>
-                      onUpdateDevice(selectedDevice.id, { y: Number(e.target.value) || 0 })
-                    }
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null) onUpdateDevice(selectedDevice.id, { y: n });
+                    }}
                     className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono tabular-nums text-[12px] text-[var(--flux-text)]"
                   />
                 </div>
@@ -654,6 +664,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   <input
                     id="insp-e3block"
                     type="text"
+                    spellCheck={false}
                     value={selectedDevice.e3BlockName}
                     onChange={(e) => onUpdateDevice(selectedDevice.id, { e3BlockName: e.target.value })}
                     className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
@@ -777,6 +788,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       id="insp-offpage-potential"
                       data-testid="inspector-offpage-potential"
                       type="text"
+                      spellCheck={false}
                       list="offpage-potential-nets"
                       value={meta.potentialName}
                       onChange={(e) =>
@@ -917,6 +929,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                     </div>
                     <input
                       type="text"
+                      spellCheck={false}
                       aria-label={`Значение атрибута ${attr.name}`}
                       value={attr.value}
                       onChange={(e) => handleAttrChange(idx, { value: e.target.value })}
@@ -930,6 +943,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               <form onSubmit={handleAddAttr} className="flex items-center gap-1 pt-1">
                 <input
                   type="text"
+                  spellCheck={false}
                   value={newAttrName}
                   onChange={(e) => setNewAttrName(e.target.value)}
                   placeholder="Атрибут"
@@ -938,6 +952,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 />
                 <input
                   type="text"
+                  spellCheck={false}
                   value={newAttrValue}
                   onChange={(e) => setNewAttrValue(e.target.value)}
                   placeholder="Значение"
@@ -946,8 +961,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 />
                 <button
                   type="submit"
+                  disabled={!newAttrName.trim()}
                   aria-label="Добавить атрибут"
-                  className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]"
+                  className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] disabled:opacity-40 transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
@@ -1006,6 +1022,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               <input
                 id="wire-net"
                 type="text"
+                spellCheck={false}
                 value={selectedWire.netName}
                 onChange={(e) => onUpdateWire(selectedWire.id, { netName: e.target.value })}
                 className="w-full h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
@@ -1023,6 +1040,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 <input
                   id="wire-num"
                   type="text"
+                  spellCheck={false}
                   value={selectedWire.wireNumber}
                   onChange={(e) => onUpdateWire(selectedWire.id, { wireNumber: e.target.value })}
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
@@ -1038,6 +1056,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 <input
                   id="wire-sec"
                   type="text"
+                  spellCheck={false}
                   value={selectedWire.crossSection}
                   onChange={(e) => onUpdateWire(selectedWire.id, { crossSection: e.target.value })}
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
@@ -1209,6 +1228,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       </label>
                       <input
                         type="text"
+                        aria-label="Заголовок таблицы ГОСТ"
                         data-testid="inspector-table-title-input"
                         value={cfg.title ?? selectedAnnotation.text ?? ''}
                         onChange={(e) => {
@@ -1229,11 +1249,13 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                           type="number"
                           min={0}
                           max={200}
+                          aria-label="Максимальное количество строк таблицы"
                           data-testid="inspector-table-maxrows-input"
                           value={cfg.maxRows ?? 0}
-                          onChange={(e) =>
-                            updateCfg({ maxRows: Math.max(0, Number(e.target.value) || 0) })
-                          }
+                          onChange={(e) => {
+                            const n = parseFiniteNum(e.target.value);
+                            if (n !== null) updateCfg({ maxRows: Math.max(0, Math.min(200, n)) });
+                          }}
                           className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11.5px] text-[var(--flux-text)]"
                         />
                       </div>
@@ -1245,12 +1267,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                           type="number"
                           min={18}
                           max={36}
+                          aria-label="Высота строки таблицы в миллиметрах"
                           value={cfg.rowHeight ?? 22}
-                          onChange={(e) =>
-                            updateCfg({
-                              rowHeight: Math.max(18, Math.min(36, Number(e.target.value) || 22)),
-                            })
-                          }
+                          onChange={(e) => {
+                            const n = parseFiniteNum(e.target.value);
+                            if (n !== null) updateCfg({ rowHeight: Math.max(18, Math.min(36, n)) });
+                          }}
                           className="w-full h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[11.5px] text-[var(--flux-text)]"
                         />
                       </div>
@@ -1301,9 +1323,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   id="ann-x"
                   type="number"
                   value={selectedAnnotation.x}
-                  onChange={(e) =>
-                    onUpdateAnnotation(selectedAnnotation.id, { x: Number(e.target.value) || 0 })
-                  }
+                  onChange={(e) => {
+                    const n = parseFiniteNum(e.target.value);
+                    if (n !== null) onUpdateAnnotation(selectedAnnotation.id, { x: n });
+                  }}
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
                 />
               </div>
@@ -1318,9 +1341,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   id="ann-y"
                   type="number"
                   value={selectedAnnotation.y}
-                  onChange={(e) =>
-                    onUpdateAnnotation(selectedAnnotation.id, { y: Number(e.target.value) || 0 })
-                  }
+                  onChange={(e) => {
+                    const n = parseFiniteNum(e.target.value);
+                    if (n !== null) onUpdateAnnotation(selectedAnnotation.id, { y: n });
+                  }}
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
                 />
               </div>
@@ -1336,12 +1360,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 <input
                   id="ann-w"
                   type="number"
+                  min={40}
                   value={selectedAnnotation.width}
-                  onChange={(e) =>
-                    onUpdateAnnotation(selectedAnnotation.id, {
-                      width: Math.max(40, Number(e.target.value) || 120),
-                    })
-                  }
+                  onChange={(e) => {
+                    const n = parseFiniteNum(e.target.value);
+                    if (n !== null) onUpdateAnnotation(selectedAnnotation.id, { width: Math.max(40, n) });
+                  }}
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
                 />
               </div>
@@ -1355,12 +1379,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 <input
                   id="ann-h"
                   type="number"
+                  min={24}
                   value={selectedAnnotation.height}
-                  onChange={(e) =>
-                    onUpdateAnnotation(selectedAnnotation.id, {
-                      height: Math.max(24, Number(e.target.value) || 60),
-                    })
-                  }
+                  onChange={(e) => {
+                    const n = parseFiniteNum(e.target.value);
+                    if (n !== null) onUpdateAnnotation(selectedAnnotation.id, { height: Math.max(24, n) });
+                  }}
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
                 />
               </div>
@@ -1374,12 +1398,17 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 <input
                   id="ann-fs"
                   type="number"
+                  min={8}
+                  max={36}
                   value={selectedAnnotation.fontSize || 12}
-                  onChange={(e) =>
-                    onUpdateAnnotation(selectedAnnotation.id, {
-                      fontSize: Math.max(8, Math.min(36, Number(e.target.value) || 12)),
-                    })
-                  }
+                  onChange={(e) => {
+                    const n = parseFiniteNum(e.target.value);
+                    if (n !== null) {
+                      onUpdateAnnotation(selectedAnnotation.id, {
+                        fontSize: Math.max(8, Math.min(36, n)),
+                      });
+                    }
+                  }}
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
                 />
               </div>
@@ -1400,11 +1429,14 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   min="0.5"
                   max="6"
                   value={selectedAnnotation.strokeWidth ?? project.visualSettings.annotationStrokeWidth ?? 1.4}
-                  onChange={(e) =>
-                    onUpdateAnnotation(selectedAnnotation.id, {
-                      strokeWidth: Math.max(0.5, Math.min(6, Number(e.target.value) || 1.4)),
-                    })
-                  }
+                  onChange={(e) => {
+                    const n = parseFiniteNum(e.target.value);
+                    if (n !== null) {
+                      onUpdateAnnotation(selectedAnnotation.id, {
+                        strokeWidth: Math.max(0.5, Math.min(6, n)),
+                      });
+                    }
+                  }}
                   className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[12px] text-[var(--flux-text)]"
                 />
               </div>
@@ -1576,6 +1608,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               <input
                 id="sheet-doc"
                 type="text"
+                spellCheck={false}
                 value={activeSheet.titleBlock.documentCode}
                 onChange={(e) =>
                   onUpdateSheetTitle(activeSheet.id, { documentCode: e.target.value })
@@ -1836,6 +1869,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       <div className="grid grid-cols-2 gap-1.5">
                         <input
                           type="text"
+                          spellCheck={false}
                           data-testid="release-revision-code-input"
                           value={releaseCode}
                           onChange={(e) => setReleaseCode(e.target.value)}
@@ -1845,6 +1879,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                         />
                         <input
                           type="text"
+                          spellCheck={false}
                           data-testid="release-revision-doc-input"
                           value={releaseDoc}
                           onChange={(e) => setReleaseDoc(e.target.value)}
@@ -1971,4 +2006,5 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
       </motion.div>
     </aside>
   );
-};
+});
+RightInspector.displayName = 'RightInspector';
