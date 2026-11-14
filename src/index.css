@@ -106,8 +106,8 @@ html, body, #root {
   background-color: var(--flux-bg);
   color: var(--flux-text);
   font-family: var(--font-sans);
-  font-size: 12px;
-  line-height: 17px;
+  font-size: 11.5px;
+  line-height: 16px;
   -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-user-select: none;
@@ -207,7 +207,7 @@ pre,
 
 /* Precision CAD vector stroke weight for UI chrome icons */
 svg.lucide {
-  stroke-width: 1.45;
+  stroke-width: 1.4;
 }
 
 .tabular-nums {
@@ -227,8 +227,10 @@ svg.lucide {
   background-color: var(--flux-glass-surface-alt);
   border-top: 1px solid var(--flux-line);
   border-bottom: 1px solid var(--flux-line);
-  padding: 3px 8px;
-  font-size: 11px;
+  padding: 2px 8px;
+  min-height: 21px;
+  font-size: 10.5px;
+  line-height: 15px;
   font-weight: 600;
   color: var(--flux-text);
   display: flex;
@@ -239,14 +241,15 @@ svg.lucide {
 
 .cad-prop-grid {
   display: grid;
-  grid-template-columns: minmax(96px, 43%) minmax(0, 1fr);
+  grid-template-columns: minmax(90px, 43%) minmax(0, 1fr);
   background-color: var(--flux-glass-surface);
 }
 
 .cad-prop-label {
-  padding: 3px 6px 3px 8px;
+  padding: 2px 6px 2px 8px;
   font-size: 11px;
-  line-height: 18px;
+  line-height: 16px;
+  min-height: 21px;
   color: var(--flux-text-muted);
   background-color: var(--flux-glass-surface-alt);
   border-right: 1px solid var(--flux-line);
@@ -263,6 +266,7 @@ svg.lucide {
   background-color: var(--flux-glass-surface);
   border-bottom: 1px solid var(--flux-line);
   min-width: 0;
+  min-height: 21px;
   display: flex;
   align-items: center;
 }
@@ -273,11 +277,11 @@ svg.lucide {
 
 .cad-prop-input {
   width: 100%;
-  height: 24px;
+  height: 21px;
   padding: 0 6px;
   background: transparent;
   color: var(--flux-text);
-  font-size: 11.5px;
+  font-size: 11px;
   border: 0;
   outline: none;
   min-width: 0;

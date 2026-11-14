@@ -216,12 +216,12 @@ const RibbonPanel: React.FC<{ title: string; isLast?: boolean; children: React.R
   children,
 }) => (
   <div
-    className={`flex flex-col justify-between h-full px-2 py-1 shrink-0 ${
+    className={`flex flex-col justify-between h-full px-2 pt-1 pb-0.5 shrink-0 ${
       isLast ? '' : 'border-r border-[var(--flux-line)]'
     }`}
   >
     <div className="flex-1 flex items-center gap-0.5 min-h-0">{children}</div>
-    <div className="text-[9.5px] leading-none font-medium text-center text-[var(--flux-text-muted)] pt-0.5 select-none whitespace-nowrap">
+    <div className="text-[10px] leading-[13px] h-[14px] font-medium text-center text-[var(--flux-text-muted)] pt-0.5 select-none whitespace-nowrap">
       {title}
     </div>
   </div>
@@ -256,7 +256,7 @@ const LargeRibbonBtn: React.FC<LargeRibbonBtnProps> = ({
     onClick={onClick}
     disabled={disabled}
     title={title || label}
-    className={`group flex flex-col items-center justify-center gap-1 min-w-[48px] h-[46px] px-1.5 rounded-[2px] border transition-colors whitespace-nowrap shrink-0 disabled:opacity-35 ${
+    className={`group flex flex-col items-center justify-center gap-1 min-w-[46px] h-[50px] px-1.5 rounded-[2px] border transition-colors whitespace-nowrap shrink-0 disabled:opacity-35 ${
       active
         ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)]/70 text-[var(--flux-text)]'
         : danger
@@ -275,12 +275,12 @@ const LargeRibbonBtn: React.FC<LargeRibbonBtnProps> = ({
     >
       {icon}
     </span>
-    <span className="text-[10.5px] leading-none font-medium text-center">{label}</span>
+    <span className="text-[10.5px] leading-[1.1] font-medium text-center">{label}</span>
   </button>
 );
 
 const RibbonStack: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="flex flex-col justify-between h-[46px] gap-0.5 shrink-0">{children}</div>
+  <div className="flex flex-col justify-center h-[50px] gap-1 shrink-0">{children}</div>
 );
 
 interface SmallRibbonBtnProps {
@@ -599,7 +599,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
       />
 
       {/* Row 1: CAD Application Button + Monochrome Quick Access Toolbar + Document Title */}
-      <div className="flex items-center justify-between gap-2 lg:gap-4 px-1.5 lg:px-2 h-8 border-b border-[var(--flux-line)] min-w-0 flux-glass-bar">
+      <div className="flex items-center justify-between gap-2 lg:gap-4 px-1.5 h-7 border-b border-[var(--flux-line)] min-w-0 flux-glass-bar">
         <div className="flex items-center gap-0.5 shrink-0">
           <button
             ref={menuBtnRef}
@@ -609,13 +609,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             aria-expanded={appMenuOpen}
             onClick={() => setAppMenuOpen((o) => !o)}
             title="Главное меню программы: файлы, экспорт, штампы, настройки"
-            className={`inline-flex items-center gap-1.5 h-6 pl-2 pr-2 rounded-md font-semibold text-[11.5px] tracking-tight border transition-colors whitespace-nowrap shrink-0 mr-1 ${
+            className={`inline-flex items-center gap-1.5 h-[21px] pl-1.5 pr-2 rounded-[4px] font-semibold text-[11px] tracking-tight border transition-colors whitespace-nowrap shrink-0 mr-1 ${
               appMenuOpen
                 ? 'bg-[var(--flux-accent-solid)] text-white border-[var(--flux-accent-solid)]'
                 : 'bg-[#12261e] dark:bg-[#193329] hover:bg-[#183428] dark:hover:bg-[#214235] text-emerald-50 border-[#285442]'
             }`}
           >
-            <svg width="13" height="13" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 18 18" fill="none" aria-hidden="true">
               <rect x="1.5" y="1.5" width="15" height="15" rx="3" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.5" />
               <path
                 d="M4.2 9h3.4l1.9-3.6 2 7.2 1.6-3.6H14"
@@ -639,7 +639,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canUndo : !canUndo}
             title={isSymbolEditorOpen ? 'Отменить в редакторе УГО (Ctrl+Z)' : 'Отменить (Ctrl+Z)'}
             aria-label="Отменить действие"
-            className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
           >
             <Undo2 className="w-3.5 h-3.5" />
           </button>
@@ -649,7 +649,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canRedo : !canRedo}
             title={isSymbolEditorOpen ? 'Повторить в редакторе УГО (Ctrl+Y)' : 'Повторить (Ctrl+Y)'}
             aria-label="Повторить действие"
-            className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
           >
             <Redo2 className="w-3.5 h-3.5" />
           </button>
@@ -657,12 +657,12 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
         {/* Centered Document Title */}
         <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
-          <span className="text-[11.5px] font-medium text-[var(--flux-text)] truncate max-w-[200px] md:max-w-[320px] lg:max-w-[460px]">
+          <span className="text-[11px] font-medium text-[var(--flux-text)] truncate max-w-[200px] md:max-w-[320px] lg:max-w-[460px]">
             {isSymbolEditorOpen && symbolWorkspace
               ? `Редактор блока УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
               : project.name}
           </span>
-          <span className="hidden xl:inline text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
+          <span className="hidden xl:inline text-[10.5px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
             {isSymbolEditorOpen && symbolWorkspace
               ? `${symbolWorkspace.draft.e3BlockName || 'BLOCK'} · ${symbolWorkspace.draft.width}×${symbolWorkspace.draft.height}`
               : `${project.projectCode} · Rev ${project.revision}`}
@@ -678,11 +678,11 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               onClick={onOpenCommandPalette}
               aria-label="Палитра команд (Ctrl+K)"
               title="Палитра команд и быстрый переход (Ctrl+K)"
-              className="inline-flex items-center gap-1.5 h-6 px-2 mr-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+              className="inline-flex items-center gap-1 h-[21px] px-1.5 mr-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[10.5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
             >
               <Search className="w-3 h-3 text-[var(--flux-accent)]" />
               <span className="hidden sm:inline">Команды</span>
-              <kbd className="font-mono text-[10px] text-[var(--flux-text-muted)]">
+              <kbd className="font-mono text-[9.5px] text-[var(--flux-text-muted)]">
                 Ctrl+K
               </kbd>
             </button>
@@ -694,20 +694,20 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               onClick={onOpenHealthDashboard}
               aria-label="Монитор здоровья и телеметрия процессов"
               title="Монитор здоровья, частота логов и диагностика лагов"
-              className={`inline-flex items-center gap-1 h-6 px-2 mr-0.5 rounded-[2px] border text-[11px] font-medium transition-colors shrink-0 ${
+              className={`inline-flex items-center gap-1 h-[21px] px-1.5 mr-0.5 rounded-[2px] border text-[10.5px] font-medium transition-colors shrink-0 ${
                 errorLogCount > 0
                   ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20'
                   : 'border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
               }`}
             >
               <Activity
-                className={`w-3.5 h-3.5 ${
+                className={`w-3 h-3 ${
                   errorLogCount > 0 ? 'text-rose-500' : 'text-[var(--flux-text-muted)]'
                 }`}
               />
               <span className="hidden lg:inline">Здоровье</span>
               {errorLogCount > 0 && (
-                <span className="font-mono tabular-nums text-[10px] font-semibold">
+                <span className="font-mono tabular-nums text-[9.5px] font-semibold">
                   {errorLogCount}
                 </span>
               )}
@@ -718,7 +718,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             onClick={onToggleTheme}
             aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}
             title={isDark ? 'Светлая тема' : 'Тёмная тема'}
-            className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
           >
             {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
           </button>
@@ -728,7 +728,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             onClick={() => setRibbonCollapsed((c) => !c)}
             aria-label={ribbonCollapsed ? 'Развернуть ленту команд' : 'Свернуть ленту команд'}
             title={ribbonCollapsed ? 'Развернуть ленту' : 'Свернуть ленту'}
-            className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
           >
             <motion.span
               animate={{ rotate: ribbonCollapsed ? 180 : 0 }}
@@ -1136,7 +1136,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                   setActiveTab(tab.id);
                   if (ribbonCollapsed) setRibbonCollapsed(false);
                 }}
-                className={`relative h-full px-2.5 text-[11.5px] border-x border-t transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
+                className={`relative h-full px-2.5 text-[11px] border-x border-t transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
                   isActive
                     ? 'bg-[var(--flux-bg)] border-[var(--flux-line)] border-t-2 border-t-[var(--flux-accent)] text-[var(--flux-text)] border-b-transparent -mb-px pb-px font-semibold'
                     : isContextual
@@ -1150,7 +1150,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           })}
         </div>
 
-        <div className="hidden md:flex items-center gap-2 text-[11px] text-[var(--flux-text-muted)] whitespace-nowrap shrink-0 pl-2">
+        <div className="hidden md:flex items-center gap-2 text-[10.5px] text-[var(--flux-text-muted)] whitespace-nowrap shrink-0 pl-2">
           {isSymbolEditorOpen && symbolWorkspace ? (
             <span className="font-mono tabular-nums text-[var(--flux-accent)]">
               Блок: {symbolWorkspace.draft.shapes.length} прим. · {symbolWorkspace.draft.pins.length} выв. · {symbolWorkspace.draft.attributes.length} атр.
@@ -1170,25 +1170,25 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             key="ribbon-body"
             data-testid="ribbon-body"
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 68, opacity: 1 }}
+            animate={{ height: 74, opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden bg-[var(--flux-bg)]"
           >
-            <div className="flex items-stretch h-[68px] px-1 bg-[var(--flux-bg)] overflow-x-auto no-scrollbar">
+            <div className="flex items-stretch h-[74px] px-1 bg-[var(--flux-bg)] overflow-x-auto no-scrollbar">
               <div className="flex items-stretch h-full">
                   {activeTab === 'home' && (
                     <>
                       <RibbonPanel title="Инструменты">
                         <LargeRibbonBtn
-                          icon={<MousePointer2 className="w-[17px] h-[17px]" />}
+                          icon={<MousePointer2 className="w-[18px] h-[18px]" />}
                           label="Выбор"
                           title="Выбор и перетаскивание элементов (V)"
                           active={tool === 'select'}
                           onClick={() => onSetTool('select')}
                         />
                         <LargeRibbonBtn
-                          icon={<Spline className="w-[17px] h-[17px]" />}
+                          icon={<Spline className="w-[18px] h-[18px]" />}
                           label="Провод"
                           title="Соединить выводы проводом (W)"
                           active={tool === 'wire'}
@@ -1238,13 +1238,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                       <RibbonPanel title="База изделий">
                         <LargeRibbonBtn
-                          icon={<Database className="w-[17px] h-[17px]" />}
+                          icon={<Database className="w-[18px] h-[18px]" />}
                           label="База изделий"
                           title="Открыть каталог изделий в левом окне"
                           onClick={onOpenCatalogTab}
                         />
                         <LargeRibbonBtn
-                          icon={<Plus className="w-[17px] h-[17px]" />}
+                          icon={<Plus className="w-[18px] h-[18px]" />}
                           label="+ Изделие"
                           title="Создать новое изделие с атрибутами в базе"
                           onClick={onOpenAddCatalogItem}
@@ -1280,7 +1280,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           />
                         </RibbonStack>
                         <LargeRibbonBtn
-                          icon={<Printer className="w-[17px] h-[17px]" />}
+                          icon={<Printer className="w-[18px] h-[18px]" />}
                           label="Отчёт ПЭ3"
                           title="Печатная форма и перечень элементов ГОСТ"
                           onClick={onOpenReportModal}
@@ -1293,7 +1293,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                     <>
                       <RibbonPanel title="Графика и УГО">
                         <LargeRibbonBtn
-                          icon={<Square className="w-[17px] h-[17px]" />}
+                          icon={<Square className="w-[18px] h-[18px]" />}
                           label="Рамка"
                           title="Начертить пунктирный контур / зону шкафа на листе"
                           active={tool === 'rect'}
@@ -1301,7 +1301,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={() => onSetTool('rect')}
                         />
                         <LargeRibbonBtn
-                          icon={<ArrowUpRight className="w-[17px] h-[17px]" />}
+                          icon={<ArrowUpRight className="w-[18px] h-[18px]" />}
                           label="Выноска"
                           title="Поставить выноску со стрелкой на листе"
                           active={tool === 'callout'}
@@ -1309,7 +1309,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={() => onSetTool('callout')}
                         />
                         <LargeRibbonBtn
-                          icon={<Type className="w-[17px] h-[17px]" />}
+                          icon={<Type className="w-[18px] h-[18px]" />}
                           label="Текст"
                           title="Добавить текстовую надпись / примечание на лист"
                           active={tool === 'text'}
@@ -1317,7 +1317,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={() => onSetTool('text')}
                         />
                         <LargeRibbonBtn
-                          icon={<ArrowLeftRight className="w-[17px] h-[17px]" />}
+                          icon={<ArrowLeftRight className="w-[18px] h-[18px]" />}
                           label="Ссылка Л↔Л"
                           title="Поставить межлистовую ссылку потенциала (E3.series Off-Page Connector)"
                           active={tool === 'offpage'}
@@ -1326,7 +1326,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         />
                         {onOpenSymbolDesigner && (
                           <LargeRibbonBtn
-                            icon={<PenTool className="w-[17px] h-[17px]" />}
+                            icon={<PenTool className="w-[18px] h-[18px]" />}
                             label="Редактор УГО"
                             title="Создать и нарисовать пользовательское УГО по сетке"
                             accent
@@ -1338,7 +1338,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                       <RibbonPanel title="Трассировка">
                         <LargeRibbonBtn
-                          icon={<Workflow className="w-[17px] h-[17px]" />}
+                          icon={<Workflow className="w-[18px] h-[18px]" />}
                           label="Выровнять"
                           title="Выровнять соединительные линии без пересечения блоков"
                           onClick={onAutoRouteWires}
@@ -1364,7 +1364,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         </RibbonStack>
                         {onToggleCrosshair && (
                           <LargeRibbonBtn
-                            icon={<Crosshair className="w-[17px] h-[17px]" />}
+                            icon={<Crosshair className="w-[18px] h-[18px]" />}
                             label="Прицел"
                             title="Глобальное перекрестие курсора (Crosshair) для точного выравнивания"
                             active={vs.showCrosshair !== false}
@@ -1372,13 +1372,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             onClick={onToggleCrosshair}
                           />
                         )}
-                        <div className="flex flex-col justify-center gap-1 px-1.5 h-[46px] shrink-0">
+                        <div className="flex flex-col justify-center gap-1 px-1.5 h-[50px] shrink-0">
                           <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">Шаг сетки</span>
                           <select
                             aria-label="Шаг чертёжной сетки"
                             value={vs.gridSize}
                             onChange={(e) => onChangeGridSize(Number(e.target.value))}
-                            className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[11px] text-[var(--flux-text)]"
+                            className="h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10.5px] text-[var(--flux-text)]"
                           >
                             <option value={10}>10 мм</option>
                             <option value={20}>20 мм</option>
@@ -1394,14 +1394,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       {onInsertGostTable && (
                         <RibbonPanel title="Таблицы ГОСТ на лист">
                           <LargeRibbonBtn
-                            icon={<Table2 className="w-[17px] h-[17px]" />}
+                            icon={<Table2 className="w-[18px] h-[18px]" />}
                             label="Таблица ПЭ3"
                             title="Вставить автообновляемый перечень элементов ПЭ3 прямо на чертёж"
                             testId="insert-bom-table-btn"
                             onClick={() => onInsertGostTable('bom')}
                           />
                           <LargeRibbonBtn
-                            icon={<FileSpreadsheet className="w-[17px] h-[17px]" />}
+                            icon={<FileSpreadsheet className="w-[18px] h-[18px]" />}
                             label="Каб. журнал"
                             title="Вставить автообновляемую таблицу кабельного журнала на лист"
                             testId="insert-cable-table-btn"
@@ -1539,13 +1539,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             onClick={onOpenVisualModal}
                           />
                         </RibbonStack>
-                        <div className="flex flex-col justify-center gap-1 px-1.5 h-[46px] shrink-0">
+                        <div className="flex flex-col justify-center gap-1 px-1.5 h-[50px] shrink-0">
                           <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">Шрифт ГОСТ</span>
                           <select
                             aria-label="Шрифт аннотаций и таблиц"
                             value={vs.fontFamily || 'GOST'}
                             onChange={(e) => onUpdateFontFamily(e.target.value as SchematicFontFamily)}
-                            className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] max-w-[140px]"
+                            className="h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] max-w-[140px]"
                           >
                             {SCHEMATIC_FONT_OPTIONS.map((f) => (
                               <option key={f.id} value={f.id}>
@@ -1561,7 +1561,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                   {activeTab === 'sheet' && (
                     <>
                       <RibbonPanel title="Листы схемы">
-                        <div className="flex flex-col justify-center gap-1 px-1.5 h-[46px] shrink-0">
+                        <div className="flex flex-col justify-center gap-1 px-1.5 h-[50px] shrink-0">
                           <span className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
                             Формат ({activeSheet?.format || '—'})
                           </span>
@@ -1572,7 +1572,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             onChange={(e) =>
                               activeSheet && onUpdateSheetFormat(activeSheet.id, e.target.value as SheetFormat)
                             }
-                            className="h-7 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] max-w-[180px] disabled:opacity-45"
+                            className="h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] max-w-[176px] disabled:opacity-45"
                           >
                             {(Object.keys(SHEET_DIMENSIONS) as SheetFormat[]).map((fmt) => (
                               <option key={fmt} value={fmt}>
@@ -1582,7 +1582,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           </select>
                         </div>
                         <LargeRibbonBtn
-                          icon={<FilePlus2 className="w-[17px] h-[17px]" />}
+                          icon={<FilePlus2 className="w-[18px] h-[18px]" />}
                           label="+ Лист"
                           onClick={onAddSheet}
                         />
@@ -1607,14 +1607,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                       <RibbonPanel title="Основная надпись">
                         <LargeRibbonBtn
-                          icon={<Type className="w-[17px] h-[17px]" />}
+                          icon={<Type className="w-[18px] h-[18px]" />}
                           label="Штамп ГОСТ"
                           title="Редактор основной надписи ГОСТ 2.104 (один лист / все листы)"
                           testId="toolbar-stamp-btn"
                           onClick={onOpenStampEditor}
                         />
                         <LargeRibbonBtn
-                          icon={<LayoutTemplate className="w-[17px] h-[17px]" />}
+                          icon={<LayoutTemplate className="w-[18px] h-[18px]" />}
                           label="Создать штамп"
                           title="Конструктор пользовательских шаблонов штампов"
                           testId="toolbar-stamp-designer-btn"
@@ -1624,7 +1624,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                       <RibbonPanel title="Автоматизация ФСА и XT" isLast>
                         <LargeRibbonBtn
-                          icon={<Cpu className="w-[17px] h-[17px]" />}
+                          icon={<Cpu className="w-[18px] h-[18px]" />}
                           label="Собрать ФСА"
                           title="Мастер автоматической сборки приточной/вытяжной схемы и внешки"
                           accent
@@ -1660,7 +1660,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                     <>
                       <RibbonPanel title="Окна листов в центре">
                         <LargeRibbonBtn
-                          icon={<PanelLeft className="w-[17px] h-[17px]" />}
+                          icon={<PanelLeft className="w-[18px] h-[18px]" />}
                           label="1 лист"
                           title="Показывать один активный лист в центре"
                           active={viewportLayout === 'single'}
@@ -1668,7 +1668,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={() => onSetViewportLayout('single')}
                         />
                         <LargeRibbonBtn
-                          icon={<Columns2 className="w-[17px] h-[17px]" />}
+                          icon={<Columns2 className="w-[18px] h-[18px]" />}
                           label="2 листа"
                           title="Расположить 2 листа рядом в центре"
                           active={viewportLayout === 'two'}
@@ -1676,7 +1676,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={() => onSetViewportLayout('two')}
                         />
                         <LargeRibbonBtn
-                          icon={<LayoutGrid className="w-[17px] h-[17px]" />}
+                          icon={<LayoutGrid className="w-[18px] h-[18px]" />}
                           label="3 листа"
                           title="Расположить 3 листа одновременно"
                           active={viewportLayout === 'three'}
@@ -1684,7 +1684,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={() => onSetViewportLayout('three')}
                         />
                         <LargeRibbonBtn
-                          icon={<Grid2X2 className="w-[17px] h-[17px]" />}
+                          icon={<Grid2X2 className="w-[18px] h-[18px]" />}
                           label="4 листа"
                           title="Расположить 4 листа сеткой 2×2"
                           active={viewportLayout === 'four'}
@@ -1695,12 +1695,12 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                       <RibbonPanel title="Навигация и Масштаб">
                         <LargeRibbonBtn
-                          icon={<Maximize2 className="w-[17px] h-[17px]" />}
+                          icon={<Maximize2 className="w-[18px] h-[18px]" />}
                           label="По листу"
                           onClick={onFitView}
                         />
                         <LargeRibbonBtn
-                          icon={<Hand className="w-[17px] h-[17px]" />}
+                          icon={<Hand className="w-[18px] h-[18px]" />}
                           label="Панорама"
                           title="Перемещение листа (H)"
                           active={tool === 'pan'}
@@ -1711,18 +1711,18 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             type="button"
                             onClick={() => onZoomChange(Math.max(0.18, Math.round((zoom - 0.1) * 100) / 100))}
                             aria-label="Уменьшить масштаб"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
+                            className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
                           >
                             <ZoomOut className="w-3.5 h-3.5" />
                           </button>
-                          <span className="w-11 text-center font-mono tabular-nums text-[11.5px] text-[var(--flux-text)]">
+                          <span className="w-10 text-center font-mono tabular-nums text-[11px] text-[var(--flux-text)]">
                             {Math.round(zoom * 100)}%
                           </span>
                           <button
                             type="button"
                             onClick={() => onZoomChange(Math.min(2.5, Math.round((zoom + 0.15) * 100) / 100))}
                             aria-label="Увеличить масштаб"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
+                            className="inline-flex items-center justify-center w-6 h-6 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
                           >
                             <ZoomIn className="w-3.5 h-3.5" />
                           </button>
@@ -1732,7 +1732,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       <RibbonPanel title="Слои и Панели" isLast>
                         {onToggleLayerVisibility && onToggleLayerLock && (
                           <LargeRibbonBtn
-                            icon={<Layers className="w-[17px] h-[17px]" />}
+                            icon={<Layers className="w-[18px] h-[18px]" />}
                             label={
                               layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
                                 ? `Слои (${layerSummary.visibleCount}/4)`
@@ -1745,7 +1745,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           />
                         )}
                         <LargeRibbonBtn
-                          icon={<RotateCcw className="w-[17px] h-[17px]" />}
+                          icon={<RotateCcw className="w-[18px] h-[18px]" />}
                           label="Сброс окон"
                           title="Вернуть боковые и нижнюю панели в исходное положение"
                           testId="reset-dock-layout-btn"
@@ -1759,7 +1759,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                     <>
                       <RibbonPanel title="Среда Flux и Хост">
                         <LargeRibbonBtn
-                          icon={<Send className="w-[17px] h-[17px]" />}
+                          icon={<Send className="w-[18px] h-[18px]" />}
                           label="Во Flux Host"
                           title={
                             fluxHosted
@@ -1770,7 +1770,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={onPushToFluxHost}
                         />
                         <LargeRibbonBtn
-                          icon={<RefreshCw className="w-[17px] h-[17px]" />}
+                          icon={<RefreshCw className="w-[18px] h-[18px]" />}
                           label="Шина RPC и API"
                           title="Открыть шину вызовов модулей и контракт API внутри Flux Studio"
                           testId="ribbon-flux-bus-btn"
@@ -1780,13 +1780,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                       <RibbonPanel title="Мост и Студия Flux" isLast>
                         <LargeRibbonBtn
-                          icon={<Share2 className="w-[17px] h-[17px]" />}
+                          icon={<Share2 className="w-[18px] h-[18px]" />}
                           label="Мост (.json)"
                           title="Экспортировать пакет обмена flux-e3-bridge/v1 JSON"
                           onClick={onExportFluxBridge}
                         />
                         <LargeRibbonBtn
-                          icon={<Layers className="w-[17px] h-[17px]" />}
+                          icon={<Layers className="w-[18px] h-[18px]" />}
                           label="Студия Flux"
                           title={`Настроить привязку ключа (${project.fluxProjectKey}), manifest.json и опубликовать подпрограмму`}
                           accent
@@ -1794,7 +1794,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={onOpenFluxPublishModal}
                         />
                         <LargeRibbonBtn
-                          icon={<Archive className="w-[17px] h-[17px]" />}
+                          icon={<Archive className="w-[18px] h-[18px]" />}
                           label="Пакет (.zip)"
                           title="Быстро скачать архив модуля Flux Studio (.zip)"
                           testId="ribbon-flux-zip-btn"
@@ -1808,13 +1808,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                     <>
                       <RibbonPanel title="Zuken E³.series">
                         <LargeRibbonBtn
-                          icon={<Upload className="w-[17px] h-[17px]" />}
+                          icon={<Upload className="w-[18px] h-[18px]" />}
                           label="Открыть .e3s"
                           title="Открыть файл .e3s / .e3d / XML / JSON"
                           onClick={() => fileInputRef.current?.click()}
                         />
                         <LargeRibbonBtn
-                          icon={<Share2 className="w-[17px] h-[17px]" />}
+                          icon={<Share2 className="w-[18px] h-[18px]" />}
                           label="В E³.series"
                           title={
                             e3BridgeHost
@@ -1824,7 +1824,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={onDirectOpenE3}
                         />
                         <LargeRibbonBtn
-                          icon={<FolderOpen className="w-[17px] h-[17px]" />}
+                          icon={<FolderOpen className="w-[18px] h-[18px]" />}
                           label="Обмен E3"
                           title="Центр обмена E3.series и импорт пакетов"
                           onClick={onOpenExchangeModal}
@@ -1833,7 +1833,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                       <RibbonPanel title="Документация и Таблицы">
                         <LargeRibbonBtn
-                          icon={<FileCode2 className="w-[17px] h-[17px]" />}
+                          icon={<FileCode2 className="w-[18px] h-[18px]" />}
                           label="Пакет PDF/DXF"
                           title="Пакетная публикация листов в редактируемый AutoCAD (.dxf) и PDF"
                           accent
@@ -1841,7 +1841,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={onOpenPublishModal}
                         />
                         <LargeRibbonBtn
-                          icon={<FileCode2 className="w-[17px] h-[17px]" />}
+                          icon={<FileCode2 className="w-[18px] h-[18px]" />}
                           label="Лист DXF"
                           title="Экспорт активного листа в AutoCAD (.dxf)"
                           onClick={onExportDxf}
@@ -1864,13 +1864,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                       <RibbonPanel title="Дистрибутив" isLast>
                         <LargeRibbonBtn
-                          icon={<Package className="w-[17px] h-[17px]" />}
+                          icon={<Package className="w-[18px] h-[18px]" />}
                           label="Portable (.zip)"
                           title="Сборка автономной Windows Portable (.zip)"
                           onClick={onOpenPortableBuild}
                         />
                         <LargeRibbonBtn
-                          icon={<Archive className="w-[17px] h-[17px]" />}
+                          icon={<Archive className="w-[18px] h-[18px]" />}
                           label="Исходники (.zip)"
                           title="Скачать полный архив исходного кода проекта (.zip)"
                           onClick={onDownloadCodebase}
@@ -1883,7 +1883,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                     <>
                       <RibbonPanel title="Рисование УГО и Выводы">
                         <LargeRibbonBtn
-                          icon={<MousePointer2 className="w-[17px] h-[17px]" />}
+                          icon={<MousePointer2 className="w-[18px] h-[18px]" />}
                           label="Выбор"
                           title="Выделение и редактирование примитивов / выводов"
                           active={symbolWorkspace.draft.tool === 'select'}
@@ -1965,8 +1965,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       </RibbonPanel>
 
                       <RibbonPanel title="Стиль, Толщина и Линии">
-                        <div className="flex flex-col justify-between h-[46px] gap-1 px-0.5 shrink-0">
-                          <div className="flex items-center gap-1 h-[24px]">
+                        <div className="flex flex-col justify-center h-[50px] gap-1 px-0.5 shrink-0">
+                          <div className="flex items-center gap-1 h-[22px]">
                             {SYMBOL_COLOR_PALETTE.slice(0, 6).map((c) => {
                               const activeColor =
                                 symbolWorkspace.draft.activeStyle.strokeColor.toLowerCase() ===
@@ -1978,7 +1978,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                                   title={c.label}
                                   aria-label={`Цвет линии ${c.label}`}
                                   onClick={() => symbolWorkspace.onUpdateStyle({ strokeColor: c.hex })}
-                                  className={`w-4 h-4 rounded-sm border transition-transform ${
+                                  className={`w-4 h-4 rounded-[2px] border transition-transform ${
                                     activeColor
                                       ? 'border-[var(--flux-accent)] scale-110 ring-1 ring-[var(--flux-accent)]'
                                       : 'border-[var(--flux-line-strong)] hover:scale-105'
@@ -1994,7 +1994,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                               onChange={(e) =>
                                 symbolWorkspace.onUpdateStyle({ strokeColor: e.target.value })
                               }
-                              className="w-5 h-5 p-0 border border-[var(--flux-line)] rounded bg-transparent cursor-pointer"
+                              className="w-[18px] h-[18px] p-0 border border-[var(--flux-line)] rounded-[2px] bg-transparent cursor-pointer"
                             />
                             <button
                               type="button"
@@ -2004,7 +2004,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                                 })
                               }
                               title="Включить/выключить заливку фигур"
-                              className={`h-[22px] px-1.5 rounded border text-[10px] font-medium whitespace-nowrap transition-colors ${
+                              className={`h-[22px] px-1.5 rounded-[2px] border text-[10.5px] font-medium whitespace-nowrap transition-colors ${
                                 symbolWorkspace.draft.activeStyle.filled
                                   ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)] text-[var(--flux-text)]'
                                   : 'border-[var(--flux-line)] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
@@ -2013,7 +2013,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                               Заливка
                             </button>
                           </div>
-                          <div className="flex items-center gap-1.5 h-[24px]">
+                          <div className="flex items-center gap-1.5 h-[22px]">
                             <select
                               aria-label="Толщина линии примитива"
                               value={symbolWorkspace.draft.activeStyle.strokeWidth}
@@ -2023,7 +2023,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                                   symbolWorkspace.onUpdateStyle({ strokeWidth: parsed });
                                 }
                               }}
-                              className="h-[22px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10.5px] text-[var(--flux-text)]"
+                              className="h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10.5px] text-[var(--flux-text)]"
                             >
                               <option value={1}>1.0 мм</option>
                               <option value={1.4}>1.4 мм</option>
@@ -2040,7 +2040,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                                   strokeStyle: e.target.value as CustomSymbolStrokeStyle,
                                 })
                               }
-                              className="h-[22px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] max-w-[116px]"
+                              className="h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] max-w-[114px]"
                             >
                               {STROKE_STYLE_OPTIONS.map((opt) => (
                                 <option key={opt.id} value={opt.id}>
@@ -2053,12 +2053,12 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       </RibbonPanel>
 
                       <RibbonPanel title="Сетка и Геометрия">
-                        <div className="flex flex-col justify-between h-[46px] gap-0.5 shrink-0">
+                        <div className="flex flex-col justify-center h-[50px] gap-1 shrink-0">
                           <select
                             aria-label="Шаг сетки редактора УГО"
                             value={symbolWorkspace.draft.gridStep}
                             onChange={(e) => symbolWorkspace.onSetGridStep(Number(e.target.value))}
-                            className="h-[24px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10.5px] text-[var(--flux-text)]"
+                            className="h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10.5px] text-[var(--flux-text)]"
                           >
                             <option value={5}>Шаг 5 мм</option>
                             <option value={10}>Шаг 10 мм</option>
@@ -2072,7 +2072,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           />
                         </div>
                         <LargeRibbonBtn
-                          icon={<RotateCw className="w-[17px] h-[17px]" />}
+                          icon={<RotateCw className="w-[18px] h-[18px]" />}
                           label="Поворот 90°"
                           title="Повернуть всю графику и выводы блока на 90°"
                           onClick={symbolWorkspace.onRotateBlockCW}
@@ -2114,8 +2114,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       </RibbonPanel>
 
                       <RibbonPanel title="Заготовки и Шаблоны характеристик">
-                        <div className="flex flex-col justify-between h-[46px] gap-1 shrink-0">
-                          <div className="flex items-center gap-1 h-[24px]">
+                        <div className="flex flex-col justify-center h-[50px] gap-1 shrink-0">
+                          <div className="flex items-center gap-1 h-[22px]">
                             <Layers className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
                             <select
                               aria-label="Быстрая заготовка графики УГО"
@@ -2129,7 +2129,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                                   | '';
                                 if (val) symbolWorkspace.onApplyPresetShapes(val);
                               }}
-                              className="h-[23px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] w-[148px]"
+                              className="h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] w-[144px]"
                             >
                               <option value="">+ Графика УГО…</option>
                               <option value="blank_box">Корпус с тегами</option>
@@ -2138,7 +2138,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                               <option value="coil_relay">Катушка реле (KA)</option>
                             </select>
                           </div>
-                          <div className="flex items-center gap-1 h-[24px]">
+                          <div className="flex items-center gap-1 h-[22px]">
                             <Sparkles className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
                             <select
                               aria-label="Применить шаблон характеристик изделия"
@@ -2148,7 +2148,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                                   symbolWorkspace.onApplyAttributeTemplate(e.target.value);
                                 }
                               }}
-                              className="h-[23px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] w-[148px]"
+                              className="h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] w-[144px]"
                             >
                               <option value="">+ Атрибуты E3…</option>
                               {ATTRIBUTE_TEMPLATE_PRESETS.map((preset) => (
@@ -2163,7 +2163,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
                       <RibbonPanel title="Сохранение и Выход" isLast>
                         <LargeRibbonBtn
-                          icon={<Check className="w-[17px] h-[17px]" />}
+                          icon={<Check className="w-[18px] h-[18px]" />}
                           label="Сохранить"
                           title="Сохранить УГО и изделие в базу (совместимо с E3.series)"
                           accent
@@ -2171,7 +2171,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           onClick={symbolWorkspace.onSaveCurrent}
                         />
                         <LargeRibbonBtn
-                          icon={<Send className="w-[17px] h-[17px]" />}
+                          icon={<Send className="w-[18px] h-[18px]" />}
                           label="На схему"
                           title="Сохранить блок и разместить изделие на активном листе схемы"
                           testId="ugo-ribbon-place-btn"

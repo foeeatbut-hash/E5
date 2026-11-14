@@ -252,7 +252,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
   };
 
   const dockBtnCls = (active: boolean) =>
-    `inline-flex items-center justify-center w-5 h-5 rounded-[2px] transition-colors ${
+    `inline-flex items-center justify-center w-[18px] h-[18px] rounded-[2px] transition-colors ${
       active
         ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]'
         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -269,13 +269,13 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
       id: 'bom',
       label: 'Спецификация ПЭ3',
       count: bom.length,
-      icon: <FileSpreadsheet className="w-3.5 h-3.5" />,
+      icon: <FileSpreadsheet className="w-3 h-3" />,
     },
     {
       id: 'cables',
       label: 'Кабели и клеммы',
       count: cables.length,
-      icon: <Cable className="w-3.5 h-3.5" />,
+      icon: <Cable className="w-3 h-3" />,
     },
     {
       id: 'erc',
@@ -283,9 +283,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
       count: erc.length,
       icon:
         errorCount > 0 ? (
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+          <AlertTriangle className="w-3 h-3 text-rose-500" />
         ) : (
-          <ShieldCheck className="w-3.5 h-3.5" />
+          <ShieldCheck className="w-3 h-3" />
         ),
       alert: errorCount > 0,
     },
@@ -293,12 +293,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
       id: 'logs',
       label: 'Логи процессов',
       count: logs.length,
-      icon: <Terminal className="w-3.5 h-3.5" />,
+      icon: <Terminal className="w-3 h-3" />,
     },
     {
       id: 'api',
       label: 'API и Синхронизация',
-      icon: <Layers className="w-3.5 h-3.5" />,
+      icon: <Layers className="w-3 h-3" />,
     },
   ];
 
@@ -322,7 +322,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
           ? 'Нажмите вкладку для открытия/переключения, перетащите свободную область для перемещения панели'
           : undefined
       }
-      className={`group/tabstrip h-7 pr-1.5 flux-glass-bar flex items-center justify-between gap-2 shrink-0 min-w-0 select-none ${
+      className={`group/tabstrip h-6 pr-1.5 flux-glass-bar flex items-center justify-between gap-2 shrink-0 min-w-0 select-none ${
         isBottomTabs
           ? `border-t border-[var(--flux-line)] ${onStartPanelDrag ? 'cursor-grab active:cursor-grabbing' : ''}`
           : 'border-b border-[var(--flux-line)]'
@@ -334,7 +334,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
             aria-hidden="true"
             className="hidden sm:inline-flex items-center justify-center px-1.5 h-full text-[var(--flux-text-muted)]/60 group-hover/tabstrip:text-[var(--flux-text-muted)] shrink-0"
           >
-            <GripHorizontal className="w-3.5 h-3.5" />
+            <GripHorizontal className="w-3 h-3" />
           </span>
         )}
         {tabs.map((tab) => {
@@ -347,7 +347,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
               data-testid={`console-tab-${tab.id}`}
               aria-pressed={isActive}
               onClick={() => handleTabClick(tab.id)}
-              className={`relative h-full px-2.5 inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap shrink-0 transition-colors ${
+              className={`relative h-full px-2 inline-flex items-center gap-1.5 text-[11px] whitespace-nowrap shrink-0 transition-colors ${
                 isBottomTabs ? 'border-t-2' : 'border-b-2'
               } ${
                 isActive
@@ -387,8 +387,8 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
         })}
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="hidden lg:inline-block min-w-[195px] text-right font-mono tabular-nums text-[10.5px] text-[var(--flux-text-muted)]">
+      <div className="flex items-center gap-1.5 shrink-0">
+        <span className="hidden lg:inline-block min-w-[185px] text-right font-mono tabular-nums text-[10px] text-[var(--flux-text-muted)]">
           ПЭ3: {bom.length} · Изд.: {totalDevicesInBom} · Цепей: {project.wires.length}
         </span>
 
@@ -439,17 +439,17 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
           onClick={onToggleCollapse}
           title={collapsed ? 'Развернуть нижнюю панель' : 'Свернуть нижнюю панель'}
           aria-label={collapsed ? 'Развернуть нижнюю панель' : 'Свернуть нижнюю панель'}
-          className="inline-flex items-center justify-center w-5 h-5 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+          className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
         >
           {isBottomTabs ? (
             collapsed ? (
-              <ChevronUp className="w-3.5 h-3.5" />
+              <ChevronUp className="w-3 h-3" />
             ) : (
-              <ChevronDown className="w-3.5 h-3.5" />
+              <ChevronDown className="w-3 h-3" />
             )
           ) : (
             <ChevronDown
-              className={`w-3.5 h-3.5 transition-transform duration-150 ${collapsed ? 'rotate-180' : ''}`}
+              className={`w-3 h-3 transition-transform duration-150 ${collapsed ? 'rotate-180' : ''}`}
             />
           )}
         </button>
@@ -462,7 +462,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
       {/* TAB 1: BOM (Спецификация ПЭ3) */}
       {activeTab === 'bom' && (
         <>
-          <div className="h-7 px-2 border-b border-[var(--flux-line)] flux-glass-surface flex items-center justify-between gap-2 shrink-0">
+          <div className="h-6 px-2 border-b border-[var(--flux-line)] flux-glass-surface flex items-center justify-between gap-2 shrink-0">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <input
                         type="search"
@@ -471,9 +471,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         onChange={(e) => setBomQuery(e.target.value)}
                         placeholder="Поиск по ПЭ3 (позиция, артикул, завод)…"
                         aria-label="Фильтр спецификации ПЭ3"
-                        className="w-72 max-w-full h-5 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
+                        className="w-64 max-w-full h-[19px] px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[10.5px] text-[var(--flux-text)]"
                       />
-                      <span className="hidden sm:inline text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
+                      <span className="hidden sm:inline text-[10.5px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
                         {filteredBom.length} из {bom.length} поз. · {totalDevicesInBom} шт.
                       </span>
                     </div>
@@ -483,9 +483,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           type="button"
                           onClick={onDownloadBomCsv}
                           title="Скачать таблицу спецификации ПЭ3 для Excel (.csv)"
-                          className="inline-flex items-center gap-1 h-5 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                          className="inline-flex items-center gap-1 h-[19px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap"
                         >
-                          <Download className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                          <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
                           <span>CSV ПЭ3</span>
                         </button>
                       )}
@@ -494,31 +494,31 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           type="button"
                           onClick={onOpenReportModal}
                           title="Открыть печатную ведомость ГОСТ 2.701"
-                          className="inline-flex items-center gap-1 h-5 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                          className="inline-flex items-center gap-1 h-[19px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap"
                         >
-                          <Printer className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                          <Printer className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
                           <span>Ведомость</span>
                         </button>
                       )}
                     </div>
                   </div>
                   <div className="flex-1 overflow-auto bg-[var(--flux-surface)]">
-                    <table className="w-full border-collapse text-[11.5px]">
-                      <thead className="sticky top-0 z-10 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] text-[var(--flux-text-muted)]">
+                    <table className="w-full border-collapse text-[11px] leading-[15px]">
+                      <thead className="sticky top-0 z-10 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] text-[10.5px] text-[var(--flux-text-muted)]">
                         <tr className="divide-x divide-[var(--flux-line)]/60">
-                          <th className="text-left font-medium px-2 py-1 w-10 whitespace-nowrap">Поз.</th>
-                          <th className="text-left font-medium px-2 py-1 w-32 whitespace-nowrap">Обозначение</th>
-                          <th className="text-left font-medium px-2 py-1 whitespace-nowrap">Наименование</th>
-                          <th className="text-left font-medium px-2 py-1 w-40 whitespace-nowrap">Артикул</th>
-                          <th className="text-left font-medium px-2 py-1 w-44 whitespace-nowrap">Производитель</th>
-                          <th className="text-right font-medium px-2 py-1 w-20 whitespace-nowrap">Кол-во</th>
-                          <th className="text-left font-medium px-2 py-1 w-14 whitespace-nowrap">Ед.</th>
+                          <th className="text-left font-medium px-2 py-[3px] w-10 whitespace-nowrap">Поз.</th>
+                          <th className="text-left font-medium px-2 py-[3px] w-32 whitespace-nowrap">Обозначение</th>
+                          <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Наименование</th>
+                          <th className="text-left font-medium px-2 py-[3px] w-40 whitespace-nowrap">Артикул</th>
+                          <th className="text-left font-medium px-2 py-[3px] w-44 whitespace-nowrap">Производитель</th>
+                          <th className="text-right font-medium px-2 py-[3px] w-16 whitespace-nowrap">Кол-во</th>
+                          <th className="text-left font-medium px-2 py-[3px] w-12 whitespace-nowrap">Ед.</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--flux-line)]">
                         {filteredBom.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="px-3 py-5 text-center text-[11.5px] text-[var(--flux-text-muted)]">
+                            <td colSpan={7} className="px-3 py-4 text-center text-[11px] text-[var(--flux-text-muted)]">
                               <span>Позиции по фильтру не найдены. </span>
                               {bomQuery && (
                                 <button
@@ -547,23 +547,23 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                   firstDes && onSelectDeviceByDesignation ? 'cursor-pointer' : ''
                                 }`}
                               >
-                                <td className="px-2 py-1 font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
+                                <td className="px-2 py-[3px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
                                   {row.pos}
                                 </td>
-                                <td className="px-2 py-1 font-mono font-medium text-[var(--flux-text)] truncate max-w-[140px] whitespace-nowrap">
+                                <td className="px-2 py-[3px] font-mono font-medium text-[var(--flux-text)] truncate max-w-[140px] whitespace-nowrap">
                                   {row.designationText}
                                 </td>
-                                <td className="px-2 py-1 text-[var(--flux-text)]">{row.componentName}</td>
-                                <td className="px-2 py-1 font-mono text-[var(--flux-text)] whitespace-nowrap">
+                                <td className="px-2 py-[3px] text-[var(--flux-text)]">{row.componentName}</td>
+                                <td className="px-2 py-[3px] font-mono text-[var(--flux-text)] whitespace-nowrap">
                                   {row.article}
                                 </td>
-                                <td className="px-2 py-1 text-[var(--flux-text-muted)] whitespace-nowrap">
+                                <td className="px-2 py-[3px] text-[var(--flux-text-muted)] whitespace-nowrap">
                                   {row.manufacturer}
                                 </td>
-                                <td className="px-2 py-1 text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
+                                <td className="px-2 py-[3px] text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
                                   {row.quantity}
                                 </td>
-                                <td className="px-2 py-1 text-[var(--flux-text-muted)] whitespace-nowrap">
+                                <td className="px-2 py-[3px] text-[var(--flux-text-muted)] whitespace-nowrap">
                                   {row.unit}
                                 </td>
                               </tr>
@@ -579,13 +579,13 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
               {/* TAB 2: Cables & Terminals */}
               {activeTab === 'cables' && (
                 <>
-                  <div className="h-7 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
+                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
                     <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
                       <button
                         type="button"
                         data-testid="cable-subtab-cables"
                         onClick={() => setCableSubTab('cables')}
-                        className={`h-5 px-2 text-[11px] transition-colors ${
+                        className={`h-[18px] px-2 text-[10.5px] transition-colors ${
                           cableSubTab === 'cables'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -597,7 +597,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         type="button"
                         data-testid="cable-subtab-nets"
                         onClick={() => setCableSubTab('nets')}
-                        className={`h-5 px-2 text-[11px] transition-colors ${
+                        className={`h-[18px] px-2 text-[10.5px] transition-colors ${
                           cableSubTab === 'nets'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -609,7 +609,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         type="button"
                         data-testid="cable-subtab-terminals"
                         onClick={() => setCableSubTab('terminals')}
-                        className={`h-5 px-2 text-[11px] transition-colors ${
+                        className={`h-[18px] px-2 text-[10.5px] transition-colors ${
                           cableSubTab === 'terminals'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -620,7 +620,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="hidden sm:inline text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)]">
+                      <span className="hidden sm:inline text-[10.5px] font-mono tabular-nums text-[var(--flux-text-muted)]">
                         {cableSubTab === 'cables'
                           ? `Трасс: ${cables.length} · Кабели: ${totalCableMeters} м · Цепи (${netLengths.length}): ${totalNetLengthMm} мм (${totalNetLengthMeters} м)`
                           : cableSubTab === 'nets'
@@ -632,9 +632,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           type="button"
                           data-testid="open-terminal-editor-btn"
                           onClick={onOpenTerminalEditor}
-                          className="inline-flex items-center gap-1 h-5 px-2 rounded-[2px] border border-[var(--flux-accent)] bg-[var(--flux-sel)] hover:bg-[var(--flux-accent-solid)] hover:text-white text-[11px] font-medium text-[var(--flux-accent)] whitespace-nowrap transition-colors"
+                          className="inline-flex items-center gap-1 h-[19px] px-1.5 rounded-[2px] border border-[var(--flux-accent)] bg-[var(--flux-sel)] hover:bg-[var(--flux-accent-solid)] hover:text-white text-[10.5px] font-medium text-[var(--flux-accent)] whitespace-nowrap transition-colors"
                         >
-                          <Cable className="w-3 h-3" />
+                          <Cable className="w-2.5 h-2.5" />
                           <span>Редактор клеммника -XT</span>
                         </button>
                       )}
@@ -643,9 +643,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           type="button"
                           data-testid="download-net-lengths-csv-btn"
                           onClick={onDownloadNetLengthsCsv}
-                          className="inline-flex items-center gap-1 h-5 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                          className="inline-flex items-center gap-1 h-[19px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap"
                         >
-                          <Download className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                          <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
                           <span>CSV Цепи</span>
                         </button>
                       )}
@@ -653,9 +653,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         <button
                           type="button"
                           onClick={onDownloadCablesCsv}
-                          className="inline-flex items-center gap-1 h-5 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                          className="inline-flex items-center gap-1 h-[19px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap"
                         >
-                          <Download className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                          <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
                           <span>CSV Кабели</span>
                         </button>
                       )}
@@ -665,17 +665,17 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                     {cableSubTab !== 'terminals' ? (
                       <div className="flex flex-col divide-y divide-[var(--flux-line)]">
                         {cableSubTab === 'cables' && (
-                          <table data-testid="cables-journal-table" className="w-full border-collapse text-[11.5px]">
+                          <table data-testid="cables-journal-table" className="w-full border-collapse text-[11px] leading-[15px]">
                             <thead className="sticky top-0 z-10 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] text-[var(--flux-text-muted)]">
                               <tr className="divide-x divide-[var(--flux-line)]/60">
-                                <th className="text-left font-medium px-2 py-1 whitespace-nowrap">Кабель</th>
-                                <th className="text-left font-medium px-2 py-1 whitespace-nowrap">Марка кабеля</th>
-                                <th className="text-left font-medium px-2 py-1 whitespace-nowrap">Откуда</th>
-                                <th className="text-left font-medium px-2 py-1 whitespace-nowrap">Куда</th>
-                                <th className="text-right font-medium px-2 py-1 whitespace-nowrap">Жилы</th>
-                                <th className="text-right font-medium px-2 py-1 whitespace-nowrap">Сечение</th>
-                                <th className="text-right font-medium px-2 py-1 whitespace-nowrap">Длина, м</th>
-                                <th className="text-right font-medium px-2 py-1 whitespace-nowrap">По схеме (цепи), мм</th>
+                                <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Кабель</th>
+                                <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Марка кабеля</th>
+                                <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Откуда</th>
+                                <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Куда</th>
+                                <th className="text-right font-medium px-2 py-[3px] whitespace-nowrap">Жилы</th>
+                                <th className="text-right font-medium px-2 py-[3px] whitespace-nowrap">Сечение</th>
+                                <th className="text-right font-medium px-2 py-[3px] whitespace-nowrap">Длина, м</th>
+                                <th className="text-right font-medium px-2 py-[3px] whitespace-nowrap">По схеме (цепи), мм</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-[var(--flux-line)]">
@@ -688,27 +688,27 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                               ) : (
                                 cables.map((c) => (
                                   <tr key={c.designation} className="divide-x divide-[var(--flux-line)]/50 hover:bg-[var(--flux-hover)]">
-                                    <td className="px-2 py-1 font-mono font-medium text-[var(--flux-text)] whitespace-nowrap">
+                                    <td className="px-2 py-[3px] font-mono font-medium text-[var(--flux-text)] whitespace-nowrap">
                                       {c.designation}
                                     </td>
-                                    <td className="px-2 py-1 text-[var(--flux-text)] whitespace-nowrap">
+                                    <td className="px-2 py-[3px] text-[var(--flux-text)] whitespace-nowrap">
                                       {c.cableType}{' '}
                                       {c.shielded && (
                                         <span className="text-[10.5px] text-[var(--flux-accent)]">(экран)</span>
                                       )}
                                     </td>
-                                    <td className="px-2 py-1 font-mono text-[var(--flux-text)] whitespace-nowrap">{c.fromDevice}</td>
-                                    <td className="px-2 py-1 font-mono text-[var(--flux-text)] whitespace-nowrap">{c.toDevice}</td>
-                                    <td className="px-2 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
+                                    <td className="px-2 py-[3px] font-mono text-[var(--flux-text)] whitespace-nowrap">{c.fromDevice}</td>
+                                    <td className="px-2 py-[3px] font-mono text-[var(--flux-text)] whitespace-nowrap">{c.toDevice}</td>
+                                    <td className="px-2 py-[3px] text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
                                       {c.usedCores}/{c.coresCount}
                                     </td>
-                                    <td className="px-2 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
+                                    <td className="px-2 py-[3px] text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
                                       {c.crossSection}
                                     </td>
-                                    <td className="px-2 py-1 text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
+                                    <td className="px-2 py-[3px] text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
                                       {c.lengthMeters}
                                     </td>
-                                    <td className="px-2 py-1 text-right font-mono tabular-nums text-[var(--flux-text)]">
+                                    <td className="px-2 py-[3px] text-right font-mono tabular-nums text-[var(--flux-text)]">
                                       <div className="font-medium whitespace-nowrap">{c.wireLengthMm ?? 0}</div>
                                       {c.netLengths && c.netLengths.length > 0 && (
                                         <div className="text-[10px] text-[var(--flux-text-muted)] whitespace-nowrap">
@@ -724,7 +724,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         )}
 
                         <div className="bg-[var(--flux-surface)]">
-                          <div className="px-2 py-1 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2">
+                          <div className="px-2 py-[3px] bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2">
                             <span className="text-[10.5px] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
                               Суммарная длина проводов по цепям (E3-CORE)
                             </span>
@@ -735,14 +735,14 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           <table data-testid="net-wire-lengths-table" className="w-full border-collapse text-[11.5px]">
                             <thead className="sticky top-0 z-10 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] text-[var(--flux-text-muted)]">
                               <tr className="divide-x divide-[var(--flux-line)]/60">
-                                <th className="text-left font-medium px-2 py-1 whitespace-nowrap">Цепь</th>
-                                <th className="text-left font-medium px-2 py-1 whitespace-nowrap">Тип сигнала</th>
-                                <th className="text-right font-medium px-2 py-1 whitespace-nowrap">Участков</th>
-                                <th className="text-left font-medium px-2 py-1 whitespace-nowrap">Провода</th>
-                                <th className="text-left font-medium px-2 py-1 whitespace-nowrap">Кабели</th>
-                                <th className="text-right font-medium px-2 py-1 whitespace-nowrap">Сечения</th>
-                                <th className="text-right font-medium px-2 py-1 whitespace-nowrap">Длина, мм</th>
-                                <th className="text-right font-medium px-2 py-1 whitespace-nowrap">Длина, м</th>
+                                <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Цепь</th>
+                                <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Тип сигнала</th>
+                                <th className="text-right font-medium px-2 py-[3px] whitespace-nowrap">Участков</th>
+                                <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Провода</th>
+                                <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Кабели</th>
+                                <th className="text-right font-medium px-2 py-[3px] whitespace-nowrap">Сечения</th>
+                                <th className="text-right font-medium px-2 py-[3px] whitespace-nowrap">Длина, мм</th>
+                                <th className="text-right font-medium px-2 py-[3px] whitespace-nowrap">Длина, м</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-[var(--flux-line)]">
@@ -777,7 +777,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                       onClick={() => onHighlightNet?.(n.netName)}
                                       className="divide-x divide-[var(--flux-line)]/50 hover:bg-[var(--flux-hover)] cursor-pointer transition-colors"
                                     >
-                                      <td className="px-2 py-1 font-mono font-medium text-[var(--flux-text)] whitespace-nowrap">
+                                      <td className="px-2 py-[3px] font-mono font-medium text-[var(--flux-text)] whitespace-nowrap">
                                         <span className="inline-flex items-center gap-1.5">
                                           <span
                                             className="inline-block w-2 h-2 rounded-[1px] shrink-0"
@@ -786,25 +786,25 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                           <span>{n.netName}</span>
                                         </span>
                                       </td>
-                                      <td className="px-2 py-1 text-[var(--flux-text-muted)] whitespace-nowrap">
+                                      <td className="px-2 py-[3px] text-[var(--flux-text-muted)] whitespace-nowrap">
                                         {sigLabel}
                                       </td>
-                                      <td className="px-2 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
+                                      <td className="px-2 py-[3px] text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
                                         {n.wireCount}
                                       </td>
-                                      <td className="px-2 py-1 font-mono text-[var(--flux-text-muted)]">
+                                      <td className="px-2 py-[3px] font-mono text-[var(--flux-text-muted)]">
                                         {n.wireNumbers.join(', ') || '—'}
                                       </td>
-                                      <td className="px-2 py-1 font-mono text-[var(--flux-text-muted)] whitespace-nowrap">
+                                      <td className="px-2 py-[3px] font-mono text-[var(--flux-text-muted)] whitespace-nowrap">
                                         {n.cableDesignations.join(', ') || '—'}
                                       </td>
-                                      <td className="px-2 py-1 text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
+                                      <td className="px-2 py-[3px] text-right font-mono tabular-nums text-[var(--flux-text)] whitespace-nowrap">
                                         {n.crossSections.join(', ') || '—'}
                                       </td>
-                                      <td className="px-2 py-1 text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
+                                      <td className="px-2 py-[3px] text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
                                         {n.totalLengthMm}
                                       </td>
-                                      <td className="px-2 py-1 text-right font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
+                                      <td className="px-2 py-[3px] text-right font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
                                         {n.totalLengthMeters.toFixed(3)}
                                       </td>
                                     </tr>
@@ -819,12 +819,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                       <table className="w-full border-collapse text-[11.5px]">
                         <thead className="sticky top-0 z-10 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] text-[10.5px] uppercase tracking-wider text-[var(--flux-text-muted)]">
                           <tr className="divide-x divide-[var(--flux-line)]/60">
-                            <th className="text-left font-semibold px-2 py-1 whitespace-nowrap">Клеммник</th>
-                            <th className="text-left font-semibold px-2 py-1 whitespace-nowrap">Контакт</th>
-                            <th className="text-left font-semibold px-2 py-1 whitespace-nowrap">Цепь</th>
-                            <th className="text-left font-semibold px-2 py-1 whitespace-nowrap">Провод</th>
-                            <th className="text-left font-semibold px-2 py-1 whitespace-nowrap">Куда подключено</th>
-                            <th className="text-left font-semibold px-2 py-1 whitespace-nowrap">Кабель / Жила</th>
+                            <th className="text-left font-semibold px-2 py-[3px] whitespace-nowrap">Клеммник</th>
+                            <th className="text-left font-semibold px-2 py-[3px] whitespace-nowrap">Контакт</th>
+                            <th className="text-left font-semibold px-2 py-[3px] whitespace-nowrap">Цепь</th>
+                            <th className="text-left font-semibold px-2 py-[3px] whitespace-nowrap">Провод</th>
+                            <th className="text-left font-semibold px-2 py-[3px] whitespace-nowrap">Куда подключено</th>
+                            <th className="text-left font-semibold px-2 py-[3px] whitespace-nowrap">Кабель / Жила</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--flux-line)]">
@@ -840,16 +840,16 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                 key={`${t.terminalDesignation}-${t.pinName}-${idx}`}
                                 className="divide-x divide-[var(--flux-line)]/50 hover:bg-[var(--flux-hover)]"
                               >
-                                <td className="px-2 py-1 font-mono font-medium text-[var(--flux-text)]">
+                                <td className="px-2 py-[3px] font-mono font-medium text-[var(--flux-text)]">
                                   {t.terminalDesignation}
                                 </td>
-                                <td className="px-2 py-1 font-mono text-[var(--flux-text)]">{t.pinName}</td>
-                                <td className="px-2 py-1 font-mono text-[var(--flux-text)]">{t.netName}</td>
-                                <td className="px-2 py-1 font-mono text-[var(--flux-text-muted)]">
+                                <td className="px-2 py-[3px] font-mono text-[var(--flux-text)]">{t.pinName}</td>
+                                <td className="px-2 py-[3px] font-mono text-[var(--flux-text)]">{t.netName}</td>
+                                <td className="px-2 py-[3px] font-mono text-[var(--flux-text-muted)]">
                                   {t.wireNumber}
                                 </td>
-                                <td className="px-2 py-1 font-mono text-[var(--flux-text)]">{t.connectedTo}</td>
-                                <td className="px-2 py-1 text-[var(--flux-text-muted)]">{t.cableInfo}</td>
+                                <td className="px-2 py-[3px] font-mono text-[var(--flux-text)]">{t.connectedTo}</td>
+                                <td className="px-2 py-[3px] text-[var(--flux-text-muted)]">{t.cableInfo}</td>
                               </tr>
                             ))
                           )}
@@ -863,7 +863,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
               {/* TAB 3: ERC Diagnostics */}
               {activeTab === 'erc' && (
                 <>
-                  <div className="h-7 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
+                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
                     <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
                       {(
                         [
@@ -878,7 +878,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                             key={fId}
                             type="button"
                             onClick={() => setErcFilter(fId)}
-                            className={`h-5 px-2 text-[11px] transition-colors ${
+                            className={`h-[18px] px-2 text-[10.5px] transition-colors ${
                               active
                                 ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                                 : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -890,7 +890,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                       })}
                     </div>
                     <span
-                      className={`text-[11px] font-mono ${
+                      className={`text-[10.5px] font-mono ${
                         errorCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--flux-accent)]'
                       }`}
                     >
@@ -901,8 +901,8 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                   </div>
                   <div className="flex-1 overflow-auto bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)]">
                     {filteredErc.length === 0 ? (
-                      <div className="px-3 py-5 flex items-center gap-2 text-[11.5px] text-[var(--flux-text-muted)]">
-                        <CheckCircle2 className="w-4 h-4 text-[var(--flux-accent)] shrink-0" />
+                      <div className="px-3 py-4 flex items-center gap-2 text-[11px] text-[var(--flux-text-muted)]">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
                         <span>
                           {erc.length === 0
                             ? 'Проверка электрических правил (ERC) пройдена успешно. Схема готова к выпуску ПЭ3 и передаче во Flux / E³.series.'
@@ -920,7 +920,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                             type="button"
                             data-testid={`erc-issue-${issue.id}`}
                             onClick={() => onJumpToIssue(issue)}
-                            className="w-full px-2.5 py-1.5 flex items-center justify-between gap-3 text-left hover:bg-[var(--flux-hover)] transition-colors"
+                            className="w-full px-2 py-1 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span
@@ -932,19 +932,19 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                       : 'bg-sky-500'
                                 }`}
                               />
-                              <span className="font-mono text-[10.5px] text-[var(--flux-text-muted)] shrink-0">
+                              <span className="font-mono text-[10px] text-[var(--flux-text-muted)] shrink-0">
                                 {issue.code}
                               </span>
                               {targetSheet && (
-                                <span className="px-1 py-0 rounded-[2px] bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[10px] text-[var(--flux-text-muted)] shrink-0">
+                                <span className="px-1 py-0 rounded-[2px] bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[9.5px] text-[var(--flux-text-muted)] shrink-0">
                                   Л.{targetSheet.number}
                                 </span>
                               )}
-                              <span className="text-[11.5px] text-[var(--flux-text)] truncate">
+                              <span className="text-[11px] text-[var(--flux-text)] truncate">
                                 {issue.message}
                               </span>
                             </div>
-                            <span className="text-[11px] font-medium text-[var(--flux-accent)] shrink-0">
+                            <span className="text-[10.5px] font-medium text-[var(--flux-accent)] shrink-0">
                               Перейти →
                             </span>
                           </button>
@@ -958,7 +958,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
               {/* TAB 4: Process Logs */}
               {activeTab === 'logs' && (
                 <>
-                  <div className="h-7 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
+                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
                     <div className="flex items-center gap-1 min-w-0">
                       <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
                         {(['ALL', 'INFO', 'SYNC', 'WARN', 'ERROR'] as const).map((lvl) => {
@@ -968,7 +968,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                               key={lvl}
                               type="button"
                               onClick={() => setLogLevelFilter(lvl)}
-                              className={`h-5 px-1.5 text-[10.5px] font-mono transition-colors ${
+                              className={`h-[18px] px-1.5 text-[10px] font-mono transition-colors ${
                                 active
                                   ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                                   : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
@@ -986,7 +986,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         onChange={(e) => setLogQuery(e.target.value)}
                         placeholder="Поиск по логам…"
                         aria-label="Поиск по логам процессов"
-                        className="w-44 h-5 px-2 ml-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[11px] text-[var(--flux-text)]"
+                        className="w-40 h-[19px] px-1.5 ml-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[10.5px] text-[var(--flux-text)]"
                       />
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
@@ -996,21 +996,21 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           data-testid="logs-health-dashboard-btn"
                           onClick={onOpenHealthDashboard}
                           title="Открыть графики частоты логов и монитор здоровья системы"
-                          className="inline-flex items-center gap-1 h-5 px-2 rounded-[2px] border border-[var(--flux-accent)] bg-[var(--flux-sel)] hover:bg-[var(--flux-accent-solid)] hover:text-white text-[11px] font-medium text-[var(--flux-accent)] transition-colors whitespace-nowrap"
+                          className="inline-flex items-center gap-1 h-[19px] px-1.5 rounded-[2px] border border-[var(--flux-accent)] bg-[var(--flux-sel)] hover:bg-[var(--flux-accent-solid)] hover:text-white text-[10.5px] font-medium text-[var(--flux-accent)] transition-colors whitespace-nowrap"
                         >
-                          <Activity className="w-3 h-3" />
+                          <Activity className="w-2.5 h-2.5" />
                           <span>Монитор здоровья</span>
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={handleCopyAllLogs}
-                        className="inline-flex items-center justify-center gap-1 min-w-[104px] h-5 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                        className="inline-flex items-center justify-center gap-1 min-w-[96px] h-[19px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap"
                       >
                         {copiedLogs ? (
-                          <Check className="w-3 h-3 text-emerald-500" />
+                          <Check className="w-2.5 h-2.5 text-emerald-500" />
                         ) : (
-                          <Copy className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                          <Copy className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
                         )}
                         <span>{copiedLogs ? 'Скопировано' : 'Копировать'}</span>
                       </button>
@@ -1019,17 +1019,17 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           type="button"
                           onClick={onClearLogs}
                           title="Очистить журнал сессии"
-                          className="inline-flex items-center gap-1 h-5 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[11px] text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400"
+                          className="inline-flex items-center gap-1 h-[19px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[10.5px] text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-2.5 h-2.5" />
                           <span>Очистить</span>
                         </button>
                       )}
                     </div>
                   </div>
-                  <div className="flex-1 overflow-auto bg-[var(--flux-surface)] font-mono text-[11px] divide-y divide-[var(--flux-line)]">
+                  <div className="flex-1 overflow-auto bg-[var(--flux-surface)] font-mono text-[10.5px] divide-y divide-[var(--flux-line)]">
                     {filteredLogs.length === 0 ? (
-                      <div className="px-3 py-5 text-center font-sans text-[11.5px] text-[var(--flux-text-muted)]">
+                      <div className="px-3 py-4 text-center font-sans text-[11px] text-[var(--flux-text-muted)]">
                         <span>Записей по выбранным фильтрам нет. </span>
                         {(logLevelFilter !== 'ALL' || logQuery) && (
                           <button
@@ -1057,7 +1057,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         );
                         const shownDuration = entry.durationMs ?? entry.lagMs;
                         return (
-                          <div key={entry.id} className="px-2.5 py-1 hover:bg-[var(--flux-hover)]">
+                          <div key={entry.id} className="px-2 py-1 hover:bg-[var(--flux-hover)]">
                             <div className="flex items-start gap-2">
                               <span className="text-[var(--flux-text-muted)] tabular-nums shrink-0">
                                 {entry.timestamp.slice(11, 23)}
@@ -1087,13 +1087,13 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                   onClick={() =>
                                     setExpandedLogIds((prev) => ({ ...prev, [entry.id]: !isExpanded }))
                                   }
-                                  className="text-[10.5px] text-[var(--flux-accent)] hover:underline shrink-0"
+                                  className="text-[10px] text-[var(--flux-accent)] hover:underline shrink-0"
                                 >
                                   {isExpanded ? 'Скрыть' : 'Детали'}
                                 </button>
                               )}
                               {shownDuration !== undefined && (
-                                <span className="min-w-[54px] text-right tabular-nums text-[var(--flux-text-muted)] shrink-0">
+                                <span className="min-w-[52px] text-right tabular-nums text-[var(--flux-text-muted)] shrink-0">
                                   {shownDuration.toFixed(1)} мс
                                 </span>
                               )}
@@ -1135,46 +1135,46 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
               {/* TAB 5: 3-Tier API & Flux Synchronization */}
               {activeTab === 'api' && (
-                <div className="flex-1 min-h-0 flex flex-col overflow-hidden text-[11.5px] bg-[var(--flux-surface)]">
-                  <div className="h-7 px-2 border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0">
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden text-[11px] bg-[var(--flux-surface)]">
+                  <div className="h-6 px-2 border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0">
                     <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
                       <button
                         type="button"
                         data-testid="api-subtab-own"
                         onClick={() => setApiSubTab('own')}
-                        className={`h-5 px-2 text-[11px] inline-flex items-center gap-1 transition-colors ${
+                        className={`h-[18px] px-2 text-[10.5px] inline-flex items-center gap-1 transition-colors ${
                           apiSubTab === 'own'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
-                        <Terminal className="w-3 h-3" />
+                        <Terminal className="w-2.5 h-2.5" />
                         <span>Свой API (REST)</span>
                       </button>
                       <button
                         type="button"
                         data-testid="api-subtab-flux"
                         onClick={() => setApiSubTab('flux-internal')}
-                        className={`h-5 px-2 text-[11px] inline-flex items-center gap-1 transition-colors ${
+                        className={`h-[18px] px-2 text-[10.5px] inline-flex items-center gap-1 transition-colors ${
                           apiSubTab === 'flux-internal'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
-                        <Layers className="w-3 h-3" />
+                        <Layers className="w-2.5 h-2.5" />
                         <span>Шина Flux Studio ({fluxBusMessages.length})</span>
                       </button>
                       <button
                         type="button"
                         data-testid="api-subtab-external"
                         onClick={() => setApiSubTab('external')}
-                        className={`h-5 px-2 text-[11px] inline-flex items-center gap-1 transition-colors ${
+                        className={`h-[18px] px-2 text-[10.5px] inline-flex items-center gap-1 transition-colors ${
                           apiSubTab === 'external'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
-                        <Globe className="w-3 h-3" />
+                        <Globe className="w-2.5 h-2.5" />
                         <span>Внешние Webhooks</span>
                       </button>
                     </div>
@@ -1184,7 +1184,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         <button
                           type="button"
                           onClick={onOpenFluxPublishModal}
-                          className="inline-flex items-center gap-1 h-5 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                          className="inline-flex items-center gap-1 h-[19px] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap"
                         >
                           <span>Студия Flux</span>
                         </button>
@@ -1200,12 +1200,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                             setApiBusy(false);
                           }
                         }}
-                        className="inline-flex items-center gap-1 h-5 px-2 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[11px] font-medium disabled:opacity-50 whitespace-nowrap"
+                        className="inline-flex items-center gap-1 h-[19px] px-2 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[10.5px] font-medium disabled:opacity-50 whitespace-nowrap"
                       >
                         {apiBusy ? (
-                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                         ) : (
-                          <Play className="w-3 h-3" />
+                          <Play className="w-2.5 h-2.5" />
                         )}
                         <span>Тест API Push</span>
                       </button>

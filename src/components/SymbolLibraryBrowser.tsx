@@ -153,36 +153,36 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
     >
       {/* Flush CAD Switcher: УГО (Графика) vs Изделия (БД) */}
       <div className="border-b border-[var(--flux-line)] flux-glass-surface">
-        <div className="grid grid-cols-2 h-7 border-b border-[var(--flux-line)] flux-glass-bar">
+        <div className="grid grid-cols-2 h-6 border-b border-[var(--flux-line)] flux-glass-bar">
           <button
             type="button"
             data-testid="sym-lib-tab-symbols"
             onClick={() => setSubTab('symbols')}
-            className={`inline-flex items-center justify-center gap-1.5 h-full border-r border-[var(--flux-line)] text-[11.5px] whitespace-nowrap transition-colors ${
+            className={`inline-flex items-center justify-center gap-1 h-full border-r border-[var(--flux-line)] text-[11px] whitespace-nowrap transition-colors ${
               subTab === 'symbols'
                 ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
                 : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
-            <Layers className={`w-3.5 h-3.5 ${subTab === 'symbols' ? 'text-[var(--flux-accent)]' : ''}`} />
+            <Layers className={`w-3 h-3 ${subTab === 'symbols' ? 'text-[var(--flux-accent)]' : ''}`} />
             <span>УГО ({symbolLibrary.length})</span>
           </button>
           <button
             type="button"
             data-testid="sym-lib-tab-components"
             onClick={() => setSubTab('components')}
-            className={`inline-flex items-center justify-center gap-1.5 h-full text-[11.5px] whitespace-nowrap transition-colors ${
+            className={`inline-flex items-center justify-center gap-1 h-full text-[11px] whitespace-nowrap transition-colors ${
               subTab === 'components'
                 ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
                 : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
-            <Database className={`w-3.5 h-3.5 ${subTab === 'components' ? 'text-[var(--flux-accent)]' : ''}`} />
+            <Database className={`w-3 h-3 ${subTab === 'components' ? 'text-[var(--flux-accent)]' : ''}`} />
             <span>Изделия ({catalog.length})</span>
           </button>
         </div>
 
-        <div className="px-2 py-1 text-[10.5px] text-[var(--flux-text-muted)] leading-snug">
+        <div className="px-2 py-1 text-[10px] text-[var(--flux-text-muted)] leading-snug">
           {subTab === 'symbols'
             ? 'Графические блоки УГО. Выберите блок для правки или клонируйте.'
             : 'Изделия БД E3: привязывают графику УГО к артикулу и атрибутам.'}
@@ -190,30 +190,30 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
       </div>
 
       {/* Actions + Search + Filter */}
-      <div className="p-1.5 border-b border-[var(--flux-line)] space-y-1.5">
+      <div className="p-1.5 border-b border-[var(--flux-line)] space-y-1">
         <div className="grid grid-cols-2 gap-1">
           <button
             type="button"
             data-testid="sym-lib-new-symbol-btn"
             onClick={workspace.onCreateNewBlankSymbol}
-            className="inline-flex items-center justify-center gap-1 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="inline-flex items-center justify-center gap-1 h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
-            <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <Plus className="w-3 h-3 text-[var(--flux-accent)]" />
             <span>Новое УГО</span>
           </button>
           <button
             type="button"
             data-testid="sym-lib-new-component-btn"
             onClick={workspace.onCreateNewComponentFromSymbol}
-            className="inline-flex items-center justify-center gap-1 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="inline-flex items-center justify-center gap-1 h-[22px] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[10.5px] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
-            <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+            <Plus className="w-3 h-3 text-[var(--flux-accent)]" />
             <span>Изделие</span>
           </button>
         </div>
 
         <div className="relative">
-          <Search className="w-3.5 h-3.5 text-[var(--flux-text-muted)] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-3 h-3 text-[var(--flux-text-muted)] absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
             value={query}
@@ -221,7 +221,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             spellCheck={false}
             aria-label={subTab === 'symbols' ? 'Поиск блока УГО' : 'Поиск изделия или артикула'}
             placeholder={subTab === 'symbols' ? 'Поиск блока УГО…' : 'Поиск изделия или артикула…'}
-            className="w-full h-6 pl-7 pr-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11.5px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
+            className="w-full h-[22px] pl-6 pr-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[11px] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
           />
         </div>
 
@@ -243,7 +243,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                 key={k}
                 type="button"
                 onClick={() => setFilterKind(k)}
-                className={`h-6 text-[11px] transition-colors ${
+                className={`h-[21px] text-[10.5px] transition-colors ${
                   active
                     ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
                     : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'

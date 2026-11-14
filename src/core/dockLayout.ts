@@ -29,7 +29,7 @@ export interface DockLayoutState {
 }
 
 export const DOCK_LAYOUT_STORAGE_KEY = 'e3promax.dockLayout.v1';
-export const COLLAPSED_BOTTOM_TABS_HEIGHT = 32;
+export const COLLAPSED_BOTTOM_TABS_HEIGHT = 24;
 
 export function createDefaultDockLayout(): DockLayoutState {
   return {
@@ -41,7 +41,7 @@ export function createDefaultDockLayout(): DockLayoutState {
         dock: 'left',
         order: 0,
         collapsed: false,
-        floating: { x: 24, y: 148, width: 300, height: 480 },
+        floating: { x: 20, y: 136, width: 264, height: 460 },
       },
       inspector: {
         id: 'inspector',
@@ -49,7 +49,7 @@ export function createDefaultDockLayout(): DockLayoutState {
         dock: 'right',
         order: 0,
         collapsed: false,
-        floating: { x: 1080, y: 148, width: 330, height: 480 },
+        floating: { x: 1140, y: 136, width: 280, height: 460 },
       },
       console: {
         id: 'console',
@@ -57,14 +57,14 @@ export function createDefaultDockLayout(): DockLayoutState {
         dock: 'bottom',
         order: 0,
         collapsed: false,
-        floating: { x: 240, y: 520, width: 820, height: 260 },
+        floating: { x: 256, y: 560, width: 840, height: 216 },
       },
     },
     sizes: {
-      left: 280,
-      right: 320,
-      bottom: 240,
-      top: 190,
+      left: 244,
+      right: 268,
+      bottom: 184,
+      top: 168,
     },
   };
 }
