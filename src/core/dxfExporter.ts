@@ -1,9 +1,17 @@
 import JSZip from 'jszip';
 import { mapDxfLayerFlags } from './cadLayers.ts';
 import { buildBom, computeWireJunctionDots, getAbsolutePinPos } from './e3Engine.ts';
-import type { AnnotationStrokeStyle, CadLayerStateMap, E3Device, E3Project, E3Sheet } from './e3Types.ts';
+import type {
+  AnnotationStrokeStyle,
+  CadLayerStateMap,
+  CustomSymbolStrokeStyle,
+  E3Device,
+  E3Project,
+  E3Sheet,
+} from './e3Types.ts';
 import { buildGostSheetGeometry } from './gostFrame.ts';
 import { buildGostTableRenderModel } from './gostTables.ts';
+import { normalizeArcSweepDeg, resolveDynamicSymbolText } from './symbolLibrary.ts';
 
 export interface DxfExportOptions {
   sheetIds?: string[];
@@ -12,7 +20,7 @@ export interface DxfExportOptions {
   editableBlocks?: boolean;
 }
 
-type DxfLineType = 'CONTINUOUS' | 'DASHED' | 'DOT';
+type DxfLineType = 'CONTINUOUS' | 'DASHED' | 'DASHDOT' | 'DOT';
 
 const DXF_LINEWEIGHT_TABLE = [13, 15, 18, 20, 25, 30, 35, 40, 50, 60, 70, 80, 90, 100];
 
@@ -33,10 +41,24 @@ export function toDxfLineweight(pxWidth: number | undefined, fallback = 25): num
   return best;
 }
 
-function toDxfLtype(style?: AnnotationStrokeStyle): DxfLineType {
+function toDxfLtype(style?: AnnotationStrokeStyle | CustomSymbolStrokeStyle, dashedFallback?: boolean): DxfLineType {
   if (style === 'dashed') return 'DASHED';
+  if (style === 'dashdot') return 'DASHDOT';
   if (style === 'dotted') return 'DOT';
+  if (dashedFallback && !style) return 'DASHED';
   return 'CONTINUOUS';
+}
+
+function hexToAciColor(hex?: string, fallback = 7): number {
+  if (!hex) return fallback;
+  const c = hex.trim().toLowerCase();
+  if (c === '#dc2626' || c === '#ef4444') return 1; // Red
+  if (c === '#d97706' || c === '#f59e0b' || c === '#eab308') return 2; // Yellow
+  if (c === '#15803d' || c === '#16a34a' || c === '#22c55e') return 3; // Green
+  if (c === '#0284c7' || c === '#06b6d4' || c === '#0f766e') return 4; // Cyan / Teal
+  if (c === '#4f46e5' || c === '#2563eb' || c === '#1d4ed8') return 5; // Blue
+  if (c === '#64748b' || c === '#475569' || c === '#94a3b8') return 8; // Gray
+  return fallback;
 }
 
 export function extractDeviceRating(dev: E3Device): string {
@@ -97,6 +119,15 @@ interface DxfWriter {
     cx: number,
     cy: number,
     r: number,
+    layer: string,
+    colorOrOpts?: number | EntityStyleOpts
+  ) => void;
+  arc: (
+    cx: number,
+    cy: number,
+    r: number,
+    startDeg: number,
+    endDeg: number,
     layer: string,
     colorOrOpts?: number | EntityStyleOpts
   ) => void;
@@ -203,6 +234,18 @@ function createDxfWriter(): DxfWriter {
       add(20, cy.toFixed(2));
       add(30, '0.0');
       add(40, Math.max(0.5, r).toFixed(2));
+    },
+    arc(cx, cy, r, startDeg, endDeg, layer, colorOrOpts = 256) {
+      add(0, 'ARC');
+      add(8, layer);
+      emitStyle(resolveStyle(colorOrOpts));
+      add(10, cx.toFixed(2));
+      add(20, cy.toFixed(2));
+      add(30, '0.0');
+      add(40, Math.max(0.5, r).toFixed(2));
+      const norm = (deg: number) => ((deg % 360) + 360) % 360;
+      add(50, norm(startDeg).toFixed(2));
+      add(51, norm(endDeg).toFixed(2));
     },
     polyline(pts, layer, colorOrOpts = 256, closed = false) {
       if (pts.length < 2) return;
@@ -343,26 +386,47 @@ function drawDeviceSymbolInBlock(
 
   if (dev.customSymbol && dev.customSymbol.shapes.length > 0) {
     for (const sh of dev.customSymbol.shapes) {
+      const shAci = hexToAciColor(sh.strokeColor, sh.kind === 'rect' || sh.kind === 'circle' ? 3 : 7);
+      const shLw = sh.kind !== 'text' && sh.strokeWidth ? toDxfLineweight(sh.strokeWidth, deviceLw) : deviceLw;
+      const shLtype = sh.kind !== 'text' ? toDxfLtype(sh.strokeStyle, sh.dashed) : 'CONTINUOUS';
       if (sh.kind === 'line') {
         w.line(ox + sh.x1, oy - sh.y1, ox + sh.x2, oy - sh.y2, 'DEVICES', {
-          color: 7,
-          ltype: sh.dashed ? 'DASHED' : 'CONTINUOUS',
-          lineweight: deviceLw,
+          color: shAci,
+          ltype: shLtype,
+          lineweight: shLw,
         });
+      } else if (sh.kind === 'polyline') {
+        w.polyline(
+          (sh.points || []).map((pt) => ({ x: ox + pt.x, y: oy - pt.y })),
+          'DEVICES',
+          { color: shAci, ltype: shLtype, lineweight: shLw },
+          Boolean(sh.closed)
+        );
       } else if (sh.kind === 'rect') {
         w.rect(ox + sh.x, oy - sh.y, sh.width, sh.height, 'DEVICES', {
-          color: 3,
-          ltype: sh.dashed ? 'DASHED' : 'CONTINUOUS',
-          lineweight: deviceLw,
+          color: shAci,
+          ltype: shLtype,
+          lineweight: shLw,
         });
       } else if (sh.kind === 'circle') {
         w.circle(ox + sh.cx, oy - sh.cy, sh.r, 'DEVICES', {
-          color: 3,
-          ltype: sh.dashed ? 'DASHED' : 'CONTINUOUS',
-          lineweight: deviceLw,
+          color: shAci,
+          ltype: shLtype,
+          lineweight: shLw,
+        });
+      } else if (sh.kind === 'arc') {
+        const sweep = normalizeArcSweepDeg(sh.startAngle, sh.endAngle);
+        const endDeg = sh.startAngle + sweep;
+        // SVG Y-down CW [startAngle -> endDeg] mirrors to DXF Y-up CCW [-endDeg -> -startAngle]
+        w.arc(ox + sh.cx, oy - sh.cy, sh.r, -endDeg, -sh.startAngle, 'DEVICES', {
+          color: shAci,
+          ltype: shLtype,
+          lineweight: shLw,
         });
       } else if (sh.kind === 'text') {
-        w.text(ox + sh.x, oy - sh.y, sh.text, sh.fontSize || 10, 'TEXT', 7, 1, 2, textLw);
+        const resolved = resolveDynamicSymbolText(sh, dev);
+        const hAlign: 0 | 1 | 2 = sh.align === 'left' ? 0 : sh.align === 'right' ? 2 : 1;
+        w.text(ox + sh.x, oy - sh.y, resolved, sh.fontSize || 10, 'TEXT', hexToAciColor(sh.strokeColor, 7), hAlign, 2, textLw);
       }
     }
   } else {
@@ -464,10 +528,10 @@ function writeHeaderAndTables(
   w.add(0, 'SECTION');
   w.add(2, 'TABLES');
 
-  // LTYPE (CONTINUOUS, DASHED, DOT)
+  // LTYPE (CONTINUOUS, DASHED, DASHDOT, DOT)
   w.add(0, 'TABLE');
   w.add(2, 'LTYPE');
-  w.add(70, 3);
+  w.add(70, 4);
   w.add(0, 'LTYPE');
   w.add(2, 'CONTINUOUS');
   w.add(70, 0);
@@ -483,6 +547,17 @@ function writeHeaderAndTables(
   w.add(73, 2);
   w.add(40, 12.0);
   w.add(49, 8.0);
+  w.add(49, -4.0);
+  w.add(0, 'LTYPE');
+  w.add(2, 'DASHDOT');
+  w.add(70, 0);
+  w.add(3, 'Dash dot __ . __ .');
+  w.add(72, 65);
+  w.add(73, 4);
+  w.add(40, 14.0);
+  w.add(49, 6.0);
+  w.add(49, -3.0);
+  w.add(49, 1.0);
   w.add(49, -4.0);
   w.add(0, 'LTYPE');
   w.add(2, 'DOT');

@@ -1,7 +1,8 @@
 import { buildBom, buildCableJournal, buildNetWireLengths } from './e3Engine.ts';
-import type { E3Device, E3Project, E3Sheet } from './e3Types.ts';
+import type { CustomSymbolStrokeStyle, E3Device, E3Project, E3Sheet } from './e3Types.ts';
 import { buildGostSheetGeometry } from './gostFrame.ts';
 import { buildGostTableRenderModel } from './gostTables.ts';
+import { resolveDynamicSymbolText, sampleArcPoints } from './symbolLibrary.ts';
 
 export interface PdfExportOptions {
   sheetIds?: string[];
@@ -262,23 +263,74 @@ function drawPdfDevice(
   const pdfThinSw = Math.max(0.3, symbolStrokeWidth * 0.42).toFixed(2);
 
   if (dev.customSymbol && dev.customSymbol.shapes.length > 0) {
+    const dashForShape = (style?: CustomSymbolStrokeStyle, dashed?: boolean): string | null => {
+      const resolved = style || (dashed ? 'dashed' : 'solid');
+      if (resolved === 'dashed') return '[4 2] 0 d';
+      if (resolved === 'dashdot') return '[6 2 1.5 2] 0 d';
+      if (resolved === 'dotted') return '[1.5 2] 0 d';
+      return null;
+    };
+
     for (const sh of dev.customSymbol.shapes) {
+      if (sh.kind === 'text') {
+        const textRgb: [number, number, number] = sh.strokeColor
+          ? hexColorToRgb01(sh.strokeColor)
+          : [0.1, 0.14, 0.22];
+        const resolvedText = resolveDynamicSymbolText(sh, dev);
+        drawText(
+          toX(dev.x + sh.x),
+          toY(dev.y + sh.y),
+          resolvedText,
+          Math.max(5.5, (sh.fontSize || 10) * s),
+          Boolean(sh.bold),
+          sh.align === 'left' ? 'left' : 'center',
+          textRgb
+        );
+        continue;
+      }
+
+      const strokeRgb = sh.strokeColor ? hexColorToRgb01(sh.strokeColor) : [0.12, 0.16, 0.24];
+      const shW = Math.max(0.3, (sh.strokeWidth || symbolStrokeWidth) * 0.52).toFixed(2);
+      const dashOp = dashForShape(sh.strokeStyle, sh.dashed);
+
       if (sh.kind === 'line') {
-        ops.push(`0.12 0.16 0.24 RG ${pdfSw} w`);
-        if (sh.dashed) ops.push('[4 2] 0 d');
+        ops.push(`${strokeRgb[0].toFixed(2)} ${strokeRgb[1].toFixed(2)} ${strokeRgb[2].toFixed(2)} RG ${shW} w`);
+        if (dashOp) ops.push(dashOp);
         ops.push(`${toX(dev.x + sh.x1).toFixed(2)} ${toY(dev.y + sh.y1).toFixed(2)} m ${toX(dev.x + sh.x2).toFixed(2)} ${toY(dev.y + sh.y2).toFixed(2)} l S`);
-        if (sh.dashed) ops.push('[] 0 d');
+        if (dashOp) ops.push('[] 0 d');
+      } else if (sh.kind === 'polyline' && (sh.points?.length || 0) >= 2) {
+        const fillRgb = sh.fillColor ? hexColorToRgb01(sh.fillColor) : [0.98, 0.99, 1];
+        ops.push(
+          `${strokeRgb[0].toFixed(2)} ${strokeRgb[1].toFixed(2)} ${strokeRgb[2].toFixed(2)} RG ` +
+            `${fillRgb[0].toFixed(2)} ${fillRgb[1].toFixed(2)} ${fillRgb[2].toFixed(2)} rg ${shW} w`
+        );
+        if (dashOp) ops.push(dashOp);
+        const pathOps = sh.points
+          .map((pt, idx) => `${toX(dev.x + pt.x).toFixed(2)} ${toY(dev.y + pt.y).toFixed(2)} ${idx === 0 ? 'm' : 'l'}`)
+          .join(' ');
+        const paintOp = sh.closed ? (sh.filled ? 'b' : 's') : 'S';
+        ops.push(`${pathOps} ${paintOp}`);
+        if (dashOp) ops.push('[] 0 d');
       } else if (sh.kind === 'rect') {
-        ops.push(`0.12 0.16 0.24 RG 0.98 0.99 1 rg ${pdfSw} w`);
-        if (sh.dashed) ops.push('[4 2] 0 d');
+        const fillRgb = sh.fillColor ? hexColorToRgb01(sh.fillColor) : [0.98, 0.99, 1];
+        ops.push(
+          `${strokeRgb[0].toFixed(2)} ${strokeRgb[1].toFixed(2)} ${strokeRgb[2].toFixed(2)} RG ` +
+            `${fillRgb[0].toFixed(2)} ${fillRgb[1].toFixed(2)} ${fillRgb[2].toFixed(2)} rg ${shW} w`
+        );
+        if (dashOp) ops.push(dashOp);
         ops.push(`${toX(dev.x + sh.x).toFixed(2)} ${toY(dev.y + sh.y + sh.height).toFixed(2)} ${(sh.width * s).toFixed(2)} ${(sh.height * s).toFixed(2)} re ${sh.filled ? 'B' : 'S'}`);
-        if (sh.dashed) ops.push('[] 0 d');
+        if (dashOp) ops.push('[] 0 d');
       } else if (sh.kind === 'circle') {
         const ccx = toX(dev.x + sh.cx);
         const ccy = toY(dev.y + sh.cy);
         const rr = Math.max(1, sh.r * s);
         const kk = rr * 0.5523;
-        ops.push(`0.12 0.16 0.24 RG 0.98 0.99 1 rg ${pdfSw} w`);
+        const fillRgb = sh.fillColor ? hexColorToRgb01(sh.fillColor) : [0.98, 0.99, 1];
+        ops.push(
+          `${strokeRgb[0].toFixed(2)} ${strokeRgb[1].toFixed(2)} ${strokeRgb[2].toFixed(2)} RG ` +
+            `${fillRgb[0].toFixed(2)} ${fillRgb[1].toFixed(2)} ${fillRgb[2].toFixed(2)} rg ${shW} w`
+        );
+        if (dashOp) ops.push(dashOp);
         ops.push(
           `${(ccx + rr).toFixed(2)} ${ccy.toFixed(2)} m ` +
             `${(ccx + rr).toFixed(2)} ${(ccy + kk).toFixed(2)} ${(ccx + kk).toFixed(2)} ${(ccy + rr).toFixed(2)} ${ccx.toFixed(2)} ${(ccy + rr).toFixed(2)} c ` +
@@ -286,8 +338,18 @@ function drawPdfDevice(
             `${(ccx - rr).toFixed(2)} ${(ccy - kk).toFixed(2)} ${(ccx - kk).toFixed(2)} ${(ccy - rr).toFixed(2)} ${ccx.toFixed(2)} ${(ccy - rr).toFixed(2)} c ` +
             `${(ccx + kk).toFixed(2)} ${(ccy - rr).toFixed(2)} ${(ccx + rr).toFixed(2)} ${(ccy - kk).toFixed(2)} ${(ccx + rr).toFixed(2)} ${ccy.toFixed(2)} c ${sh.filled ? 'B' : 'S'}`
         );
-      } else if (sh.kind === 'text') {
-        drawText(toX(dev.x + sh.x), toY(dev.y + sh.y), sh.text, Math.max(5.5, (sh.fontSize || 10) * s), Boolean(sh.bold), 'center');
+        if (dashOp) ops.push('[] 0 d');
+      } else if (sh.kind === 'arc') {
+        const pts = sampleArcPoints(sh.cx, sh.cy, sh.r, sh.startAngle, sh.endAngle, 20);
+        if (pts.length >= 2) {
+          ops.push(`${strokeRgb[0].toFixed(2)} ${strokeRgb[1].toFixed(2)} ${strokeRgb[2].toFixed(2)} RG ${shW} w`);
+          if (dashOp) ops.push(dashOp);
+          const pathOps = pts
+            .map((pt, idx) => `${toX(dev.x + pt.x).toFixed(2)} ${toY(dev.y + pt.y).toFixed(2)} ${idx === 0 ? 'm' : 'l'}`)
+            .join(' ');
+          ops.push(`${pathOps} S`);
+          if (dashOp) ops.push('[] 0 d');
+        }
       }
     }
   } else {

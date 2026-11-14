@@ -31,7 +31,7 @@ import { StampEditorModal, type StampModalMode } from './components/StampEditorM
 import { TerminalStripModal } from './components/TerminalStripModal';
 import { AutoNumberingModal } from './components/AutoNumberingModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
-import { SymbolDesignerModal } from './components/SymbolDesignerModal';
+import { SymbolWorkspaceCanvas } from './components/SymbolWorkspaceCanvas';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
 import {
   clampDockLayoutToViewport,
@@ -119,10 +119,16 @@ import type {
   CableJournalRow,
   CadLayerId,
   CatalogItem,
+  CustomSymbolShape,
+  CustomSymbolSpec,
+  DeviceCategory,
   E3Annotation,
+  E3Attribute,
   E3Device,
+  E3Pin,
   E3Project,
   E3Sheet,
+  E3SymbolDef,
   E3TitleBlock,
   E3VisualSettings,
   E3Wire,
@@ -137,6 +143,31 @@ import type {
   SheetFormat,
   TerminalPlanRow,
 } from './core/e3Types';
+import {
+  buildSymbolDesignerPreset,
+  normalizeCustomSymbolSpec,
+  type SymbolEditorTool,
+  type SymbolPresetId,
+} from './core/symbolDesigner';
+import {
+  applyAttributeTemplate,
+  buildSymbolDefFromCatalogItem,
+  duplicateCatalogItemAsCopy,
+  duplicateSymbolDefAsCopy,
+  extractBuiltInSymbolShapes,
+  getBuiltInSymbolLibrary,
+  loadCustomSymbols,
+  mergeSymbolLibrary,
+  mirrorSymbolGeometryX,
+  mirrorSymbolGeometryY,
+  rotateSymbolGeometryCW,
+  saveCustomSymbols,
+} from './core/symbolLibrary';
+import type {
+  SymbolActiveDrawStyle,
+  SymbolWorkspaceActions,
+  SymbolWorkspaceDraft,
+} from './core/symbolWorkspaceTypes';
 import {
   createFluxBusLogEntry,
   detectFluxHost,
@@ -366,7 +397,6 @@ export default function App() {
   const [fluxPublishOpen, setFluxPublishOpen] = useState(false);
   const [terminalEditorOpen, setTerminalEditorOpen] = useState(false);
   const [autoNumberModalOpen, setAutoNumberModalOpen] = useState(false);
-  const [symbolDesignerOpen, setSymbolDesignerOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteInitialQuery, setCommandPaletteInitialQuery] = useState('');
   const fluxHostStatus = useMemo(() => detectFluxHost(), []);
@@ -387,6 +417,57 @@ export default function App() {
   const [editingCatalogItem, setEditingCatalogItem] = useState<CatalogItem | null>(null);
   const [customCatalog, setCustomCatalog] = useState<CatalogItem[]>(() => loadCustomCatalog());
   const mergedCatalog = useMemo(() => mergeCatalogItems(customCatalog), [customCatalog]);
+  const [customSymbols, setCustomSymbols] = useState<E3SymbolDef[]>(() => loadCustomSymbols());
+  const mergedSymbolLibrary = useMemo(
+    () =>
+      mergeSymbolLibrary(
+        getBuiltInSymbolLibrary(mergedCatalog),
+        mergeSymbolLibrary(project.symbolLibrary || [], customSymbols)
+      ),
+    [mergedCatalog, project.symbolLibrary, customSymbols]
+  );
+
+  type SymbolGeoSnapshot = {
+    width: number;
+    height: number;
+    shapes: CustomSymbolShape[];
+    pins: Omit<E3Pin, 'id'>[];
+  };
+  const [symbolUndoStack, setSymbolUndoStack] = useState<SymbolGeoSnapshot[]>([]);
+  const [symbolRedoStack, setSymbolRedoStack] = useState<SymbolGeoSnapshot[]>([]);
+  const [symbolDraft, setSymbolDraft] = useState<SymbolWorkspaceDraft>(() => ({
+    open: false,
+    targetMode: 'component',
+    symbolId: 'sym-new',
+    name: 'Новый блок УГО',
+    e3BlockName: 'E3_NEW_BLK',
+    category: 'relay',
+    width: 120,
+    height: 100,
+    shapes: [],
+    pins: [],
+    componentName: 'Новое изделие',
+    article: 'E3-NEW-01',
+    manufacturer: 'Собств. база',
+    defaultPrefix: 'K',
+    defaultCable: 'ВВГнг(А)-LS 3х1,5',
+    attributes: [],
+    tool: 'select',
+    activeStyle: {
+      strokeColor: '#111827',
+      strokeWidth: 1.8,
+      strokeStyle: 'solid',
+      filled: true,
+      fillColor: '',
+    },
+    activeAttrTagKey: 'designation',
+    activePinSignal: 'signal',
+    gridStep: 10,
+    snapToGrid: true,
+    selectedShapeId: null,
+    selectedPinIndex: null,
+    dirty: false,
+  }));
 
   const [logs, setLogs] = useState<ProcessLogEntry[]>(() => [
     {
@@ -614,11 +695,15 @@ export default function App() {
       const cur = docStateRef.current.present;
       const rawNext = updater(cur);
       const next = normalizeProjectSheetRevisions(rawNext);
-      setDocState((s) => ({
-        past: recordHistory ? [...s.past.slice(-29), s.present] : s.past,
+      const nextDoc = {
+        past: recordHistory
+          ? [...docStateRef.current.past.slice(-29), docStateRef.current.present]
+          : docStateRef.current.past,
         present: next,
-        future: recordHistory ? [] : s.future,
-      }));
+        future: recordHistory ? [] : docStateRef.current.future,
+      };
+      docStateRef.current = nextDoc;
+      setDocState(nextDoc);
       if (!suppressSyncPushRef.current) {
         pushSync(next);
       }
@@ -1082,10 +1167,11 @@ export default function App() {
         appendLog('WARN', 'E3-CORE', 'Размещение невозможно: слой «Изделия и аппараты» заблокирован.');
         return;
       }
-      const sheetId = targetSheetId || activeSheet?.id || project.sheets[0].id;
-      const targetSheet = project.sheets.find((s) => s.id === sheetId) || project.sheets[0];
-      const sheetDevices = project.devices.filter((d) => d.sheetId === sheetId);
-      const des = nextUniqueDesignation(project.devices, item.defaultPrefix);
+      const cur = docStateRef.current.present;
+      const sheetId = targetSheetId || activeSheet?.id || cur.sheets[0].id;
+      const targetSheet = cur.sheets.find((s) => s.id === sheetId) || cur.sheets[0];
+      const sheetDevices = cur.devices.filter((d) => d.sheetId === sheetId);
+      const des = nextUniqueDesignation(cur.devices, item.defaultPrefix);
       const id = `dev-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
       const smartPos =
         x === undefined || y === undefined
@@ -1093,7 +1179,7 @@ export default function App() {
               { width: item.width, height: item.height },
               sheetDevices,
               targetSheet,
-              project.visualSettings.gridSize
+              cur.visualSettings.gridSize
             )
           : { x, y };
       const posX = smartPos.x;
@@ -1113,6 +1199,7 @@ export default function App() {
         rotation: 0,
         width: item.width,
         height: item.height,
+        symbolId: item.symbolId,
         e3BlockName: item.e3BlockName,
         bindingState: 'PLACED',
         pins: item.pins.map((p, idx) => ({ ...p, id: `${id}-p${idx + 1}` })),
@@ -1129,7 +1216,6 @@ export default function App() {
             : undefined,
       };
 
-      const cur = docStateRef.current.present;
       const baseWithDevice: E3Project = {
         ...cur,
         revision: cur.revision + 1,
@@ -1505,6 +1591,738 @@ export default function App() {
       );
     },
     [customCatalog, handleSaveCustomCatalogItem, appendLog]
+  );
+
+  const ensureSymbolEditorDocksVisible = useCallback(() => {
+    setDockLayout((prev) => {
+      let next = prev;
+      if (next.panels.explorer.collapsed) next = togglePanelCollapse(next, 'explorer');
+      if (next.panels.inspector.collapsed) next = togglePanelCollapse(next, 'inspector');
+      return next;
+    });
+  }, []);
+
+  const openSymbolInWorkspace = useCallback(
+    (sym: E3SymbolDef) => {
+      const linkedCat =
+        mergedCatalog.find((c) => c.symbolId === sym.id || c.e3BlockName === sym.e3BlockName) ||
+        null;
+      const shapes =
+        sym.shapes.length > 0
+          ? structuredClone(sym.shapes)
+          : extractBuiltInSymbolShapes(
+              sym.category,
+              sym.width,
+              sym.height,
+              sym.e3BlockName,
+              sym.defaultPins
+            );
+      setSymbolUndoStack([]);
+      setSymbolRedoStack([]);
+      setSymbolDraft((prev) => ({
+        ...prev,
+        open: true,
+        targetMode: linkedCat ? 'component' : 'symbol',
+        symbolId: sym.id,
+        catalogItemId: linkedCat?.id,
+        deviceId: undefined,
+        name: sym.name,
+        e3BlockName: sym.e3BlockName,
+        category: sym.category,
+        width: sym.width,
+        height: sym.height,
+        shapes,
+        pins: structuredClone(sym.defaultPins),
+        componentName: linkedCat?.componentName || sym.description || sym.name,
+        article: linkedCat?.article || sym.e3BlockName,
+        manufacturer: linkedCat?.manufacturer || 'Собств. база',
+        defaultPrefix: linkedCat?.defaultPrefix || 'K',
+        defaultCable: linkedCat?.defaultCable || 'ВВГнг(А)-LS 3х1,5',
+        attributes: linkedCat
+          ? structuredClone(linkedCat.defaultAttributes)
+          : applyAttributeTemplate([], 'gost_base'),
+        tool: 'select',
+        selectedShapeId: null,
+        selectedPinIndex: null,
+        dirty: false,
+      }));
+      ensureSymbolEditorDocksVisible();
+      appendLog('INFO', 'E3-CORE', `Открыт блок УГО «${sym.name}» (${sym.e3BlockName}) в редакторе.`);
+    },
+    [mergedCatalog, ensureSymbolEditorDocksVisible, appendLog]
+  );
+
+  const openCatalogItemInWorkspace = useCallback(
+    (item: CatalogItem) => {
+      const linkedSym = item.symbolId
+        ? mergedSymbolLibrary.find((s) => s.id === item.symbolId)
+        : mergedSymbolLibrary.find((s) => s.e3BlockName === item.e3BlockName);
+      const sym = linkedSym && !item.customSymbol?.shapes.length ? linkedSym : buildSymbolDefFromCatalogItem(item);
+      setSymbolUndoStack([]);
+      setSymbolRedoStack([]);
+      setSymbolDraft((prev) => ({
+        ...prev,
+        open: true,
+        targetMode: 'component',
+        symbolId: sym.id,
+        catalogItemId: item.id,
+        deviceId: undefined,
+        name: sym.name,
+        e3BlockName: item.e3BlockName,
+        category: item.category,
+        width: item.width,
+        height: item.height,
+        shapes: structuredClone(sym.shapes),
+        pins: structuredClone(item.pins),
+        componentName: item.componentName,
+        article: item.article,
+        manufacturer: item.manufacturer,
+        defaultPrefix: item.defaultPrefix,
+        defaultCable: item.defaultCable || '',
+        attributes: structuredClone(item.defaultAttributes),
+        tool: 'select',
+        selectedShapeId: null,
+        selectedPinIndex: null,
+        dirty: false,
+      }));
+      ensureSymbolEditorDocksVisible();
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Открыто изделие «${item.componentName}» (${item.e3BlockName}) в редакторе УГО.`
+      );
+    },
+    [mergedSymbolLibrary, ensureSymbolEditorDocksVisible, appendLog]
+  );
+
+  const openDeviceSymbolInWorkspace = useCallback(
+    (dev: E3Device) => {
+      const shapes =
+        dev.customSymbol && dev.customSymbol.shapes.length > 0
+          ? structuredClone(dev.customSymbol.shapes)
+          : extractBuiltInSymbolShapes(
+              dev.category,
+              dev.width,
+              dev.height,
+              dev.e3BlockName,
+              dev.pins
+            );
+      const pins = dev.pins.map(({ id: _id, ...rest }) => ({ ...rest }));
+      const matchingCat = mergedCatalog.find(
+        (c) => (dev.symbolId && c.symbolId === dev.symbolId) || c.e3BlockName === dev.e3BlockName
+      );
+      setSymbolUndoStack([]);
+      setSymbolRedoStack([]);
+      setSymbolDraft((prev) => ({
+        ...prev,
+        open: true,
+        targetMode: 'device',
+        symbolId: dev.symbolId || `sym-${dev.e3BlockName || dev.id}`,
+        catalogItemId: matchingCat?.id,
+        deviceId: dev.id,
+        name: `${dev.designation} (${dev.e3BlockName})`,
+        e3BlockName: dev.e3BlockName,
+        category: dev.category,
+        width: dev.width,
+        height: dev.height,
+        shapes,
+        pins,
+        componentName: dev.componentName,
+        article: dev.article,
+        manufacturer: dev.manufacturer,
+        defaultPrefix: dev.designation.replace(/\d+.*$/, '') || 'K',
+        defaultCable: matchingCat?.defaultCable || '',
+        attributes: structuredClone(dev.attributes),
+        tool: 'select',
+        selectedShapeId: null,
+        selectedPinIndex: null,
+        dirty: false,
+      }));
+      ensureSymbolEditorDocksVisible();
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Открыто УГО аппарата ${dev.designation} (${dev.e3BlockName}) для редактирования.`
+      );
+    },
+    [mergedCatalog, ensureSymbolEditorDocksVisible, appendLog]
+  );
+
+  const openCatalogSeedInWorkspace = useCallback(
+    (seed: {
+      catalogItemId?: string;
+      name: string;
+      e3BlockName: string;
+      category: DeviceCategory;
+      width: number;
+      height: number;
+      componentName: string;
+      article: string;
+      manufacturer: string;
+      defaultPrefix: string;
+      defaultCable?: string;
+      attributes: E3Attribute[];
+      pins: Omit<E3Pin, 'id'>[];
+      customSymbol?: CustomSymbolSpec;
+    }) => {
+      const shapes =
+        seed.customSymbol && seed.customSymbol.shapes.length > 0
+          ? structuredClone(seed.customSymbol.shapes)
+          : extractBuiltInSymbolShapes(
+              seed.category,
+              seed.width,
+              seed.height,
+              seed.e3BlockName,
+              seed.pins
+            );
+      setSymbolUndoStack([]);
+      setSymbolRedoStack([]);
+      setSymbolDraft((prev) => ({
+        ...prev,
+        open: true,
+        targetMode: 'component',
+        symbolId: `sym-${seed.e3BlockName || Date.now().toString(36)}`,
+        catalogItemId: seed.catalogItemId,
+        deviceId: undefined,
+        name: seed.name,
+        e3BlockName: seed.e3BlockName,
+        category: seed.category,
+        width: seed.width,
+        height: seed.height,
+        shapes,
+        pins: structuredClone(seed.pins),
+        componentName: seed.componentName || seed.name,
+        article: seed.article || 'E3-NEW-01',
+        manufacturer: seed.manufacturer || 'Собств. база',
+        defaultPrefix: seed.defaultPrefix || 'K',
+        defaultCable: seed.defaultCable || '',
+        attributes: structuredClone(seed.attributes),
+        tool: 'select',
+        selectedShapeId: null,
+        selectedPinIndex: null,
+        dirty: true,
+      }));
+      ensureSymbolEditorDocksVisible();
+    },
+    [ensureSymbolEditorDocksVisible]
+  );
+
+  const createNewBlankSymbolInWorkspace = useCallback(() => {
+    const preset = buildSymbolDesignerPreset('blank_box');
+    const suffix = Date.now().toString(36).slice(-4).toUpperCase();
+    setSymbolUndoStack([]);
+    setSymbolRedoStack([]);
+    setSymbolDraft((prev) => ({
+      ...prev,
+      open: true,
+      targetMode: 'symbol',
+      symbolId: `sym-custom-${Date.now().toString(36)}`,
+      catalogItemId: undefined,
+      deviceId: undefined,
+      name: `Новое УГО ${suffix}`,
+      e3BlockName: `E3_BLK_${suffix}`,
+      category: 'relay',
+      width: preset.width,
+      height: preset.height,
+      shapes: structuredClone(preset.shapes),
+      pins: structuredClone(preset.pins),
+      componentName: `Новое изделие ${suffix}`,
+      article: `ART-${suffix}`,
+      manufacturer: 'Собств. база',
+      defaultPrefix: 'K',
+      defaultCable: 'ВВГнг(А)-LS 3х1,5',
+      attributes: applyAttributeTemplate([], 'gost_base'),
+      tool: 'select',
+      selectedShapeId: null,
+      selectedPinIndex: null,
+      dirty: true,
+    }));
+    ensureSymbolEditorDocksVisible();
+  }, [ensureSymbolEditorDocksVisible]);
+
+  const openBlockEditorWorkspace = useCallback(() => {
+    if (selectedDevice) {
+      openDeviceSymbolInWorkspace(selectedDevice);
+      return;
+    }
+    if (mergedSymbolLibrary.length > 0) {
+      openSymbolInWorkspace(mergedSymbolLibrary[0]);
+      return;
+    }
+    createNewBlankSymbolInWorkspace();
+  }, [
+    selectedDevice,
+    mergedSymbolLibrary,
+    openDeviceSymbolInWorkspace,
+    openSymbolInWorkspace,
+    createNewBlankSymbolInWorkspace,
+  ]);
+
+  const commitSymbolGeometry = useCallback(
+    (
+      nextShapes: CustomSymbolShape[],
+      nextPins: Omit<E3Pin, 'id'>[],
+      bounds?: { width?: number; height?: number }
+    ) => {
+      setSymbolDraft((prev) => {
+        setSymbolUndoStack((u) => [
+          ...u.slice(-29),
+          {
+            width: prev.width,
+            height: prev.height,
+            shapes: structuredClone(prev.shapes),
+            pins: structuredClone(prev.pins),
+          },
+        ]);
+        setSymbolRedoStack([]);
+        return {
+          ...prev,
+          width: bounds?.width ?? prev.width,
+          height: bounds?.height ?? prev.height,
+          shapes: nextShapes,
+          pins: nextPins,
+          dirty: true,
+        };
+      });
+    },
+    []
+  );
+
+  const undoSymbolEditor = useCallback(() => {
+    setSymbolUndoStack((past) => {
+      if (past.length === 0) return past;
+      const prevSnap = past[past.length - 1];
+      setSymbolDraft((curr) => {
+        setSymbolRedoStack((r) => [
+          {
+            width: curr.width,
+            height: curr.height,
+            shapes: structuredClone(curr.shapes),
+            pins: structuredClone(curr.pins),
+          },
+          ...r.slice(0, 29),
+        ]);
+        return {
+          ...curr,
+          width: prevSnap.width,
+          height: prevSnap.height,
+          shapes: prevSnap.shapes,
+          pins: prevSnap.pins,
+          selectedShapeId: null,
+          selectedPinIndex: null,
+          dirty: true,
+        };
+      });
+      return past.slice(0, -1);
+    });
+  }, []);
+
+  const redoSymbolEditor = useCallback(() => {
+    setSymbolRedoStack((fut) => {
+      if (fut.length === 0) return fut;
+      const nextSnap = fut[0];
+      setSymbolDraft((curr) => {
+        setSymbolUndoStack((u) => [
+          ...u.slice(-29),
+          {
+            width: curr.width,
+            height: curr.height,
+            shapes: structuredClone(curr.shapes),
+            pins: structuredClone(curr.pins),
+          },
+        ]);
+        return {
+          ...curr,
+          width: nextSnap.width,
+          height: nextSnap.height,
+          shapes: nextSnap.shapes,
+          pins: nextSnap.pins,
+          selectedShapeId: null,
+          selectedPinIndex: null,
+          dirty: true,
+        };
+      });
+      return fut.slice(1);
+    });
+  }, []);
+
+  const saveSymbolWorkspace = useCallback(
+    (draftOverride?: SymbolWorkspaceDraft): { sym: E3SymbolDef; catalogItem: CatalogItem } => {
+      const d = draftOverride || symbolDraft;
+      const norm = normalizeCustomSymbolSpec(d.width, d.height, d.shapes, d.pins);
+      const cleanBlock = d.e3BlockName.trim() || 'E3_CUSTOM_BLK';
+      const cleanSymId = d.symbolId || `sym-${cleanBlock}`;
+      const savedSym: E3SymbolDef = {
+        id: cleanSymId,
+        name: d.name.trim() || cleanBlock,
+        e3BlockName: cleanBlock,
+        category: d.category,
+        description: d.componentName.trim() || d.name.trim(),
+        width: norm.width,
+        height: norm.height,
+        shapes: structuredClone(norm.customSymbol.shapes),
+        defaultPins: structuredClone(norm.pins),
+        isCustom: true,
+        updatedAt: new Date().toISOString(),
+      };
+
+      setCustomSymbols((prev) => {
+        const idx = prev.findIndex((s) => s.id === savedSym.id);
+        const next = idx >= 0 ? prev.map((s) => (s.id === savedSym.id ? savedSym : s)) : [...prev, savedSym];
+        saveCustomSymbols(next);
+        return next;
+      });
+
+      const existingCat =
+        (d.catalogItemId && mergedCatalog.find((c) => c.id === d.catalogItemId)) ||
+        mergedCatalog.find((c) => c.symbolId === savedSym.id || c.e3BlockName === cleanBlock);
+
+      const savedCat: CatalogItem = {
+        id: existingCat?.id || `custom-cat-${Date.now().toString(36)}`,
+        category: d.category,
+        stageRole: existingCat?.stageRole || 'custom',
+        defaultPrefix: d.defaultPrefix.trim() || 'K',
+        componentName: d.componentName.trim() || savedSym.name,
+        article: d.article.trim() || cleanBlock,
+        manufacturer: d.manufacturer.trim() || 'Собств. база',
+        e3BlockName: cleanBlock,
+        symbolId: savedSym.id,
+        width: norm.width,
+        height: norm.height,
+        pins: structuredClone(norm.pins),
+        customSymbol: structuredClone(norm.customSymbol),
+        defaultAttributes: structuredClone(d.attributes),
+        defaultCable: d.defaultCable?.trim() || undefined,
+        isCustom: true,
+        ioProfile: existingCat?.ioProfile,
+        fluxMatch: existingCat?.fluxMatch,
+      };
+
+      if (d.targetMode === 'component' || existingCat || d.componentName.trim()) {
+        handleSaveCustomCatalogItem(savedCat);
+      }
+
+      commitProject((prev) => {
+        const prevLib = prev.symbolLibrary || [];
+        const symIdx = prevLib.findIndex((s) => s.id === savedSym.id);
+        const nextLib =
+          symIdx >= 0 ? prevLib.map((s) => (s.id === savedSym.id ? savedSym : s)) : [...prevLib, savedSym];
+
+        const nextDevices = prev.devices.map((dev) => {
+          const isTargetDev = d.targetMode === 'device' && d.deviceId === dev.id;
+          const isSharedSym = dev.symbolId === savedSym.id || (!d.deviceId && dev.e3BlockName === cleanBlock);
+          if (!isTargetDev && !isSharedSym) return dev;
+
+          const updatedPins: E3Pin[] = norm.pins.map((p, idx) => ({
+            ...p,
+            id: dev.pins[idx]?.id || `${dev.id}-p${idx + 1}`,
+          }));
+          return {
+            ...dev,
+            symbolId: savedSym.id,
+            e3BlockName: cleanBlock,
+            category: d.category,
+            width: norm.width,
+            height: norm.height,
+            customSymbol: structuredClone(norm.customSymbol),
+            pins: updatedPins,
+            ...(isTargetDev
+              ? {
+                  componentName: d.componentName.trim() || dev.componentName,
+                  article: d.article.trim() || dev.article,
+                  manufacturer: d.manufacturer.trim() || dev.manufacturer,
+                  attributes: structuredClone(d.attributes),
+                }
+              : {}),
+          };
+        });
+
+        let nextWires = prev.wires;
+        for (const dev of nextDevices) {
+          if (
+            (d.targetMode === 'device' && d.deviceId === dev.id) ||
+            dev.symbolId === savedSym.id
+          ) {
+            nextWires = rerouteDeviceWires(dev, nextDevices, nextWires, prev.sheets);
+          }
+        }
+
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          symbolLibrary: nextLib,
+          devices: nextDevices,
+          wires: nextWires,
+        };
+      });
+
+      setSymbolDraft((curr) => ({
+        ...curr,
+        symbolId: savedSym.id,
+        catalogItemId: savedCat.id,
+        width: norm.width,
+        height: norm.height,
+        shapes: norm.customSymbol.shapes,
+        pins: norm.pins,
+        dirty: false,
+      }));
+      appendLog(
+        'SYNC',
+        'E3-CORE',
+        `Сохранён блок УГО «${savedSym.name}» (${cleanBlock}, ${norm.customSymbol.shapes.length} прим., ${norm.pins.length} выв.) и синхронизирован с БД E3.`
+      );
+      return { sym: savedSym, catalogItem: savedCat };
+    },
+    [symbolDraft, mergedCatalog, handleSaveCustomCatalogItem, commitProject, appendLog]
+  );
+
+  const saveSymbolAsCopyWorkspace = useCallback(
+    (copyName: string, copyBlockName?: string, copyArticle?: string) => {
+      const norm = normalizeCustomSymbolSpec(
+        symbolDraft.width,
+        symbolDraft.height,
+        symbolDraft.shapes,
+        symbolDraft.pins
+      );
+      const baseSym: E3SymbolDef = {
+        id: symbolDraft.symbolId,
+        name: symbolDraft.name,
+        e3BlockName: symbolDraft.e3BlockName,
+        category: symbolDraft.category,
+        description: symbolDraft.componentName,
+        width: norm.width,
+        height: norm.height,
+        shapes: norm.customSymbol.shapes,
+        defaultPins: norm.pins,
+        isCustom: true,
+      };
+      const newSym = duplicateSymbolDefAsCopy(baseSym, copyName, copyBlockName);
+      const sourceCat =
+        (symbolDraft.catalogItemId && mergedCatalog.find((c) => c.id === symbolDraft.catalogItemId)) ||
+        mergedCatalog[0];
+      const newCat = duplicateCatalogItemAsCopy(sourceCat, {
+        componentName: copyName.trim() || `${symbolDraft.componentName} (копия)`,
+        article: copyArticle?.trim() || `${symbolDraft.article || newSym.e3BlockName}-COPY`,
+        e3BlockName: newSym.e3BlockName,
+        symbolId: newSym.id,
+        shapes: newSym.shapes,
+        pins: newSym.defaultPins,
+        width: newSym.width,
+        height: newSym.height,
+        attributes: symbolDraft.attributes,
+      });
+      newCat.category = symbolDraft.category;
+      newCat.manufacturer = symbolDraft.manufacturer || newCat.manufacturer;
+      newCat.defaultPrefix = symbolDraft.defaultPrefix || newCat.defaultPrefix;
+      newCat.defaultCable = symbolDraft.defaultCable || newCat.defaultCable;
+
+      setCustomSymbols((prev) => {
+        const next = [...prev, newSym];
+        saveCustomSymbols(next);
+        return next;
+      });
+      handleSaveCustomCatalogItem(newCat);
+      commitProject((prev) => ({
+        ...prev,
+        revision: prev.revision + 1,
+        updatedAt: new Date().toISOString(),
+        symbolLibrary: [...(prev.symbolLibrary || []), newSym],
+      }));
+
+      setSymbolUndoStack([]);
+      setSymbolRedoStack([]);
+      setSymbolDraft((prev) => ({
+        ...prev,
+        targetMode: 'component',
+        symbolId: newSym.id,
+        catalogItemId: newCat.id,
+        deviceId: undefined,
+        name: newSym.name,
+        e3BlockName: newSym.e3BlockName,
+        componentName: newCat.componentName,
+        article: newCat.article,
+        width: newSym.width,
+        height: newSym.height,
+        shapes: structuredClone(newSym.shapes),
+        pins: structuredClone(newSym.defaultPins),
+        dirty: false,
+      }));
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Создана независимая копия блока и изделия: «${newSym.name}» (${newSym.e3BlockName} / ${newCat.article}).`
+      );
+    },
+    [symbolDraft, mergedCatalog, handleSaveCustomCatalogItem, commitProject, appendLog]
+  );
+
+  const symbolWorkspaceActions = useMemo<SymbolWorkspaceActions>(
+    () => ({
+      draft: symbolDraft,
+      canUndo: symbolUndoStack.length > 0,
+      canRedo: symbolRedoStack.length > 0,
+      symbolLibrary: mergedSymbolLibrary,
+      catalog: mergedCatalog,
+      onUndo: undoSymbolEditor,
+      onRedo: redoSymbolEditor,
+      onSetTool: (nextTool: SymbolEditorTool) =>
+        setSymbolDraft((prev) => ({ ...prev, tool: nextTool })),
+      onUpdateStyle: (patch: Partial<SymbolActiveDrawStyle>) =>
+        setSymbolDraft((prev) => ({
+          ...prev,
+          activeStyle: { ...prev.activeStyle, ...patch },
+        })),
+      onSetGridStep: (step: number) =>
+        setSymbolDraft((prev) => ({ ...prev, gridStep: step })),
+      onToggleSnap: () =>
+        setSymbolDraft((prev) => ({ ...prev, snapToGrid: !prev.snapToGrid })),
+      onSetAttrTagKey: (key: string) =>
+        setSymbolDraft((prev) => ({ ...prev, activeAttrTagKey: key })),
+      onSetPinSignal: (sig) =>
+        setSymbolDraft((prev) => ({ ...prev, activePinSignal: sig })),
+      onUpdateDraftMeta: (patch) =>
+        setSymbolDraft((prev) => ({ ...prev, ...patch, dirty: true })),
+      onCommitGeometry: commitSymbolGeometry,
+      onSelectShape: (shapeId) =>
+        setSymbolDraft((prev) => ({
+          ...prev,
+          selectedShapeId: shapeId,
+          selectedPinIndex: shapeId ? null : prev.selectedPinIndex,
+        })),
+      onSelectPin: (pinIndex) =>
+        setSymbolDraft((prev) => ({
+          ...prev,
+          selectedPinIndex: pinIndex,
+          selectedShapeId: pinIndex !== null ? null : prev.selectedShapeId,
+        })),
+      onDeleteSelection: () => {
+        if (symbolDraft.selectedShapeId) {
+          const id = symbolDraft.selectedShapeId;
+          commitSymbolGeometry(
+            symbolDraft.shapes.filter((s) => s.id !== id),
+            symbolDraft.pins
+          );
+          setSymbolDraft((prev) => ({ ...prev, selectedShapeId: null }));
+        } else if (symbolDraft.selectedPinIndex !== null) {
+          const pIdx = symbolDraft.selectedPinIndex;
+          commitSymbolGeometry(
+            symbolDraft.shapes,
+            symbolDraft.pins.filter((_, idx) => idx !== pIdx)
+          );
+          setSymbolDraft((prev) => ({ ...prev, selectedPinIndex: null }));
+        }
+      },
+      onDuplicateSelectedShape: () => {
+        const sh = symbolDraft.shapes.find((s) => s.id === symbolDraft.selectedShapeId);
+        if (!sh) return;
+        const copyId = `sh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
+        let cloned: CustomSymbolShape = { ...structuredClone(sh), id: copyId };
+        if (cloned.kind === 'line') {
+          cloned = { ...cloned, x1: cloned.x1 + 10, y1: cloned.y1 + 10, x2: cloned.x2 + 10, y2: cloned.y2 + 10 };
+        } else if (cloned.kind === 'polyline') {
+          cloned = { ...cloned, points: cloned.points.map((pt) => ({ x: pt.x + 10, y: pt.y + 10 })) };
+        } else if (cloned.kind === 'circle' || cloned.kind === 'arc') {
+          cloned = { ...cloned, cx: cloned.cx + 10, cy: cloned.cy + 10 };
+        } else {
+          cloned = { ...cloned, x: cloned.x + 10, y: cloned.y + 10 };
+        }
+        commitSymbolGeometry([...symbolDraft.shapes, cloned], symbolDraft.pins);
+        setSymbolDraft((prev) => ({ ...prev, selectedShapeId: copyId }));
+      },
+      onMoveShapeOrder: (dir) => {
+        const idx = symbolDraft.shapes.findIndex((s) => s.id === symbolDraft.selectedShapeId);
+        if (idx < 0) return;
+        const nextIdx = dir === 'up' ? idx + 1 : idx - 1;
+        if (nextIdx < 0 || nextIdx >= symbolDraft.shapes.length) return;
+        const next = [...symbolDraft.shapes];
+        const [item] = next.splice(idx, 1);
+        next.splice(nextIdx, 0, item);
+        commitSymbolGeometry(next, symbolDraft.pins);
+      },
+      onRotateBlockCW: () => {
+        const rot = rotateSymbolGeometryCW(
+          symbolDraft.width,
+          symbolDraft.height,
+          symbolDraft.shapes,
+          symbolDraft.pins
+        );
+        commitSymbolGeometry(rot.shapes, rot.pins, { width: rot.width, height: rot.height });
+      },
+      onMirrorBlockX: () => {
+        const mir = mirrorSymbolGeometryX(symbolDraft.width, symbolDraft.shapes, symbolDraft.pins);
+        commitSymbolGeometry(mir.shapes, mir.pins);
+      },
+      onMirrorBlockY: () => {
+        const mir = mirrorSymbolGeometryY(symbolDraft.height, symbolDraft.shapes, symbolDraft.pins);
+        commitSymbolGeometry(mir.shapes, mir.pins);
+      },
+      onApplyAttributeTemplate: (presetId) => {
+        setSymbolDraft((prev) => ({
+          ...prev,
+          attributes: applyAttributeTemplate(prev.attributes, presetId, false),
+          dirty: true,
+        }));
+      },
+      onApplyPresetShapes: (presetId: SymbolPresetId) => {
+        const preset = buildSymbolDesignerPreset(presetId);
+        commitSymbolGeometry(structuredClone(preset.shapes), structuredClone(preset.pins), {
+          width: preset.width,
+          height: preset.height,
+        });
+      },
+      onOpenSymbolInEditor: openSymbolInWorkspace,
+      onOpenCatalogItemInEditor: openCatalogItemInWorkspace,
+      onCreateNewBlankSymbol: createNewBlankSymbolInWorkspace,
+      onCreateNewComponentFromSymbol: () => {
+        const suffix = Date.now().toString(36).slice(-4).toUpperCase();
+        saveSymbolAsCopyWorkspace(
+          `${symbolDraft.componentName || symbolDraft.name} (изделие ${suffix})`,
+          `${symbolDraft.e3BlockName}_${suffix}`,
+          `${symbolDraft.article || 'E3'}-${suffix}`
+        );
+      },
+      onSaveCurrent: () => {
+        saveSymbolWorkspace();
+      },
+      onSaveAsCopy: saveSymbolAsCopyWorkspace,
+      onPlaceOnActiveSheet: () => {
+        const { catalogItem } = saveSymbolWorkspace();
+        setSymbolDraft((prev) => ({ ...prev, open: false }));
+        handlePlaceCatalogItem(catalogItem);
+      },
+      onDeleteCustomSymbol: (symId: string) => {
+        setCustomSymbols((prev) => {
+          const next = prev.filter((s) => s.id !== symId);
+          saveCustomSymbols(next);
+          return next;
+        });
+        commitProject((prev) => ({
+          ...prev,
+          symbolLibrary: (prev.symbolLibrary || []).filter((s) => s.id !== symId),
+        }));
+        appendLog('WARN', 'E3-CORE', 'Пользовательское УГО удалено из библиотеки.');
+      },
+      onCloseWorkspace: () => setSymbolDraft((prev) => ({ ...prev, open: false })),
+    }),
+    [
+      symbolDraft,
+      symbolUndoStack.length,
+      symbolRedoStack.length,
+      mergedSymbolLibrary,
+      mergedCatalog,
+      undoSymbolEditor,
+      redoSymbolEditor,
+      commitSymbolGeometry,
+      openSymbolInWorkspace,
+      openCatalogItemInWorkspace,
+      createNewBlankSymbolInWorkspace,
+      saveSymbolWorkspace,
+      saveSymbolAsCopyWorkspace,
+      handlePlaceCatalogItem,
+      commitProject,
+      appendLog,
+    ]
   );
 
   const fitSheetToViewport = useCallback(
@@ -2500,7 +3318,6 @@ export default function App() {
     publishModalOpen ||
     terminalEditorOpen ||
     autoNumberModalOpen ||
-    symbolDesignerOpen ||
     fluxPublishOpen ||
     stampModalState.open;
 
@@ -2985,7 +3802,7 @@ export default function App() {
           setHvacWizardOpen(true);
           break;
         case 'open-symbol-designer':
-          setSymbolDesignerOpen(true);
+          openBlockEditorWorkspace();
           break;
         case 'insert-sheet-table':
           handleInsertGostTable(act.tableKind);
@@ -3110,6 +3927,7 @@ export default function App() {
       handleRedo,
       applySelection,
       centerCameraOnCoords,
+      openBlockEditorWorkspace,
     ]
   );
 
@@ -3152,6 +3970,25 @@ export default function App() {
           target.tagName === 'SELECT' ||
           target.isContentEditable)
       ) {
+        return;
+      }
+      if (symbolDraft.open) {
+        if ((e.ctrlKey || e.metaKey) && key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) redoSymbolEditor();
+          else undoSymbolEditor();
+        } else if ((e.ctrlKey || e.metaKey) && key === 'y') {
+          e.preventDefault();
+          redoSymbolEditor();
+        } else if ((e.ctrlKey || e.metaKey) && key === 's') {
+          e.preventDefault();
+          saveSymbolWorkspace();
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          symbolWorkspaceActions.onDeleteSelection();
+        } else if (e.key === 'Escape') {
+          symbolWorkspaceActions.onSetTool('select');
+        }
         return;
       }
       if (e.key === 'F3') {
@@ -3215,6 +4052,11 @@ export default function App() {
   }, [
     anyModalOpen,
     commandPaletteOpen,
+    symbolDraft.open,
+    undoSymbolEditor,
+    redoSymbolEditor,
+    saveSymbolWorkspace,
+    symbolWorkspaceActions,
     project.visualSettings,
     handleApplyVisualSettings,
     appendLog,
@@ -3561,7 +4403,8 @@ export default function App() {
           }}
           onDeleteCustomCatalogItem={handleDeleteCustomCatalogItem}
           onOpenHvacWizard={() => setHvacWizardOpen(true)}
-          onOpenSymbolDesigner={() => setSymbolDesignerOpen(true)}
+          onOpenSymbolDesigner={openBlockEditorWorkspace}
+          symbolWorkspace={symbolWorkspaceActions}
         />
       );
     }
@@ -3585,6 +4428,8 @@ export default function App() {
           onClearSelection={() => applySelection({})}
           onUpdateDevice={handleUpdateDevice}
           onSaveDeviceToCatalog={handleSaveDeviceToCatalog}
+          onEditDeviceSymbol={openDeviceSymbolInWorkspace}
+          symbolWorkspace={symbolWorkspaceActions}
           onUpdateWire={(wireId, patch) => {
             if (isLayerLocked(docStateRef.current.present.layers, 'wires')) return;
             commitCoalesced(`wire:${wireId}:${Object.keys(patch).join(',')}`, (prev) => ({
@@ -4062,7 +4907,8 @@ export default function App() {
           setCommandPaletteInitialQuery('');
           setCommandPaletteOpen(true);
         }}
-        onOpenSymbolDesigner={() => setSymbolDesignerOpen(true)}
+        onOpenSymbolDesigner={openBlockEditorWorkspace}
+        symbolWorkspace={symbolWorkspaceActions}
         onInsertGostTable={handleInsertGostTable}
         recentProjects={recentProjects}
         lastSavedAt={lastSavedAt}
@@ -4079,8 +4925,14 @@ export default function App() {
         <main className="flex-1 min-h-0 flex overflow-hidden">
           {renderDockBand(leftPanels, 'left')}
 
-          {/* Center Multi-Viewport Area (1, 2, 3, or 4 Sheets) */}
-          <div data-testid="center-viewports" data-layout={viewportLayout} className={centerGridClass}>
+          {/* Center Area: Sheetless Block Editor (BEDIT) OR Multi-Viewport Schematics */}
+          {symbolDraft.open ? (
+            <SymbolWorkspaceCanvas
+              workspace={symbolWorkspaceActions}
+              isDark={project.visualSettings.theme === 'dark'}
+            />
+          ) : (
+            <div data-testid="center-viewports" data-layout={viewportLayout} className={centerGridClass}>
             {Array.from({ length: vpCount }, (_, idx) => {
               const vpSheetId = effectiveViewportSheets[idx] || activeSheetId;
               const vpTr = viewportTransforms[idx] || { zoom: 0.42, pan: { x: 20, y: 12 } };
@@ -4249,7 +5101,8 @@ export default function App() {
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
 
           {renderDockBand(rightPanels, 'right')}
         </main>
@@ -4357,6 +5210,7 @@ export default function App() {
         editingItem={editingCatalogItem}
         onClose={() => setCatalogModalOpen(false)}
         onSave={handleSaveCustomCatalogItem}
+        onOpenFullSymbolEditor={openCatalogSeedInWorkspace}
       />
 
       <HvacWizardModal
@@ -4464,19 +5318,6 @@ export default function App() {
           setCommandPaletteInitialQuery('');
         }}
         onExecute={handleExecuteCommandPaletteItem}
-      />
-
-      <SymbolDesignerModal
-        open={symbolDesignerOpen}
-        mode="catalog"
-        onClose={() => setSymbolDesignerOpen(false)}
-        onSaveCatalogItem={(item) => {
-          handleSaveCustomCatalogItem(item);
-          setLeftTab('library');
-          setDockLayout((prev) =>
-            prev.panels.explorer.collapsed ? togglePanelCollapse(prev, 'explorer') : prev
-          );
-        }}
       />
     </div>
     </MotionConfig>

@@ -57,6 +57,8 @@ import type {
   SignalType,
 } from '../core/e3Types';
 import type { StampFieldKey } from '../core/gostFrame';
+import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
+import { SymbolEditorInspector } from './SymbolEditorInspector';
 
 interface RightInspectorProps {
   project: E3Project;
@@ -68,6 +70,8 @@ interface RightInspectorProps {
   selectedDeviceIds?: string[];
   selectedWireIds?: string[];
   selectedAnnotationIds?: string[];
+  symbolWorkspace?: SymbolWorkspaceActions;
+  onEditDeviceSymbol?: (device: E3Device) => void;
   onAlignDevices?: (kind: DeviceAlignKind) => void;
   onRotateSelected?: () => void;
   onDuplicateSelected?: () => void;
@@ -133,6 +137,8 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   onHighlightPotential,
   onRestoreSheetRevision,
   onReleaseSheetRevision,
+  symbolWorkspace,
+  onEditDeviceSymbol,
 }) => {
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
@@ -157,6 +163,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     });
     return () => cancelAnimationFrame(raf);
   }, [pendingScrollToHistory, isSheetMode]);
+
+  if (symbolWorkspace?.draft.open) {
+    return <SymbolEditorInspector workspace={symbolWorkspace} />;
+  }
 
   const layersMap = resolveCadLayers(project.layers, project.visualSettings.showGostFrame);
   const activeLayerId: CadLayerId = selectedDevice
@@ -482,17 +492,30 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   {selectedDevice.e3BlockName || selectedDevice.article}
                 </div>
               </div>
-              {onSaveDeviceToCatalog && (
-                <button
-                  type="button"
-                  onClick={() => onSaveDeviceToCatalog(selectedDevice)}
-                  title="Сохранить изделие со всеми атрибутами и выводами в базу компонентов"
-                  className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
-                >
-                  <BookmarkPlus className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
-                  <span>В базу</span>
-                </button>
-              )}
+              <div className="flex items-center gap-1 shrink-0">
+                {onEditDeviceSymbol && (
+                  <button
+                    type="button"
+                    data-testid="insp-edit-device-symbol-btn"
+                    onClick={() => onEditDeviceSymbol(selectedDevice)}
+                    title="Открыть графику УГО этого объекта в редакторе блоков"
+                    className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-sel)] text-[11px] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
+                  >
+                    <span>УГО…</span>
+                  </button>
+                )}
+                {onSaveDeviceToCatalog && (
+                  <button
+                    type="button"
+                    onClick={() => onSaveDeviceToCatalog(selectedDevice)}
+                    title="Сохранить изделие со всеми атрибутами и выводами в базу компонентов"
+                    className="inline-flex items-center gap-1 h-7 px-2 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[11px] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                  >
+                    <BookmarkPlus className="w-3.5 h-3.5 text-[var(--flux-text-muted)]" />
+                    <span>В базу</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <fieldset disabled={activeLayerLocked} className="space-y-4 min-w-0 disabled:opacity-65">

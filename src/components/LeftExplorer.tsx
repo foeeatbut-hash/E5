@@ -16,7 +16,9 @@ import {
 } from 'lucide-react';
 import type { CatalogItem, E3Device, E3Project } from '../core/e3Types';
 import { getSheetRevisionLabel, hasSheetUncommittedChanges } from '../core/sheetRevisions';
+import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
 import { isTwoPinBreakEligible } from '../core/wireEditing';
+import { SymbolLibraryBrowser } from './SymbolLibraryBrowser';
 
 interface LeftExplorerProps {
   project: E3Project;
@@ -24,6 +26,7 @@ interface LeftExplorerProps {
   activeSheetId: string;
   selectedDeviceId: string | null;
   activeTab?: 'project' | 'library';
+  symbolWorkspace?: SymbolWorkspaceActions;
   onTabChange?: (tab: 'project' | 'library') => void;
   onSelectSheet: (sheetId: string) => void;
   onSelectDevice: (device: E3Device) => void;
@@ -52,6 +55,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
   onDeleteCustomCatalogItem,
   onOpenHvacWizard,
   onOpenSymbolDesigner,
+  symbolWorkspace,
 }) => {
   const [internalTab, setInternalTab] = useState<'project' | 'library'>('project');
   const tab = activeTab ?? internalTab;
@@ -110,6 +114,10 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = ({
 
   const toggleSection = (key: string) =>
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  if (symbolWorkspace?.draft.open) {
+    return <SymbolLibraryBrowser workspace={symbolWorkspace} />;
+  }
 
   return (
     <aside

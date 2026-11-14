@@ -17,6 +17,22 @@ interface CatalogItemModalProps {
   editingItem?: CatalogItem | null;
   onClose: () => void;
   onSave: (item: CatalogItem) => void;
+  onOpenFullSymbolEditor?: (draftSeed: {
+    catalogItemId?: string;
+    name: string;
+    e3BlockName: string;
+    category: DeviceCategory;
+    width: number;
+    height: number;
+    componentName: string;
+    article: string;
+    manufacturer: string;
+    defaultPrefix: string;
+    defaultCable?: string;
+    attributes: E3Attribute[];
+    pins: Omit<E3Pin, 'id'>[];
+    customSymbol?: CustomSymbolSpec;
+  }) => void;
 }
 
 const CATEGORY_OPTIONS: Array<{ value: DeviceCategory; label: string }> = [
@@ -68,6 +84,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
   editingItem,
   onClose,
   onSave,
+  onOpenFullSymbolEditor,
 }) => {
   const [category, setCategory] = useState<DeviceCategory>('fan');
   const [stageRole, setStageRole] = useState<HvacStageRole>('supply_fan');
@@ -316,7 +333,31 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
               <button
                 type="button"
                 data-testid="catalog-edit-symbol-btn"
-                onClick={() => setSymbolEditorOpen(true)}
+                onClick={() => {
+                  if (onOpenFullSymbolEditor) {
+                    const finalPins = pins.length > 0 ? pins : buildDefaultPins(category);
+                    onClose();
+                    onOpenFullSymbolEditor({
+                      catalogItemId: editingItem?.id,
+                      name: componentName.trim() || e3BlockName.trim() || 'Новое УГО',
+                      e3BlockName:
+                        e3BlockName.trim() || `FSA_${(defaultPrefix || 'DEV').toUpperCase()}`,
+                      category,
+                      width: symWidth || 120,
+                      height: symHeight || 100,
+                      componentName: componentName.trim(),
+                      article: article.trim(),
+                      manufacturer: manufacturer.trim(),
+                      defaultPrefix: defaultPrefix.trim() || 'K',
+                      defaultCable: defaultCable.trim() || undefined,
+                      attributes: structuredClone(attributes),
+                      pins: structuredClone(finalPins),
+                      customSymbol: customSymbol ? structuredClone(customSymbol) : undefined,
+                    });
+                  } else {
+                    setSymbolEditorOpen(true);
+                  }
+                }}
                 className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[11px] font-medium text-[var(--flux-text)] transition-colors"
               >
                 <PenTool className="w-3 h-3" />

@@ -7,6 +7,7 @@ import type {
   BomRow,
   CableJournalRow,
   CadLayerId,
+  CustomSymbolSpec,
   E3Annotation,
   E3Attribute,
   E3Cable,
@@ -14,6 +15,7 @@ import type {
   E3Pin,
   E3Project,
   E3Sheet,
+  E3SymbolDef,
   E3VisualSettings,
   E3Wire,
   ErcIssue,
@@ -28,6 +30,7 @@ import type {
   TerminalPlanRow,
 } from './e3Types.ts';
 import { getSheetRevisionNumber, normalizeProjectSheetRevisions } from './sheetRevisions.ts';
+import { resolveDynamicSymbolText, sampleArcPoints } from './symbolLibrary.ts';
 
 export function getAbsolutePinPos(device: E3Device, pin: E3Pin): { x: number; y: number; direction: PinDirection } {
   const cx = device.width / 2;
@@ -1737,8 +1740,9 @@ export function serializeE3Xml(project: E3Project): string {
     const offPageAttrs = d.offPageRef
       ? ` offPageDir="${xmlEscape(d.offPageRef.direction)}" offPagePotential="${xmlEscape(d.offPageRef.potentialName)}" offPageSignal="${xmlEscape(d.offPageRef.signalType)}" offPagePairId="${xmlEscape(d.offPageRef.pairId || '')}" offPageTargetId="${xmlEscape(d.offPageRef.targetDeviceId || '')}"`
       : '';
+    const symbolIdAttr = d.symbolId ? ` symbolId="${xmlEscape(d.symbolId)}"` : '';
     lines.push(
-      `    <Device id="${xmlEscape(d.id)}" elementId="${xmlEscape(d.elementId)}" designation="${xmlEscape(d.designation)}" componentName="${xmlEscape(d.componentName)}" article="${xmlEscape(d.article)}" manufacturer="${xmlEscape(d.manufacturer)}" category="${xmlEscape(d.category)}" sheetId="${xmlEscape(d.sheetId)}" x="${d.x}" y="${d.y}" rotation="${d.rotation}" width="${d.width}" height="${d.height}" e3BlockName="${xmlEscape(d.e3BlockName)}" bindingState="${xmlEscape(d.bindingState)}"${offPageAttrs}>`
+      `    <Device id="${xmlEscape(d.id)}" elementId="${xmlEscape(d.elementId)}" designation="${xmlEscape(d.designation)}" componentName="${xmlEscape(d.componentName)}" article="${xmlEscape(d.article)}" manufacturer="${xmlEscape(d.manufacturer)}" category="${xmlEscape(d.category)}" sheetId="${xmlEscape(d.sheetId)}" x="${d.x}" y="${d.y}" rotation="${d.rotation}" width="${d.width}" height="${d.height}" e3BlockName="${xmlEscape(d.e3BlockName)}"${symbolIdAttr} bindingState="${xmlEscape(d.bindingState)}"${offPageAttrs}>`
     );
     lines.push('      <Pins>');
     for (const p of d.pins) {
@@ -1754,6 +1758,11 @@ export function serializeE3Xml(project: E3Project): string {
       );
     }
     lines.push('      </Attributes>');
+    if (d.customSymbol && d.customSymbol.shapes.length > 0) {
+      lines.push(
+        `      <CustomSymbol showBodyBorder="${Boolean(d.customSymbol.showBodyBorder)}" shapesJson="${xmlEscape(JSON.stringify(d.customSymbol.shapes))}" />`
+      );
+    }
     lines.push('    </Device>');
   }
   lines.push('  </Devices>');
@@ -1804,6 +1813,16 @@ export function serializeE3Xml(project: E3Project): string {
       }
     }
     lines.push('  </SheetRevisions>');
+  }
+
+  if (project.symbolLibrary?.length) {
+    lines.push('  <SymbolLibrary>');
+    for (const sym of project.symbolLibrary) {
+      lines.push(
+        `    <Symbol id="${xmlEscape(sym.id)}" name="${xmlEscape(sym.name)}" e3BlockName="${xmlEscape(sym.e3BlockName)}" category="${xmlEscape(sym.category)}" description="${xmlEscape(sym.description || '')}" width="${sym.width}" height="${sym.height}" isCustom="${Boolean(sym.isCustom)}" shapesJson="${xmlEscape(JSON.stringify(sym.shapes || []))}" pinsJson="${xmlEscape(JSON.stringify(sym.defaultPins || []))}" />`
+      );
+    }
+    lines.push('  </SymbolLibrary>');
   }
 
   lines.push('</E3Project>');
@@ -1966,6 +1985,25 @@ export function parseE3Xml(xml: string): E3Project {
       });
     }
 
+    let customSymbol: CustomSymbolSpec | undefined;
+    const csMatch = /<CustomSymbol\s+([^>]+?)\s*\/?>/.exec(body);
+    if (csMatch) {
+      const csa = parseXmlAttrs(csMatch[1]);
+      if (csa.shapesJson) {
+        try {
+          const parsedShapes = JSON.parse(csa.shapesJson);
+          if (Array.isArray(parsedShapes) && parsedShapes.length > 0) {
+            customSymbol = {
+              shapes: parsedShapes,
+              showBodyBorder: csa.showBodyBorder === 'true',
+            };
+          }
+        } catch {
+          customSymbol = undefined;
+        }
+      }
+    }
+
     const devCat = (da.category as E3Device['category']) || 'breaker';
     const hasOffPage = devCat === 'offpage_ref' || Boolean(da.offPageDir || da.offPagePotential);
     devices.push({
@@ -1983,9 +2021,11 @@ export function parseE3Xml(xml: string): E3Project {
       width: Number(da.width || 100),
       height: Number(da.height || 100),
       e3BlockName: da.e3BlockName || 'GOST_GENERIC',
+      symbolId: da.symbolId || undefined,
       bindingState: (da.bindingState as E3Device['bindingState']) || 'PLACED',
       pins,
       attributes,
+      customSymbol,
       offPageRef: hasOffPage
         ? {
             direction: da.offPageDir === 'in' ? 'in' : 'out',
@@ -2116,6 +2156,39 @@ export function parseE3Xml(xml: string): E3Project {
     return revs && revs.length > 0 ? { ...s, revisions: revs } : s;
   });
 
+  // SymbolLibrary
+  const symbolLibrary: E3SymbolDef[] = [];
+  const symDefRe = /<Symbol\s+([^>]+?)\s*\/?>/g;
+  let symm: RegExpExecArray | null;
+  while ((symm = symDefRe.exec(xml)) !== null) {
+    const syma = parseXmlAttrs(symm[1]);
+    if (!syma.id) continue;
+    let parsedShapes = [];
+    let parsedPins = [];
+    try {
+      if (syma.shapesJson) parsedShapes = JSON.parse(syma.shapesJson);
+    } catch {
+      parsedShapes = [];
+    }
+    try {
+      if (syma.pinsJson) parsedPins = JSON.parse(syma.pinsJson);
+    } catch {
+      parsedPins = [];
+    }
+    symbolLibrary.push({
+      id: syma.id,
+      name: syma.name || syma.e3BlockName || syma.id,
+      e3BlockName: syma.e3BlockName || syma.id,
+      category: (syma.category as E3Device['category']) || 'breaker',
+      description: syma.description || undefined,
+      width: Number(syma.width || 120),
+      height: Number(syma.height || 100),
+      shapes: Array.isArray(parsedShapes) ? parsedShapes : [],
+      defaultPins: Array.isArray(parsedPins) ? parsedPins : [],
+      isCustom: syma.isCustom === 'true',
+    });
+  }
+
   return normalizeProjectSheetRevisions({
     schemaVersion: rootAttrs.schemaVersion || '1.0',
     id: rootAttrs.id || `proj-${Date.now()}`,
@@ -2132,6 +2205,7 @@ export function parseE3Xml(xml: string): E3Project {
     cables,
     annotations,
     layers,
+    symbolLibrary: symbolLibrary.length > 0 ? symbolLibrary : undefined,
     visualSettings,
   });
 }
@@ -2149,6 +2223,16 @@ export function exportToFluxBridge(project: E3Project): FluxBridgeBundle {
     status: dev.article ? 'one' : 'none',
     solutionId: `sol-${dev.e3BlockName.toLowerCase()}`,
     solutionName: dev.e3BlockName,
+    category: dev.category,
+    symbolId: dev.symbolId,
+    pins: dev.pins.map(({ name, dx, dy, direction, signalType }) => ({
+      name,
+      dx,
+      dy,
+      direction,
+      signalType,
+    })),
+    customSymbol: dev.customSymbol ? structuredClone(dev.customSymbol) : undefined,
     rect: {
       sheet: dev.sheetId,
       x: dev.x,
@@ -2183,6 +2267,7 @@ export function exportToFluxBridge(project: E3Project): FluxBridgeBundle {
     wires: structuredClone(project.wires),
     cables: structuredClone(project.cables),
     sheets: structuredClone(project.sheets),
+    symbolLibrary: project.symbolLibrary?.length ? structuredClone(project.symbolLibrary) : undefined,
   };
 }
 
@@ -2207,6 +2292,12 @@ export function importFromFluxBridge(bundle: FluxBridgeBundle, baseProject: E3Pr
   if (bundle.cables?.length) next.cables = structuredClone(bundle.cables);
   else if (!isSameProject) next.cables = [];
   if (bundle.visualSettings) next.visualSettings = parseVisualSettings(JSON.stringify(bundle.visualSettings));
+  if (bundle.symbolLibrary?.length) {
+    const mergedLib = new Map<string, E3SymbolDef>();
+    for (const s of next.symbolLibrary || []) mergedLib.set(s.id, s);
+    for (const s of bundle.symbolLibrary) mergedLib.set(s.id, structuredClone(s));
+    next.symbolLibrary = Array.from(mergedLib.values());
+  }
 
   if (!isSameProject) {
     next.devices = [];
@@ -2220,7 +2311,7 @@ export function importFromFluxBridge(bundle: FluxBridgeBundle, baseProject: E3Pr
     const manufacturer = node.attrs.find((a) => a.name === 'Производитель')?.value || '';
     const componentName = node.attrs.find((a) => a.name === 'Наименование')?.value || node.solutionName || node.designation;
     const customAttrs: E3Attribute[] = node.attrs
-      .filter((a) => !['Артикул', 'Производитель', 'Наименование'].includes(a.name))
+      .filter((a) => !['Артикул', 'Производитель', 'Наименование', 'FLUX_CUSTOM_SYMBOL'].includes(a.name))
       .map((a) => ({
         name: a.name,
         value: a.value,
@@ -2242,6 +2333,19 @@ export function importFromFluxBridge(bundle: FluxBridgeBundle, baseProject: E3Pr
       existing.article = article || existing.article;
       existing.manufacturer = manufacturer || existing.manufacturer;
       existing.componentName = componentName || existing.componentName;
+      if (node.category) existing.category = node.category;
+      if (node.symbolId) existing.symbolId = node.symbolId;
+      if (nodeW > 0) existing.width = nodeW;
+      if (nodeH > 0) existing.height = nodeH;
+      if (node.customSymbol?.shapes?.length) {
+        existing.customSymbol = structuredClone(node.customSymbol);
+      }
+      if (node.pins?.length) {
+        existing.pins = node.pins.map((p, idx) => ({
+          ...p,
+          id: existing.pins[idx]?.id || `${existing.id}-p${idx + 1}`,
+        }));
+      }
       existing.sheetId = sheetTarget;
       existing.x = nodeX;
       existing.y = nodeY;
@@ -2256,6 +2360,9 @@ export function importFromFluxBridge(bundle: FluxBridgeBundle, baseProject: E3Pr
         E3_CATALOG.find((c) => c.defaultPrefix === prefix) ||
         E3_CATALOG[0];
       const newId = `dev-${node.elementId}`;
+      const resolvedPins = node.pins?.length
+        ? node.pins.map((p, idx) => ({ ...p, id: `${newId}-p${idx + 1}` }))
+        : catItem.pins.map((p, idx) => ({ ...p, id: `${newId}-p${idx + 1}` }));
       next.devices.push({
         id: newId,
         elementId: node.elementId,
@@ -2263,7 +2370,7 @@ export function importFromFluxBridge(bundle: FluxBridgeBundle, baseProject: E3Pr
         componentName,
         article: article || catItem.article,
         manufacturer: manufacturer || catItem.manufacturer,
-        category: catItem.category,
+        category: node.category || catItem.category,
         sheetId: sheetTarget,
         x: nodeX,
         y: nodeY,
@@ -2271,9 +2378,11 @@ export function importFromFluxBridge(bundle: FluxBridgeBundle, baseProject: E3Pr
         width: nodeW || catItem.width,
         height: nodeH || catItem.height,
         e3BlockName: node.solutionName || catItem.e3BlockName,
+        symbolId: node.symbolId || catItem.symbolId,
         bindingState: isChecked ? 'PLACED' : 'REMOVED_IN_FLUX',
-        pins: catItem.pins.map((p, idx) => ({ ...p, id: `${newId}-p${idx + 1}` })),
+        pins: resolvedPins,
         attributes: customAttrs,
+        customSymbol: node.customSymbol ? structuredClone(node.customSymbol) : undefined,
       });
     }
   }
@@ -2479,6 +2588,25 @@ export function generateE3ComScript(
     })
     .join('\n');
 
+  const e3ColorIndexForHex = (hex?: string): number => {
+    if (!hex) return 0;
+    const c = hex.trim().toLowerCase();
+    if (c === '#dc2626' || c === '#ef4444') return 1;
+    if (c === '#d97706' || c === '#f59e0b') return 2;
+    if (c === '#15803d' || c === '#16a34a' || c === '#0f766e') return 3;
+    if (c === '#0284c7' || c === '#4f46e5') return 4;
+    if (c === '#64748b') return 8;
+    return 0;
+  };
+
+  const e3StyleCode = (style?: string, dashed?: boolean): number => {
+    const resolved = style || (dashed ? 'dashed' : 'solid');
+    if (resolved === 'dashed') return 2;
+    if (resolved === 'dashdot') return 3;
+    if (resolved === 'dotted') return 4;
+    return 1;
+  };
+
   const devLines = devices
     .filter((d) => d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
     .map((d) => {
@@ -2488,6 +2616,16 @@ export function generateE3ComScript(
       const idx = shEntry?.idx || (sheets.length > 0 ? 1 : 0);
       const shVar = idx > 0 ? `shId_${idx}` : '0';
 
+      const customSymbolJson =
+        d.customSymbol && d.customSymbol.shapes.length > 0
+          ? JSON.stringify({
+              width: d.width,
+              height: d.height,
+              showBodyBorder: Boolean(d.customSymbol.showBodyBorder),
+              shapes: d.customSymbol.shapes,
+            })
+          : '';
+
       const rawAttrs: Array<[string, string]> = [
         ['Артикул', d.article],
         ['Производитель', d.manufacturer],
@@ -2495,6 +2633,7 @@ export function generateE3ComScript(
         ['Категория', d.category],
         ['FLUX_ELEMENT_ID', d.elementId],
         ['FLUX_BLOCK', d.e3BlockName],
+        ...(customSymbolJson ? ([['FLUX_CUSTOM_SYMBOL', customSymbolJson]] as Array<[string, string]>) : []),
         ...d.attributes.filter((a) => !a.service).map((a): [string, string] => [a.name, a.value]),
       ];
       const attrList = rawAttrs.filter(([, v]) => String(v || '').trim() !== '');
@@ -2521,6 +2660,59 @@ export function generateE3ComScript(
         })
         .join('\n');
 
+      const customDrawLines: string[] = [];
+      if (d.customSymbol && d.customSymbol.shapes.length > 0) {
+        const mx = (lx: number) => `MapX(shX1_${idx}, shX2_${idx}, ${d.x + lx}, ${sw})`;
+        const my = (ly: number) => `MapY(shY1_${idx}, shY2_${idx}, ${d.y + ly}, ${sh})`;
+        for (const shape of d.customSymbol.shapes) {
+          const col = e3ColorIndexForHex(shape.strokeColor);
+          const lStyle = shape.kind !== 'text' ? e3StyleCode(shape.strokeStyle, shape.dashed) : 1;
+          const lwMm = shape.kind !== 'text' && shape.strokeWidth ? Number((shape.strokeWidth * 0.2).toFixed(2)) : 0.35;
+          if (shape.kind === 'line') {
+            customDrawLines.push(
+              `    Call DrawCustomLine(Graph, ${shVar}, ${mx(shape.x1)}, ${my(shape.y1)}, ${mx(shape.x2)}, ${my(shape.y2)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+            );
+          } else if (shape.kind === 'rect') {
+            customDrawLines.push(
+              `    Call DrawCustomRect(Graph, ${shVar}, ${mx(shape.x)}, ${my(shape.y + shape.height)}, ${mx(shape.x + shape.width)}, ${my(shape.y)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+            );
+          } else if (shape.kind === 'circle') {
+            customDrawLines.push(
+              `    Call DrawCustomCircle(Graph, ${shVar}, ${mx(shape.cx)}, ${my(shape.cy)}, Abs(${mx(shape.cx + shape.r)} - ${mx(shape.cx)}), ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+            );
+          } else if (shape.kind === 'polyline' && (shape.points?.length || 0) >= 2) {
+            const pts = shape.closed ? [...shape.points, shape.points[0]] : shape.points;
+            for (let pi = 0; pi < pts.length - 1; pi++) {
+              customDrawLines.push(
+                `    Call DrawCustomLine(Graph, ${shVar}, ${mx(pts[pi].x)}, ${my(pts[pi].y)}, ${mx(pts[pi + 1].x)}, ${my(pts[pi + 1].y)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+              );
+            }
+          } else if (shape.kind === 'arc') {
+            const pts = sampleArcPoints(shape.cx, shape.cy, shape.r, shape.startAngle, shape.endAngle, 14);
+            for (let pi = 0; pi < pts.length - 1; pi++) {
+              customDrawLines.push(
+                `    Call DrawCustomLine(Graph, ${shVar}, ${mx(pts[pi].x)}, ${my(pts[pi].y)}, ${mx(pts[pi + 1].x)}, ${my(pts[pi + 1].y)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+              );
+            }
+          } else if (shape.kind === 'text') {
+            const txt = resolveDynamicSymbolText(shape, d);
+            customDrawLines.push(
+              `    Call DrawCustomText(Graph, ${shVar}, ${mx(shape.x)}, ${my(shape.y)}, "${vbsEsc(txt)}", ${Number(((shape.fontSize || 10) * 0.26).toFixed(2))}, ${col}, gIds, gCnt)`
+            );
+          }
+        }
+        customDrawLines.push(
+          `    Call DrawCustomText(Graph, ${shVar}, ${mx(0)}, ${my(-6)}, "${vbsEsc(d.designation)}", 3.5, 0, gIds, gCnt)`
+        );
+      }
+
+      const drawBodyBlock =
+        customDrawLines.length > 0
+          ? customDrawLines.join('\n')
+          : `    Call DrawDeviceBox(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${d.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y + d.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${d.x + d.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.article)}", "${vbsEsc(d.category)}", gIds, gCnt)`;
+
+      const gCap = Math.max(128, customDrawLines.length + d.pins.length + 32);
+
       return `  ' --- Цельное изделие ${vbsEsc(d.designation)} (${vbsEsc(d.componentName)}) ---
   curDevId = CreateFluxDevice(Prj, Dev, Sym, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${d.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y + d.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${d.x + d.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.componentName)}", "${vbsEsc(d.article)}", "${vbsEsc(d.e3BlockName)}", "${vbsEsc(d.manufacturer)}")
   If curDevId > 0 Then
@@ -2530,8 +2722,8 @@ ${pinCreateLines}
   End If
   If ${shVar} > 0 Then
     gCnt = 0
-    ReDim gIds(128)
-    Call DrawDeviceBox(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${d.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y + d.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${d.x + d.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.article)}", "${vbsEsc(d.category)}", gIds, gCnt)
+    ReDim gIds(${gCap})
+${drawBodyBlock}
 ${pinDrawLines}
     curGrpId = FinalizeIntegralDeviceGroup(Graph, ${shVar}, gIds, gCnt, curDevId)
     If curGrpId > 0 Then
@@ -3030,6 +3222,75 @@ Sub DrawDeviceBox(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, B
   On Error GoTo 0
 End Sub
 
+Sub DrawCustomLine(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal colIdx, ByVal lwMm, ByVal lStyle, ByRef gIds, ByRef gCnt)
+  On Error Resume Next
+  Dim gid, xs(2), ys(2)
+  xs(1) = x1 : xs(2) = x2
+  ys(1) = y1 : ys(2) = y2
+  gid = g.CreateLine(shId, 2, xs, ys)
+  If gid > 0 Then
+    g.SetId gid
+    g.SetColour colIdx
+    g.SetLineWidth lwMm
+    If lStyle > 1 Then Call g.SetLineStyle(lStyle)
+    Call AddGraphicId(gIds, gCnt, gid)
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub DrawCustomRect(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal colIdx, ByVal lwMm, ByVal lStyle, ByRef gIds, ByRef gCnt)
+  On Error Resume Next
+  Dim gid, bx(5), by(5)
+  gid = g.CreateRectangle(shId, x1, y1, x2, y2)
+  If gid <= 0 Or Err.Number <> 0 Then
+    Err.Clear
+    bx(1) = x1 : by(1) = y1 : bx(2) = x2 : by(2) = y1 : bx(3) = x2 : by(3) = y2 : bx(4) = x1 : by(4) = y2 : bx(5) = x1 : by(5) = y1
+    gid = g.CreateLine(shId, 5, bx, by)
+  End If
+  If gid > 0 Then
+    g.SetId gid
+    g.SetColour colIdx
+    g.SetLineWidth lwMm
+    If lStyle > 1 Then Call g.SetLineStyle(lStyle)
+    Call AddGraphicId(gIds, gCnt, gid)
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub DrawCustomCircle(ByRef g, ByVal shId, ByVal cx, ByVal cy, ByVal r, ByVal colIdx, ByVal lwMm, ByVal lStyle, ByRef gIds, ByRef gCnt)
+  On Error Resume Next
+  Dim gid
+  If r < 0.8 Then r = 0.8
+  gid = g.CreateCircle(shId, cx, cy, r)
+  If gid > 0 Then
+    g.SetId gid
+    g.SetColour colIdx
+    g.SetLineWidth lwMm
+    If lStyle > 1 Then Call g.SetLineStyle(lStyle)
+    Call AddGraphicId(gIds, gCnt, gid)
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub DrawCustomText(ByRef g, ByVal shId, ByVal x, ByVal y, ByVal txt, ByVal hMm, ByVal colIdx, ByRef gIds, ByRef gCnt)
+  On Error Resume Next
+  Dim gid
+  If Trim(txt) = "" Then Exit Sub
+  If hMm < 1.8 Then hMm = 1.8
+  gid = g.CreateText(shId, txt, x, y)
+  If gid > 0 Then
+    g.SetId gid
+    g.SetColour colIdx
+    g.SetTextHeight hMm
+    Call AddGraphicId(gIds, gCnt, gid)
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
 Sub DrawPinTickGrouped(ByRef g, ByVal shId, ByVal px, ByVal py, ByVal dir, ByVal pName, ByRef gIds, ByRef gCnt)
   On Error Resume Next
   Dim gid, lx(2), ly(2), dx, dy
@@ -3248,7 +3509,7 @@ Sub ExportActiveE3sToFluxJson()
   Dim devSheetDict, devXDict, devYDict, sheetFluxIdDict, sheetBoundsDict
   Dim shIdCur, shNm, shFm, firstSheet, firstNode, firstWire, firstCab
   Dim dIdCur, isCab, dKey, mappedShId, wx1, wy1, wpStr, wireIdx, segNm
-  Dim pIds, pCnt, aIds, aCnt, ai, attNm, attVal, cabLen, cabTypeStr, devNote
+  Dim pIds, pCnt, pi, pNm, customSymStr, catVal, blkVal, aIds, aCnt, ai, attNm, attVal, cabLen, cabTypeStr, devNote
 
   If gImportFilePath <> "" Then
     On Error Resume Next
@@ -3395,7 +3656,7 @@ Sub ExportActiveE3sToFluxJson()
     Err.Clear
     On Error GoTo 0
     If dName <> "" And isCab = 0 Then
-      comp = "" : art = "" : mfg = "" : elId = ""
+      comp = "" : art = "" : mfg = "" : elId = "" : customSymStr = "" : catVal = "" : blkVal = ""
       On Error Resume Next
       comp = Dev.GetComponentName()
       art = Dev.GetAttributeValue("Артикул")
@@ -3406,9 +3667,13 @@ Sub ExportActiveE3sToFluxJson()
       If mfg = "" Then mfg = Dev.GetAttributeValue("Manufacturer")
       If mfg = "" Then mfg = Dev.GetAttributeValue("Supplier")
       elId = Dev.GetAttributeValue("FLUX_ELEMENT_ID")
+      customSymStr = Dev.GetAttributeValue("FLUX_CUSTOM_SYMBOL")
+      catVal = Dev.GetAttributeValue("Категория")
+      blkVal = Dev.GetAttributeValue("FLUX_BLOCK")
       Err.Clear
       On Error GoTo 0
       If elId = "" Then elId = "e3-" & CStr(devIds(i))
+      If blkVal = "" Then blkVal = comp
       If devSheetDict.Exists(CStr(devIds(i))) Then
         mappedShId = devSheetDict(CStr(devIds(i)))
         fx = devXDict(CStr(devIds(i)))
@@ -3428,7 +3693,13 @@ Sub ExportActiveE3sToFluxJson()
       sb = sb & "      ""designation"": """ & JsonEsc(dName) & """," & vbCrLf
       sb = sb & "      ""status"": ""one""," & vbCrLf
       sb = sb & "      ""solutionId"": ""e3-native""," & vbCrLf
-      sb = sb & "      ""solutionName"": """ & JsonEsc(comp) & """," & vbCrLf
+      sb = sb & "      ""solutionName"": """ & JsonEsc(blkVal) & """," & vbCrLf
+      If catVal <> "" Then
+        sb = sb & "      ""category"": """ & JsonEsc(catVal) & """," & vbCrLf
+      End If
+      If Trim(customSymStr) <> "" And Left(Trim(customSymStr), 1) = "{" Then
+        sb = sb & "      ""customSymbol"": " & customSymStr & "," & vbCrLf
+      End If
       sb = sb & "      ""rect"": { ""sheet"": """ & JsonEsc(mappedShId) & """, ""x"": " & fx & ", ""y"": " & fy & ", ""rotation"": 0, ""width"": 100, ""height"": 100 }," & vbCrLf
       sb = sb & "      ""attrs"": [" & vbCrLf
       sb = sb & "        { ""name"": ""Артикул"", ""value"": """ & JsonEsc(art) & """, ""owner"": """", ""conflict"": ""flux"" }," & vbCrLf
@@ -3442,7 +3713,7 @@ Sub ExportActiveE3sToFluxJson()
           Att.SetId aIds(ai)
           attNm = Att.GetName()
           attVal = Att.GetValue()
-          If attNm <> "" And attNm <> "Артикул" And attNm <> "Производитель" And attNm <> "Наименование" And attNm <> "FLUX_ELEMENT_ID" Then
+          If attNm <> "" And attNm <> "Артикул" And attNm <> "Производитель" And attNm <> "Наименование" And attNm <> "FLUX_ELEMENT_ID" And attNm <> "FLUX_CUSTOM_SYMBOL" And attNm <> "FLUX_BLOCK" And attNm <> "Категория" Then
             sb = sb & "," & vbCrLf & "        { ""name"": """ & JsonEsc(attNm) & """, ""value"": """ & JsonEsc(attVal) & """, ""owner"": ""E3"", ""conflict"": ""script"" }"
           End If
         Next

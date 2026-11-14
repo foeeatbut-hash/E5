@@ -5,10 +5,12 @@ import {
   Archive,
   ArrowLeftRight,
   ArrowUpRight,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Circle,
   ClipboardPaste,
   Clock,
   Columns2,
@@ -22,6 +24,8 @@ import {
   FilePlus2,
   FileSpreadsheet,
   FileX2,
+  FlipHorizontal2,
+  FlipVertical2,
   FolderOpen,
   Frame,
   Grid2X2,
@@ -33,6 +37,7 @@ import {
   LayoutTemplate,
   Magnet,
   Maximize2,
+  Minus,
   Moon,
   MousePointer2,
   Package,
@@ -51,6 +56,7 @@ import {
   Send,
   Settings,
   Share2,
+  Sparkles,
   Spline,
   Square,
   Sun,
@@ -62,6 +68,7 @@ import {
   Undo2,
   Upload,
   Workflow,
+  X,
   Zap,
   ZoomIn,
   ZoomOut,
@@ -77,16 +84,31 @@ import type { RecentProjectEntry } from '../core/sessionStorage';
 import type {
   CadLayerId,
   CadTool,
+  CustomSymbolStrokeStyle,
   E3Project,
   E3Sheet,
   E3VisualSettings,
   SchematicFontFamily,
   SheetFormat,
 } from '../core/e3Types';
+import {
+  ATTRIBUTE_TEMPLATE_PRESETS,
+  STROKE_STYLE_OPTIONS,
+  SYMBOL_COLOR_PALETTE,
+} from '../core/symbolLibrary';
+import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
 import { LayerManagerPopover } from './LayerManagerPopover';
 
 export type { CadTool };
-export type RibbonSectionId = 'home' | 'drafting' | 'annotations' | 'sheet' | 'view' | 'flux' | 'export';
+export type RibbonSectionId =
+  | 'home'
+  | 'drafting'
+  | 'annotations'
+  | 'sheet'
+  | 'view'
+  | 'flux'
+  | 'export'
+  | 'ugo_editor';
 type AppMenuCategory = 'file' | 'export' | 'stamps' | 'system';
 
 interface TopToolbarProps {
@@ -166,6 +188,7 @@ interface TopToolbarProps {
   onUnlockAllLayers?: () => void;
   onOpenCommandPalette?: () => void;
   onOpenSymbolDesigner?: () => void;
+  symbolWorkspace?: SymbolWorkspaceActions;
   onInsertGostTable?: (tableKind: 'bom' | 'cables') => void;
   recentProjects?: RecentProjectEntry[];
   lastSavedAt?: string | null;
@@ -175,7 +198,7 @@ interface TopToolbarProps {
   onRemoveRecentProject?: (projectId: string) => void;
 }
 
-const RIBBON_TABS: Array<{ id: RibbonSectionId; label: string }> = [
+const RIBBON_TABS: Array<{ id: RibbonSectionId; label: string; contextual?: boolean }> = [
   { id: 'home', label: 'Главная' },
   { id: 'drafting', label: 'Черчение' },
   { id: 'annotations', label: 'Аннотации' },
@@ -467,6 +490,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onUnlockAllLayers,
   onOpenCommandPalette,
   onOpenSymbolDesigner,
+  symbolWorkspace,
   onInsertGostTable,
   recentProjects = [],
   lastSavedAt = null,
@@ -487,6 +511,19 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   const [layersPopoverOpen, setLayersPopoverOpen] = useState(false);
   const [layersPopoverLeft, setLayersPopoverLeft] = useState<number | null>(null);
   const [menuCategory, setMenuCategory] = useState<AppMenuCategory>('file');
+
+  const isSymbolEditorOpen = Boolean(symbolWorkspace?.draft.open);
+  const prevSymbolOpenRef = useRef(false);
+  useEffect(() => {
+    if (isSymbolEditorOpen && !prevSymbolOpenRef.current) {
+      setActiveTab('ugo_editor');
+      setRibbonCollapsed(false);
+      setLayersPopoverOpen(false);
+    } else if (!isSymbolEditorOpen && prevSymbolOpenRef.current) {
+      setActiveTab((curr) => (curr === 'ugo_editor' ? 'home' : curr));
+    }
+    prevSymbolOpenRef.current = isSymbolEditorOpen;
+  }, [isSymbolEditorOpen]);
 
   const vs = project.visualSettings;
   const resolvedLayers = resolveCadLayers(project.layers, vs.showGostFrame);
@@ -632,9 +669,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
 
           <button
             type="button"
-            onClick={onUndo}
-            disabled={!canUndo}
-            title="Отменить (Ctrl+Z)"
+            onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onUndo() : onUndo())}
+            disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canUndo : !canUndo}
+            title={isSymbolEditorOpen ? 'Отменить в редакторе УГО (Ctrl+Z)' : 'Отменить (Ctrl+Z)'}
             aria-label="Отменить действие"
             className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
           >
@@ -642,9 +679,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           </button>
           <button
             type="button"
-            onClick={onRedo}
-            disabled={!canRedo}
-            title="Повторить (Ctrl+Y)"
+            onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onRedo() : onRedo())}
+            disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canRedo : !canRedo}
+            title={isSymbolEditorOpen ? 'Повторить в редакторе УГО (Ctrl+Y)' : 'Повторить (Ctrl+Y)'}
             aria-label="Повторить действие"
             className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
           >
@@ -655,10 +692,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         {/* Centered Document Title */}
         <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
           <span className="text-[12px] font-medium text-[var(--flux-text)] truncate max-w-[200px] md:max-w-[320px] lg:max-w-[460px]">
-            {project.name}
+            {isSymbolEditorOpen && symbolWorkspace
+              ? `Редактор блока УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
+              : project.name}
           </span>
           <span className="hidden xl:inline text-[11px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
-            {project.projectCode} · Rev {project.revision}
+            {isSymbolEditorOpen && symbolWorkspace
+              ? `${symbolWorkspace.draft.e3BlockName || 'BLOCK'} · ${symbolWorkspace.draft.width}×${symbolWorkspace.draft.height}`
+              : `${project.projectCode} · Rev ${project.revision}`}
           </span>
         </div>
 
@@ -1087,8 +1128,12 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
           aria-label="Разделы ленты инструментов"
           className="flex items-end gap-0.5 h-full pt-0.5 overflow-x-auto no-scrollbar"
         >
-          {RIBBON_TABS.map((tab) => {
+          {(isSymbolEditorOpen
+            ? [...RIBBON_TABS, { id: 'ugo_editor' as const, label: 'Редактор УГО', contextual: true }]
+            : RIBBON_TABS
+          ).map((tab) => {
             const isActive = activeTab === tab.id;
+            const isContextual = Boolean(tab.contextual);
             return (
               <button
                 key={tab.id}
@@ -1100,10 +1145,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                   setActiveTab(tab.id);
                   if (ribbonCollapsed) setRibbonCollapsed(false);
                 }}
-                className={`relative h-full px-3 text-[12px] rounded-t border-x border-t transition-colors whitespace-nowrap shrink-0 ${
+                className={`relative h-full px-3 text-[12px] rounded-t border-x border-t transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
                   isActive
-                    ? 'bg-[var(--flux-bg)] border-[var(--flux-line)] text-[var(--flux-text)] border-b-transparent -mb-px pb-px font-semibold'
-                    : 'bg-transparent border-transparent text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                    ? isContextual
+                      ? 'bg-[var(--flux-bg)] border-emerald-500/60 text-emerald-700 dark:text-emerald-300 border-b-transparent -mb-px pb-px font-semibold'
+                      : 'bg-[var(--flux-bg)] border-[var(--flux-line)] text-[var(--flux-text)] border-b-transparent -mb-px pb-px font-semibold'
+                    : isContextual
+                      ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15 font-semibold'
+                      : 'bg-transparent border-transparent text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                 }`}
               >
                 {isActive && (
@@ -1111,19 +1160,30 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                     layoutId="ribbon-tab-accent"
                     transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
                     aria-hidden="true"
-                    className="absolute top-0 left-1 right-1 h-0.5 bg-[var(--flux-accent)] rounded-t"
+                    className={`absolute top-0 left-1 right-1 h-0.5 rounded-t ${
+                      isContextual ? 'bg-emerald-500' : 'bg-[var(--flux-accent)]'
+                    }`}
                   />
                 )}
-                {tab.label}
+                {isContextual && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+                )}
+                <span>{tab.label}</span>
               </button>
             );
           })}
         </div>
 
         <div className="hidden md:flex items-center gap-2 text-[11px] text-[var(--flux-text-muted)] whitespace-nowrap shrink-0 pl-2">
-          <span className="font-mono tabular-nums">
-            {project.sheets.length} л. · {project.devices.length} изд. · {project.wires.length} цеп.
-          </span>
+          {isSymbolEditorOpen && symbolWorkspace ? (
+            <span className="font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
+              Блок: {symbolWorkspace.draft.shapes.length} прим. · {symbolWorkspace.draft.pins.length} выв. · {symbolWorkspace.draft.attributes.length} атр.
+            </span>
+          ) : (
+            <span className="font-mono tabular-nums">
+              {project.sheets.length} л. · {project.devices.length} изд. · {project.wires.length} цеп.
+            </span>
+          )}
         </div>
       </div>
 
@@ -2079,6 +2139,322 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                           label="Код (.zip)"
                           onClick={onDownloadCodebase}
                         />
+                      </RibbonPanel>
+                    </>
+                  )}
+
+                  {activeTab === 'ugo_editor' && symbolWorkspace && (
+                    <>
+                      <RibbonPanel title="Рисование УГО и Выводы">
+                        <LargeRibbonBtn
+                          icon={<MousePointer2 className="w-[17px] h-[17px]" />}
+                          label="Выбор"
+                          title="Выделение и редактирование примитивов / выводов"
+                          active={symbolWorkspace.draft.tool === 'select'}
+                          testId="ugo-tool-select"
+                          onClick={() => symbolWorkspace.onSetTool('select')}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Minus className="w-3.5 h-3.5" />}
+                            label="Линия"
+                            title="Отрезок по 2 точкам"
+                            active={symbolWorkspace.draft.tool === 'line'}
+                            testId="ugo-tool-line"
+                            onClick={() => symbolWorkspace.onSetTool('line')}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Spline className="w-3.5 h-3.5" />}
+                            label="Полилиния"
+                            title="Ломаная или замкнутый контур (двойной клик или Enter завершает)"
+                            active={symbolWorkspace.draft.tool === 'polyline'}
+                            testId="ugo-tool-polyline"
+                            onClick={() => symbolWorkspace.onSetTool('polyline')}
+                          />
+                        </RibbonStack>
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Square className="w-3.5 h-3.5" />}
+                            label="Прямоуг."
+                            title="Прямоугольный контур / корпус"
+                            active={symbolWorkspace.draft.tool === 'rect'}
+                            testId="ugo-tool-rect"
+                            onClick={() => symbolWorkspace.onSetTool('rect')}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Circle className="w-3.5 h-3.5" />}
+                            label="Круг"
+                            title="Окружность от центра"
+                            active={symbolWorkspace.draft.tool === 'circle'}
+                            testId="ugo-tool-circle"
+                            onClick={() => symbolWorkspace.onSetTool('circle')}
+                          />
+                        </RibbonStack>
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Activity className="w-3.5 h-3.5" />}
+                            label="Дуга"
+                            title="Дуга по центру и радиусу"
+                            active={symbolWorkspace.draft.tool === 'arc'}
+                            testId="ugo-tool-arc"
+                            onClick={() => symbolWorkspace.onSetTool('arc')}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Type className="w-3.5 h-3.5" />}
+                            label="Текст"
+                            title="Статический текст на УГО"
+                            active={symbolWorkspace.draft.tool === 'text'}
+                            testId="ugo-tool-text"
+                            onClick={() => symbolWorkspace.onSetTool('text')}
+                          />
+                        </RibbonStack>
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Tag className="w-3.5 h-3.5" />}
+                            label="Тег атр."
+                            title="Динамическая метка атрибута ({designation}, {article} и др.)"
+                            active={symbolWorkspace.draft.tool === 'attr_tag'}
+                            testId="ugo-tool-attr"
+                            onClick={() => symbolWorkspace.onSetTool('attr_tag')}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Plus className="w-3.5 h-3.5" />}
+                            label="+ Вывод"
+                            title="Добавить электрический/сигнальный вывод E3 (Pin)"
+                            active={symbolWorkspace.draft.tool === 'pin'}
+                            testId="ugo-tool-pin"
+                            onClick={() => symbolWorkspace.onSetTool('pin')}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Стиль, Толщина и Линии">
+                        <div className="flex flex-col justify-between h-[52px] gap-1 px-0.5 shrink-0">
+                          <div className="flex items-center gap-1 h-[24px]">
+                            {SYMBOL_COLOR_PALETTE.slice(0, 6).map((c) => {
+                              const activeColor =
+                                symbolWorkspace.draft.activeStyle.strokeColor.toLowerCase() ===
+                                c.hex.toLowerCase();
+                              return (
+                                <button
+                                  key={c.hex}
+                                  type="button"
+                                  title={c.label}
+                                  aria-label={`Цвет линии ${c.label}`}
+                                  onClick={() => symbolWorkspace.onUpdateStyle({ strokeColor: c.hex })}
+                                  className={`w-4 h-4 rounded-sm border transition-transform ${
+                                    activeColor
+                                      ? 'border-[var(--flux-accent)] scale-110 ring-1 ring-[var(--flux-accent)]'
+                                      : 'border-[var(--flux-line-strong)] hover:scale-105'
+                                  }`}
+                                  style={{ backgroundColor: c.hex }}
+                                />
+                              );
+                            })}
+                            <input
+                              type="color"
+                              aria-label="Произвольный цвет линии"
+                              value={symbolWorkspace.draft.activeStyle.strokeColor}
+                              onChange={(e) =>
+                                symbolWorkspace.onUpdateStyle({ strokeColor: e.target.value })
+                              }
+                              className="w-5 h-5 p-0 border border-[var(--flux-line)] rounded bg-transparent cursor-pointer"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                symbolWorkspace.onUpdateStyle({
+                                  filled: !symbolWorkspace.draft.activeStyle.filled,
+                                })
+                              }
+                              title="Включить/выключить заливку фигур"
+                              className={`h-[22px] px-1.5 rounded border text-[10px] font-medium whitespace-nowrap transition-colors ${
+                                symbolWorkspace.draft.activeStyle.filled
+                                  ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)] text-[var(--flux-text)]'
+                                  : 'border-[var(--flux-line)] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
+                              }`}
+                            >
+                              Заливка
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-1.5 h-[24px]">
+                            <select
+                              aria-label="Толщина линии примитива"
+                              value={symbolWorkspace.draft.activeStyle.strokeWidth}
+                              onChange={(e) =>
+                                symbolWorkspace.onUpdateStyle({
+                                  strokeWidth: Number(e.target.value) || 1.8,
+                                })
+                              }
+                              className="h-[22px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10.5px] text-[var(--flux-text)]"
+                            >
+                              <option value={1}>1.0 мм</option>
+                              <option value={1.4}>1.4 мм</option>
+                              <option value={1.8}>1.8 мм</option>
+                              <option value={2.2}>2.2 мм</option>
+                              <option value={3}>3.0 мм</option>
+                              <option value={4}>4.0 мм</option>
+                            </select>
+                            <select
+                              aria-label="Тип линии примитива"
+                              value={symbolWorkspace.draft.activeStyle.strokeStyle}
+                              onChange={(e) =>
+                                symbolWorkspace.onUpdateStyle({
+                                  strokeStyle: e.target.value as CustomSymbolStrokeStyle,
+                                })
+                              }
+                              className="h-[22px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] max-w-[116px]"
+                            >
+                              {STROKE_STYLE_OPTIONS.map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Сетка и Геометрия">
+                        <div className="flex flex-col justify-between h-[52px] gap-0.5 shrink-0">
+                          <select
+                            aria-label="Шаг сетки редактора УГО"
+                            value={symbolWorkspace.draft.gridStep}
+                            onChange={(e) => symbolWorkspace.onSetGridStep(Number(e.target.value))}
+                            className="h-[24px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[10.5px] text-[var(--flux-text)]"
+                          >
+                            <option value={5}>Шаг 5 мм</option>
+                            <option value={10}>Шаг 10 мм</option>
+                            <option value={20}>Шаг 20 мм</option>
+                          </select>
+                          <SmallRibbonBtn
+                            icon={<Magnet className="w-3.5 h-3.5" />}
+                            label="Привязка"
+                            active={symbolWorkspace.draft.snapToGrid}
+                            onClick={symbolWorkspace.onToggleSnap}
+                          />
+                        </div>
+                        <LargeRibbonBtn
+                          icon={<RotateCw className="w-[17px] h-[17px]" />}
+                          label="Поворот 90°"
+                          title="Повернуть всю графику и выводы блока на 90°"
+                          onClick={symbolWorkspace.onRotateBlockCW}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<FlipHorizontal2 className="w-3.5 h-3.5" />}
+                            label="Отр. X"
+                            title="Отразить блок по горизонтали"
+                            onClick={symbolWorkspace.onMirrorBlockX}
+                          />
+                          <SmallRibbonBtn
+                            icon={<FlipVertical2 className="w-3.5 h-3.5" />}
+                            label="Отр. Y"
+                            title="Отразить блок по вертикали"
+                            onClick={symbolWorkspace.onMirrorBlockY}
+                          />
+                        </RibbonStack>
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<Copy className="w-3.5 h-3.5" />}
+                            label="Дубль"
+                            title="Дублировать выбранный примитив"
+                            disabled={!symbolWorkspace.draft.selectedShapeId}
+                            onClick={symbolWorkspace.onDuplicateSelectedShape}
+                          />
+                          <SmallRibbonBtn
+                            icon={<Trash2 className="w-3.5 h-3.5" />}
+                            label="Удалить"
+                            title="Удалить выбранный примитив или вывод (Del)"
+                            danger
+                            disabled={
+                              !symbolWorkspace.draft.selectedShapeId &&
+                              symbolWorkspace.draft.selectedPinIndex === null
+                            }
+                            onClick={symbolWorkspace.onDeleteSelection}
+                          />
+                        </RibbonStack>
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Заготовки и Шаблоны характеристик">
+                        <div className="flex flex-col justify-between h-[52px] gap-1 shrink-0">
+                          <div className="flex items-center gap-1 h-[24px]">
+                            <Layers className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                            <select
+                              aria-label="Быстрая заготовка графики УГО"
+                              value=""
+                              onChange={(e) => {
+                                const val = e.target.value as
+                                  | 'blank_box'
+                                  | 'sensor_circle'
+                                  | 'breaker_1p'
+                                  | 'coil_relay'
+                                  | '';
+                                if (val) symbolWorkspace.onApplyPresetShapes(val);
+                              }}
+                              className="h-[23px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] w-[148px]"
+                            >
+                              <option value="">+ Графика УГО…</option>
+                              <option value="blank_box">Корпус с тегами</option>
+                              <option value="sensor_circle">Круг КИП / Датчик</option>
+                              <option value="breaker_1p">Автомат 1P (QF)</option>
+                              <option value="coil_relay">Катушка реле (KA)</option>
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-1 h-[24px]">
+                            <Sparkles className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                            <select
+                              aria-label="Применить шаблон характеристик изделия"
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  symbolWorkspace.onApplyAttributeTemplate(e.target.value);
+                                }
+                              }}
+                              className="h-[23px] px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[10.5px] text-[var(--flux-text)] w-[148px]"
+                            >
+                              <option value="">+ Атрибуты E3…</option>
+                              {ATTRIBUTE_TEMPLATE_PRESETS.map((preset) => (
+                                <option key={preset.id} value={preset.id}>
+                                  {preset.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </RibbonPanel>
+
+                      <RibbonPanel title="Сохранение и Выход" isLast>
+                        <LargeRibbonBtn
+                          icon={<Check className="w-[17px] h-[17px]" />}
+                          label="Сохранить"
+                          title="Сохранить УГО и изделие в базу (совместимо с E3.series)"
+                          accent
+                          testId="ugo-ribbon-save-btn"
+                          onClick={symbolWorkspace.onSaveCurrent}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Send className="w-[17px] h-[17px]" />}
+                          label="На схему"
+                          title="Сохранить блок и разместить изделие на активном листе схемы"
+                          testId="ugo-ribbon-place-btn"
+                          onClick={symbolWorkspace.onPlaceOnActiveSheet}
+                        />
+                        <RibbonStack>
+                          <SmallRibbonBtn
+                            icon={<FilePlus2 className="w-3.5 h-3.5" />}
+                            label="+ Новое УГО"
+                            title="Создать пустое УГО с нуля"
+                            onClick={symbolWorkspace.onCreateNewBlankSymbol}
+                          />
+                          <SmallRibbonBtn
+                            icon={<X className="w-3.5 h-3.5" />}
+                            label="Закрыть УГО"
+                            title="Выйти из редактора блока и вернуться на лист схемы"
+                            testId="ugo-ribbon-close-btn"
+                            onClick={symbolWorkspace.onCloseWorkspace}
+                          />
+                        </RibbonStack>
                       </RibbonPanel>
                     </>
                   )}

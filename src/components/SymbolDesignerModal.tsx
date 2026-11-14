@@ -569,6 +569,9 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                             />
                           );
                         }
+                        if (sh.kind === 'polyline' || sh.kind === 'arc') {
+                          return null;
+                        }
                         return (
                           <text
                             key={sh.id}
@@ -791,11 +794,15 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                           {i + 1}.{' '}
                           {sh.kind === 'line'
                             ? `Линия (${sh.x1},${sh.y1}→${sh.x2},${sh.y2})`
-                            : sh.kind === 'rect'
-                              ? `Прямоуг. ${sh.width}×${sh.height}`
-                              : sh.kind === 'circle'
-                                ? `Круг R=${sh.r}`
-                                : `Текст «${sh.text}»`}
+                            : sh.kind === 'polyline'
+                              ? `Полилиния (${sh.points.length} т.)`
+                              : sh.kind === 'rect'
+                                ? `Прямоуг. ${sh.width}×${sh.height}`
+                                : sh.kind === 'circle'
+                                  ? `Круг R=${sh.r}`
+                                  : sh.kind === 'arc'
+                                    ? `Дуга R=${sh.r}`
+                                    : `Текст «${sh.text}»`}
                         </span>
                         <button
                           type="button"

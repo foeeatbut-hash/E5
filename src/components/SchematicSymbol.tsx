@@ -2,6 +2,11 @@ import React from 'react';
 import { resolveSchematicCssFont } from '../core/e3Catalog';
 import type { E3Device, E3VisualSettings } from '../core/e3Types';
 import type { FsaMatrixData } from '../core/hvacBuilder';
+import {
+  describeSvgArcPath,
+  resolveDynamicSymbolText,
+  resolveShapeStrokeDasharray,
+} from '../core/symbolLibrary';
 
 interface SchematicSymbolProps {
   device: E3Device;
@@ -60,6 +65,8 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
       return (
         <g data-testid={`custom-symbol-${device.id}`}>
           {device.customSymbol.shapes.map((sh) => {
+            const shapeStroke = selected ? 'var(--flux-accent)' : sh.strokeColor || stroke;
+            const dasharray = resolveShapeStrokeDasharray(sh);
             if (sh.kind === 'line') {
               return (
                 <line
@@ -68,9 +75,36 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                   y1={sh.y1}
                   x2={sh.x2}
                   y2={sh.y2}
-                  stroke={stroke}
+                  stroke={shapeStroke}
                   strokeWidth={sh.strokeWidth || sw}
-                  strokeDasharray={sh.dashed ? '5 3' : undefined}
+                  strokeDasharray={dasharray}
+                  strokeLinecap="round"
+                />
+              );
+            }
+            if (sh.kind === 'polyline') {
+              const pts = (sh.points || []).map((pt) => `${pt.x},${pt.y}`).join(' ');
+              if (!pts) return null;
+              return sh.closed ? (
+                <polygon
+                  key={sh.id}
+                  points={pts}
+                  fill={sh.filled ? sh.fillColor || 'var(--flux-surface)' : 'none'}
+                  fillOpacity={sh.filled ? sh.fillOpacity ?? 0.92 : 0}
+                  stroke={shapeStroke}
+                  strokeWidth={sh.strokeWidth || sw}
+                  strokeDasharray={dasharray}
+                  strokeLinejoin="round"
+                />
+              ) : (
+                <polyline
+                  key={sh.id}
+                  points={pts}
+                  fill="none"
+                  stroke={shapeStroke}
+                  strokeWidth={sh.strokeWidth || sw}
+                  strokeDasharray={dasharray}
+                  strokeLinejoin="round"
                   strokeLinecap="round"
                 />
               );
@@ -84,11 +118,11 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                   width={sh.width}
                   height={sh.height}
                   rx={2}
-                  fill={sh.filled ? 'var(--flux-surface)' : 'none'}
-                  fillOpacity={sh.filled ? 0.92 : 0}
-                  stroke={stroke}
+                  fill={sh.filled ? sh.fillColor || 'var(--flux-surface)' : 'none'}
+                  fillOpacity={sh.filled ? sh.fillOpacity ?? 0.92 : 0}
+                  stroke={shapeStroke}
                   strokeWidth={sh.strokeWidth || sw}
-                  strokeDasharray={sh.dashed ? '5 3' : undefined}
+                  strokeDasharray={dasharray}
                 />
               );
             }
@@ -99,26 +133,41 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = ({
                   cx={sh.cx}
                   cy={sh.cy}
                   r={sh.r}
-                  fill={sh.filled ? 'var(--flux-surface)' : 'none'}
-                  fillOpacity={sh.filled ? 0.92 : 0}
-                  stroke={stroke}
+                  fill={sh.filled ? sh.fillColor || 'var(--flux-surface)' : 'none'}
+                  fillOpacity={sh.filled ? sh.fillOpacity ?? 0.92 : 0}
+                  stroke={shapeStroke}
                   strokeWidth={sh.strokeWidth || sw}
-                  strokeDasharray={sh.dashed ? '5 3' : undefined}
+                  strokeDasharray={dasharray}
                 />
               );
             }
+            if (sh.kind === 'arc') {
+              return (
+                <path
+                  key={sh.id}
+                  d={describeSvgArcPath(sh.cx, sh.cy, sh.r, sh.startAngle, sh.endAngle)}
+                  fill="none"
+                  stroke={shapeStroke}
+                  strokeWidth={sh.strokeWidth || sw}
+                  strokeDasharray={dasharray}
+                  strokeLinecap="round"
+                />
+              );
+            }
+            const resolvedText = resolveDynamicSymbolText(sh, device);
+            const anchor = sh.align === 'left' ? 'start' : sh.align === 'right' ? 'end' : 'middle';
             return (
               <text
                 key={sh.id}
                 x={sh.x}
                 y={sh.y}
-                textAnchor="middle"
-                fill={stroke}
+                textAnchor={anchor}
+                fill={shapeStroke}
                 fontSize={(sh.fontSize || 11) * visual.fontScale}
                 fontWeight={sh.bold ? 700 : 500}
                 fontFamily={fontCss}
               >
-                {sh.text}
+                {resolvedText}
               </text>
             );
           })}

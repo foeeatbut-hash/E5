@@ -59,38 +59,61 @@ export interface OffPageRefMeta {
   targetDeviceId?: string;
 }
 
-export interface CustomSymbolShapeLine {
+export type CustomSymbolStrokeStyle = 'solid' | 'dashed' | 'dashdot' | 'dotted';
+
+export interface CustomSymbolShapeBase {
   id: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  dashed?: boolean;
+  strokeStyle?: CustomSymbolStrokeStyle;
+}
+
+export interface CustomSymbolShapeLine extends CustomSymbolShapeBase {
   kind: 'line';
   x1: number;
   y1: number;
   x2: number;
   y2: number;
-  strokeWidth?: number;
-  dashed?: boolean;
 }
 
-export interface CustomSymbolShapeRect {
-  id: string;
+export interface CustomSymbolShapePolyline extends CustomSymbolShapeBase {
+  kind: 'polyline';
+  points: Array<{ x: number; y: number }>;
+  closed?: boolean;
+  filled?: boolean;
+  fillColor?: string;
+  fillOpacity?: number;
+}
+
+export interface CustomSymbolShapeRect extends CustomSymbolShapeBase {
   kind: 'rect';
   x: number;
   y: number;
   width: number;
   height: number;
   filled?: boolean;
-  strokeWidth?: number;
-  dashed?: boolean;
+  fillColor?: string;
+  fillOpacity?: number;
 }
 
-export interface CustomSymbolShapeCircle {
-  id: string;
+export interface CustomSymbolShapeCircle extends CustomSymbolShapeBase {
   kind: 'circle';
   cx: number;
   cy: number;
   r: number;
   filled?: boolean;
-  strokeWidth?: number;
-  dashed?: boolean;
+  fillColor?: string;
+  fillOpacity?: number;
+}
+
+export interface CustomSymbolShapeArc extends CustomSymbolShapeBase {
+  kind: 'arc';
+  cx: number;
+  cy: number;
+  r: number;
+  startAngle: number;
+  endAngle: number;
 }
 
 export interface CustomSymbolShapeText {
@@ -101,17 +124,36 @@ export interface CustomSymbolShapeText {
   text: string;
   fontSize?: number;
   bold?: boolean;
+  strokeColor?: string;
+  attrKey?: string;
+  align?: 'left' | 'center' | 'right';
 }
 
 export type CustomSymbolShape =
   | CustomSymbolShapeLine
+  | CustomSymbolShapePolyline
   | CustomSymbolShapeRect
   | CustomSymbolShapeCircle
+  | CustomSymbolShapeArc
   | CustomSymbolShapeText;
 
 export interface CustomSymbolSpec {
   shapes: CustomSymbolShape[];
   showBodyBorder?: boolean;
+}
+
+export interface E3SymbolDef {
+  id: string;
+  name: string;
+  e3BlockName: string;
+  category: DeviceCategory;
+  description?: string;
+  width: number;
+  height: number;
+  shapes: CustomSymbolShape[];
+  defaultPins: Omit<E3Pin, 'id'>[];
+  isCustom?: boolean;
+  updatedAt?: string;
 }
 
 export interface E3Device {
@@ -129,6 +171,7 @@ export interface E3Device {
   width: number;
   height: number;
   e3BlockName: string;
+  symbolId?: string;
   bindingState: BindingState;
   pins: E3Pin[];
   attributes: E3Attribute[];
@@ -374,6 +417,7 @@ export interface E3Project {
   annotations?: E3Annotation[];
   layers?: CadLayerStateMap;
   customStampTemplates?: GostStampTemplate[];
+  symbolLibrary?: E3SymbolDef[];
   visualSettings: E3VisualSettings;
 }
 
@@ -415,6 +459,7 @@ export interface CatalogItem {
     signalKind?: string;
   };
   defaultCable?: string;
+  symbolId?: string;
   customSymbol?: CustomSymbolSpec;
 }
 
@@ -510,6 +555,10 @@ export interface FluxExportNode {
   status: 'one' | 'many' | 'none';
   solutionId: string;
   solutionName: string;
+  category?: DeviceCategory;
+  symbolId?: string;
+  pins?: Array<Omit<E3Pin, 'id'>>;
+  customSymbol?: CustomSymbolSpec;
   rect: { sheet: string; x: number; y: number; rotation: number; width: number; height: number };
   attrs: Array<{ name: string; value: string; owner: string; conflict?: 'flux' | 'script' | 'ask'; service?: boolean }>;
   checked: boolean;
@@ -526,4 +575,5 @@ export interface FluxBridgeBundle {
   wires: E3Wire[];
   cables: E3Cable[];
   sheets: E3Sheet[];
+  symbolLibrary?: E3SymbolDef[];
 }

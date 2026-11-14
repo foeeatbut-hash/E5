@@ -6,7 +6,16 @@ import type {
   SignalType,
 } from './e3Types.ts';
 
-export type SymbolEditorTool = 'select' | 'line' | 'rect' | 'circle' | 'text' | 'pin';
+export type SymbolEditorTool =
+  | 'select'
+  | 'line'
+  | 'polyline'
+  | 'rect'
+  | 'circle'
+  | 'arc'
+  | 'text'
+  | 'attr_tag'
+  | 'pin';
 
 export function snapSymbolCoord(value: number, step = 10): number {
   const s = Math.max(1, step);
@@ -63,6 +72,15 @@ export function normalizeCustomSymbolSpec(
         y2: Math.max(0, Math.min(cleanH, sh.y2)),
       };
     }
+    if (sh.kind === 'polyline') {
+      return {
+        ...sh,
+        points: (sh.points || []).map((pt) => ({
+          x: Math.max(0, Math.min(cleanW, pt.x)),
+          y: Math.max(0, Math.min(cleanH, pt.y)),
+        })),
+      };
+    }
     if (sh.kind === 'rect') {
       return {
         ...sh,
@@ -73,6 +91,14 @@ export function normalizeCustomSymbolSpec(
       };
     }
     if (sh.kind === 'circle') {
+      return {
+        ...sh,
+        cx: Math.max(4, Math.min(cleanW - 4, sh.cx)),
+        cy: Math.max(4, Math.min(cleanH - 4, sh.cy)),
+        r: Math.max(3, Math.min(Math.min(cleanW, cleanH) / 2, sh.r)),
+      };
+    }
+    if (sh.kind === 'arc') {
       return {
         ...sh,
         cx: Math.max(4, Math.min(cleanW - 4, sh.cx)),
