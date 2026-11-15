@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Eye, EyeOff, Layers, Lock, Unlock } from 'lucide-react';
 import {
@@ -35,6 +35,37 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
   onUnlockAll,
 }) => {
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const [nudgeX, setNudgeX] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setNudgeX(0);
+      return;
+    }
+    const clampToViewport = () => {
+      const el = panelRef.current;
+      if (!el || typeof window === 'undefined') return;
+      const rect = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const pad = 8;
+      let delta = 0;
+      if (rect.left < pad) {
+        delta = pad - rect.left;
+      } else if (rect.right > vw - pad) {
+        delta = vw - pad - rect.right;
+      }
+      if (Math.abs(delta) > 0.5) {
+        setNudgeX((prev) => Math.round(prev + delta));
+      }
+    };
+    clampToViewport();
+    const raf = window.requestAnimationFrame(clampToViewport);
+    window.addEventListener('resize', clampToViewport);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener('resize', clampToViewport);
+    };
+  }, [open, align]);
 
   useEffect(() => {
     if (!open) return;
@@ -48,7 +79,9 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
       const target = e.target as Node;
       if (
         target instanceof Element &&
-        target.closest('[data-testid="toolbar-layers-btn"], [data-testid="ribbon-view-layers-btn"]')
+        target.closest(
+          '[data-testid="toolbar-layers-btn"], [data-testid="ribbon-view-layers-btn"], [data-testid="focus-rail-item-open_layers"]'
+        )
       ) {
         return;
       }
@@ -84,7 +117,8 @@ export const LayerManagerPopover: React.FC<LayerManagerPopoverProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -4, scale: 0.985 }}
           transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          className={`absolute top-full mt-1.5 z-50 w-[calc(332px*var(--flux-ui-scale))] max-w-[calc(100vw-16px)] rounded-2xl border border-[var(--flux-line-strong)] flux-glass-popover overflow-hidden select-none text-[length:calc(11.5px*var(--flux-ui-scale))] ${
+          style={nudgeX !== 0 ? { marginLeft: nudgeX } : undefined}
+          className={`absolute top-full mt-1.5 z-50 w-[calc(332px*var(--flux-ui-scale))] max-w-[calc(100vw-16px)] max-h-[min(420px,calc(100vh-110px))] overflow-y-auto rounded-2xl border border-[var(--flux-line-strong)] flux-glass-popover select-none text-[length:calc(11.5px*var(--flux-ui-scale))] ${
             align === 'right' ? 'right-0' : 'left-0'
           }`}
         >

@@ -36,6 +36,7 @@ export interface FocusLayoutMetrics {
   sheetTabsMaxWidth: number;
   bottomBarHeight: number;
   bottomDockClearance: number;
+  commandPillCenterX: number;
   commandPillMaxWidth: number;
   toolRailLeft: number;
   toolRailTop: number;
@@ -60,6 +61,10 @@ export interface FocusLayoutMetrics {
   minimapHeight: number;
   showMinimap: boolean;
   selectionBarTop: number;
+  multiViewportTop: number;
+  multiViewportLeft: number;
+  multiViewportRight: number;
+  multiViewportBottom: number;
 }
 
 export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutMetrics {
@@ -210,13 +215,26 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
       : outerPad + minimapHeight + gutter;
   const toolRailMaxHeight = Math.max(180, vh - toolRailTop - toolRailBottomClearance);
 
-  // Bottom-center command bar sits cleanly between minimap and scaled right status pill
-  const leftBottomReserve = !input.consoleOpen && showMinimap ? outerPad + minimapWidth + gutter : outerPad;
-  const rightBottomReserve = outerPad + Math.round((vw >= 1280 ? 348 : 260) * f) + gutter;
-  const commandPillMaxWidth = Math.max(
-    160,
-    Math.min(Math.round(430 * f), vw - 2 * Math.max(leftBottomReserve, rightBottomReserve))
-  );
+  // Bottom-center command bar sits cleanly between minimap (if visible) and scaled right status pill
+  const leftBottomEdge = !input.consoleOpen && showMinimap ? outerPad + minimapWidth + gutter : outerPad;
+  const estStatusWidth = Math.round((vw >= 1280 ? 405 : 285) * f);
+  const rightBottomEdge = vw - outerPad - estStatusWidth - gutter;
+  const availableCommandWidth = Math.max(140, rightBottomEdge - leftBottomEdge);
+  const preferredCommandWidth = Math.min(Math.round(400 * f), 520);
+  const commandPillMaxWidth = Math.max(140, Math.min(preferredCommandWidth, availableCommandWidth));
+  const minCmdCenter = leftBottomEdge + commandPillMaxWidth / 2;
+  const maxCmdCenter = rightBottomEdge - commandPillMaxWidth / 2;
+  const commandPillCenterX = Math.round(Math.max(minCmdCenter, Math.min(maxCmdCenter, vw / 2)));
+
+  const collapsedInspectorWidth = Math.round(110 * f);
+  const multiViewportTop = topClearance;
+  const multiViewportLeft = input.explorerOpen
+    ? explorerLeft + explorerWidth + gutter
+    : toolRailLeft + toolRailWidth + gutter;
+  const multiViewportRight =
+    (input.inspectorCollapsed ? inspectorRight + collapsedInspectorWidth : inspectorRight + inspectorWidth) +
+    gutter;
+  const multiViewportBottom = input.consoleOpen ? aboveConsoleBottom : bottomDockClearance;
 
   return {
     outerPad,
@@ -231,6 +249,7 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     sheetTabsMaxWidth,
     bottomBarHeight,
     bottomDockClearance,
+    commandPillCenterX,
     commandPillMaxWidth,
     toolRailLeft,
     toolRailTop,
@@ -255,6 +274,10 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     minimapHeight,
     showMinimap,
     selectionBarTop: topClearance,
+    multiViewportTop,
+    multiViewportLeft,
+    multiViewportRight,
+    multiViewportBottom,
   };
 }
 

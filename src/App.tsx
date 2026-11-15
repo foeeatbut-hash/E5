@@ -12,6 +12,11 @@ import {
   resolveDropTarget,
 } from './components/DockablePanel';
 import { FluxStudioPublishModal } from './components/FluxStudioPublishModal';
+import {
+  FocusCommandPill,
+  FocusStatusPill,
+  FocusToolRail,
+} from './components/FocusWorkspaceHud';
 import { HvacWizardModal } from './components/HvacWizardModal';
 import { LeftExplorer } from './components/LeftExplorer';
 import {
@@ -85,6 +90,15 @@ import {
   UI_MODE_OPTIONS,
   type UiWorkspaceMode,
 } from './core/uiMode';
+import {
+  type AllSheetsCanvasLayout,
+  type CanvasViewMode,
+  computeAllSheetsLayout,
+  computeSheetViewportFitTransform,
+  getSheetCanvasOrigin,
+  loadCanvasViewMode,
+  saveCanvasViewMode,
+} from './core/canvasSheetLayout';
 import { computeFocusLayoutMetrics, isMinimapEnabled } from './core/focusLayout';
 import {
   addQuickAccessAction,
@@ -577,6 +591,13 @@ export default function App() {
     ]
   );
 
+  const focusMultiCoordsRef = useRef<HTMLSpanElement | null>(null);
+  const handleActiveViewportCoordsText = useCallback((coordsText: string) => {
+    if (focusMultiCoordsRef.current) {
+      focusMultiCoordsRef.current.textContent = coordsText;
+    }
+  }, []);
+
   const [bom, setBom] = useState<BomRow[]>(() => buildBom(project));
   const [cables, setCables] = useState<CableJournalRow[]>(() => buildCableJournal(project));
   const [netLengths, setNetLengths] = useState<NetWireLengthRow[]>(() => buildNetWireLengths(project));
@@ -602,6 +623,17 @@ export default function App() {
       // ignore storage failure
     }
   }, [explorerSplitView]);
+
+  const [canvasViewMode, setCanvasViewMode] = useState<CanvasViewMode>(() => loadCanvasViewMode());
+  const canvasViewModeRef = useRef<CanvasViewMode>(canvasViewMode);
+  canvasViewModeRef.current = canvasViewMode;
+
+  const allSheetsLayout = useMemo<AllSheetsCanvasLayout>(
+    () => computeAllSheetsLayout(project.sheets),
+    [project.sheets]
+  );
+  const allSheetsLayoutRef = useRef<AllSheetsCanvasLayout>(allSheetsLayout);
+  allSheetsLayoutRef.current = allSheetsLayout;
 
   const [canvasFocusActive, setCanvasFocusActive] = useState<boolean>(false);
   const preCanvasFocusRef = useRef<{
@@ -761,6 +793,32 @@ export default function App() {
       ]);
     },
     []
+  );
+
+  const handleToggleCanvasViewMode = useCallback(
+    (explicitMode?: CanvasViewMode) => {
+      const nextMode: CanvasViewMode =
+        explicitMode ?? (canvasViewModeRef.current === 'single' ? 'all' : 'single');
+      if (nextMode === canvasViewModeRef.current) return;
+      canvasViewModeRef.current = nextMode;
+      setCanvasViewMode(nextMode);
+      saveCanvasViewMode(nextMode);
+      window.requestAnimationFrame(() => {
+        const sheets = docStateRef.current.present.sheets;
+        const curSheet = sheets.find((s) => s.id === activeSheetIdRef.current) || sheets[0];
+        if (curSheet) {
+          fitSheetToViewportRef.current?.(curSheet, activeViewportIdxRef.current, true);
+        }
+      });
+      appendLog(
+        'INFO',
+        'UI-INTERACT',
+        nextMode === 'all'
+          ? 'Режим холста: все листы проекта по порядку на одном холсте.'
+          : 'Режим холста: один активный лист.'
+      );
+    },
+    [appendLog]
   );
 
   const handleChangeUiMode = useCallback(
@@ -1530,11 +1588,13 @@ export default function App() {
     const s = docStateRef.current;
     if (s.past.length === 0) return;
     const previous = s.past[s.past.length - 1];
-    setDocState({
+    const nextDoc = {
       past: s.past.slice(0, -1),
       present: previous,
       future: [s.present, ...s.future],
-    });
+    };
+    docStateRef.current = nextDoc;
+    setDocState(nextDoc);
     pushSync(previous);
     appendLog('INFO', 'E3-CORE', `Отмена действия (возврат к ревизии ${previous.revision}).`);
   }, [pushSync, appendLog]);
@@ -1543,11 +1603,13 @@ export default function App() {
     const s = docStateRef.current;
     if (s.future.length === 0) return;
     const next = s.future[0];
-    setDocState({
+    const nextDoc = {
       past: [...s.past, s.present],
       present: next,
       future: s.future.slice(1),
-    });
+    };
+    docStateRef.current = nextDoc;
+    setDocState(nextDoc);
     pushSync(next);
     appendLog('INFO', 'E3-CORE', `Повтор действия (ревизия ${next.revision}).`);
   }, [pushSync, appendLog]);
@@ -1571,15 +1633,22 @@ export default function App() {
     }
   }, [project.sheets, activeSheetId]);
 
-  const openSheetTab = useCallback((sheetId: string, vpIdx?: number) => {
-    if (!sheetId) return;
-    const sheets = docStateRef.current.present.sheets;
-    if (!sheets.some((s) => s.id === sheetId)) return;
-    const targetVp = typeof vpIdx === 'number' ? vpIdx : activeViewportIdxRef.current;
-    setOpenSheetIds((prev) => ensureSheetTabOpen(prev, sheetId, sheets));
-    setActiveSheetId(sheetId);
-    setViewportSheetIds((prev) => prev.map((sId, idx) => (idx === targetVp ? sheetId : sId)));
-  }, []);
+  const openSheetTab = useCallback(
+    (sheetId: string, vpIdx?: number, opts?: { skipFit?: boolean; animate?: boolean }) => {
+      if (!sheetId) return;
+      const sheets = docStateRef.current.present.sheets;
+      const targetSheet = sheets.find((s) => s.id === sheetId);
+      if (!targetSheet) return;
+      const targetVp = typeof vpIdx === 'number' ? vpIdx : activeViewportIdxRef.current;
+      setOpenSheetIds((prev) => ensureSheetTabOpen(prev, sheetId, sheets));
+      setActiveSheetId(sheetId);
+      setViewportSheetIds((prev) => prev.map((sId, idx) => (idx === targetVp ? sheetId : sId)));
+      if (canvasViewModeRef.current === 'all' && !opts?.skipFit) {
+        fitSheetToViewportRef.current?.(targetSheet, targetVp, opts?.animate ?? true);
+      }
+    },
+    []
+  );
 
   const handleCloseSheetTab = useCallback(
     (sheetId: string) => {
@@ -2629,8 +2698,13 @@ export default function App() {
     setViewportSheetIds((prev) =>
       prev.map((sId, idx) => (idx === activeViewportIdxRef.current ? newSheet.id : sId))
     );
+    if (canvasViewModeRef.current === 'all') {
+      window.requestAnimationFrame(() => {
+        fitSheetToViewportRef.current?.(newSheet, activeViewportIdxRef.current, true);
+      });
+    }
     appendLog('INFO', 'E3-CORE', `Добавлен новый лист: ${newSheet.name}.`);
-  }, [project.sheets, project.projectCode, project.author, commitProject, appendLog]);
+  }, [project.sheets, project.projectCode, project.name, project.author, commitProject, appendLog]);
 
   const handleSaveCustomCatalogItem = useCallback(
     (item: CatalogItem) => {
@@ -3490,11 +3564,13 @@ export default function App() {
       const rect = el?.getBoundingClientRect();
       const vw = rect?.width && rect.width > 100 ? rect.width : 820;
       const vh = rect?.height && rect.height > 100 ? rect.height : 500;
-      const fitZ = Math.min((vw - 24) / target.width, (vh - 18) / target.height);
-      const clampedZ = Math.min(1.2, Math.max(0.14, Math.floor(fitZ * 100) / 100));
-      const panX = Math.max(8, Math.round((vw - target.width * clampedZ) / 2));
-      const panY = Math.max(6, Math.round((vh - target.height * clampedZ) / 2));
-      animateCameraTo(vpIdx, clampedZ, { x: panX, y: panY }, animate);
+      const layout =
+        allSheetsLayoutRef.current.bySheetId.has(target.id)
+          ? allSheetsLayoutRef.current
+          : computeAllSheetsLayout(sheets);
+      const origin = getSheetCanvasOrigin(layout, target.id, canvasViewModeRef.current);
+      const fitted = computeSheetViewportFitTransform(target, origin, vw, vh);
+      animateCameraTo(vpIdx, fitted.zoom, fitted.pan, animate);
     },
     [animateCameraTo]
   );
@@ -3505,21 +3581,26 @@ export default function App() {
 
   const centerCameraOnCoords = useCallback(
     (sheetId: string, worldX: number, worldY: number, vpIdx = activeViewportIdx, animate = true) => {
-      openSheetTab(sheetId, vpIdx);
+      openSheetTab(sheetId, vpIdx, { skipFit: true });
       window.requestAnimationFrame(() => {
         const sel = vpIdx === 0 ? '[data-testid="schematic-canvas"]' : `[data-testid="schematic-canvas-${vpIdx}"]`;
         const el = document.querySelector(sel) || document.querySelector('[data-testid="schematic-canvas"]');
         const rect = el?.getBoundingClientRect();
         const vw = rect?.width && rect.width > 100 ? rect.width : 820;
         const vh = rect?.height && rect.height > 100 ? rect.height : 500;
+        const origin = getSheetCanvasOrigin(
+          allSheetsLayoutRef.current,
+          sheetId,
+          canvasViewModeRef.current
+        );
         const curZoom = viewportTransformsRef.current[vpIdx]?.zoom ?? 0.56;
         const nextZ = Math.min(1.35, Math.max(0.68, curZoom));
         animateCameraTo(
           vpIdx,
           nextZ,
           {
-            x: Math.round(vw / 2 - worldX * nextZ),
-            y: Math.round(vh / 2 - worldY * nextZ),
+            x: Math.round(vw / 2 - (origin.x + worldX) * nextZ),
+            y: Math.round(vh / 2 - (origin.y + worldY) * nextZ),
           },
           animate
         );
@@ -3838,6 +3919,14 @@ export default function App() {
       setOpenSheetIds((prev) => ensureSheetTabOpen(prev, newSheetId, nextProject.sheets));
       setActiveSheetId(newSheetId);
       setViewportSheetIds((prev) => prev.map((id, idx) => (idx === activeViewportIdx ? newSheetId : id)));
+      if (canvasViewModeRef.current === 'all') {
+        const clonedSheet = nextProject.sheets.find((s) => s.id === newSheetId);
+        if (clonedSheet) {
+          window.requestAnimationFrame(() => {
+            fitSheetToViewportRef.current?.(clonedSheet, activeViewportIdxRef.current, true);
+          });
+        }
+      }
       appendLog('INFO', 'E3-CORE', 'Создана копия листа со всеми элементами и связями.');
     },
     [project, commitProject, activeViewportIdx, appendLog]
@@ -4319,6 +4408,7 @@ export default function App() {
   const handleUpdateSheetFormat = useCallback(
     (sheetId: string, format: SheetFormat) => {
       const dims = SHEET_DIMENSIONS[format];
+      const currSheet = docStateRef.current.present.sheets.find((s) => s.id === sheetId);
       commitProject((prev) => ({
         ...prev,
         revision: prev.revision + 1,
@@ -4326,13 +4416,15 @@ export default function App() {
           s.id === sheetId ? { ...s, format, width: dims.width, height: dims.height } : s
         ),
       }));
-      const currSheet = project.sheets.find((s) => s.id === sheetId);
       if (currSheet) {
-        fitSheetToViewport({ ...currSheet, format, width: dims.width, height: dims.height });
+        const resizedSheet = { ...currSheet, format, width: dims.width, height: dims.height };
+        window.requestAnimationFrame(() => {
+          fitSheetToViewportRef.current?.(resizedSheet, activeViewportIdxRef.current, true);
+        });
       }
       appendLog('INFO', 'E3-CORE', `Изменён формат листа на ${format} (${dims.width}×${dims.height}).`);
     },
-    [commitProject, project.sheets, fitSheetToViewport, appendLog]
+    [commitProject, appendLog]
   );
 
   const handleUpdateFontFamily = useCallback(
@@ -4854,50 +4946,12 @@ export default function App() {
     [project.id, commitProject, fitSheetToViewport, appendLog]
   );
 
-  const handleSaveAsE3Flux = useCallback(async () => {
+  const handleSaveAsE3Flux = useCallback(() => {
     const t0 = performance.now();
     const curProject = docStateRef.current.present;
     const bytes = serializeE3FluxProject(curProject);
     const filename = buildE3FluxFilename(curProject);
-
-    const pickerWindow = window as unknown as {
-      showSaveFilePicker?: (opts: {
-        suggestedName?: string;
-        types?: Array<{ description: string; accept: Record<string, string[]> }>;
-      }) => Promise<{
-        createWritable: () => Promise<{ write: (data: BlobPart) => Promise<void>; close: () => Promise<void> }>;
-      }>;
-    };
-
-    let savedViaPicker = false;
-    if (typeof pickerWindow.showSaveFilePicker === 'function') {
-      try {
-        const handle = await pickerWindow.showSaveFilePicker({
-          suggestedName: filename,
-          types: [
-            {
-              description: 'Зашифрованный проект E3Flux (.e3flux)',
-              accept: { 'application/x-e3flux': ['.e3flux'] },
-            },
-          ],
-        });
-        const writable = await handle.createWritable();
-        const copy = new Uint8Array(bytes.length);
-        copy.set(bytes);
-        await writable.write(new Blob([copy.buffer], { type: 'application/x-e3flux' }));
-        await writable.close();
-        savedViaPicker = true;
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          return;
-        }
-        // Fallback to direct <a download> when showSaveFilePicker is restricted (e.g. iframe)
-      }
-    }
-
-    if (!savedViaPicker) {
-      downloadBytes(filename, bytes, 'application/x-e3flux');
-    }
+    downloadBytes(filename, bytes, 'application/x-e3flux');
 
     const res = saveActiveSession(curProject, activeSheetIdRef.current);
     setLastSavedAt(res.savedAt);
@@ -6560,8 +6614,16 @@ export default function App() {
     viewportLayout === 'single'
       ? 'flex-1 min-w-0 min-h-0 flex'
       : viewportLayout === 'two'
-        ? 'flex-1 min-w-0 min-h-0 grid grid-cols-2 gap-1.5 p-1.5 bg-[var(--flux-line)]/40'
-        : 'flex-1 min-w-0 min-h-0 grid grid-cols-2 grid-rows-2 gap-1.5 p-1.5 bg-[var(--flux-line)]/40';
+        ? `flex-1 min-w-0 min-h-0 grid grid-cols-2 gap-1.5 ${
+            uiMode === 'focus'
+              ? `bg-[var(--flux-canvas-bg)] ${resizingFocusPanel ? '' : 'transition-[padding] duration-150'}`
+              : 'p-1.5 bg-[var(--flux-line)]/40'
+          }`
+        : `flex-1 min-w-0 min-h-0 grid grid-cols-2 grid-rows-2 gap-1.5 ${
+            uiMode === 'focus'
+              ? `bg-[var(--flux-canvas-bg)] ${resizingFocusPanel ? '' : 'transition-[padding] duration-150'}`
+              : 'p-1.5 bg-[var(--flux-line)]/40'
+          }`;
 
   const handleMoveDockPanel = useCallback((id: PanelId, side: DockSide) => {
     setDockLayout((prev) =>
@@ -6829,9 +6891,15 @@ export default function App() {
         case 'viewport_four': handleSetViewportLayout('four'); break;
         case 'action_fit': fitSheetToViewport(undefined, activeViewportIdxRef.current, true); break;
         case 'toggle_minimap': handleToggleMinimap(); break;
-        case 'open_layers':
-          document.querySelector<HTMLButtonElement>('[data-testid="canvas-layers-btn"]')?.click();
+        case 'open_layers': {
+          const vpIdx = activeViewportIdxRef.current;
+          const sel =
+            vpIdx === 0
+              ? '[data-testid="canvas-layers-btn"]'
+              : `[data-testid="canvas-layers-btn-${vpIdx}"]`;
+          document.querySelector<HTMLButtonElement>(sel)?.click();
           break;
+        }
         case 'reset_dock':
           setFocusExplorerOpen(false);
           setFocusConsoleOpen(false);
@@ -6931,7 +6999,7 @@ export default function App() {
           const sh = docStateRef.current.present.sheets.find((s) => s.id === shId);
           if (sh) fitSheetToViewportRef.current(sh, idx, true);
         },
-        onSelectSheet: (id: string) => {
+        onSelectSheet: (id: string, opts?: { skipFit?: boolean }) => {
           setActiveViewportIdx(idx);
           const sheets = docStateRef.current.present.sheets;
           setOpenSheetIds((prev) => ensureSheetTabOpen(prev, id, sheets));
@@ -6945,8 +7013,10 @@ export default function App() {
             next[idx] = id;
             return next;
           });
-          const target = sheets.find((s) => s.id === id);
-          if (target) fitSheetToViewportRef.current(target, idx, true);
+          if (!opts?.skipFit) {
+            const target = sheets.find((s) => s.id === id);
+            if (target) fitSheetToViewportRef.current(target, idx, true);
+          }
         },
         onSetZoom: (nextZ: number) => {
           cancelCameraAnimRef.current(idx);
@@ -7372,6 +7442,16 @@ export default function App() {
               transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
               data-testid="center-viewports"
               data-layout={viewportLayout}
+              style={
+                uiMode === 'focus' && viewportLayout !== 'single'
+                  ? {
+                      paddingTop: focusLayout.multiViewportTop,
+                      paddingLeft: focusLayout.multiViewportLeft,
+                      paddingRight: focusLayout.multiViewportRight,
+                      paddingBottom: focusLayout.multiViewportBottom,
+                    }
+                  : undefined
+              }
               className={centerGridClass}
             >
             {Array.from({ length: vpCount }, (_, idx) => {
@@ -7407,6 +7487,8 @@ export default function App() {
                     selectedDeviceCount={selectedDeviceIds.length > 0 ? selectedDeviceIds.length : selectedDeviceId ? 1 : 0}
                     sheetCount={project.sheets.length}
                     viewportLayout={viewportLayout}
+                    canvasViewMode={canvasViewMode}
+                    onToggleCanvasViewMode={() => handleToggleCanvasViewMode()}
                     activeSheetId={vpSheetId}
                     openSheetIds={viewportLayout === 'single' ? openSheetIds : undefined}
                     viewportIndex={idx}
@@ -7477,6 +7559,11 @@ export default function App() {
                     onCommitInPlaceStampCell={handleCommitInPlaceStampCell}
                     commandPaletteItems={bottomCommandItems}
                     onExecuteCommandLine={handleExecuteCommandLine}
+                    onActiveCoordsText={
+                      uiMode === 'focus' && viewportLayout !== 'single'
+                        ? handleActiveViewportCoordsText
+                        : undefined
+                    }
                   />
                 </div>
               );
@@ -7490,23 +7577,75 @@ export default function App() {
 
         {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(bottomPanels, 'bottom')}
 
-        {/* Focus Mode (Variant B) Glass Overlays: Coordinated Explorer Drawer, Floating Inspector, Slide-Up Console */}
+        {/* Focus Mode (Variant B) Glass Overlays: Shared Multi-Viewport HUD, Coordinated Explorer Drawer, Floating Inspector, Slide-Up Console */}
         {uiMode === 'focus' && !symbolDraft.open && (
           <>
-            {!focusExplorerOpen && viewportLayout !== 'single' && (
-              <button
-                type="button"
-                data-testid="focus-left-edge-tab"
-                onClick={() => setFocusExplorerOpen(true)}
-                title="Открыть устройства и библиотеку компонентов (Ctrl+\)"
-                aria-label="Открыть устройства и библиотеку компонентов"
-                style={{ top: focusLayout.explorerTop, left: focusLayout.outerPad }}
-                className="no-print absolute z-30 inline-flex items-center gap-1.5 h-[calc(34px*var(--flux-ui-scale))] px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface hover:border-[var(--flux-accent)] shadow-lg text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-all"
-              >
-                <ChevronRight className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                <span>Навигатор</span>
-              </button>
-            )}
+            {viewportLayout !== 'single' && (() => {
+              const activeVpTr = viewportTransforms[activeViewportIdx] || { zoom: 0.42, pan: { x: 20, y: 12 } };
+              const activeVpH = viewportHandlers[activeViewportIdx] || viewportHandlers[0];
+              const devCount = new Set([...selectedDeviceIds, ...(selectedDeviceId ? [selectedDeviceId] : [])]).size;
+              const wireCount = new Set([...selectedWireIds, ...(selectedWireId ? [selectedWireId] : [])]).size;
+              const annCount = new Set([...selectedAnnotationIds, ...(selectedAnnotationId ? [selectedAnnotationId] : [])]).size;
+              const totalSelCount = devCount + wireCount + annCount;
+              const activeBadge = `В${activeViewportIdx + 1}`;
+              return (
+                <>
+                  <FocusToolRail
+                    tool={tool}
+                    vs={project.visualSettings}
+                    viewportLayout={viewportLayout}
+                    totalSelectedCount={totalSelCount}
+                    selectedDeviceCount={devCount}
+                    hasClipboard={hasClipboard}
+                    sheetCount={project.sheets.length}
+                    focusLayout={focusLayout}
+                    focusQuickAccessIds={focusQuickAccessIds}
+                    focusExplorerOpen={focusExplorerOpen}
+                    onToggleFocusExplorer={handleToggleFocusExplorer}
+                    canvasFocusActive={canvasFocusActive}
+                    onToggleCanvasFocus={handleToggleCanvasFocus}
+                    onSetTool={setTool}
+                    onExecuteQuickAction={handleExecuteFocusQuickAction}
+                    onRemoveQuickAccess={handleRemoveFocusQuickAccess}
+                    onMoveQuickAccess={handleMoveFocusQuickAccess}
+                    onResetQuickAccess={handleResetFocusQuickAccess}
+                    onRotateSelected={handleRotateSelected}
+                    onFitViewport={activeVpH.onFitViewport}
+                    onToggleGrid={handleCanvasToggleGrid}
+                    motionLayoutScopeId="workspace-multi"
+                  />
+                  <FocusCommandPill
+                    centerX={focusLayout.commandPillCenterX}
+                    maxWidth={focusLayout.commandPillMaxWidth}
+                    commandPaletteItems={bottomCommandItems}
+                    onExecuteCommandLine={handleExecuteCommandLine}
+                    activeViewportBadge={activeBadge}
+                  />
+                  <FocusStatusPill
+                    zoom={activeVpTr.zoom}
+                    showGrid={project.visualSettings.showGrid}
+                    snapToGrid={project.visualSettings.snapToGrid}
+                    focusConsoleOpen={focusConsoleOpen}
+                    activeViewportBadge={activeBadge}
+                    coordsSpanRef={focusMultiCoordsRef}
+                    onZoomStep={(delta) => {
+                      const cur = viewportTransformsRef.current[activeViewportIdx] || {
+                        zoom: 0.42,
+                        pan: { x: 20, y: 12 },
+                      };
+                      const nextZ =
+                        delta < 0
+                          ? Math.max(0.16, Math.round((cur.zoom + delta) * 100) / 100)
+                          : Math.min(2.5, Math.round((cur.zoom + delta) * 100) / 100);
+                      activeVpH.onSetTransform(nextZ, cur.pan);
+                    }}
+                    onToggleGrid={handleCanvasToggleGrid}
+                    onToggleSnapToGrid={handleCanvasToggleSnap}
+                    onToggleFocusConsole={handleToggleFocusConsole}
+                  />
+                </>
+              );
+            })()}
 
             <AnimatePresence initial={false}>
               {focusExplorerOpen && (
@@ -7622,7 +7761,7 @@ export default function App() {
                     right: focusLayout.consoleRight,
                     height: focusLayout.consoleHeight,
                   }}
-                  className="no-print absolute z-35 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col"
+                  className="no-print absolute z-[35] rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col"
                 >
                   <div
                     role="separator"

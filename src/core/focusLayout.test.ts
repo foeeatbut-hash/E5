@@ -168,8 +168,24 @@ test('computeFocusLayoutMetrics preserves non-overlapping top & bottom pills at 
     assert.ok(centerLeft >= m.outerPad + m.leftPillMaxWidth + m.gutter - 1);
     assert.ok(centerRight <= vw - m.outerPad - m.rightPillMaxWidth - m.gutter + 1);
     assert.ok(m.commandPillMaxWidth >= 160);
-    assert.ok(vw / 2 + m.commandPillMaxWidth / 2 <= vw - m.outerPad - Math.round(348 * 1.5));
+    const cmdLeft = m.commandPillCenterX - m.commandPillMaxWidth / 2;
+    const cmdRight = m.commandPillCenterX + m.commandPillMaxWidth / 2;
+    const leftBottomEdge = m.outerPad;
+    const rightBottomEdge = vw - m.outerPad - Math.round((vw >= 1280 ? 405 : 285) * 1.5) - m.gutter;
+    assert.ok(cmdLeft >= leftBottomEdge - 1);
+    assert.ok(cmdRight <= rightBottomEdge + 1);
   }
+
+  const centered100 = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 100,
+    ribbonOpen: false,
+    explorerOpen: false,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+  });
+  assert.equal(centered100.commandPillCenterX, 720);
 
   const expanded = computeFocusLayoutMetrics({
     viewportWidth: 1440,
@@ -204,4 +220,48 @@ test('computeFocusLayoutMetrics preserves non-overlapping top & bottom pills at 
   assert.equal(minimized.consoleHeight, 120);
 });
 
+test('computeFocusLayoutMetrics computes collision-free multiViewport safe-area insets across all panel combinations', () => {
+  const base = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 100,
+    ribbonOpen: false,
+    explorerOpen: false,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+  });
+  assert.equal(base.multiViewportTop, base.topClearance);
+  assert.equal(base.multiViewportLeft, base.toolRailLeft + base.toolRailWidth + base.gutter);
+  assert.equal(base.multiViewportRight, base.inspectorRight + base.inspectorWidth + base.gutter);
+  assert.equal(base.multiViewportBottom, base.bottomDockClearance);
+  assert.ok(1440 - base.multiViewportLeft - base.multiViewportRight >= 900);
+  assert.ok(900 - base.multiViewportTop - base.multiViewportBottom >= 700);
 
+  const allOpen = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 150,
+    ribbonOpen: true,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: true,
+  });
+  assert.ok(allOpen.multiViewportTop >= allOpen.ribbonTop + allOpen.ribbonTotalHeight + allOpen.gutter);
+  assert.ok(allOpen.multiViewportLeft >= allOpen.explorerLeft + allOpen.explorerWidth + allOpen.gutter);
+  assert.ok(allOpen.multiViewportRight >= allOpen.inspectorRight + allOpen.inspectorWidth + allOpen.gutter);
+  assert.ok(allOpen.multiViewportBottom >= allOpen.consoleBottom + allOpen.consoleHeight + allOpen.gutter);
+  assert.ok(1440 - allOpen.multiViewportLeft - allOpen.multiViewportRight >= 600);
+  assert.ok(900 - allOpen.multiViewportTop - allOpen.multiViewportBottom >= 260);
+
+  const collapsedInspector = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 150,
+    ribbonOpen: false,
+    explorerOpen: false,
+    inspectorCollapsed: true,
+    consoleOpen: false,
+  });
+  assert.ok(collapsedInspector.multiViewportRight < allOpen.multiViewportRight);
+  assert.ok(collapsedInspector.multiViewportRight >= collapsedInspector.inspectorRight + 160);
+});

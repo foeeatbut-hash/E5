@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Columns2,
   Crosshair,
   FlipHorizontal2,
   FlipVertical2,
@@ -15,10 +16,8 @@ import {
   Lock,
   Magnet,
   Maximize2,
-  Minimize2,
   Minus,
   MousePointer2,
-  PanelLeft,
   Plus,
   RotateCw,
   Ruler,
@@ -37,12 +36,9 @@ import {
   selectEntitiesInBox,
   type SelectionBox,
 } from '../core/cadSelection';
-import {
-  type CommandLineResolution,
-  type CommandPaletteItem,
-  filterBottomCommandItems,
-  pushCommandHistory,
-  stepCommandHistory,
+import type {
+  CommandLineResolution,
+  CommandPaletteItem,
 } from '../core/commandPalette';
 import { resolveSchematicCssFont } from '../core/e3Catalog';
 import { buildGostTableRenderModel } from '../core/gostTables';
@@ -94,18 +90,25 @@ import type {
   PinDirection,
 } from '../core/e3Types';
 import type { ViewportLayoutMode } from '../core/dockLayout';
+import {
+  type AllSheetsCanvasLayout,
+  type CanvasViewMode,
+  computeAllSheetsLayout,
+  findSheetSlotAtCanvasPoint,
+  getSheetCanvasOrigin,
+} from '../core/canvasSheetLayout';
 import { computeFocusLayoutMetrics, isMinimapEnabled, type FocusLayoutMetrics } from '../core/focusLayout';
 import {
   DEFAULT_FOCUS_QUICK_ACCESS_IDS,
   type FocusQuickActionId,
-  getFocusQuickActionDef,
 } from '../core/focusQuickAccess';
 import { isNewUiMode, type UiWorkspaceMode } from '../core/uiMode';
 import {
-  FocusQuickAccessMenu,
-  type FocusQuickAccessMenuState,
-  renderFocusQuickAccessIcon,
-} from './FocusQuickAccessMenu';
+  FocusCommandPill,
+  FocusStatusPill,
+  FocusToolRail,
+  useCadCommandBar,
+} from './FocusWorkspaceHud';
 import { LayerManagerPopover } from './LayerManagerPopover';
 import { SchematicSymbol } from './SchematicSymbol';
 
@@ -145,7 +148,7 @@ interface SchematicCanvasProps {
   selectedAnnotationIds?: string[];
   onFocusViewport?: () => void;
   onFitViewport?: () => void;
-  onSelectSheet: (sheetId: string) => void;
+  onSelectSheet: (sheetId: string, opts?: { skipFit?: boolean }) => void;
   onPrevSheet?: () => void;
   onNextSheet?: () => void;
   canPrevSheet?: boolean;
@@ -221,20 +224,9 @@ interface SchematicCanvasProps {
   selectedDeviceCount?: number;
   sheetCount?: number;
   viewportLayout?: ViewportLayoutMode;
-}
-
-const CMD_HISTORY_STORAGE_KEY = 'e3promax_cmd_history_v1';
-
-function loadSavedCommandHistory(): string[] {
-  if (typeof window === 'undefined' || !window.localStorage) return [];
-  try {
-    const raw = window.localStorage.getItem(CMD_HISTORY_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
-  } catch {
-    return [];
-  }
+  canvasViewMode?: CanvasViewMode;
+  onToggleCanvasViewMode?: () => void;
+  onActiveCoordsText?: (coordsText: string) => void;
 }
 
 export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
@@ -325,7 +317,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   selectedDeviceCount = 0,
   sheetCount,
   viewportLayout = 'single',
+  canvasViewMode = 'single',
+  onToggleCanvasViewMode,
+  onActiveCoordsText,
 }) => {
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
+  const onActiveCoordsTextRef = useRef(onActiveCoordsText);
+  onActiveCoordsTextRef.current = onActiveCoordsText;
   const resolvedFocusLayout = useMemo(
     () =>
       focusLayout ??
@@ -371,212 +370,22 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const [cmdValue, setCmdValue] = useState('');
-  const [cmdHistory, setCmdHistory] = useState<string[]>(() => loadSavedCommandHistory());
-  const [cmdHistIdx, setCmdHistIdx] = useState<number>(-1);
-  const [cmdSavedDraft, setCmdSavedDraft] = useState<string>('');
-  const [cmdFocused, setCmdFocused] = useState<boolean>(false);
-  const [cmdFeedback, setCmdFeedback] = useState<{
-    status: CommandLineResolution['status'];
-    text: string;
-  } | null>(null);
-  const cmdInputRef = useRef<HTMLInputElement | null>(null);
-  const cmdFeedbackTimerRef = useRef<number | null>(null);
-
-  const [activeHintIdx, setActiveHintIdx] = useState(0);
-  const [hintNavigated, setHintNavigated] = useState(false);
-
-  const matchingCmdHints = useMemo(() => {
-    if (!cmdFocused || commandPaletteItems.length === 0) return [];
-    const q = cmdValue.trim();
-    if (!q) {
-      if (cmdFeedback) return [];
-      return filterBottomCommandItems(commandPaletteItems, '').slice(0, 7);
-    }
-    return filterBottomCommandItems(commandPaletteItems, q).slice(0, 8);
-  }, [cmdFocused, cmdValue, cmdFeedback, commandPaletteItems]);
-
-  useEffect(() => {
-    setActiveHintIdx(0);
-    setHintNavigated(false);
-  }, [cmdValue]);
-
-  const showCmdFeedback = useCallback(
-    (status: CommandLineResolution['status'], text: string) => {
-      if (cmdFeedbackTimerRef.current) {
-        window.clearTimeout(cmdFeedbackTimerRef.current);
-      }
-      setCmdFeedback({ status, text });
-      cmdFeedbackTimerRef.current = window.setTimeout(() => {
-        setCmdFeedback(null);
-      }, 3600);
-    },
-    []
-  );
-
-  useEffect(() => {
-    return () => {
-      if (cmdFeedbackTimerRef.current) window.clearTimeout(cmdFeedbackTimerRef.current);
-    };
-  }, []);
-
-  const executeCanvasCommand = useCallback(
-    (raw: string) => {
-      const trimmed = raw.trim();
-      if (!trimmed) return;
-      const nextHist = pushCommandHistory(cmdHistory, trimmed);
-      setCmdHistory(nextHist);
-      try {
-        window.localStorage?.setItem(CMD_HISTORY_STORAGE_KEY, JSON.stringify(nextHist));
-      } catch {
-        // Ignore storage failure
-      }
-      setCmdHistIdx(-1);
-      setCmdSavedDraft('');
-      setCmdValue('');
-      setActiveHintIdx(0);
-      setHintNavigated(false);
-      const res = onExecuteCommandLine?.(trimmed);
-      if (res) {
-        showCmdFeedback(res.status, res.message);
-      }
-    },
-    [cmdHistory, onExecuteCommandLine, showCmdFeedback]
-  );
-
-  const applyOrExecuteHint = useCallback(
-    (hint: CommandPaletteItem) => {
-      if (hint.disabled) return;
-      const keyword = hint.commandKeyword || hint.keywords[0] || hint.title;
-      if (hint.requiresArg) {
-        setCmdValue(keyword);
-        setHintNavigated(false);
-        setActiveHintIdx(0);
-        window.requestAnimationFrame(() => {
-          const el = cmdInputRef.current;
-          if (el) {
-            el.focus();
-            el.setSelectionRange(keyword.length, keyword.length);
-          }
-        });
-        return;
-      }
-      executeCanvasCommand(keyword);
-    },
-    [executeCanvasCommand]
-  );
-
-  const handleCmdKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if ((e.ctrlKey || e.metaKey) && ['k', 's', '\\'].includes(e.key.toLowerCase())) {
-        return;
-      }
-      e.stopPropagation();
-      if (e.key === 'Tab' && matchingCmdHints.length > 0) {
-        e.preventDefault();
-        const hint = matchingCmdHints[activeHintIdx] || matchingCmdHints[0];
-        if (hint) {
-          const keyword = hint.commandKeyword || (hint.keywords[0] || '').toUpperCase();
-          setCmdValue(keyword);
-          setHintNavigated(false);
-          setActiveHintIdx(0);
-          window.requestAnimationFrame(() => {
-            e.currentTarget.setSelectionRange(keyword.length, keyword.length);
-          });
-        }
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (hintNavigated && matchingCmdHints[activeHintIdx]) {
-          applyOrExecuteHint(matchingCmdHints[activeHintIdx]);
-          return;
-        }
-        if (cmdValue.trim()) {
-          executeCanvasCommand(cmdValue);
-        }
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        if (cmdValue.trim().length > 0 && matchingCmdHints.length > 0 && cmdHistIdx === -1) {
-          e.preventDefault();
-          setHintNavigated(true);
-          setActiveHintIdx((prev) => (prev - 1 + matchingCmdHints.length) % matchingCmdHints.length);
-          return;
-        }
-        const el = e.currentTarget;
-        const len = el.value.length;
-        const atEnd =
-          (el.selectionStart ?? len) === len && (el.selectionEnd ?? len) === len;
-        if (atEnd) {
-          e.preventDefault();
-          const step = stepCommandHistory(
-            cmdHistory,
-            cmdHistIdx,
-            'up',
-            cmdValue,
-            cmdSavedDraft
-          );
-          setCmdHistIdx(step.nextIndex);
-          setCmdValue(step.nextValue);
-          setCmdSavedDraft(step.nextSavedDraft);
-          window.requestAnimationFrame(() => {
-            el.setSelectionRange(step.nextValue.length, step.nextValue.length);
-          });
-        }
-        return;
-      }
-      if (e.key === 'ArrowDown') {
-        if (cmdHistIdx === -1 && matchingCmdHints.length > 0 && (cmdValue.trim().length > 0 || hintNavigated)) {
-          e.preventDefault();
-          setHintNavigated(true);
-          setActiveHintIdx((prev) => (prev + 1) % matchingCmdHints.length);
-          return;
-        }
-        const el = e.currentTarget;
-        const len = el.value.length;
-        const atEnd =
-          (el.selectionStart ?? len) === len && (el.selectionEnd ?? len) === len;
-        if (atEnd && cmdHistIdx !== -1) {
-          e.preventDefault();
-          const step = stepCommandHistory(
-            cmdHistory,
-            cmdHistIdx,
-            'down',
-            cmdValue,
-            cmdSavedDraft
-          );
-          setCmdHistIdx(step.nextIndex);
-          setCmdValue(step.nextValue);
-          setCmdSavedDraft(step.nextSavedDraft);
-          window.requestAnimationFrame(() => {
-            el.setSelectionRange(step.nextValue.length, step.nextValue.length);
-          });
-        }
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setCmdValue('');
-        setCmdHistIdx(-1);
-        setCmdSavedDraft('');
-        setCmdFeedback(null);
-        setHintNavigated(false);
-        e.currentTarget.blur();
-      }
-    },
-    [
-      activeHintIdx,
-      applyOrExecuteHint,
-      cmdHistory,
-      cmdHistIdx,
-      cmdSavedDraft,
-      cmdValue,
-      executeCanvasCommand,
-      hintNavigated,
-      matchingCmdHints,
-    ]
-  );
+  const {
+    cmdValue,
+    setCmdValue,
+    cmdHistIdx,
+    setCmdHistIdx,
+    setCmdFocused,
+    cmdFeedback,
+    cmdInputRef,
+    matchingCmdHints,
+    activeHintIdx,
+    setActiveHintIdx,
+    hintNavigated,
+    setHintNavigated,
+    applyOrExecuteHint,
+    handleCmdKeyDown,
+  } = useCadCommandBar(commandPaletteItems, onExecuteCommandLine);
   const cursorRef = useRef<{
     world: { x: number; y: number };
     screen: { x: number; y: number };
@@ -603,6 +412,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   const [rubberBandCursor, setRubberBandCursor] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [activeSnapHud, setActiveSnapHud] = useState<{
     entityId: string;
+    originX?: number;
+    originY?: number;
     x: number;
     y: number;
     width: number;
@@ -619,13 +430,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     y: number;
     kind: 'device' | 'wire' | 'canvas';
   } | null>(null);
-  const [railQuickMenu, setRailQuickMenu] = useState<FocusQuickAccessMenuState | null>(null);
   const [measureState, setMeasureState] = useState<{
     start: WirePoint;
     end: WirePoint;
     locked: boolean;
   } | null>(null);
   const [wireStart, setWireStart] = useState<{
+    sheetId: string;
     deviceId: string;
     pinId: string;
     x: number;
@@ -683,7 +494,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   const onSetPanRef = useRef(onSetPan);
   onSetPanRef.current = onSetPan;
 
-  const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{
+    box: SelectionBox;
+    originX: number;
+    originY: number;
+  } | null>(null);
   const [altHeld, setAltHeld] = useState(false);
   const altHeldRef = useRef(false);
   altHeldRef.current = altHeld;
@@ -750,8 +565,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     return () => window.cancelAnimationFrame(raf);
   }, [inPlaceTargetKey]);
 
+  const prevActiveSheetIdRef = useRef<string>(activeSheetId);
   useEffect(() => {
-    if (inPlaceEdit && inPlaceEdit.sheetId !== activeSheetId) {
+    const sheetChanged = prevActiveSheetIdRef.current !== activeSheetId;
+    prevActiveSheetIdRef.current = activeSheetId;
+    if (sheetChanged && inPlaceEdit && inPlaceEdit.sheetId !== activeSheetId) {
       cancelInPlaceEdit();
     }
   }, [activeSheetId, inPlaceEdit, cancelInPlaceEdit]);
@@ -822,12 +640,27 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
   const dragRef = useRef<
     | { kind: 'pan'; startX: number; startY: number; origPanX: number; origPanY: number; moved: boolean }
-    | { kind: 'device'; deviceId: string; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean; others: SnapRectEntity[] }
-    | { kind: 'annotation'; annId: string; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean; others: SnapRectEntity[] }
-    | { kind: 'wireSegment'; wireId: string; segmentIndex: number; origWaypoints: WirePoint[]; moved: boolean }
-    | { kind: 'marquee'; startWorldX: number; startWorldY: number; additive: boolean; moved: boolean; currentBox?: SelectionBox }
+    | { kind: 'device'; deviceId: string; sheetId: string; sheetOriginX: number; sheetOriginY: number; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean; others: SnapRectEntity[] }
+    | { kind: 'annotation'; annId: string; sheetId: string; sheetOriginX: number; sheetOriginY: number; startWorldX: number; startWorldY: number; origX: number; origY: number; moved: boolean; others: SnapRectEntity[] }
+    | { kind: 'wireSegment'; wireId: string; sheetId: string; sheetOriginX: number; sheetOriginY: number; segmentIndex: number; origWaypoints: WirePoint[]; moved: boolean }
+    | { kind: 'marquee'; sheetId: string; sheetOriginX: number; sheetOriginY: number; startWorldX: number; startWorldY: number; additive: boolean; moved: boolean; currentBox?: SelectionBox }
     | null
   >(null);
+
+  const allSheetsLayout = useMemo<AllSheetsCanvasLayout>(
+    () => computeAllSheetsLayout(project.sheets),
+    [project.sheets]
+  );
+  const allSheetsLayoutRef = useRef<AllSheetsCanvasLayout>(allSheetsLayout);
+  allSheetsLayoutRef.current = allSheetsLayout;
+  const canvasViewModeRef = useRef<CanvasViewMode>(canvasViewMode);
+  canvasViewModeRef.current = canvasViewMode;
+
+  const getSheetOrigin = useCallback(
+    (sheetId?: string | null) =>
+      getSheetCanvasOrigin(allSheetsLayoutRef.current, sheetId, canvasViewModeRef.current),
+    []
+  );
 
   const sheet = useMemo(() => {
     if (!isMultiViewport && openSheetIds !== undefined) {
@@ -835,6 +668,18 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     }
     return project.sheets.find((s) => s.id === activeSheetId) || project.sheets[0];
   }, [project.sheets, activeSheetId, isMultiViewport, openSheetIds]);
+
+  const activeSheetOrigin = useMemo(
+    () => getSheetCanvasOrigin(allSheetsLayout, sheet?.id, canvasViewMode),
+    [allSheetsLayout, sheet?.id, canvasViewMode]
+  );
+
+  const renderedSheets = useMemo(() => {
+    if (canvasViewMode === 'all') {
+      return project.sheets;
+    }
+    return sheet ? [sheet] : [];
+  }, [canvasViewMode, project.sheets, sheet]);
 
   const openSingleTabs = useMemo(() => {
     if (openSheetIds === undefined) return project.sheets;
@@ -1050,10 +895,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       onCommitDrag?.(d.moved);
     } else if (d.kind === 'marquee') {
       if (d.moved && d.currentBox) {
+        const targetDevices = project.devices.filter((dev) => dev.sheetId === d.sheetId);
+        const targetWires = project.wires.filter((w) => w.sheetId === d.sheetId);
+        const targetAnnotations = (project.annotations || []).filter((a) => a.sheetId === d.sheetId);
         const matched = selectEntitiesInBox(
-          sheetDevices,
-          sheetWires,
-          sheetAnnotations,
+          targetDevices,
+          targetWires,
+          targetAnnotations,
           d.currentBox,
           resolvedLayers,
           project.visualSettings.showGostFrame
@@ -1077,9 +925,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   }, [
     applyDomTransform,
     onCommitDrag,
-    sheetDevices,
-    sheetWires,
-    sheetAnnotations,
+    project.devices,
+    project.wires,
+    project.annotations,
     resolvedLayers,
     project.visualSettings.showGostFrame,
     onSetSelection,
@@ -1249,6 +1097,26 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       return;
     }
     onFocusViewport?.();
+    const canvasWorld = toWorld(e.clientX, e.clientY);
+    const clickedSlot =
+      canvasViewMode === 'all'
+        ? findSheetSlotAtCanvasPoint(allSheetsLayoutRef.current, canvasWorld.x, canvasWorld.y, 48)
+        : null;
+    const activeSlot = sheet ? allSheetsLayoutRef.current.bySheetId.get(sheet.id) ?? null : null;
+    const targetSlot = clickedSlot ?? activeSlot;
+    const targetSheetId = targetSlot?.sheet.id || sheet?.id || '';
+    const targetOrigin =
+      canvasViewMode === 'all' && targetSlot
+        ? { x: targetSlot.originX, y: targetSlot.originY }
+        : { x: 0, y: 0 };
+    if (canvasViewMode === 'all' && clickedSlot && clickedSlot.sheet.id !== sheet?.id) {
+      onSelectSheet(clickedSlot.sheet.id, { skipFit: true });
+    }
+    const localWorld = {
+      x: canvasWorld.x - targetOrigin.x,
+      y: canvasWorld.y - targetOrigin.y,
+    };
+
     if (wireStart) {
       if (e.button === 2) {
         e.preventDefault();
@@ -1260,10 +1128,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         return;
       }
       if (e.button === 0) {
-        const world = toWorld(e.clientX, e.clientY);
+        const wsOrigin = getSheetOrigin(wireStart.sheetId);
+        const wsLocal = {
+          x: canvasWorld.x - wsOrigin.x,
+          y: canvasWorld.y - wsOrigin.y,
+        };
         const anchorPt: WirePoint = {
-          x: e.altKey ? world.x : snap(world.x),
-          y: e.altKey ? world.y : snap(world.y),
+          x: e.altKey ? wsLocal.x : snap(wsLocal.x),
+          y: e.altKey ? wsLocal.y : snap(wsLocal.y),
         };
         setWireAnchors((prev) => [...prev, anchorPt]);
         return;
@@ -1272,16 +1144,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       setWireAnchors([]);
       return;
     }
-    if ((tool === 'text' || tool === 'rect' || tool === 'callout') && sheet) {
+    if ((tool === 'text' || tool === 'rect' || tool === 'callout') && targetSheetId) {
       if (annotationsLocked || !annotationsVisible) return;
-      const world = toWorld(e.clientX, e.clientY);
-      onCreateAnnotation(sheet.id, tool, snap(world.x), snap(world.y));
+      onCreateAnnotation(targetSheetId, tool, snap(localWorld.x), snap(localWorld.y));
       return;
     }
-    if (tool === 'offpage' && sheet) {
+    if (tool === 'offpage' && targetSheetId) {
       if (devicesLocked || !devicesVisible) return;
-      const world = toWorld(e.clientX, e.clientY);
-      onCreateOffPageAt?.(sheet.id, snap(world.x), snap(world.y));
+      onCreateOffPageAt?.(targetSheetId, snap(localWorld.x), snap(localWorld.y));
       return;
     }
     if (tool === 'measure') {
@@ -1291,10 +1161,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         return;
       }
       if (e.button === 0) {
-        const world = toWorld(e.clientX, e.clientY);
         const pt = {
-          x: e.altKey ? world.x : snap(world.x),
-          y: e.altKey ? world.y : snap(world.y),
+          x: e.altKey ? canvasWorld.x : snap(canvasWorld.x),
+          y: e.altKey ? canvasWorld.y : snap(canvasWorld.y),
         };
         setMeasureState((prev) => {
           if (!prev || prev.locked) {
@@ -1306,12 +1175,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       }
     }
     if (tool === 'select' && e.button === 0) {
-      const world = toWorld(e.clientX, e.clientY);
       setSelectionBox(null);
       dragRef.current = {
         kind: 'marquee',
-        startWorldX: world.x,
-        startWorldY: world.y,
+        sheetId: targetSheetId,
+        sheetOriginX: targetOrigin.x,
+        sheetOriginY: targetOrigin.y,
+        startWorldX: localWorld.x,
+        startWorldY: localWorld.y,
         additive: e.shiftKey,
         moved: false,
       };
@@ -1335,6 +1206,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     }
     e.stopPropagation();
     onFocusViewport?.();
+    if (canvasViewMode === 'all' && device.sheetId !== sheet?.id) {
+      onSelectSheet(device.sheetId, { skipFit: true });
+    }
     if (tool === 'pan') {
       startPanDrag(e.clientX, e.clientY);
       return;
@@ -1348,9 +1222,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       onSelectDevice(device.id);
     }
     if (tool === 'select' && !devicesLocked) {
-      const world = toWorld(e.clientX, e.clientY);
-      const others: SnapRectEntity[] = sheetDevices
-        .filter((d) => d.id !== device.id && d.bindingState !== 'REMOVED_IN_FLUX')
+      const origin = getSheetOrigin(device.sheetId);
+      const canvasWorld = toWorld(e.clientX, e.clientY);
+      const localWorld = { x: canvasWorld.x - origin.x, y: canvasWorld.y - origin.y };
+      const others: SnapRectEntity[] = project.devices
+        .filter((d) => d.sheetId === device.sheetId && d.id !== device.id && d.bindingState !== 'REMOVED_IN_FLUX')
         .map((d) => ({
           id: d.id,
           designation: d.designation,
@@ -1365,8 +1241,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       dragRef.current = {
         kind: 'device',
         deviceId: device.id,
-        startWorldX: world.x,
-        startWorldY: world.y,
+        sheetId: device.sheetId,
+        sheetOriginX: origin.x,
+        sheetOriginY: origin.y,
+        startWorldX: localWorld.x,
+        startWorldY: localWorld.y,
         origX: device.x,
         origY: device.y,
         moved: false,
@@ -1384,6 +1263,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     }
     e.stopPropagation();
     onFocusViewport?.();
+    if (canvasViewMode === 'all' && ann.sheetId !== sheet?.id) {
+      onSelectSheet(ann.sheetId, { skipFit: true });
+    }
     if (tool === 'pan') {
       startPanDrag(e.clientX, e.clientY);
       return;
@@ -1397,11 +1279,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       onSelectAnnotation(ann.id);
     }
     if (annotationsLocked) return;
-    const world = toWorld(e.clientX, e.clientY);
+    const origin = getSheetOrigin(ann.sheetId);
+    const canvasWorld = toWorld(e.clientX, e.clientY);
+    const localWorld = { x: canvasWorld.x - origin.x, y: canvasWorld.y - origin.y };
     const others: SnapRectEntity[] = [
       ...(devicesVisible
-        ? sheetDevices
-            .filter((d) => d.bindingState !== 'REMOVED_IN_FLUX')
+        ? project.devices
+            .filter((d) => d.sheetId === ann.sheetId && d.bindingState !== 'REMOVED_IN_FLUX')
             .map((d) => ({
               id: d.id,
               designation: d.designation,
@@ -1411,8 +1295,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               height: d.height,
             }))
         : []),
-      ...sheetAnnotations
-        .filter((a) => a.id !== ann.id)
+      ...(project.annotations || [])
+        .filter((a) => a.sheetId === ann.sheetId && a.id !== ann.id)
         .map((a) => ({
           id: a.id,
           designation: a.kind === 'rect' ? 'Зона' : 'Выноска',
@@ -1426,8 +1310,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     dragRef.current = {
       kind: 'annotation',
       annId: ann.id,
-      startWorldX: world.x,
-      startWorldY: world.y,
+      sheetId: ann.sheetId,
+      sheetOriginX: origin.x,
+      sheetOriginY: origin.y,
+      startWorldX: localWorld.x,
+      startWorldY: localWorld.y,
       origX: ann.x,
       origY: ann.y,
       moved: false,
@@ -1446,21 +1333,32 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     const vsCurr = project.visualSettings;
     const magneticEnabled = vsCurr.smartGuides !== false;
     const snapThresholdWorld = Math.max(8, Math.min(18, Math.round(12 / Math.max(0.35, liveZoomRef.current))));
+    const localWorld = {
+      x: sample.world.x - drag.sheetOriginX,
+      y: sample.world.y - drag.sheetOriginY,
+    };
+    const targetSheet = project.sheets.find((s) => s.id === drag.sheetId) || sheet;
 
     if (drag.kind === 'marquee') {
       const box = normalizeSelectionBox(
         { x: drag.startWorldX, y: drag.startWorldY },
-        sample.world
+        localWorld
       );
       if (box.width >= 4 || box.height >= 4) {
         drag.moved = true;
         drag.currentBox = box;
-        setSelectionBox(box);
+        setSelectionBox({
+          box,
+          originX: drag.sheetOriginX,
+          originY: drag.sheetOriginY,
+        });
       }
     } else if (drag.kind === 'device') {
-      const dev = sheetDevices.find((d) => d.id === drag.deviceId);
-      const rawX = drag.origX + (sample.world.x - drag.startWorldX);
-      const rawY = drag.origY + (sample.world.y - drag.startWorldY);
+      const targetDevices = project.devices.filter((d) => d.sheetId === drag.sheetId);
+      const targetWires = project.wires.filter((w) => w.sheetId === drag.sheetId);
+      const dev = targetDevices.find((d) => d.id === drag.deviceId);
+      const rawX = drag.origX + (localWorld.x - drag.startWorldX);
+      const rawY = drag.origY + (localWorld.y - drag.startWorldY);
       if (dev) {
         const res = computeSmartSnap(dev, rawX, rawY, drag.others, {
           gridSize: vsCurr.gridSize,
@@ -1468,11 +1366,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
           magneticSnap: magneticEnabled,
           bypassAllSnap: sample.altKey,
           snapThreshold: snapThresholdWorld,
-          sheet,
-          wires: wiresVisible ? sheetWires : [],
+          sheet: targetSheet,
+          wires: wiresVisible ? targetWires : [],
         });
         setActiveSnapHud({
           entityId: dev.id,
+          originX: drag.sheetOriginX,
+          originY: drag.sheetOriginY,
           x: res.x,
           y: res.y,
           width: dev.width,
@@ -1489,10 +1389,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         const alreadyWired =
           !wiresVisible ||
           wiresLocked ||
-          sheetWires.some((w) => w.fromDeviceId === dev.id || w.toDeviceId === dev.id);
+          targetWires.some((w) => w.fromDeviceId === dev.id || w.toDeviceId === dev.id);
         const nextCand =
           !alreadyWired && isTwoPinBreakEligible(dev)
-            ? findWireBreakCandidate({ ...dev, x: res.x, y: res.y }, sheetWires)
+            ? findWireBreakCandidate({ ...dev, x: res.x, y: res.y }, targetWires)
             : null;
         const candKey = nextCand
           ? `${nextCand.wire.id}:${nextCand.segmentIndex}:${nextCand.projX}:${nextCand.projY}`
@@ -1515,7 +1415,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       const nextPts = dragWireSegment(
         drag.origWaypoints,
         drag.segmentIndex,
-        sample.world,
+        localWorld,
         vsCurr.gridSize,
         sample.altKey ? false : vsCurr.snapToGrid
       );
@@ -1527,9 +1427,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       }
       onPreviewWireWaypoints?.(drag.wireId, nextPts);
     } else if (drag.kind === 'annotation') {
-      const ann = sheetAnnotations.find((a) => a.id === drag.annId);
-      const rawX = drag.origX + (sample.world.x - drag.startWorldX);
-      const rawY = drag.origY + (sample.world.y - drag.startWorldY);
+      const targetAnnotations = (project.annotations || []).filter((a) => a.sheetId === drag.sheetId);
+      const ann = targetAnnotations.find((a) => a.id === drag.annId);
+      const rawX = drag.origX + (localWorld.x - drag.startWorldX);
+      const rawY = drag.origY + (localWorld.y - drag.startWorldY);
       if (ann) {
         const res = computeSmartSnap(
           { id: ann.id, x: ann.x, y: ann.y, width: ann.width, height: ann.height },
@@ -1542,11 +1443,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             magneticSnap: magneticEnabled,
             bypassAllSnap: sample.altKey,
             snapThreshold: snapThresholdWorld,
-            sheet,
+            sheet: targetSheet,
           }
         );
         setActiveSnapHud({
           entityId: ann.id,
+          originX: drag.sheetOriginX,
+          originY: drag.sheetOriginY,
           x: res.x,
           y: res.y,
           width: ann.width,
@@ -1647,8 +1550,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         if (containerRef.current) {
           containerRef.current.setAttribute('data-crosshair-active', String(chEnabled && cur.inside));
         }
+        let dispX = cur.world.x;
+        let dispY = cur.world.y;
+        if (canvasViewModeRef.current === 'all') {
+          const hoveredSlot = findSheetSlotAtCanvasPoint(allSheetsLayoutRef.current, cur.world.x, cur.world.y);
+          if (hoveredSlot) {
+            dispX = cur.world.x - hoveredSlot.originX;
+            dispY = cur.world.y - hoveredSlot.originY;
+          }
+        }
+        const coordsText = `X:${dispX} Y:${dispY}${isMultiViewport && uiMode !== 'focus' ? '' : ' мм'}`;
         if (coordsSpanRef.current) {
-          coordsSpanRef.current.textContent = `X:${cur.world.x} Y:${cur.world.y}${isMultiViewport ? '' : ' мм'}`;
+          coordsSpanRef.current.textContent = coordsText;
+        }
+        if (isFocusedRef.current && onActiveCoordsTextRef.current) {
+          onActiveCoordsTextRef.current(coordsText);
         }
         if (crosshairGroupRef.current) {
           const g = crosshairGroupRef.current;
@@ -1685,8 +1601,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
           }
         }
         if (wireStartRef.current) {
+          const wsOrigin = getSheetOrigin(wireStartRef.current.sheetId);
+          const localCursor = {
+            x: cur.world.x - wsOrigin.x,
+            y: cur.world.y - wsOrigin.y,
+          };
           setRubberBandCursor((prev) =>
-            prev.x === cur.world.x && prev.y === cur.world.y ? prev : cur.world
+            prev.x === localCursor.x && prev.y === localCursor.y ? prev : localCursor
           );
         }
         setMeasureState((prev) => {
@@ -1803,14 +1724,18 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   const handlePinClick = (e: React.MouseEvent, device: E3Device, pinId: string) => {
     e.stopPropagation();
     onFocusViewport?.();
+    if (canvasViewMode === 'all' && device.sheetId !== sheet?.id) {
+      onSelectSheet(device.sheetId, { skipFit: true });
+    }
     if (wiresLocked || !wiresVisible) return;
     const pin = device.pins.find((p) => p.id === pinId);
     if (!pin) return;
     const abs = getAbsolutePinPos(device, pin);
 
-    if (!wireStart) {
+    if (!wireStart || wireStart.sheetId !== device.sheetId) {
       setWireAnchors([]);
       setWireStart({
+        sheetId: device.sheetId,
         deviceId: device.id,
         pinId: pin.id,
         x: abs.x,
@@ -1854,9 +1779,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     const item = catalog.find((c) => c.id === catId);
     if (!item) return;
     const world = toWorld(e.clientX, e.clientY);
-    const rawX = world.x - item.width / 2;
-    const rawY = world.y - item.height / 2;
-    const others: SnapRectEntity[] = (devicesVisible ? sheetDevices : [])
+    const dropSlot =
+      canvasViewMode === 'all'
+        ? (findSheetSlotAtCanvasPoint(allSheetsLayoutRef.current, world.x, world.y, 48) ??
+            allSheetsLayoutRef.current.bySheetId.get(sheet.id))
+        : allSheetsLayoutRef.current.bySheetId.get(sheet.id);
+    const targetSheet = dropSlot?.sheet || sheet;
+    const dropOrigin =
+      canvasViewMode === 'all' && dropSlot ? { x: dropSlot.originX, y: dropSlot.originY } : { x: 0, y: 0 };
+    if (canvasViewMode === 'all' && targetSheet.id !== sheet.id) {
+      onSelectSheet(targetSheet.id, { skipFit: true });
+    }
+    const rawX = world.x - dropOrigin.x - item.width / 2;
+    const rawY = world.y - dropOrigin.y - item.height / 2;
+    const targetSheetDevices = project.devices.filter((d) => d.sheetId === targetSheet.id);
+    const others: SnapRectEntity[] = (devicesVisible ? targetSheetDevices : [])
       .filter((d) => d.bindingState !== 'REMOVED_IN_FLUX')
       .map((d) => ({
         id: d.id,
@@ -1886,19 +1823,22 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         magneticSnap: project.visualSettings.smartGuides !== false,
         bypassAllSnap: e.altKey,
         snapThreshold: Math.max(8, Math.min(18, Math.round(12 / Math.max(0.35, zoom)))),
-        sheet,
+        sheet: targetSheet,
       }
     );
-    onDropCatalogItem(item, snapped.x, snapped.y, sheet.id);
+    onDropCatalogItem(item, snapped.x, snapped.y, targetSheet.id);
   };
 
   const previewWireData = useMemo(() => {
     if (!wireStart) return { points: '', lengthMm: 0, segCount: 0, endPt: null as WirePoint | null };
-    const obstacles = sheetDevices
+    const wsSheet = project.sheets.find((s) => s.id === wireStart.sheetId) || sheet;
+    const wsDevices = project.devices.filter((d) => d.sheetId === wireStart.sheetId);
+    const wsWires = project.wires.filter((w) => w.sheetId === wireStart.sheetId);
+    const obstacles = wsDevices
       .filter((d) => d.bindingState !== 'REMOVED_IN_FLUX' && d.category !== 'io_matrix')
       .map((d) => getDeviceBounds(d));
-    const occupied = sheetWires.flatMap((w) => extractWireSegments(w.waypoints, w.netName));
-    const sheetBounds = getSheetDrawableBounds(sheet);
+    const occupied = wsWires.flatMap((w) => extractWireSegments(w.waypoints, w.netName));
+    const sheetBounds = getSheetDrawableBounds(wsSheet);
     const snapTarget =
       hoveredPin && !(hoveredPin.deviceId === wireStart.deviceId && hoveredPin.pinId === wireStart.pinId)
         ? hoveredPin
@@ -1946,50 +1886,108 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       segCount: Math.max(0, pts.length - 1),
       endPt: pts[pts.length - 1] || null,
     };
-  }, [wireStart, wireAnchors, wirePosture, hoveredPin, rubberBandCursor, sheetDevices, sheetWires, sheet]);
+  }, [wireStart, wireAnchors, wirePosture, hoveredPin, rubberBandCursor, project.sheets, project.devices, project.wires, sheet]);
   const previewWirePoints = previewWireData.points;
 
-  const gostGeom = useMemo(
-    () => (sheet ? buildGostSheetGeometry(sheet, project) : null),
-    [sheet, project.name, project.customStampTemplates, project.sheets.length]
-  );
-
-  const junctionDots = useMemo(() => computeWireJunctionDots(sheetWires), [sheetWires]);
-
   const vs = project.visualSettings;
-  const crossingArcs = useMemo(
-    () => (vs.wireCrossingBridge !== false ? computeWireCrossingArcs(sheetWires, junctionDots) : []),
-    [sheetWires, junctionDots, vs.wireCrossingBridge]
-  );
-  const crossingArcsByWireId = useMemo(() => {
-    const map = new Map<string, typeof crossingArcs>();
-    for (const arc of crossingArcs) {
-      let arr = map.get(arc.wireId);
-      if (!arr) {
-        arr = [];
-        map.set(arc.wireId, arr);
-      }
-      arr.push(arc);
-    }
-    return map;
-  }, [crossingArcs]);
-  const wireLabelMap = useMemo(
-    () => computeWireLabelPositions(sheetWires, sheetDevices),
-    [sheetWires, sheetDevices]
-  );
 
-  const sheetGostTableAnnotations = useMemo(
-    () => sheetAnnotations.filter((ann) => ann.kind === 'bom_table' || ann.kind === 'cable_table'),
-    [sheetAnnotations]
-  );
-  const gostTableModels = useMemo(() => {
-    const map = new Map<string, ReturnType<typeof buildGostTableRenderModel>>();
-    if (!annotationsVisible) return map;
-    for (const ann of sheetGostTableAnnotations) {
-      map.set(ann.id, buildGostTableRenderModel(ann, project));
+  const perSheetRenderMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        gostGeom: ReturnType<typeof buildGostSheetGeometry>;
+        devices: E3Device[];
+        visibleDevices: E3Device[];
+        wires: E3Wire[];
+        annotations: E3Annotation[];
+        gostTableAnnotations: E3Annotation[];
+        gostTableModels: Map<string, ReturnType<typeof buildGostTableRenderModel>>;
+        junctionDots: ReturnType<typeof computeWireJunctionDots>;
+        crossingArcsByWireId: Map<string, ReturnType<typeof computeWireCrossingArcs>>;
+        wireLabelMap: ReturnType<typeof computeWireLabelPositions>;
+        connectedPinKeys: Set<string>;
+      }
+    >();
+    const vw = canvasViewportSize.width || 1280;
+    const vh = canvasViewportSize.height || 800;
+    const z = Math.max(0.16, zoom);
+    const pad = 320;
+    const viewMinX = -pan.x / z - pad;
+    const viewMinY = -pan.y / z - pad;
+    const viewMaxX = (vw - pan.x) / z + pad;
+    const viewMaxY = (vh - pan.y) / z + pad;
+
+    for (const curSheet of renderedSheets) {
+      const origin = getSheetCanvasOrigin(allSheetsLayout, curSheet.id, canvasViewMode);
+      const devices = project.devices.filter((d) => d.sheetId === curSheet.id);
+      const visibleDevices =
+        devices.length <= 40
+          ? devices
+          : devices.filter((d) => {
+              if (selectedDeviceIdSet.has(d.id)) return true;
+              const wx = origin.x + d.x;
+              const wy = origin.y + d.y;
+              return wx + d.width >= viewMinX && wx <= viewMaxX && wy + d.height >= viewMinY && wy <= viewMaxY;
+            });
+      const wires = project.wires.filter((w) => w.sheetId === curSheet.id);
+      const annotations = (project.annotations || []).filter((a) => a.sheetId === curSheet.id);
+      const gostTableAnnotations = annotations.filter(
+        (ann) => ann.kind === 'bom_table' || ann.kind === 'cable_table'
+      );
+      const gostTableModels = new Map<string, ReturnType<typeof buildGostTableRenderModel>>();
+      if (annotationsVisible) {
+        for (const ann of gostTableAnnotations) {
+          gostTableModels.set(ann.id, buildGostTableRenderModel(ann, project));
+        }
+      }
+      const junctionDots = computeWireJunctionDots(wires);
+      const crossingArcs =
+        vs.wireCrossingBridge !== false ? computeWireCrossingArcs(wires, junctionDots) : [];
+      const crossingArcsByWireId = new Map<string, typeof crossingArcs>();
+      for (const arc of crossingArcs) {
+        let arr = crossingArcsByWireId.get(arc.wireId);
+        if (!arr) {
+          arr = [];
+          crossingArcsByWireId.set(arc.wireId, arr);
+        }
+        arr.push(arc);
+      }
+      const wireLabelMap = computeWireLabelPositions(wires, devices);
+      const connectedPinKeys = new Set<string>();
+      if (wiresVisible) {
+        for (const w of wires) {
+          connectedPinKeys.add(`${w.fromDeviceId}:${w.fromPinId}`);
+          connectedPinKeys.add(`${w.toDeviceId}:${w.toPinId}`);
+        }
+      }
+      map.set(curSheet.id, {
+        gostGeom: buildGostSheetGeometry(curSheet, project),
+        devices,
+        visibleDevices,
+        wires,
+        annotations,
+        gostTableAnnotations,
+        gostTableModels,
+        junctionDots,
+        crossingArcsByWireId,
+        wireLabelMap,
+        connectedPinKeys,
+      });
     }
     return map;
-  }, [annotationsVisible, sheetGostTableAnnotations, project]);
+  }, [
+    renderedSheets,
+    allSheetsLayout,
+    canvasViewMode,
+    project,
+    canvasViewportSize,
+    zoom,
+    pan,
+    selectedDeviceIdSet,
+    annotationsVisible,
+    wiresVisible,
+    vs.wireCrossingBridge,
+  ]);
 
   const offPageLinks = useMemo(() => resolveOffPageLinks(project), [project]);
 
@@ -2027,7 +2025,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   const stampThinSw = Math.max(0.35, Number((frameSw * 0.47).toFixed(2)));
   const fontCss = resolveSchematicCssFont(vs.fontFamily);
   const activeSvgKey = sheet?.id || activeSheetId;
-  const gridPatternId = `flux-cad-grid-vp-${viewportIndex}-${activeSvgKey}`;
+  const svgMountKey = canvasViewMode === 'all' ? `all-sheets-vp-${viewportIndex}` : activeSvgKey;
+  const gridPatternId = `flux-cad-grid-vp-${viewportIndex}-${svgMountKey}`;
 
   const isDrawingTool =
     tool === 'wire' || tool === 'text' || tool === 'rect' || tool === 'callout' || tool === 'offpage';
@@ -2051,16 +2050,20 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       }}
       className={`flex-1 w-full h-full min-w-0 min-h-0 flex flex-col bg-[var(--flux-canvas-bg)] relative ${
         isMultiViewport
-          ? `border rounded-lg overflow-hidden ${
-              isFocused ? 'border-[var(--flux-accent)] ring-1 ring-[var(--flux-accent)]/40' : 'border-[var(--flux-line)]'
+          ? `border rounded-lg overflow-visible ${
+              isFocused ? 'z-10 border-[var(--flux-accent)] ring-1 ring-[var(--flux-accent)]/40' : 'border-[var(--flux-line)]'
             }`
           : ''
       }`}
     >
       {/* Sheet Tabs Bar (single) OR Compact Viewport Header (multi-viewport) */}
       {isMultiViewport ? (
-        <div className="no-print h-6 shrink-0 border-b border-[var(--flux-line)] flux-glass-bar px-2 flex items-center justify-between gap-2 relative z-20">
-          <div className="flex items-center gap-1.5 min-w-0">
+        <div
+          className={`no-print min-h-[calc(24px*var(--flux-ui-scale))] py-0.5 shrink-0 border-b border-[var(--flux-line)] flux-glass-bar px-2 flex items-center justify-between gap-2 relative rounded-t-lg ${
+            layerPopoverOpen ? 'z-30' : 'z-20'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
             <span
               className={`font-mono text-[length:calc(10px*var(--flux-ui-scale))] px-1.5 py-[1px] rounded-[2px] shrink-0 ${
                 isFocused
@@ -2084,7 +2087,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 onSelectSheet(e.target.value);
                 e.currentTarget.blur();
               }}
-              className="h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] max-w-[calc(230px*var(--flux-ui-scale))] truncate"
+              className="min-w-0 flex-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] max-w-[calc(230px*var(--flux-ui-scale))] truncate"
             >
               {project.sheets.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -2119,6 +2122,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   open={layerPopoverOpen}
                   layers={resolvedLayers}
                   entityCounts={sheetLayerCounts}
+                  align={viewportIndex === 0 ? 'left' : 'right'}
                   anchorRef={layerBtnRef}
                   onClose={() => setLayerPopoverOpen(false)}
                   onToggleVisibility={onToggleLayerVisibility}
@@ -2315,6 +2319,31 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             <span className="hidden @[780px]/sheethdr:inline-block min-w-[calc(52px*var(--flux-ui-scale))] font-mono tabular-nums">Эл.: {sheetDevices.length}</span>
             <span className="hidden @[780px]/sheethdr:inline-block min-w-[calc(66px*var(--flux-ui-scale))] font-mono tabular-nums">Связи: {sheetWires.length}</span>
 
+            {onToggleCanvasViewMode && (
+              <button
+                type="button"
+                data-testid="canvas-view-mode-toggle"
+                aria-pressed={canvasViewMode === 'all'}
+                onClick={() => {
+                  onFocusViewport?.();
+                  onToggleCanvasViewMode();
+                }}
+                title={
+                  canvasViewMode === 'all'
+                    ? 'Режим «Все листы» — переключить на 1 активный лист'
+                    : 'Режим «1 лист» — показать все листы проекта на одном холсте'
+                }
+                className={`inline-flex items-center gap-1 h-[calc(18px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors whitespace-nowrap shrink-0 ${
+                  canvasViewMode === 'all'
+                    ? 'border-[var(--flux-accent)] bg-[var(--flux-sel)] text-[var(--flux-text)]'
+                    : 'border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                }`}
+              >
+                <Columns2 className={`w-3 h-3 shrink-0 ${canvasViewMode === 'all' ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'}`} />
+                <span>{canvasViewMode === 'all' ? 'Все листы' : '1 лист'}</span>
+              </button>
+            )}
+
             <div className="relative">
               <button
                 ref={layerBtnRef}
@@ -2422,11 +2451,22 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             e.dataTransfer.types.includes('application/x-flux-2pin')
           ) {
             const world = toWorld(e.clientX, e.clientY);
+            const dragSlot =
+              canvasViewMode === 'all'
+                ? (findSheetSlotAtCanvasPoint(allSheetsLayoutRef.current, world.x, world.y, 48) ??
+                    allSheetsLayoutRef.current.bySheetId.get(sheet.id))
+                : allSheetsLayoutRef.current.bySheetId.get(sheet.id);
+            const dragSheet = dragSlot?.sheet || sheet;
+            const dragOrigin =
+              canvasViewMode === 'all' && dragSlot
+                ? { x: dragSlot.originX, y: dragSlot.originY }
+                : { x: 0, y: 0 };
+            const dragSheetWires = project.wires.filter((w) => w.sheetId === dragSheet.id);
             const virtualDev = {
               id: '__drag_2pin__',
-              sheetId: sheet.id,
-              x: world.x - 30,
-              y: world.y - 40,
+              sheetId: dragSheet.id,
+              x: world.x - dragOrigin.x - 30,
+              y: world.y - dragOrigin.y - 40,
               width: 60,
               height: 80,
               category: 'breaker' as const,
@@ -2435,7 +2475,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 { id: 'p2', name: '2', dx: 30, dy: 80, direction: 'bottom' as const, signalType: 'power' as const },
               ],
             };
-            const nextCand = findWireBreakCandidate(virtualDev, sheetWires);
+            const nextCand = findWireBreakCandidate(virtualDev, dragSheetWires);
             const candKey = nextCand
               ? `${nextCand.wire.id}:${nextCand.segmentIndex}:${nextCand.projX}:${nextCand.projY}`
               : '';
@@ -2455,7 +2495,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
           }
         }}
         onDrop={handleDrop}
-        className="flex-1 min-h-0 overflow-hidden relative"
+        className={`flex-1 min-h-0 overflow-hidden relative ${isMultiViewport ? 'rounded-b-lg' : ''}`}
         style={{
           cursor:
             tool === 'pan'
@@ -2513,8 +2553,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         ) : (
         <AnimatePresence mode="sync" initial={false}>
         <motion.svg
-          key={activeSvgKey}
-          data-sheet-svg={activeSvgKey}
+          key={svgMountKey}
+          data-sheet-svg={svgMountKey}
+          data-canvas-view-mode={canvasViewMode}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0, pointerEvents: 'none' }}
@@ -2561,354 +2602,424 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             }}
             transform={`translate(${livePanRef.current.x}, ${livePanRef.current.y}) scale(${liveZoomRef.current})`}
           >
-            {/* Sheet Paper & Grid */}
-            {sheet && (
-              <g>
-                <rect
-                  x={6}
-                  y={6}
-                  width={sheet.width}
-                  height={sheet.height}
-                  fill="rgba(15, 23, 42, 0.08)"
-                  pointerEvents="none"
-                />
-                <rect
-                  x={0}
-                  y={0}
-                  width={sheet.width}
-                  height={sheet.height}
-                  fill="var(--flux-surface)"
-                  stroke="var(--flux-line-strong)"
-                  strokeWidth={1.5}
-                />
-                {vs.showGrid && (
-                  <rect
-                    x={0}
-                    y={0}
-                    width={sheet.width}
-                    height={sheet.height}
-                    fill={`url(#${gridPatternId})`}
-                  />
-                )}
-
-                {/* GOST 2.104-2006 Frame, Zones, Left Archival Strip & Editable Form 1/2a Title Block */}
-                {frameVisible && gostGeom && (
-                  <g data-testid="layer-group-frame">
-                    {/* Outer paper border & inner main GOST frame */}
-                    <rect
-                      data-testid="gost-main-frame"
-                      x={gostGeom.frame.left}
-                      y={gostGeom.frame.top}
-                      width={gostGeom.frame.width}
-                      height={gostGeom.frame.height}
-                      fill="none"
-                      stroke="var(--flux-text)"
-                      strokeWidth={frameSw}
-                      pointerEvents="none"
-                    />
-                    <rect
-                      x={4}
-                      y={4}
-                      width={sheet.width - 8}
-                      height={sheet.height - 8}
-                      fill="none"
-                      stroke="var(--flux-line-strong)"
-                      strokeWidth={frameThinSw}
-                      pointerEvents="none"
-                    />
-                    {/* Top Coordinate Zones 1..6 */}
-                    {['1', '2', '3', '4', '5', '6'].map((zoneNum, zi, arr) => {
-                      const spanW = gostGeom.frame.width / arr.length;
-                      const zx = gostGeom.frame.left + zi * spanW;
-                      return (
-                        <g key={`z-top-${zoneNum}`} pointerEvents="none">
-                          {zi > 0 && (
-                            <line
-                              x1={zx}
-                              y1={4}
-                              x2={zx}
-                              y2={gostGeom.frame.top}
-                              stroke="var(--flux-line-strong)"
-                              strokeWidth={frameThinSw}
-                            />
-                          )}
-                          <text
-                            x={zx + spanW / 2}
-                            y={14}
-                            textAnchor="middle"
-                            fill="var(--flux-text-muted)"
-                            fontSize={9.5}
-                            fontFamily={fontCss}
-                          >
-                            {zoneNum}
-                          </text>
-                        </g>
-                      );
-                    })}
-                    {/* Left Coordinate Zones А..Д */}
-                    {['А', 'Б', 'В', 'Г', 'Д'].map((zoneLet, zi, arr) => {
-                      const spanH = gostGeom.frame.height / arr.length;
-                      const zy = gostGeom.frame.top + zi * spanH;
-                      return (
-                        <g key={`z-left-${zoneLet}`} pointerEvents="none">
-                          {zi > 0 && (
-                            <line
-                              x1={4}
-                              y1={zy}
-                              x2={20}
-                              y2={zy}
-                              stroke="var(--flux-line-strong)"
-                              strokeWidth={frameThinSw}
-                            />
-                          )}
-                          <text
-                            x={12}
-                            y={zy + spanH / 2 + 3}
-                            textAnchor="middle"
-                            fill="var(--flux-text-muted)"
-                            fontSize={9.5}
-                            fontFamily={fontCss}
-                          >
-                            {zoneLet}
-                          </text>
-                        </g>
-                      );
-                    })}
-
-                    {/* Left Archival Strip (Графы 19-23 ГОСТ 2.104) */}
-                    {gostGeom.archivalBox.visible && (
-                    <g pointerEvents="none">
+            {/* Sheets Loop (Single active sheet or All sheets side-by-side) */}
+            {renderedSheets.map((curSheet) => {
+              const sd = perSheetRenderMap.get(curSheet.id);
+              if (!sd) return null;
+              const origin = getSheetCanvasOrigin(allSheetsLayout, curSheet.id, canvasViewMode);
+              const isActiveSheet = curSheet.id === sheet?.id;
+              const curGostGeom = sd.gostGeom;
+              const curAnnotations = sd.annotations;
+              const curWires = sd.wires;
+              const curJunctionDots = sd.junctionDots;
+              const curCrossingArcsByWireId = sd.crossingArcsByWireId;
+              const curWireLabelMap = sd.wireLabelMap;
+              const curVisibleDevices = sd.visibleDevices;
+              const curConnectedPinKeys = sd.connectedPinKeys;
+              const curGostTableAnnotations = sd.gostTableAnnotations;
+              const curGostTableModels = sd.gostTableModels;
+              return (
+                <g
+                  key={curSheet.id}
+                  data-testid={`sheet-group-${curSheet.id}`}
+                  data-active-sheet={String(isActiveSheet)}
+                  data-sheet-format={curSheet.format}
+                  data-origin-x={origin.x}
+                  data-origin-y={origin.y}
+                  transform={`translate(${origin.x}, ${origin.y})`}
+                >
+                  {canvasViewMode === 'all' && (
+                    <g
+                      data-testid={`sheet-canvas-badge-${curSheet.id}`}
+                      className="no-print cursor-pointer"
+                      onMouseDown={(e) => {
+                        if (e.button === 1 || tool === 'pan') return;
+                        e.stopPropagation();
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onFocusViewport?.();
+                        onSelectSheet(curSheet.id);
+                      }}
+                    >
                       <rect
-                        x={gostGeom.archivalBox.x}
-                        y={gostGeom.archivalBox.y}
-                        width={gostGeom.archivalBox.width}
-                        height={gostGeom.archivalBox.height}
-                        fill="var(--flux-surface)"
-                        stroke="var(--flux-text)"
-                        strokeWidth={Math.max(0.5, Number((frameSw * 0.68).toFixed(2)))}
+                        x={0}
+                        y={-30}
+                        width={Math.min(curSheet.width, Math.max(220, (`Л.${curSheet.number} · ${curSheet.name} · ${curSheet.format}`).length * 7.2 + 24))}
+                        height={22}
+                        rx={5}
+                        fill={isActiveSheet ? 'var(--flux-accent-solid)' : 'var(--flux-surface)'}
+                        stroke={isActiveSheet ? 'var(--flux-accent-solid)' : 'var(--flux-line-strong)'}
+                        strokeWidth={1.2}
                       />
-                      <line
-                        x1={gostGeom.archivalBox.x + 17}
-                        y1={gostGeom.archivalBox.y}
-                        x2={gostGeom.archivalBox.x + 17}
-                        y2={gostGeom.archivalBox.y + gostGeom.archivalBox.height}
-                        stroke="var(--flux-text)"
-                        strokeWidth={stampThinSw}
+                      <text
+                        x={10}
+                        y={-15.5}
+                        fill={isActiveSheet ? '#ffffff' : 'var(--flux-text)'}
+                        fontSize={11}
+                        fontFamily={fontCss}
+                        fontWeight={isActiveSheet ? 700 : 600}
+                      >
+                        {`Л.${curSheet.number} · ${curSheet.name} · ${curSheet.format}`}
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Sheet Paper & Grid */}
+                  <g>
+                    <rect
+                      x={6}
+                      y={6}
+                      width={curSheet.width}
+                      height={curSheet.height}
+                      fill="rgba(15, 23, 42, 0.08)"
+                      pointerEvents="none"
+                    />
+                    <rect
+                      x={0}
+                      y={0}
+                      width={curSheet.width}
+                      height={curSheet.height}
+                      fill="var(--flux-surface)"
+                      stroke={canvasViewMode === 'all' && isActiveSheet ? 'var(--flux-accent)' : 'var(--flux-line-strong)'}
+                      strokeWidth={canvasViewMode === 'all' && isActiveSheet ? 2.2 : 1.5}
+                    />
+                    {vs.showGrid && (
+                      <rect
+                        x={0}
+                        y={0}
+                        width={curSheet.width}
+                        height={curSheet.height}
+                        fill={`url(#${gridPatternId})`}
                       />
-                      {(() => {
-                        let curY = gostGeom.archivalBox.y;
-                        return gostGeom.archivalBox.rows.map((r, ri) => {
-                          const rowY = curY;
-                          curY += r.h;
+                    )}
+
+                    {/* GOST 2.104-2006 Frame, Zones, Left Archival Strip & Editable Form 1/2a Title Block */}
+                    {frameVisible && curGostGeom && (
+                      <g data-testid="layer-group-frame">
+                        {/* Outer paper border & inner main GOST frame */}
+                        <rect
+                          data-testid="gost-main-frame"
+                          x={curGostGeom.frame.left}
+                          y={curGostGeom.frame.top}
+                          width={curGostGeom.frame.width}
+                          height={curGostGeom.frame.height}
+                          fill="none"
+                          stroke="var(--flux-text)"
+                          strokeWidth={frameSw}
+                          pointerEvents="none"
+                        />
+                        <rect
+                          x={4}
+                          y={4}
+                          width={curSheet.width - 8}
+                          height={curSheet.height - 8}
+                          fill="none"
+                          stroke="var(--flux-line-strong)"
+                          strokeWidth={frameThinSw}
+                          pointerEvents="none"
+                        />
+                        {/* Top Coordinate Zones 1..6 */}
+                        {['1', '2', '3', '4', '5', '6'].map((zoneNum, zi, arr) => {
+                          const spanW = curGostGeom.frame.width / arr.length;
+                          const zx = curGostGeom.frame.left + zi * spanW;
                           return (
-                            <g key={`arch-${ri}`}>
-                              {ri > 0 && (
+                            <g key={`z-top-${zoneNum}`} pointerEvents="none">
+                              {zi > 0 && (
                                 <line
-                                  x1={gostGeom.archivalBox.x}
-                                  y1={rowY}
-                                  x2={gostGeom.archivalBox.x + gostGeom.archivalBox.width}
-                                  y2={rowY}
-                                  stroke="var(--flux-text)"
-                                  strokeWidth={stampThinSw}
+                                  x1={zx}
+                                  y1={4}
+                                  x2={zx}
+                                  y2={curGostGeom.frame.top}
+                                  stroke="var(--flux-line-strong)"
+                                  strokeWidth={frameThinSw}
                                 />
                               )}
                               <text
-                                transform={`translate(${gostGeom.archivalBox.x + 12}, ${rowY + r.h / 2}) rotate(-90)`}
+                                x={zx + spanW / 2}
+                                y={14}
                                 textAnchor="middle"
                                 fill="var(--flux-text-muted)"
-                                fontSize={7.5}
+                                fontSize={9.5}
                                 fontFamily={fontCss}
                               >
-                                {r.label}
+                                {zoneNum}
                               </text>
-                              {r.value && (
-                                <text
-                                  transform={`translate(${gostGeom.archivalBox.x + 30}, ${rowY + r.h / 2}) rotate(-90)`}
-                                  textAnchor="middle"
-                                  fill="var(--flux-text)"
-                                  fontSize={8}
-                                  fontFamily={fontCss}
-                                >
-                                  {r.value}
-                                </text>
-                              )}
                             </g>
                           );
-                        });
-                      })()}
-                    </g>
-                    )}
+                        })}
+                        {/* Left Coordinate Zones А..Д */}
+                        {['А', 'Б', 'В', 'Г', 'Д'].map((zoneLet, zi, arr) => {
+                          const spanH = curGostGeom.frame.height / arr.length;
+                          const zy = curGostGeom.frame.top + zi * spanH;
+                          return (
+                            <g key={`z-left-${zoneLet}`} pointerEvents="none">
+                              {zi > 0 && (
+                                <line
+                                  x1={4}
+                                  y1={zy}
+                                  x2={20}
+                                  y2={zy}
+                                  stroke="var(--flux-line-strong)"
+                                  strokeWidth={frameThinSw}
+                                />
+                              )}
+                              <text
+                                x={12}
+                                y={zy + spanH / 2 + 3}
+                                textAnchor="middle"
+                                fill="var(--flux-text-muted)"
+                                fontSize={9.5}
+                                fontFamily={fontCss}
+                              >
+                                {zoneLet}
+                              </text>
+                            </g>
+                          );
+                        })}
 
-                    {/* GOST 2.104 Stamp (Form 1 or Form 2a) */}
-                    <g data-testid="gost-stamp">
-                      <rect
-                        x={gostGeom.stamp.x}
-                        y={gostGeom.stamp.y}
-                        width={gostGeom.stamp.width}
-                        height={gostGeom.stamp.height}
-                        fill="var(--flux-surface)"
-                        stroke="var(--flux-text)"
-                        strokeWidth={frameSw}
-                      />
-                      {gostGeom.stamp.lines.map((ln, li) => (
-                        <line
-                          key={`st-ln-${li}`}
-                          x1={ln.x1}
-                          y1={ln.y1}
-                          x2={ln.x2}
-                          y2={ln.y2}
-                          stroke="var(--flux-text)"
-                          strokeWidth={ln.thick ? stampThickSw : stampThinSw}
-                          pointerEvents="none"
-                        />
-                      ))}
-                      {gostGeom.stamp.cells.map((cell) => {
-                        const hasField = Boolean(cell.editable && cell.fieldKey);
-                        const isEditable = hasField && !frameLocked;
-                        const fitted = fitStampCellText(
-                          cell.text,
-                          cell.width,
-                          cell.height,
-                          cell.fontSize || 8.5,
-                          cell.bold
-                        );
-                        const fs = fitted.fontSize;
-                        const tx = cell.align === 'center' ? cell.x + cell.width / 2 : cell.x + 4;
-                        const totalBlockH =
-                          fitted.lines.length > 1
-                            ? (fitted.lines.length - 1) * fitted.lineHeight
-                            : 0;
-                        const firstLineY =
-                          cell.y + cell.height / 2 - totalBlockH / 2 + fs * 0.34;
-                        const clipId = `vp-${viewportIndex}-${activeSvgKey}-st-clip-${cell.id}`;
-                        return (
+                        {/* Left Archival Strip (Графы 19-23 ГОСТ 2.104) */}
+                        {curGostGeom.archivalBox.visible && (
+                        <g pointerEvents="none">
+                          <rect
+                            x={curGostGeom.archivalBox.x}
+                            y={curGostGeom.archivalBox.y}
+                            width={curGostGeom.archivalBox.width}
+                            height={curGostGeom.archivalBox.height}
+                            fill="var(--flux-surface)"
+                            stroke="var(--flux-text)"
+                            strokeWidth={Math.max(0.5, Number((frameSw * 0.68).toFixed(2)))}
+                          />
+                          <line
+                            x1={curGostGeom.archivalBox.x + 17}
+                            y1={curGostGeom.archivalBox.y}
+                            x2={curGostGeom.archivalBox.x + 17}
+                            y2={curGostGeom.archivalBox.y + curGostGeom.archivalBox.height}
+                            stroke="var(--flux-text)"
+                            strokeWidth={stampThinSw}
+                          />
+                          {(() => {
+                            let curY = curGostGeom.archivalBox.y;
+                            return curGostGeom.archivalBox.rows.map((r, ri) => {
+                              const rowY = curY;
+                              curY += r.h;
+                              return (
+                                <g key={`arch-${ri}`}>
+                                  {ri > 0 && (
+                                    <line
+                                      x1={curGostGeom.archivalBox.x}
+                                      y1={rowY}
+                                      x2={curGostGeom.archivalBox.x + curGostGeom.archivalBox.width}
+                                      y2={rowY}
+                                      stroke="var(--flux-text)"
+                                      strokeWidth={stampThinSw}
+                                    />
+                                  )}
+                                  <text
+                                    transform={`translate(${curGostGeom.archivalBox.x + 12}, ${rowY + r.h / 2}) rotate(-90)`}
+                                    textAnchor="middle"
+                                    fill="var(--flux-text-muted)"
+                                    fontSize={7.5}
+                                    fontFamily={fontCss}
+                                  >
+                                    {r.label}
+                                  </text>
+                                  {r.value && (
+                                    <text
+                                      transform={`translate(${curGostGeom.archivalBox.x + 30}, ${rowY + r.h / 2}) rotate(-90)`}
+                                      textAnchor="middle"
+                                      fill="var(--flux-text)"
+                                      fontSize={8}
+                                      fontFamily={fontCss}
+                                    >
+                                      {r.value}
+                                    </text>
+                                  )}
+                                </g>
+                              );
+                            });
+                          })()}
+                        </g>
+                        )}
+
+                        {/* GOST 2.104 Stamp (Form 1 or Form 2a) */}
+                        <g data-testid="gost-stamp">
+                          <rect
+                            x={curGostGeom.stamp.x}
+                            y={curGostGeom.stamp.y}
+                            width={curGostGeom.stamp.width}
+                            height={curGostGeom.stamp.height}
+                            fill="var(--flux-surface)"
+                            stroke="var(--flux-text)"
+                            strokeWidth={frameSw}
+                          />
+                          {curGostGeom.stamp.lines.map((ln, li) => (
+                            <line
+                              key={`st-ln-${li}`}
+                              x1={ln.x1}
+                              y1={ln.y1}
+                              x2={ln.x2}
+                              y2={ln.y2}
+                              stroke="var(--flux-text)"
+                              strokeWidth={ln.thick ? stampThickSw : stampThinSw}
+                              pointerEvents="none"
+                            />
+                          ))}
+                          {curGostGeom.stamp.cells.map((cell) => {
+                            const hasField = Boolean(cell.editable && cell.fieldKey);
+                            const isEditable = hasField && !frameLocked;
+                            const fitted = fitStampCellText(
+                              cell.text,
+                              cell.width,
+                              cell.height,
+                              cell.fontSize || 8.5,
+                              cell.bold
+                            );
+                            const fs = fitted.fontSize;
+                            const tx = cell.align === 'center' ? cell.x + cell.width / 2 : cell.x + 4;
+                            const totalBlockH =
+                              fitted.lines.length > 1
+                                ? (fitted.lines.length - 1) * fitted.lineHeight
+                                : 0;
+                            const firstLineY =
+                              cell.y + cell.height / 2 - totalBlockH / 2 + fs * 0.34;
+                            const clipId = `vp-${viewportIndex}-${curSheet.id}-st-clip-${cell.id}`;
+                            return (
+                              <g
+                                key={cell.id}
+                                data-testid={hasField ? `gost-stamp-cell-${cell.id}` : undefined}
+                                onMouseDown={(e) => {
+                                  if (e.button === 1) return;
+                                  if (isEditable) e.stopPropagation();
+                                }}
+                                onClick={(e) => {
+                                  if (!isEditable) return;
+                                  e.stopPropagation();
+                                  onFocusViewport?.();
+                                  if (canvasViewMode === 'all' && curSheet.id !== sheet?.id) {
+                                    onSelectSheet(curSheet.id, { skipFit: true });
+                                  }
+                                }}
+                                onDoubleClick={(e) => {
+                                  if (!isEditable || !cell.fieldKey) return;
+                                  e.stopPropagation();
+                                  onFocusViewport?.();
+                                  if (canvasViewMode === 'all' && curSheet.id !== sheet?.id) {
+                                    onSelectSheet(curSheet.id, { skipFit: true });
+                                  }
+                                  openInPlaceEdit({
+                                    kind: 'stamp',
+                                    id: cell.id,
+                                    sheetId: curSheet.id,
+                                    fieldKey: cell.fieldKey,
+                                    label: cell.label || cell.fieldKey,
+                                    worldX: cell.x,
+                                    worldY: cell.y,
+                                    worldW: Math.max(110, cell.width),
+                                    worldH: Math.max(26, cell.height),
+                                    multiline: cell.height >= 28,
+                                    initialValue: cell.text,
+                                    value: cell.text,
+                                  });
+                                }}
+                                className={isEditable ? 'cursor-text group' : undefined}
+                              >
+                                <defs>
+                                  <clipPath id={clipId}>
+                                    <rect
+                                      x={cell.x + 1}
+                                      y={cell.y + 1}
+                                      width={Math.max(1, cell.width - 2)}
+                                      height={Math.max(1, cell.height - 2)}
+                                    />
+                                  </clipPath>
+                                </defs>
+                                <rect
+                                  x={cell.x + 0.5}
+                                  y={cell.y + 0.5}
+                                  width={Math.max(1, cell.width - 1)}
+                                  height={Math.max(1, cell.height - 1)}
+                                  fill={isEditable ? 'var(--flux-accent)' : 'transparent'}
+                                  fillOpacity={0}
+                                  className={isEditable ? 'hover:fill-opacity-10 transition-opacity' : undefined}
+                                />
+                                {isEditable && cell.label && <title>{`${cell.label} — двойной клик для правки`}</title>}
+                                {hasField && frameLocked && cell.label && (
+                                  <title>{`${cell.label} (слой «Рамка и штамп ГОСТ» заблокирован)`}</title>
+                                )}
+                                <text
+                                  x={tx}
+                                  y={firstLineY}
+                                  textAnchor={cell.align === 'center' ? 'middle' : 'start'}
+                                  fill={hasField ? 'var(--flux-text)' : 'var(--flux-text-muted)'}
+                                  fontSize={fs}
+                                  fontFamily={fontCss}
+                                  fontWeight={cell.bold ? 600 : 400}
+                                  clipPath={`url(#${clipId})`}
+                                  pointerEvents="none"
+                                >
+                                  {fitted.lines.map((lnText, li) => (
+                                    <tspan key={li} x={tx} dy={li === 0 ? 0 : fitted.lineHeight}>
+                                      {lnText}
+                                    </tspan>
+                                  ))}
+                                </text>
+                              </g>
+                            );
+                          })}
+                          {/* Quick AutoCAD-like edit badge above stamp corner */}
                           <g
-                            key={cell.id}
-                            data-testid={hasField ? `gost-stamp-cell-${cell.id}` : undefined}
+                            data-testid="gost-stamp-edit-btn"
+                            className={`${frameLocked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} no-print`}
                             onMouseDown={(e) => {
                               if (e.button === 1) return;
-                              if (isEditable) e.stopPropagation();
+                              e.stopPropagation();
                             }}
                             onClick={(e) => {
-                              if (!isEditable) return;
                               e.stopPropagation();
                               onFocusViewport?.();
+                              if (canvasViewMode === 'all' && curSheet.id !== sheet?.id) {
+                                onSelectSheet(curSheet.id, { skipFit: true });
+                              }
+                              if (frameLocked) return;
+                              onOpenStampEditor?.(curSheet.id);
                             }}
-                            onDoubleClick={(e) => {
-                              if (!isEditable || !cell.fieldKey) return;
-                              e.stopPropagation();
-                              onFocusViewport?.();
-                              openInPlaceEdit({
-                                kind: 'stamp',
-                                id: cell.id,
-                                sheetId: sheet.id,
-                                fieldKey: cell.fieldKey,
-                                label: cell.label || cell.fieldKey,
-                                worldX: cell.x,
-                                worldY: cell.y,
-                                worldW: Math.max(110, cell.width),
-                                worldH: Math.max(26, cell.height),
-                                multiline: cell.height >= 28,
-                                initialValue: cell.text,
-                                value: cell.text,
-                              });
-                            }}
-                            className={isEditable ? 'cursor-text group' : undefined}
                           >
-                            <defs>
-                              <clipPath id={clipId}>
-                                <rect
-                                  x={cell.x + 1}
-                                  y={cell.y + 1}
-                                  width={Math.max(1, cell.width - 2)}
-                                  height={Math.max(1, cell.height - 2)}
-                                />
-                              </clipPath>
-                            </defs>
                             <rect
-                              x={cell.x + 0.5}
-                              y={cell.y + 0.5}
-                              width={Math.max(1, cell.width - 1)}
-                              height={Math.max(1, cell.height - 1)}
-                              fill={isEditable ? 'var(--flux-accent)' : 'transparent'}
-                              fillOpacity={0}
-                              className={isEditable ? 'hover:fill-opacity-10 transition-opacity' : undefined}
+                              x={curGostGeom.stamp.x}
+                              y={curGostGeom.stamp.y - 18}
+                              width={curGostGeom.stamp.form === 'custom' ? 182 : 126}
+                              height={16}
+                              rx={2}
+                              fill="var(--flux-surface)"
+                              stroke={frameLocked ? '#d97706' : 'var(--flux-accent)'}
+                              strokeWidth={0.9}
                             />
-                            {isEditable && cell.label && <title>{`${cell.label} — двойной клик для правки`}</title>}
-                            {hasField && frameLocked && cell.label && (
-                              <title>{`${cell.label} (слой «Рамка и штамп ГОСТ» заблокирован)`}</title>
-                            )}
                             <text
-                              x={tx}
-                              y={firstLineY}
-                              textAnchor={cell.align === 'center' ? 'middle' : 'start'}
-                              fill={hasField ? 'var(--flux-text)' : 'var(--flux-text-muted)'}
-                              fontSize={fs}
+                              x={curGostGeom.stamp.x + (curGostGeom.stamp.form === 'custom' ? 91 : 63)}
+                              y={curGostGeom.stamp.y - 7}
+                              textAnchor="middle"
+                              fill={frameLocked ? '#b45309' : 'var(--flux-accent)'}
+                              fontSize={8.5}
                               fontFamily={fontCss}
-                              fontWeight={cell.bold ? 600 : 400}
-                              clipPath={`url(#${clipId})`}
-                              pointerEvents="none"
+                              fontWeight={600}
                             >
-                              {fitted.lines.map((lnText, li) => (
-                                <tspan key={li} x={tx} dy={li === 0 ? 0 : fitted.lineHeight}>
-                                  {lnText}
-                                </tspan>
-                              ))}
+                              {frameLocked
+                                ? 'БЛОК: Штамп'
+                                : curGostGeom.stamp.form === 'custom'
+                                  ? `Штамп: ${(curGostGeom.stamp.templateName || 'Свой штамп').slice(0, 22)}`
+                                  : `Штамп (${curGostGeom.stamp.form === 'form1' ? 'Форма 1' : 'Форма 2а'})`}
                             </text>
                           </g>
-                        );
-                      })}
-                      {/* Quick AutoCAD-like edit badge above stamp corner */}
-                      <g
-                        data-testid="gost-stamp-edit-btn"
-                        className={`${frameLocked ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} no-print`}
-                        onMouseDown={(e) => {
-                          if (e.button === 1) return;
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onFocusViewport?.();
-                          if (frameLocked) return;
-                          onOpenStampEditor?.(sheet.id);
-                        }}
-                      >
-                        <rect
-                          x={gostGeom.stamp.x}
-                          y={gostGeom.stamp.y - 18}
-                          width={gostGeom.stamp.form === 'custom' ? 182 : 126}
-                          height={16}
-                          rx={2}
-                          fill="var(--flux-surface)"
-                          stroke={frameLocked ? '#d97706' : 'var(--flux-accent)'}
-                          strokeWidth={0.9}
-                        />
-                        <text
-                          x={gostGeom.stamp.x + (gostGeom.stamp.form === 'custom' ? 91 : 63)}
-                          y={gostGeom.stamp.y - 7}
-                          textAnchor="middle"
-                          fill={frameLocked ? '#b45309' : 'var(--flux-accent)'}
-                          fontSize={8.5}
-                          fontFamily={fontCss}
-                          fontWeight={600}
-                        >
-                          {frameLocked
-                            ? 'БЛОК: Штамп'
-                            : gostGeom.stamp.form === 'custom'
-                              ? `Штамп: ${(gostGeom.stamp.templateName || 'Свой штамп').slice(0, 22)}`
-                              : `Штамп (${gostGeom.stamp.form === 'form1' ? 'Форма 1' : 'Форма 2а'})`}
-                        </text>
+                        </g>
                       </g>
-                    </g>
+                    )}
                   </g>
-                )}
-              </g>
-            )}
 
-            {/* Drafting Zones / Annotations (under wires/devices for rect zones) */}
-            {annotationsVisible && (
-              <g data-testid="layer-group-annotations">
-                {sheetAnnotations.map((ann) => {
+                  {/* Drafting Zones / Annotations (under wires/devices for rect zones) */}
+                  {annotationsVisible && (
+                    <g data-testid="layer-group-annotations">
+                      {curAnnotations.map((ann) => {
                   const selected = selectedAnnotationIdSet.has(ann.id);
                   const strokeColor = selected
                     ? annotationsLocked
@@ -3111,7 +3222,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             {/* Wires */}
             {wiresVisible && (
               <g data-testid="layer-group-wires">
-                {sheetWires.map((wire: E3Wire) => {
+                {curWires.map((wire: E3Wire) => {
                   const selected = selectedWireIdSet.has(wire.id);
                   const isTraced = tracedWireIdSet.has(wire.id);
                   const isDimmed = Boolean(activeTrace) && !isTraced && !selected;
@@ -3123,14 +3234,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                       : 'var(--flux-accent)'
                     : netSigColor;
                   const midPt =
-                    wireLabelMap.get(wire.id) ||
+                    curWireLabelMap.get(wire.id) ||
                     (wire.waypoints.length >= 2
                       ? {
                           x: Math.round((wire.waypoints[0].x + wire.waypoints[1].x) / 2),
                           y: Math.round((wire.waypoints[0].y + wire.waypoints[1].y) / 2),
                         }
                       : wire.waypoints[0]);
-                  const wireArcs = crossingArcsByWireId.get(wire.id) || [];
+                  const wireArcs = curCrossingArcsByWireId.get(wire.id) || [];
                   const openWireInPlace = (e: React.MouseEvent) => {
                     if (wiresLocked || !midPt) return;
                     e.stopPropagation();
@@ -3174,6 +3285,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (canvasViewMode === 'all' && curSheet.id !== sheet?.id) {
+                          onSelectSheet(curSheet.id, { skipFit: true });
+                        }
                         onSelectWire(wire.id, { toggle: e.shiftKey });
                         if (!e.shiftKey || e.altKey) {
                           onHighlightPotential?.({ wireId: wire.id });
@@ -3246,7 +3360,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 })}
 
                 {/* Electrical Junction Dots (T-nodes) */}
-                {junctionDots.map((dot, idx) => (
+                {curJunctionDots.map((dot, idx) => (
                   <circle
                     key={`jdot-${idx}`}
                     data-testid={`junction-dot-${idx}`}
@@ -3261,13 +3375,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 {/* Interactive Segment Drag Grips for Single Selected Wire */}
                 {selectedWireIdSet.size === 1 && !wiresLocked && !wireStart && tool === 'select' && (() => {
                   const selWireId = Array.from(selectedWireIdSet)[0];
-                  const selWire = sheetWires.find((w) => w.id === selWireId);
+                  const selWire = curWires.find((w) => w.id === selWireId);
                   if (!selWire) return null;
                   const handles = extractWireSegmentHandles(selWire.waypoints, 8);
                   const inv = 1 / Math.max(0.25, zoom);
                   const gripHalf = Math.max(3.5, Math.min(8, 4.5 * inv));
                   const selMidPt =
-                    wireLabelMap.get(selWire.id) ||
+                    curWireLabelMap.get(selWire.id) ||
                     (selWire.waypoints.length >= 2
                       ? {
                           x: Math.round((selWire.waypoints[0].x + selWire.waypoints[1].x) / 2),
@@ -3286,10 +3400,16 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                             if (e.button !== 0) return;
                             e.stopPropagation();
                             onFocusViewport?.();
+                            if (canvasViewMode === 'all' && curSheet.id !== sheet?.id) {
+                              onSelectSheet(curSheet.id, { skipFit: true });
+                            }
                             onBeginDrag?.();
                             dragRef.current = {
                               kind: 'wireSegment',
                               wireId: selWire.id,
+                              sheetId: selWire.sheetId,
+                              sheetOriginX: origin.x,
+                              sheetOriginY: origin.y,
                               segmentIndex: h.segmentIndex,
                               origWaypoints: selWire.waypoints.map((pt) => ({ ...pt })),
                               moved: false,
@@ -3342,9 +3462,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 {/* Wire Core Labels rendered above grips so double-click is never occluded */}
                 {vs.showWireNumbers && (
                   <g data-testid="layer-group-wire-labels">
-                    {sheetWires.map((wire: E3Wire) => {
+                    {curWires.map((wire: E3Wire) => {
                       const midPt =
-                        wireLabelMap.get(wire.id) ||
+                        curWireLabelMap.get(wire.id) ||
                         (wire.waypoints.length >= 2
                           ? {
                               x: Math.round((wire.waypoints[0].x + wire.waypoints[1].x) / 2),
@@ -3386,6 +3506,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
+                            if (canvasViewMode === 'all' && curSheet.id !== sheet?.id) {
+                              onSelectSheet(curSheet.id, { skipFit: true });
+                            }
                             onSelectWire(wire.id, { toggle: e.shiftKey });
                             if (!e.shiftKey || e.altKey) {
                               onHighlightPotential?.({ wireId: wire.id });
@@ -3438,7 +3561,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 )}
 
                 {/* Live Rubber-band Wire Preview + Step-by-Step Waypoint Anchors + Cursor HUD */}
-                {wireStart && previewWirePoints && (
+                {wireStart && wireStart.sheetId === curSheet.id && previewWirePoints && (
                   <g pointerEvents="none">
                     <polyline
                       data-testid="wire-preview-polyline"
@@ -3499,7 +3622,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 )}
 
                 {/* Auto Wire Break Highlight when dragging 2-pin device over a wire */}
-                {wireBreakPreview && (() => {
+                {wireBreakPreview && wireBreakPreview.wire.sheetId === curSheet.id && (() => {
                   const bw = wireBreakPreview.wire;
                   const segA = bw.waypoints[wireBreakPreview.segmentIndex];
                   const segB = bw.waypoints[wireBreakPreview.segmentIndex + 1];
@@ -3562,7 +3685,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             {/* Devices */}
             {devicesVisible && (
               <g data-testid="layer-group-devices">
-                {visibleSheetDevices.map((device) => {
+                {curVisibleDevices.map((device) => {
                   const link = device.category === 'offpage_ref' ? offPageLinks.get(device.id) : undefined;
                   return (
                     <SchematicSymbol
@@ -3576,7 +3699,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                       hoveredPinKey={
                         wireStart && hoveredPin ? `${hoveredPin.deviceId}:${hoveredPin.pinId}` : null
                       }
-                      connectedPinKeys={connectedPinKeys}
+                      connectedPinKeys={curConnectedPinKeys}
                       highlightedPinKeys={tracedPinKeySet}
                       isPotentialHighlighted={tracedOffPageIdSet.has(device.id)}
                       offPageAddress={link?.addressText}
@@ -3595,7 +3718,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             {/* Live GOST Tables (BOM / Cable Journal) rendered over wires & devices with opaque backing */}
             {annotationsVisible && (
               <g data-testid="layer-group-gost-tables">
-                {sheetGostTableAnnotations.map((ann) => {
+                {curGostTableAnnotations.map((ann) => {
                     const selected = selectedAnnotationIdSet.has(ann.id);
                     const borderColor = selected
                       ? annotationsLocked
@@ -3606,7 +3729,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     const annSw = Math.max(0.5, ann.strokeWidth ?? vs.annotationStrokeWidth ?? 1.4);
                     const activeSw = selected ? Math.max(annSw + 0.8, 2.2) : annSw;
                     const annCls = annotationsLocked ? 'cursor-default' : 'cursor-move';
-                    const table = gostTableModels.get(ann.id) || buildGostTableRenderModel(ann, project);
+                    const table = curGostTableModels.get(ann.id) || buildGostTableRenderModel(ann, project);
                     const cellFontSize = Math.max(8, ann.fontSize ? ann.fontSize * 0.8 : 9.5) * vs.fontScale;
                     const gridStroke = Math.max(0.6, Number((annSw * 0.68).toFixed(2)));
                     const bodyStartY = ann.y + table.titleHeight + table.headerHeight;
@@ -3758,34 +3881,40 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   })}
               </g>
             )}
+                </g>
+              );
+            })}
 
             {/* AutoCAD Window (blue solid) / Crossing (green dashed) Marquee Selection */}
             {selectionBox && (
-              <rect
-                data-testid="selection-marquee"
-                data-mode={selectionBox.mode}
-                x={selectionBox.x}
-                y={selectionBox.y}
-                width={selectionBox.width}
-                height={selectionBox.height}
-                fill={
-                  selectionBox.mode === 'window'
-                    ? 'rgba(37, 99, 235, 0.09)'
-                    : 'rgba(22, 163, 74, 0.10)'
-                }
-                stroke={selectionBox.mode === 'window' ? '#2563eb' : '#16a34a'}
-                strokeWidth={1.3 / Math.max(0.25, zoom)}
-                strokeDasharray={
-                  selectionBox.mode === 'crossing'
-                    ? `${5 / Math.max(0.25, zoom)} ${3 / Math.max(0.25, zoom)}`
-                    : undefined
-                }
-                pointerEvents="none"
-              />
+              <g transform={`translate(${selectionBox.originX}, ${selectionBox.originY})`}>
+                <rect
+                  data-testid="selection-marquee"
+                  data-mode={selectionBox.box.mode}
+                  x={selectionBox.box.x}
+                  y={selectionBox.box.y}
+                  width={selectionBox.box.width}
+                  height={selectionBox.box.height}
+                  fill={
+                    selectionBox.box.mode === 'window'
+                      ? 'rgba(37, 99, 235, 0.09)'
+                      : 'rgba(22, 163, 74, 0.10)'
+                  }
+                  stroke={selectionBox.box.mode === 'window' ? '#2563eb' : '#16a34a'}
+                  strokeWidth={1.3 / Math.max(0.25, zoom)}
+                  strokeDasharray={
+                    selectionBox.box.mode === 'crossing'
+                      ? `${5 / Math.max(0.25, zoom)} ${3 / Math.max(0.25, zoom)}`
+                      : undefined
+                  }
+                  pointerEvents="none"
+                />
+              </g>
             )}
 
             {/* CAD Magnetic Alignment Guides, Pin Anchors & Spacing Cadence */}
             {activeSnapHud && (
+              <g transform={`translate(${activeSnapHud.originX ?? activeSheetOrigin.x}, ${activeSnapHud.originY ?? activeSheetOrigin.y})`}>
               <g
                 data-testid="smart-guides-layer"
                 data-guide-count={activeSnapHud.guides.length}
@@ -4002,6 +4131,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     </g>
                   );
                 })()}
+              </g>
               </g>
             )}
 
@@ -4225,8 +4355,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 Math.min(Math.round(140 * scaleFactor), Math.round(inPlaceEdit.worldH * Math.max(lz, 0.85)))
               )
             : Math.max(Math.round(28 * scaleFactor), Math.round(inPlaceEdit.worldH * Math.max(lz, 0.9)));
-          const rawLeft = lp.x + inPlaceEdit.worldX * lz;
-          const rawTop = lp.y + inPlaceEdit.worldY * lz;
+          const editOrigin = getSheetOrigin(inPlaceEdit.sheetId);
+          const rawLeft = lp.x + (editOrigin.x + inPlaceEdit.worldX) * lz;
+          const rawTop = lp.y + (editOrigin.y + inPlaceEdit.worldY) * lz;
           const left = Math.max(8, Math.min(cw - boxW - 8, rawLeft));
           const top = Math.max(22, Math.min(ch - boxH - 8, rawTop));
           const handleEditorKeyDown = (
@@ -4451,7 +4582,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               transform: 'translateX(-50%)',
               maxWidth: resolvedFocusLayout.sheetTabsMaxWidth,
             }}
-            className="no-print absolute top-3 z-30 inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-hidden"
+            className="no-print absolute top-3 z-40 inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-visible"
           >
             <button
               type="button"
@@ -4561,6 +4692,30 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
+            {onToggleCanvasViewMode && (
+              <button
+                type="button"
+                data-testid="canvas-view-mode-toggle"
+                aria-pressed={canvasViewMode === 'all'}
+                onClick={() => {
+                  onFocusViewport?.();
+                  onToggleCanvasViewMode();
+                }}
+                title={
+                  canvasViewMode === 'all'
+                    ? 'Режим «Все листы» — переключить на 1 активный лист'
+                    : 'Режим «1 лист» — показать все листы проекта на одном холсте'
+                }
+                className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors whitespace-nowrap shrink-0 ${
+                  canvasViewMode === 'all'
+                    ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] border border-[var(--flux-accent)]/35'
+                    : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                }`}
+              >
+                <Columns2 className="w-3.5 h-3.5 shrink-0" />
+                <span>{canvasViewMode === 'all' ? 'Все листы' : '1 лист'}</span>
+              </button>
+            )}
             <div className="relative shrink-0">
               <button
                 ref={layerBtnRef}
@@ -4687,7 +4842,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
           sheet &&
           !inPlaceEdit &&
           isMinimapEnabled(vs) &&
-          (uiMode !== 'focus' || resolvedFocusLayout.showMinimap) && (
+          (uiMode !== 'focus' || resolvedFocusLayout.showMinimap) && (() => {
+          const mapWidth = canvasViewMode === 'all' ? allSheetsLayout.totalWidth : sheet.width;
+          const mapHeight = canvasViewMode === 'all' ? allSheetsLayout.totalHeight : sheet.height;
+          return (
           <div
             data-testid="canvas-minimap"
             onMouseDown={(e) => {
@@ -4697,8 +4855,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               const ry = (e.clientY - rect.top) / rect.height;
               const cRect = containerRef.current?.getBoundingClientRect();
               if (!cRect) return;
-              const worldX = rx * sheet.width;
-              const worldY = ry * sheet.height;
+              const worldX = rx * mapWidth;
+              const worldY = ry * mapHeight;
               const z = liveZoomRef.current;
               const nextPan = {
                 x: Math.round(cRect.width / 2 - worldX * z),
@@ -4707,7 +4865,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               if (onSetTransform) onSetTransform(z, nextPan);
               else onSetPan(nextPan);
             }}
-            title="Мини-карта листа (клик — переместить камеру)"
+            title={canvasViewMode === 'all' ? 'Мини-карта всех листов (клик — переместить камеру)' : 'Мини-карта листа (клик — переместить камеру)'}
             style={
               uiMode === 'focus'
                 ? {
@@ -4722,30 +4880,49 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               uiMode === 'focus' ? '' : 'bottom-3 left-3 w-[112px] h-[72px]'
             }`}
           >
-            <svg viewBox={`0 0 ${sheet.width} ${sheet.height}`} className="w-full h-full block" preserveAspectRatio="xMidYMid meet">
-              <rect x={0} y={0} width={sheet.width} height={sheet.height} fill="var(--flux-surface)" />
-              <rect x={16} y={16} width={sheet.width - 32} height={sheet.height - 32} fill="none" stroke="var(--flux-line-strong)" strokeWidth={8} />
-              {sheetWires.slice(0, 120).map((w) => (
-                <polyline
-                  key={w.id}
-                  points={w.waypoints.map((p) => `${p.x},${p.y}`).join(' ')}
-                  fill="none"
-                  stroke="var(--flux-text-muted)"
-                  strokeOpacity={0.45}
-                  strokeWidth={6}
-                />
-              ))}
-              {sheetDevices.slice(0, 160).map((d) => (
-                <rect
-                  key={d.id}
-                  x={d.x}
-                  y={d.y}
-                  width={Math.max(16, d.width)}
-                  height={Math.max(14, d.height)}
-                  fill={selectedDeviceIdSet.has(d.id) ? 'var(--flux-accent)' : 'var(--flux-text-muted)'}
-                  fillOpacity={selectedDeviceIdSet.has(d.id) ? 0.85 : 0.45}
-                />
-              ))}
+            <svg viewBox={`0 0 ${mapWidth} ${mapHeight}`} className="w-full h-full block" preserveAspectRatio="xMidYMid meet">
+              {renderedSheets.map((ms) => {
+                const mOrigin = getSheetCanvasOrigin(allSheetsLayout, ms.id, canvasViewMode);
+                const sd = perSheetRenderMap.get(ms.id);
+                const mWires = sd?.wires || [];
+                const mDevs = sd?.devices || [];
+                const isCur = ms.id === sheet.id;
+                return (
+                  <g key={ms.id} transform={`translate(${mOrigin.x}, ${mOrigin.y})`}>
+                    <rect x={0} y={0} width={ms.width} height={ms.height} fill="var(--flux-surface)" />
+                    <rect
+                      x={16}
+                      y={16}
+                      width={ms.width - 32}
+                      height={ms.height - 32}
+                      fill="none"
+                      stroke={canvasViewMode === 'all' && isCur ? 'var(--flux-accent)' : 'var(--flux-line-strong)'}
+                      strokeWidth={canvasViewMode === 'all' && isCur ? 18 : 8}
+                    />
+                    {mWires.slice(0, 120).map((w) => (
+                      <polyline
+                        key={w.id}
+                        points={w.waypoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                        fill="none"
+                        stroke="var(--flux-text-muted)"
+                        strokeOpacity={0.45}
+                        strokeWidth={6}
+                      />
+                    ))}
+                    {mDevs.slice(0, 160).map((d) => (
+                      <rect
+                        key={d.id}
+                        x={d.x}
+                        y={d.y}
+                        width={Math.max(16, d.width)}
+                        height={Math.max(14, d.height)}
+                        fill={selectedDeviceIdSet.has(d.id) ? 'var(--flux-accent)' : 'var(--flux-text-muted)'}
+                        fillOpacity={selectedDeviceIdSet.has(d.id) ? 0.85 : 0.45}
+                      />
+                    ))}
+                  </g>
+                );
+              })}
               {(() => {
                 const vw = (canvasViewportSize.width || 900) / Math.max(0.16, zoom);
                 const vh = (canvasViewportSize.height || 600) / Math.max(0.16, zoom);
@@ -4759,13 +4936,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     height={vh}
                     fill="var(--flux-accent-soft)"
                     stroke="var(--flux-accent)"
-                    strokeWidth={Math.max(10, sheet.width * 0.01)}
+                    strokeWidth={Math.max(10, mapWidth * 0.008)}
                   />
                 );
               })()}
             </svg>
           </div>
-        )}
+          );
+        })()}
 
         {/* Hybrid Mode (Variant A): Floating Bottom-Center Precision CAD Tool Dock */}
         {uiMode === 'hybrid' && !isMultiViewport && sheet && !inPlaceEdit && onSetTool && (
@@ -4826,418 +5004,71 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         )}
 
         {/* Focus Mode (Variant B): Left Floating Customizable Quick-Access Rail */}
-        {uiMode === 'focus' && !isMultiViewport && sheet && !inPlaceEdit && onSetTool && (() => {
-          const quickIds = focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS;
-          const totalSheets = sheetCount ?? project.sheets.length;
-          const hasAnySel = totalSelectedCount > 0;
-          const isQuickActive = (id: FocusQuickActionId): boolean => {
-            switch (id) {
-              case 'tool_select': return tool === 'select';
-              case 'tool_wire': return tool === 'wire';
-              case 'tool_measure': return tool === 'measure';
-              case 'tool_pan': return tool === 'pan';
-              case 'tool_rect': return tool === 'rect';
-              case 'tool_callout': return tool === 'callout';
-              case 'tool_text': return tool === 'text';
-              case 'tool_offpage': return tool === 'offpage';
-              case 'toggle_grid': return vs.showGrid;
-              case 'toggle_snap': return vs.snapToGrid;
-              case 'toggle_crosshair': return vs.showCrosshair !== false;
-              case 'toggle_pins': return vs.showPinNumbers;
-              case 'toggle_wires': return vs.showWireNumbers;
-              case 'toggle_crossrefs': return vs.showCrossRefs;
-              case 'toggle_frame': return vs.showGostFrame;
-              case 'toggle_bridges': return vs.wireCrossingBridge !== false;
-              case 'toggle_minimap': return isMinimapEnabled(vs);
-              case 'viewport_single': return viewportLayout === 'single';
-              case 'viewport_two': return viewportLayout === 'two';
-              case 'viewport_three': return viewportLayout === 'three';
-              case 'viewport_four': return viewportLayout === 'four';
-              case 'open_layers': return layerPopoverOpen;
-              default: return false;
-            }
-          };
-          const isQuickDisabled = (id: FocusQuickActionId): boolean => {
-            switch (id) {
-              case 'edit_copy':
-              case 'action_rotate':
-              case 'edit_delete':
-              case 'mirror_x':
-              case 'mirror_y':
-                return !hasAnySel;
-              case 'edit_paste':
-                return !hasClipboard;
-              case 'align_left':
-              case 'align_center':
-              case 'align_top':
-              case 'align_middle':
-                return selectedDeviceCount < 2;
-              case 'delete_sheet':
-                return totalSheets <= 1;
-              default:
-                return false;
-            }
-          };
-          const handleQuickClick = (id: FocusQuickActionId) => {
-            if (onExecuteQuickAction) {
-              onExecuteQuickAction(id);
-              return;
-            }
-            if (id === 'tool_select') onSetTool('select');
-            else if (id === 'tool_wire') onSetTool('wire');
-            else if (id === 'tool_measure') onSetTool('measure');
-            else if (id === 'tool_pan') onSetTool('pan');
-            else if (id === 'tool_text') onSetTool('text');
-            else if (id === 'tool_callout') onSetTool('callout');
-            else if (id === 'tool_rect') onSetTool('rect');
-            else if (id === 'tool_offpage') onSetTool('offpage');
-            else if (id === 'action_rotate') onRotateSelected?.();
-            else if (id === 'action_fit') onFitViewport?.();
-            else if (id === 'toggle_grid') onToggleGrid?.();
-          };
-
-          return (
-            <div
-              data-testid="canvas-tool-dock"
-              onMouseDown={(e) => e.stopPropagation()}
-              onWheel={(e) => e.stopPropagation()}
-              style={{
-                top: resolvedFocusLayout.toolRailTop,
-                left: resolvedFocusLayout.toolRailLeft,
-                width: resolvedFocusLayout.toolRailWidth,
-                maxHeight: resolvedFocusLayout.toolRailMaxHeight,
-              }}
-              className="no-print absolute z-20 flex flex-col items-center gap-0.5 p-1 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl transition-[top,max-height] duration-150 overflow-y-auto no-scrollbar"
-            >
-              {onToggleFocusExplorer && (
-                <>
-                  <button
-                    type="button"
-                    data-testid="focus-left-edge-tab"
-                    aria-pressed={focusExplorerOpen}
-                    title="Навигатор проекта и база компонентов (Ctrl+\)"
-                    aria-label="Устройства и база компонентов"
-                    onClick={onToggleFocusExplorer}
-                    className={`inline-flex items-center justify-center w-7 h-7 rounded-[6px] shrink-0 transition-colors ${
-                      focusExplorerOpen
-                        ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
-                        : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-                    }`}
-                  >
-                    <PanelLeft className="w-3.5 h-3.5" strokeWidth={1.7} />
-                  </button>
-                  {onToggleCanvasFocus && (
-                    <button
-                      type="button"
-                      data-testid="left-focus-canvas-btn"
-                      aria-pressed={canvasFocusActive}
-                      onClick={onToggleCanvasFocus}
-                      title={
-                        canvasFocusActive
-                          ? 'Фокус холст (нажмите снова, чтобы вернуть панели и прежний вид)'
-                          : 'Фокус холст — полноэкранный чертёж'
-                      }
-                      aria-label={canvasFocusActive ? 'Вернуть прежний вид' : 'Фокус холст'}
-                      className={`inline-flex items-center justify-center w-7 h-7 rounded-[6px] shrink-0 transition-colors ${
-                        canvasFocusActive
-                          ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
-                          : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]'
-                      }`}
-                    >
-                      {canvasFocusActive ? (
-                        <Minimize2 className="w-3.5 h-3.5" strokeWidth={1.7} />
-                      ) : (
-                        <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.7} />
-                      )}
-                    </button>
-                  )}
-                  <span className="w-5 h-px bg-[var(--flux-line)] my-0.5 shrink-0" />
-                </>
-              )}
-
-              {quickIds.map((actionId, idx) => {
-                const def = getFocusQuickActionDef(actionId);
-                const active = isQuickActive(actionId);
-                const disabled = isQuickDisabled(actionId);
-                const prevGroup = idx > 0 ? getFocusQuickActionDef(quickIds[idx - 1]).group : def.group;
-                const needsDivider = idx > 0 && prevGroup !== def.group;
-                const fullTitle = `${def.title}${def.shortcut ? ` (${def.shortcut})` : ''} · ПКМ — настроить`;
-                return (
-                  <React.Fragment key={actionId}>
-                    {needsDivider && (
-                      <span className="w-5 h-px bg-[var(--flux-line)] my-0.5 shrink-0" />
-                    )}
-                    <button
-                      type="button"
-                      data-testid={`focus-rail-item-${actionId}`}
-                      data-quick-access-id={actionId}
-                      disabled={disabled}
-                      title={fullTitle}
-                      aria-label={def.label}
-                      aria-pressed={active}
-                      onClick={() => handleQuickClick(actionId)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setRailQuickMenu({
-                          actionId,
-                          mode: 'rail',
-                          x: e.clientX,
-                          y: e.clientY,
-                        });
-                      }}
-                      className={`relative inline-flex items-center justify-center w-7 h-7 rounded-[6px] shrink-0 transition-colors disabled:opacity-35 ${
-                        active
-                          ? 'text-[var(--flux-accent)]'
-                          : def.danger
-                            ? 'text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--flux-hover)]/70'
-                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70'
-                      }`}
-                    >
-                      {active && (
-                        <motion.span
-                          layoutId={`cad-dock-pill-${viewportIndex}`}
-                          transition={{ type: 'spring', stiffness: 520, damping: 36 }}
-                          className="absolute inset-0 rounded-[6px] bg-[var(--flux-accent-soft)] border border-[var(--flux-accent)]/35"
-                        />
-                      )}
-                      <span className="relative z-10 inline-flex items-center justify-center">
-                        {renderFocusQuickAccessIcon(actionId, 'w-3.5 h-3.5')}
-                      </span>
-                    </button>
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          );
-        })()}
-
-        <FocusQuickAccessMenu
-          menu={railQuickMenu}
-          isPinned={true}
-          canMoveUp={Boolean(
-            railQuickMenu &&
-              (focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS).indexOf(railQuickMenu.actionId) > 0
-          )}
-          canMoveDown={Boolean(
-            railQuickMenu &&
-              (() => {
-                const list = focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS;
-                const idx = list.indexOf(railQuickMenu.actionId);
-                return idx !== -1 && idx < list.length - 1;
-              })()
-          )}
-          onClose={() => setRailQuickMenu(null)}
-          onRemove={onRemoveQuickAccess}
-          onMove={onMoveQuickAccess}
-          onReset={onResetQuickAccess}
-        />
+        {uiMode === 'focus' && !isMultiViewport && sheet && !inPlaceEdit && onSetTool && (
+          <FocusToolRail
+            tool={tool}
+            vs={vs}
+            viewportLayout={viewportLayout}
+            layerPopoverOpen={layerPopoverOpen}
+            totalSelectedCount={totalSelectedCount}
+            selectedDeviceCount={selectedDeviceCount}
+            hasClipboard={hasClipboard}
+            sheetCount={sheetCount ?? project.sheets.length}
+            focusLayout={resolvedFocusLayout}
+            focusQuickAccessIds={focusQuickAccessIds}
+            focusExplorerOpen={focusExplorerOpen}
+            onToggleFocusExplorer={onToggleFocusExplorer}
+            canvasFocusActive={canvasFocusActive}
+            onToggleCanvasFocus={onToggleCanvasFocus}
+            onSetTool={onSetTool}
+            onExecuteQuickAction={onExecuteQuickAction}
+            onRemoveQuickAccess={onRemoveQuickAccess}
+            onMoveQuickAccess={onMoveQuickAccess}
+            onResetQuickAccess={onResetQuickAccess}
+            onRotateSelected={onRotateSelected}
+            onFitViewport={onFitViewport}
+            onToggleGrid={onToggleGrid}
+            motionLayoutScopeId={String(viewportIndex)}
+          />
+        )}
 
         {/* Focus Mode (Variant B): Compact Single-Row Bottom-Center Command Pill */}
         {uiMode === 'focus' && !isMultiViewport && sheet && !inPlaceEdit && (
-          <div
-            data-testid="focus-command-pill"
-            onMouseDown={(e) => e.stopPropagation()}
-            onWheel={(e) => e.stopPropagation()}
-            style={{ maxWidth: resolvedFocusLayout.commandPillMaxWidth }}
-            className="no-print absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(calc(400px*var(--flux-ui-scale)),92vw)] min-w-0 h-[calc(36px*var(--flux-ui-scale))] rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl px-2 flex items-center gap-1.5"
-          >
-            <div className="relative flex-1 flex items-center gap-1.5 h-[calc(26px*var(--flux-ui-scale))] px-2 rounded-[6px] border border-[var(--flux-line)] bg-[var(--flux-bg)]/85 focus-within:border-[var(--flux-accent)] min-w-0">
-              <span className="font-mono font-bold text-[var(--flux-accent)] shrink-0">›</span>
-              <input
-                ref={cmdInputRef}
-                type="text"
-                data-testid={viewportIndex === 0 ? 'cad-command-input' : `cad-command-input-${viewportIndex}`}
-                spellCheck={false}
-                autoComplete="off"
-                value={cmdValue}
-                onChange={(e) => {
-                  setCmdValue(e.target.value);
-                  if (cmdHistIdx !== -1) setCmdHistIdx(-1);
-                }}
-                onFocus={() => setCmdFocused(true)}
-                onBlur={() => {
-                  window.setTimeout(() => setCmdFocused(false), 120);
-                }}
-                onKeyDown={handleCmdKeyDown}
-                placeholder="Команда: ПРОВОД, ВЫБОР, СЕТКА, ВПИСАТЬ…"
-                aria-label="Командная строка САПР"
-                className="flex-1 w-full min-w-0 bg-transparent text-[length:calc(11px*var(--flux-ui-scale))] font-mono text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)]/75 focus:outline-none select-text"
-              />
-              <span className="hidden xl:inline font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]/75 shrink-0">
-                Enter
-              </span>
-
-              {cmdFeedback && !cmdValue.trim() && (
-                <div
-                  data-testid="cad-command-feedback"
-                  className={`absolute left-0 bottom-full mb-2 z-40 px-2.5 py-1.5 rounded-[8px] border flux-glass-popover text-[length:calc(11px*var(--flux-ui-scale))] font-sans whitespace-nowrap max-w-[calc(380px*var(--flux-ui-scale))] truncate ${
-                    cmdFeedback.status === 'ok'
-                      ? 'border-[var(--flux-accent)]/60 text-[var(--flux-text)]'
-                      : cmdFeedback.status === 'disabled'
-                        ? 'border-amber-500/70 text-amber-700 dark:text-amber-300'
-                        : 'border-rose-500/70 text-rose-700 dark:text-rose-300'
-                  }`}
-                >
-                  {cmdFeedback.text}
-                </div>
-              )}
-
-              {matchingCmdHints.length > 0 && (
-                <div
-                  data-testid="cad-command-suggestions"
-                  className="absolute left-0 bottom-full mb-2 z-40 w-[min(calc(370px*var(--flux-ui-scale)),92vw)] rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-popover shadow-xl overflow-hidden font-sans"
-                >
-                  <div className="px-2.5 py-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)]/70 flex items-center justify-between gap-2 text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-                    <span>
-                      {cmdValue.trim()
-                        ? `Доступные команды (${matchingCmdHints.length})`
-                        : 'Доступные команды чертежа'}
-                    </span>
-                    <span className="font-mono opacity-80">Tab · Enter</span>
-                  </div>
-                  <div className="max-h-[calc(210px*var(--flux-ui-scale))] overflow-y-auto divide-y divide-[var(--flux-line)]/50">
-                    {matchingCmdHints.map((hint, idx) => {
-                      const isActive = hintNavigated && idx === activeHintIdx;
-                      const keywordLabel =
-                        (hint.commandKeyword || hint.keywords[0] || '').trim().toUpperCase();
-                      return (
-                        <button
-                          key={hint.id}
-                          type="button"
-                          disabled={hint.disabled}
-                          data-active={isActive ? 'true' : 'false'}
-                          onMouseEnter={() => {
-                            setActiveHintIdx(idx);
-                            setHintNavigated(true);
-                          }}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            applyOrExecuteHint(hint);
-                          }}
-                          className={`w-full px-2.5 py-1.5 text-left flex items-center justify-between gap-2 transition-colors disabled:opacity-45 ${
-                            isActive ? 'bg-[var(--flux-sel)]' : 'hover:bg-[var(--flux-hover)]/80'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-mono font-semibold text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-accent)] shrink-0">
-                              {keywordLabel}
-                            </span>
-                            <span className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate">
-                              {hint.commandHint || hint.subtitle}
-                            </span>
-                          </div>
-                          {hint.shortcut && (
-                            <span className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                              {hint.shortcut}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          <FocusCommandPill
+            centerX={resolvedFocusLayout.commandPillCenterX}
+            maxWidth={resolvedFocusLayout.commandPillMaxWidth}
+            commandPaletteItems={commandPaletteItems}
+            onExecuteCommandLine={onExecuteCommandLine}
+            inputTestId={viewportIndex === 0 ? 'cad-command-input' : `cad-command-input-${viewportIndex}`}
+          />
         )}
 
         {/* Focus Mode (Variant B): Bottom-Right Floating Status Pill */}
         {uiMode === 'focus' && !isMultiViewport && sheet && !inPlaceEdit && (
-          <div
-            data-testid="focus-status-pill"
-            onMouseDown={(e) => e.stopPropagation()}
-            onWheel={(e) => e.stopPropagation()}
-            className="no-print absolute bottom-3 right-3 z-20 inline-flex items-center gap-1 h-[calc(36px*var(--flux-ui-scale))] px-2 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)]"
-          >
-            <span
-              data-testid="canvas-coords"
-              className="hidden xl:inline-block min-w-[calc(84px*var(--flux-ui-scale))] tabular-nums whitespace-nowrap"
-            >
-              <span ref={coordsSpanRef} />
-            </span>
-            {onToggleGrid && (
-              <button
-                type="button"
-                onClick={onToggleGrid}
-                title="Сетка чертежа (F9)"
-                aria-label="Переключить сетку"
-                className={`inline-flex items-center justify-center w-6 h-6 rounded-[4px] shrink-0 transition-colors ${
-                  vs.showGrid ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]' : 'hover:bg-[var(--flux-hover)]'
-                }`}
-              >
-                <Grid3X3 className="w-3 h-3" />
-              </button>
-            )}
-            {onToggleSnapToGrid && (
-              <button
-                type="button"
-                data-testid="toggle-snap-grid-btn"
-                onClick={onToggleSnapToGrid}
-                title="Привязка к сетке (F3)"
-                aria-label="Переключить привязку"
-                className={`inline-flex items-center justify-center w-6 h-6 rounded-[4px] shrink-0 transition-colors ${
-                  vs.snapToGrid ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]' : 'hover:bg-[var(--flux-hover)]'
-                }`}
-              >
-                <Magnet className="w-3 h-3" />
-              </button>
-            )}
-            <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" />
-            <button
-              type="button"
-              onClick={() => {
-                const nextZ = Math.max(0.16, Math.round((liveZoomRef.current - 0.1) * 100) / 100);
-                onSetTransform ? onSetTransform(nextZ, livePanRef.current) : onSetZoom(nextZ);
-              }}
-              aria-label="Уменьшить масштаб"
-              className="inline-flex items-center justify-center w-5 h-6 rounded-[4px] shrink-0 hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
-            >
-              <Minus className="w-3 h-3" />
-            </button>
-            <span
-              ref={zoomTextRef}
-              data-testid={viewportIndex === 0 ? 'canvas-zoom-value' : `canvas-zoom-value-${viewportIndex}`}
-              className="w-9 text-center tabular-nums text-[var(--flux-text)] shrink-0"
-            >
-              {Math.round(zoom * 100)}%
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                const nextZ = Math.min(2.5, Math.round((liveZoomRef.current + 0.1) * 100) / 100);
-                onSetTransform ? onSetTransform(nextZ, livePanRef.current) : onSetZoom(nextZ);
-              }}
-              aria-label="Увеличить масштаб"
-              className="inline-flex items-center justify-center w-5 h-6 rounded-[4px] shrink-0 hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
-            >
-              <Plus className="w-3 h-3" />
-            </button>
-            {onToggleFocusConsole && (
-              <>
-                <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" />
-                <button
-                  type="button"
-                  data-testid="focus-console-toggle-btn"
-                  onClick={onToggleFocusConsole}
-                  aria-pressed={focusConsoleOpen}
-                  title="Открыть / скрыть панель ПЭ3, кабелей, ERC, логов и API"
-                  className={`inline-flex items-center gap-1 h-6 px-2 rounded-[5px] font-sans font-medium whitespace-nowrap shrink-0 transition-colors ${
-                    focusConsoleOpen
-                      ? 'bg-[var(--flux-accent-solid)] text-white'
-                      : 'bg-[var(--flux-surface-alt)] border border-[var(--flux-line)] text-[var(--flux-text)] hover:border-[var(--flux-accent)]'
-                  }`}
-                >
-                  <span>ПЭ3 · ERC</span>
-                </button>
-              </>
-            )}
-          </div>
+          <FocusStatusPill
+            zoom={zoom}
+            showGrid={vs.showGrid}
+            snapToGrid={vs.snapToGrid}
+            focusConsoleOpen={focusConsoleOpen}
+            coordsSpanRef={coordsSpanRef}
+            zoomTextRef={zoomTextRef}
+            zoomValueTestId={viewportIndex === 0 ? 'canvas-zoom-value' : `canvas-zoom-value-${viewportIndex}`}
+            onZoomStep={(delta) => {
+              const nextZ =
+                delta < 0
+                  ? Math.max(0.16, Math.round((liveZoomRef.current + delta) * 100) / 100)
+                  : Math.min(2.5, Math.round((liveZoomRef.current + delta) * 100) / 100);
+              onSetTransform ? onSetTransform(nextZ, livePanRef.current) : onSetZoom(nextZ);
+            }}
+            onToggleGrid={onToggleGrid}
+            onToggleSnapToGrid={onToggleSnapToGrid}
+            onToggleFocusConsole={onToggleFocusConsole}
+          />
         )}
       </div>
 
       {/* Pinned Non-Shifting CAD Canvas Footer Strip (Classic & Hybrid only) */}
-      {(uiMode !== 'focus' || isMultiViewport) && (
+      {uiMode !== 'focus' && (
       <div className="no-print @container/footer relative h-[calc(24px*var(--flux-ui-scale))] px-2 border-t border-[var(--flux-line)] flux-glass-bar grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 shrink-0 overflow-visible select-none text-[length:calc(10.5px*var(--flux-ui-scale))]">
         {/* Column 1: Fixed-Width Pinned Coordinates & Sheet Format */}
         <div className="flex items-center gap-1.5 shrink-0 font-mono tabular-nums text-[var(--flux-text-muted)]">
