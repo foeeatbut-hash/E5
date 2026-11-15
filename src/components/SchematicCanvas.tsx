@@ -14,6 +14,7 @@ import {
   Maximize2,
   Minus,
   MousePointer2,
+  PanelLeft,
   Plus,
   RotateCw,
   Ruler,
@@ -87,7 +88,19 @@ import type {
   E3Wire,
   PinDirection,
 } from '../core/e3Types';
+import type { ViewportLayoutMode } from '../core/dockLayout';
+import { computeFocusLayoutMetrics, type FocusLayoutMetrics } from '../core/focusLayout';
+import {
+  DEFAULT_FOCUS_QUICK_ACCESS_IDS,
+  type FocusQuickActionId,
+  getFocusQuickActionDef,
+} from '../core/focusQuickAccess';
 import { isNewUiMode, type UiWorkspaceMode } from '../core/uiMode';
+import {
+  FocusQuickAccessMenu,
+  type FocusQuickAccessMenuState,
+  renderFocusQuickAccessIcon,
+} from './FocusQuickAccessMenu';
 import { LayerManagerPopover } from './LayerManagerPopover';
 import { SchematicSymbol } from './SchematicSymbol';
 
@@ -185,6 +198,18 @@ interface SchematicCanvasProps {
   onExecuteCommandLine?: (rawCommand: string) => CommandLineResolution;
   focusConsoleOpen?: boolean;
   onToggleFocusConsole?: () => void;
+  focusExplorerOpen?: boolean;
+  onToggleFocusExplorer?: () => void;
+  focusLayout?: FocusLayoutMetrics;
+  focusQuickAccessIds?: FocusQuickActionId[];
+  onExecuteQuickAction?: (id: FocusQuickActionId) => void;
+  onRemoveQuickAccess?: (id: FocusQuickActionId) => void;
+  onMoveQuickAccess?: (id: FocusQuickActionId, delta: -1 | 1) => void;
+  onResetQuickAccess?: () => void;
+  onOpenRibbonForQuickAccess?: () => void;
+  selectedDeviceCount?: number;
+  sheetCount?: number;
+  viewportLayout?: ViewportLayoutMode;
 }
 
 const CMD_HISTORY_STORAGE_KEY = 'e3promax_cmd_history_v1';
@@ -271,8 +296,64 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   onExecuteCommandLine,
   focusConsoleOpen = false,
   onToggleFocusConsole,
+  focusExplorerOpen = false,
+  onToggleFocusExplorer,
+  focusLayout,
+  focusQuickAccessIds,
+  onExecuteQuickAction,
+  onRemoveQuickAccess,
+  onMoveQuickAccess,
+  onResetQuickAccess,
+  onOpenRibbonForQuickAccess,
+  selectedDeviceCount = 0,
+  sheetCount,
+  viewportLayout = 'single',
 }) => {
+  const resolvedFocusLayout = useMemo(
+    () =>
+      focusLayout ??
+      computeFocusLayoutMetrics({
+        viewportWidth: 1440,
+        viewportHeight: 900,
+        uiScale: 100,
+        ribbonOpen: false,
+        explorerOpen: focusExplorerOpen,
+        inspectorCollapsed: false,
+        consoleOpen: focusConsoleOpen,
+        showMinimap: project.visualSettings.showMinimap !== false,
+        railItemCount: (focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS).length,
+      }),
+    [
+      focusLayout,
+      focusExplorerOpen,
+      focusConsoleOpen,
+      project.visualSettings.showMinimap,
+      focusQuickAccessIds,
+    ]
+  );
   const containerRef = useRef<HTMLDivElement>(null);
+  const [canvasViewportSize, setCanvasViewportSize] = useState<{ width: number; height: number }>({
+    width: 1280,
+    height: 800,
+  });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const updateSize = () => {
+      const w = Math.round(el.clientWidth || 0);
+      const h = Math.round(el.clientHeight || 0);
+      if (w > 0 && h > 0) {
+        setCanvasViewportSize((prev) =>
+          prev.width === w && prev.height === h ? prev : { width: w, height: h }
+        );
+      }
+    };
+    updateSize();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [cmdValue, setCmdValue] = useState('');
   const [cmdHistory, setCmdHistory] = useState<string[]>(() => loadSavedCommandHistory());
   const [cmdHistIdx, setCmdHistIdx] = useState<number>(-1);
@@ -333,6 +414,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
   const handleCmdKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if ((e.ctrlKey || e.metaKey) && ['k', 's', '\\'].includes(e.key.toLowerCase())) {
+        return;
+      }
       e.stopPropagation();
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -440,6 +524,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     y: number;
     kind: 'device' | 'wire' | 'canvas';
   } | null>(null);
+  const [railQuickMenu, setRailQuickMenu] = useState<FocusQuickAccessMenuState | null>(null);
   const [measureState, setMeasureState] = useState<{
     start: WirePoint;
     end: WirePoint;
@@ -676,9 +761,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
   const visibleSheetDevices = useMemo(() => {
     if (sheetDevices.length <= 40) return sheetDevices;
-    const rect = containerRef.current?.getBoundingClientRect();
-    const vw = rect?.width || 1280;
-    const vh = rect?.height || 800;
+    const vw = canvasViewportSize.width || 1280;
+    const vh = canvasViewportSize.height || 800;
     const z = Math.max(0.16, zoom);
     const pad = 320;
     const minX = -pan.x / z - pad;
@@ -689,7 +773,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       if (selectedDeviceIdSet.has(d.id)) return true;
       return d.x + d.width >= minX && d.x <= maxX && d.y + d.height >= minY && d.y <= maxY;
     });
-  }, [sheetDevices, zoom, pan, selectedDeviceIdSet]);
+  }, [sheetDevices, zoom, pan, selectedDeviceIdSet, canvasViewportSize]);
 
   const sheetWires = useMemo(
     () => project.wires.filter((w) => w.sheetId === sheet?.id),
@@ -938,6 +1022,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         return;
       }
       if (document.querySelector('[role="dialog"]')) return;
+      if (contextMenu) {
+        e.preventDefault();
+        setContextMenu(null);
+        return;
+      }
       if (measureState) {
         e.preventDefault();
         setMeasureState(null);
@@ -954,7 +1043,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [wireStart, measureState, tool, isFocused, onSetTool]);
+  }, [wireStart, measureState, contextMenu, tool, isFocused, onSetTool]);
 
   // Cursor-centered non-passive wheel zoom (immediate GPU transform + debounced React state commit)
   useEffect(() => {
@@ -3890,8 +3979,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
         {/* Stage 4.2 In-Place Canvas Text Editor Overlay */}
         {inPlaceEdit && (() => {
-          const cw = containerRef.current?.clientWidth || 800;
-          const ch = containerRef.current?.clientHeight || 600;
+          const cw = canvasViewportSize.width || 800;
+          const ch = canvasViewportSize.height || 600;
           const lz = liveZoomRef.current;
           const lp = livePanRef.current;
           const scaleFactor =
@@ -4132,9 +4221,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             data-testid="focus-sheet-tabs-pill"
             onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
-            className="no-print absolute top-2.5 left-1/2 -translate-x-1/2 z-30 inline-flex items-center gap-0.5 h-[calc(30px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/85 backdrop-blur-md shadow-lg max-w-[min(320px,calc(100vw-720px))] min-w-[140px]"
+            style={{
+              left: resolvedFocusLayout.sheetTabsCenterX,
+              transform: 'translateX(-50%)',
+              maxWidth: resolvedFocusLayout.sheetTabsMaxWidth,
+            }}
+            className="no-print absolute top-3 z-30 inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-[140px]"
           >
-            <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0">
+            <div
+              onWheel={(e) => {
+                if (Math.abs(e.deltaY) > 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+                  e.currentTarget.scrollLeft += e.deltaY;
+                }
+              }}
+              className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0"
+            >
               {openSingleTabs.map((s) => {
                 const active = s.id === sheet?.id;
                 return (
@@ -4144,13 +4245,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     data-testid={`sheet-tab-${s.id}`}
                     onClick={() => onSelectSheet(s.id)}
                     title={`Лист ${s.number}: ${s.name} (${s.format})`}
-                    className={`h-[calc(22px*var(--flux-ui-scale))] px-2 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 flex items-center gap-1 transition-colors ${
+                    className={`h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 flex items-center gap-1 transition-colors ${
                       active
                         ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-text)] font-semibold border border-[var(--flux-accent)]/35'
                         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                     }`}
                   >
-                    <span className="max-w-[84px] truncate">Л.{s.number}: {s.name}</span>
+                    <span className="max-w-[144px] truncate">Л.{s.number}: {s.name}</span>
                   </button>
                 );
               })}
@@ -4160,9 +4261,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               onClick={onAddSheet}
               title="Добавить новый лист схемы"
               aria-label="Добавить новый лист схемы"
-              className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] shrink-0"
+              className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] shrink-0"
             >
-              <Plus className="w-3 h-3" />
+              <Plus className="w-3.5 h-3.5" />
             </button>
             <div className="relative shrink-0">
               <button
@@ -4176,13 +4277,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 aria-expanded={layerPopoverOpen}
                 title="Диспетчер слоёв чертежа"
                 aria-label="Диспетчер слоёв чертежа"
-                className={`inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[5px] transition-colors ${
+                className={`inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] transition-colors ${
                   layerPopoverOpen || layerSummary.hiddenCount > 0 || layerSummary.lockedCount > 0
                     ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
                     : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
                 }`}
               >
-                <Layers className="w-3 h-3" />
+                <Layers className="w-3.5 h-3.5" />
               </button>
               {onToggleLayerVisibility && onToggleLayerLock && (
                 <LayerManagerPopover
@@ -4207,9 +4308,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             data-testid="canvas-selection-bar"
             onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
+            style={uiMode === 'focus' ? { top: resolvedFocusLayout.selectionBarTop } : undefined}
             className={`no-print absolute ${
-              uiMode === 'focus' ? 'top-[50px]' : 'top-2.5'
-            } left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1 px-2 py-1 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover shadow-lg text-[length:calc(11px*var(--flux-ui-scale))]`}
+              uiMode === 'focus' ? 'transition-[top] duration-150' : 'top-2.5'
+            } left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1 h-[calc(32px*var(--flux-ui-scale))] px-2 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-popover shadow-lg text-[length:calc(11px*var(--flux-ui-scale))]`}
           >
             <span className="px-1.5 font-mono font-semibold text-[var(--flux-accent)] tabular-nums">
               Выбрано: {totalSelectedCount}
@@ -4284,7 +4386,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         )}
 
         {/* Compact Interactive Sheet Minimap (New UI: Hybrid & Focus) */}
-        {isNewUiMode(uiMode) && !isMultiViewport && sheet && !inPlaceEdit && (
+        {isNewUiMode(uiMode) &&
+          !isMultiViewport &&
+          sheet &&
+          !inPlaceEdit &&
+          vs.showMinimap !== false &&
+          (uiMode !== 'focus' || resolvedFocusLayout.showMinimap) && (
           <div
             data-testid="canvas-minimap"
             onMouseDown={(e) => {
@@ -4305,7 +4412,19 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               else onSetPan(nextPan);
             }}
             title="Мини-карта листа (клик — переместить камеру)"
-            className="no-print hidden md:block absolute bottom-3 left-3 z-20 w-[112px] h-[72px] rounded-[4px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/90 shadow-md overflow-hidden cursor-crosshair backdrop-blur-sm"
+            style={
+              uiMode === 'focus'
+                ? {
+                    left: resolvedFocusLayout.minimapLeft,
+                    bottom: resolvedFocusLayout.minimapBottom,
+                    width: resolvedFocusLayout.minimapWidth,
+                    height: resolvedFocusLayout.minimapHeight,
+                  }
+                : undefined
+            }
+            className={`no-print hidden md:block absolute z-20 rounded-[6px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/92 shadow-md overflow-hidden cursor-crosshair backdrop-blur-sm transition-[left,bottom] duration-150 ${
+              uiMode === 'focus' ? '' : 'bottom-3 left-3 w-[112px] h-[72px]'
+            }`}
           >
             <svg viewBox={`0 0 ${sheet.width} ${sheet.height}`} className="w-full h-full block" preserveAspectRatio="xMidYMid meet">
               <rect x={0} y={0} width={sheet.width} height={sheet.height} fill="var(--flux-surface)" />
@@ -4332,9 +4451,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 />
               ))}
               {(() => {
-                const cRect = containerRef.current?.getBoundingClientRect();
-                const vw = (cRect?.width || 900) / Math.max(0.16, zoom);
-                const vh = (cRect?.height || 600) / Math.max(0.16, zoom);
+                const vw = (canvasViewportSize.width || 900) / Math.max(0.16, zoom);
+                const vh = (canvasViewportSize.height || 600) / Math.max(0.16, zoom);
                 const vx = -pan.x / Math.max(0.16, zoom);
                 const vy = -pan.y / Math.max(0.16, zoom);
                 return (
@@ -4411,94 +4529,215 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
           </div>
         )}
 
-        {/* Focus Mode (Variant B): Left Floating Vertical Tool Rail + Interactive Command Pill + Status Pill */}
-        {uiMode === 'focus' && !isMultiViewport && sheet && !inPlaceEdit && onSetTool && (
-          <div
-            data-testid="canvas-tool-dock"
-            onMouseDown={(e) => e.stopPropagation()}
-            onWheel={(e) => e.stopPropagation()}
-            className="no-print absolute top-[54px] left-3 z-20 flex flex-col items-center gap-1 p-1 rounded-lg border border-[var(--flux-line-strong)] flux-glass-popover shadow-xl backdrop-blur-md opacity-85 hover:opacity-100 transition-opacity"
-          >
-            {(
-              [
-                { id: 'select' as const, label: 'Выбор', kbd: 'V', icon: MousePointer2 },
-                { id: 'wire' as const, label: 'Провод', kbd: 'W', icon: Spline },
-                { id: 'measure' as const, label: 'Линейка', kbd: '', icon: Ruler },
-                { id: 'pan' as const, label: 'Панорама', kbd: 'H', icon: Hand },
-              ] as const
-            ).map((item) => {
-              const Icon = item.icon;
-              const active = tool === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  title={item.kbd ? `${item.label} (${item.kbd})` : item.label}
-                  onClick={() => onSetTool(item.id)}
-                  className={`relative inline-flex items-center justify-center w-8 h-8 rounded-md transition-colors ${
-                    active
-                      ? 'text-[var(--flux-accent)]'
-                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70'
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId={`cad-dock-pill-${viewportIndex}`}
-                      transition={{ type: 'spring', stiffness: 520, damping: 36 }}
-                      className="absolute inset-0 rounded-md bg-[var(--flux-accent-soft)] border border-[var(--flux-accent)]/35"
-                    />
-                  )}
-                  <Icon className="relative z-10 w-4 h-4" strokeWidth={1.6} />
-                </button>
-              );
-            })}
-            <span className="w-5 h-px bg-[var(--flux-line)] my-0.5" />
-            {onRotateSelected && (
-              <button
-                type="button"
-                title="Повернуть на 90° (R)"
-                onClick={onRotateSelected}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70 transition-colors"
-              >
-                <RotateCw className="w-4 h-4" strokeWidth={1.6} />
-              </button>
-            )}
-            {onFitViewport && (
-              <button
-                type="button"
-                title="Вписать лист в окно (Z)"
-                onClick={onFitViewport}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70 transition-colors"
-              >
-                <Maximize2 className="w-4 h-4" strokeWidth={1.6} />
-              </button>
-            )}
-            {onToggleGrid && (
-              <button
-                type="button"
-                title="Сетка чертежа (F9)"
-                onClick={onToggleGrid}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70 transition-colors"
-              >
-                <Grid3X3 className="w-4 h-4" strokeWidth={1.6} />
-              </button>
-            )}
-          </div>
-        )}
+        {/* Focus Mode (Variant B): Left Floating Customizable Quick-Access Rail */}
+        {uiMode === 'focus' && !isMultiViewport && sheet && !inPlaceEdit && onSetTool && (() => {
+          const quickIds = focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS;
+          const totalSheets = sheetCount ?? project.sheets.length;
+          const hasAnySel = totalSelectedCount > 0;
+          const isQuickActive = (id: FocusQuickActionId): boolean => {
+            switch (id) {
+              case 'tool_select': return tool === 'select';
+              case 'tool_wire': return tool === 'wire';
+              case 'tool_measure': return tool === 'measure';
+              case 'tool_pan': return tool === 'pan';
+              case 'tool_rect': return tool === 'rect';
+              case 'tool_callout': return tool === 'callout';
+              case 'tool_text': return tool === 'text';
+              case 'tool_offpage': return tool === 'offpage';
+              case 'toggle_grid': return vs.showGrid;
+              case 'toggle_snap': return vs.snapToGrid;
+              case 'toggle_crosshair': return vs.showCrosshair !== false;
+              case 'toggle_pins': return vs.showPinNumbers;
+              case 'toggle_wires': return vs.showWireNumbers;
+              case 'toggle_crossrefs': return vs.showCrossRefs;
+              case 'toggle_frame': return vs.showGostFrame;
+              case 'toggle_bridges': return vs.wireCrossingBridge !== false;
+              case 'toggle_minimap': return vs.showMinimap !== false;
+              case 'viewport_single': return viewportLayout === 'single';
+              case 'viewport_two': return viewportLayout === 'two';
+              case 'viewport_three': return viewportLayout === 'three';
+              case 'viewport_four': return viewportLayout === 'four';
+              case 'open_layers': return layerPopoverOpen;
+              default: return false;
+            }
+          };
+          const isQuickDisabled = (id: FocusQuickActionId): boolean => {
+            switch (id) {
+              case 'edit_copy':
+              case 'action_rotate':
+              case 'edit_delete':
+              case 'mirror_x':
+              case 'mirror_y':
+                return !hasAnySel;
+              case 'edit_paste':
+                return !hasClipboard;
+              case 'align_left':
+              case 'align_center':
+              case 'align_top':
+              case 'align_middle':
+                return selectedDeviceCount < 2;
+              case 'delete_sheet':
+                return totalSheets <= 1;
+              default:
+                return false;
+            }
+          };
+          const handleQuickClick = (id: FocusQuickActionId) => {
+            if (onExecuteQuickAction) {
+              onExecuteQuickAction(id);
+              return;
+            }
+            if (id === 'tool_select') onSetTool('select');
+            else if (id === 'tool_wire') onSetTool('wire');
+            else if (id === 'tool_measure') onSetTool('measure');
+            else if (id === 'tool_pan') onSetTool('pan');
+            else if (id === 'tool_text') onSetTool('text');
+            else if (id === 'tool_callout') onSetTool('callout');
+            else if (id === 'tool_rect') onSetTool('rect');
+            else if (id === 'tool_offpage') onSetTool('offpage');
+            else if (id === 'action_rotate') onRotateSelected?.();
+            else if (id === 'action_fit') onFitViewport?.();
+            else if (id === 'toggle_grid') onToggleGrid?.();
+          };
 
-        {/* Focus Mode (Variant B): Bottom-Center Interactive Command Bar (.fl-cmd) */}
+          return (
+            <div
+              data-testid="canvas-tool-dock"
+              onMouseDown={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
+              style={{
+                top: resolvedFocusLayout.toolRailTop,
+                left: resolvedFocusLayout.toolRailLeft,
+                width: resolvedFocusLayout.toolRailWidth,
+                maxHeight: resolvedFocusLayout.toolRailMaxHeight,
+              }}
+              className="no-print absolute z-20 flex flex-col items-center gap-0.5 p-1 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl transition-[top,max-height] duration-150 overflow-y-auto no-scrollbar"
+            >
+              {onToggleFocusExplorer && (
+                <>
+                  <button
+                    type="button"
+                    data-testid="focus-left-edge-tab"
+                    aria-pressed={focusExplorerOpen}
+                    title="Навигатор проекта и база компонентов (Ctrl+\)"
+                    aria-label="Устройства и база компонентов"
+                    onClick={onToggleFocusExplorer}
+                    className={`inline-flex items-center justify-center w-7 h-7 rounded-[6px] shrink-0 transition-colors ${
+                      focusExplorerOpen
+                        ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
+                        : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                    }`}
+                  >
+                    <PanelLeft className="w-3.5 h-3.5" strokeWidth={1.7} />
+                  </button>
+                  <span className="w-5 h-px bg-[var(--flux-line)] my-0.5 shrink-0" />
+                </>
+              )}
+
+              {quickIds.map((actionId, idx) => {
+                const def = getFocusQuickActionDef(actionId);
+                const active = isQuickActive(actionId);
+                const disabled = isQuickDisabled(actionId);
+                const prevGroup = idx > 0 ? getFocusQuickActionDef(quickIds[idx - 1]).group : def.group;
+                const needsDivider = idx > 0 && prevGroup !== def.group;
+                const fullTitle = `${def.title}${def.shortcut ? ` (${def.shortcut})` : ''} · ПКМ — настроить`;
+                return (
+                  <React.Fragment key={actionId}>
+                    {needsDivider && (
+                      <span className="w-5 h-px bg-[var(--flux-line)] my-0.5 shrink-0" />
+                    )}
+                    <button
+                      type="button"
+                      data-testid={`focus-rail-item-${actionId}`}
+                      data-quick-access-id={actionId}
+                      disabled={disabled}
+                      title={fullTitle}
+                      aria-label={def.label}
+                      aria-pressed={active}
+                      onClick={() => handleQuickClick(actionId)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setRailQuickMenu({
+                          actionId,
+                          mode: 'rail',
+                          x: e.clientX,
+                          y: e.clientY,
+                        });
+                      }}
+                      className={`relative inline-flex items-center justify-center w-7 h-7 rounded-[6px] shrink-0 transition-colors disabled:opacity-35 ${
+                        active
+                          ? 'text-[var(--flux-accent)]'
+                          : def.danger
+                            ? 'text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--flux-hover)]/70'
+                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70'
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId={`cad-dock-pill-${viewportIndex}`}
+                          transition={{ type: 'spring', stiffness: 520, damping: 36 }}
+                          className="absolute inset-0 rounded-[6px] bg-[var(--flux-accent-soft)] border border-[var(--flux-accent)]/35"
+                        />
+                      )}
+                      <span className="relative z-10 inline-flex items-center justify-center">
+                        {renderFocusQuickAccessIcon(actionId, 'w-3.5 h-3.5')}
+                      </span>
+                    </button>
+                  </React.Fragment>
+                );
+              })}
+
+              {onOpenRibbonForQuickAccess && (
+                <>
+                  <span className="w-5 h-px bg-[var(--flux-line)] my-0.5 shrink-0" />
+                  <button
+                    type="button"
+                    data-testid="focus-rail-customize-btn"
+                    onClick={onOpenRibbonForQuickAccess}
+                    title="Добавить команды с ленты (откройте «Лента» и нажмите ПКМ на нужной кнопке)"
+                    aria-label="Добавить команды с ленты"
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-[6px] shrink-0 text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]/70 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" strokeWidth={1.7} />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })()}
+
+        <FocusQuickAccessMenu
+          menu={railQuickMenu}
+          isPinned={true}
+          canMoveUp={Boolean(
+            railQuickMenu &&
+              (focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS).indexOf(railQuickMenu.actionId) > 0
+          )}
+          canMoveDown={Boolean(
+            railQuickMenu &&
+              (() => {
+                const list = focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS;
+                const idx = list.indexOf(railQuickMenu.actionId);
+                return idx !== -1 && idx < list.length - 1;
+              })()
+          )}
+          onClose={() => setRailQuickMenu(null)}
+          onRemove={onRemoveQuickAccess}
+          onMove={onMoveQuickAccess}
+          onReset={onResetQuickAccess}
+        />
+
+        {/* Focus Mode (Variant B): Compact Single-Row Bottom-Center Command Pill */}
         {uiMode === 'focus' && !isMultiViewport && sheet && !inPlaceEdit && (
           <div
             data-testid="focus-command-pill"
             onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
-            className="no-print absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(450px,calc(100%-460px))] min-w-[260px] rounded-[10px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/88 backdrop-blur-md shadow-xl px-2.5 py-1.5 flex flex-col gap-1"
+            style={{ maxWidth: resolvedFocusLayout.commandPillMaxWidth }}
+            className="no-print absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(430px,calc(100vw-540px))] min-w-[230px] h-[calc(36px*var(--flux-ui-scale))] rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl px-2 flex items-center gap-1.5"
           >
-            <div className="flex items-center justify-between text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-              <span className="font-medium">Командная строка САПР</span>
-              <span className="font-mono">Enter · Esc</span>
-            </div>
-            <div className="relative flex items-center gap-1.5 h-[calc(26px*var(--flux-ui-scale))] px-2 rounded-[6px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)]/90 focus-within:border-[var(--flux-accent)]">
+            <div className="relative flex-1 flex items-center gap-1.5 h-[calc(26px*var(--flux-ui-scale))] px-2 rounded-[6px] border border-[var(--flux-line)] bg-[var(--flux-bg)]/85 focus-within:border-[var(--flux-accent)] min-w-0">
               <span className="font-mono font-bold text-[var(--flux-accent)] shrink-0">›</span>
               <input
                 ref={cmdInputRef}
@@ -4516,20 +4755,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   window.setTimeout(() => setCmdFocused(false), 120);
                 }}
                 onKeyDown={handleCmdKeyDown}
-                placeholder="ПРОВОД, НАЙТИ -QF1, ПЭ3, ERC, ВПИСАТЬ…"
+                placeholder="Команда: ПРОВОД, НАЙТИ -QF1, ПЭ3…"
                 aria-label="Командная строка САПР"
                 className="flex-1 w-full min-w-0 bg-transparent text-[length:calc(11px*var(--flux-ui-scale))] font-mono text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)]/75 focus:outline-none select-text"
               />
-              {onOpenCommandPalette && (
-                <button
-                  type="button"
-                  onClick={onOpenCommandPalette}
-                  title="Открыть палитру команд (Ctrl+K)"
-                  className="px-1.5 py-0.5 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] font-mono text-[10px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:border-[var(--flux-accent)]/50 shrink-0"
-                >
-                  Ctrl+K
-                </button>
-              )}
+              <span className="hidden xl:inline font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]/75 shrink-0">
+                Enter
+              </span>
 
               {cmdFeedback && !matchingCmdHints.length && (
                 <div
@@ -4543,6 +4775,30 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   }`}
                 >
                   {cmdFeedback.text}
+                </div>
+              )}
+
+              {cmdFocused && !matchingCmdHints.length && !cmdFeedback && (
+                <div className="absolute left-0 bottom-full mb-2 z-40 px-2 py-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-popover shadow-lg flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
+                  {[
+                    { label: 'ПРОВОД', cmd: 'ПРОВОД' },
+                    { label: 'ВЫБОР', cmd: 'ВЫБОР' },
+                    { label: 'ВПИСАТЬ', cmd: 'ВПИСАТЬ' },
+                    { label: 'ПЭ3', cmd: 'ПЭ3' },
+                    { label: 'ERC', cmd: 'ERC' },
+                  ].map((chip) => (
+                    <button
+                      key={chip.cmd}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        executeCanvasCommand(chip.cmd);
+                      }}
+                      className="px-1.5 py-0.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:border-[var(--flux-accent)] hover:text-[var(--flux-accent)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] whitespace-nowrap transition-colors"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
                 </div>
               )}
 
@@ -4572,34 +4828,26 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-              {[
-                { label: 'ПРОВОД', cmd: 'ПРОВОД' },
-                { label: 'ВЫБОР', cmd: 'ВЫБОР' },
-                { label: 'ВПИСАТЬ', cmd: 'ВПИСАТЬ' },
-                { label: 'ПЭ3', cmd: 'ПЭ3' },
-                { label: 'ERC', cmd: 'ERC' },
-              ].map((chip) => (
-                <button
-                  key={chip.cmd}
-                  type="button"
-                  onClick={() => executeCanvasCommand(chip.cmd)}
-                  className="px-1.5 py-0.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:border-[var(--flux-accent)] hover:text-[var(--flux-accent)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] whitespace-nowrap transition-colors"
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
+            {onOpenCommandPalette && (
+              <button
+                type="button"
+                onClick={onOpenCommandPalette}
+                title="Открыть палитру команд (Ctrl+K)"
+                className="h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] bg-[var(--flux-surface-alt)] border border-[var(--flux-line)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:border-[var(--flux-accent)]/50 shrink-0 transition-colors"
+              >
+                Ctrl+K
+              </button>
+            )}
           </div>
         )}
 
-        {/* Focus Mode (Variant B): Bottom-Right Floating Status Pill (.fl-st) */}
+        {/* Focus Mode (Variant B): Bottom-Right Floating Status Pill */}
         {uiMode === 'focus' && !isMultiViewport && sheet && !inPlaceEdit && (
           <div
             data-testid="focus-status-pill"
             onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
-            className="no-print absolute bottom-3 right-3 z-20 inline-flex items-center gap-1 h-8 px-2 rounded-[8px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/88 backdrop-blur-md shadow-xl text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)]"
+            className="no-print absolute bottom-3 right-3 z-20 inline-flex items-center gap-1 h-[calc(36px*var(--flux-ui-scale))] px-2 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)]"
           >
             <span
               data-testid="canvas-coords"
@@ -4671,7 +4919,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   type="button"
                   data-testid="focus-console-toggle-btn"
                   onClick={onToggleFocusConsole}
-                  title="Открыть / скрыть выдвижную панель ПЭ3, кабелей, ERC и API"
+                  aria-pressed={focusConsoleOpen}
+                  title="Открыть / скрыть панель ПЭ3, кабелей, ERC, логов и API"
                   className={`inline-flex items-center gap-1 h-6 px-2 rounded-[5px] font-sans font-medium transition-colors ${
                     focusConsoleOpen
                       ? 'bg-[var(--flux-accent-solid)] text-white'

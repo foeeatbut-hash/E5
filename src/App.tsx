@@ -81,6 +81,17 @@ import {
   UI_MODE_OPTIONS,
   type UiWorkspaceMode,
 } from './core/uiMode';
+import { computeFocusLayoutMetrics } from './core/focusLayout';
+import {
+  addQuickAccessAction,
+  type FocusQuickActionId,
+  getFocusQuickActionDef,
+  loadFocusQuickAccess,
+  moveQuickAccessAction,
+  removeQuickAccessAction,
+  resetFocusQuickAccess,
+  saveFocusQuickAccess,
+} from './core/focusQuickAccess';
 import {
   CAD_LAYER_DEFS,
   isLayerLocked,
@@ -471,6 +482,71 @@ export default function App() {
   const [focusExplorerOpen, setFocusExplorerOpen] = useState(false);
   const [focusConsoleOpen, setFocusConsoleOpen] = useState(false);
   const [focusInspectorCollapsed, setFocusInspectorCollapsed] = useState(false);
+  const [focusRibbonOpen, setFocusRibbonOpen] = useState(false);
+  const [focusQuickAccessIds, setFocusQuickAccessIds] = useState<FocusQuickActionId[]>(() =>
+    loadFocusQuickAccess()
+  );
+  useEffect(() => {
+    saveFocusQuickAccess(focusQuickAccessIds);
+  }, [focusQuickAccessIds]);
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>(() =>
+    typeof window !== 'undefined'
+      ? { width: window.innerWidth, height: window.innerHeight }
+      : { width: 1440, height: 900 }
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let rafId: number | null = null;
+    const onResize = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        setViewportSize((prev) =>
+          prev.width === w && prev.height === h ? prev : { width: w, height: h }
+        );
+      });
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (uiMode !== 'focus') {
+      setFocusRibbonOpen(false);
+    }
+  }, [uiMode]);
+
+  const focusLayout = useMemo(
+    () =>
+      computeFocusLayoutMetrics({
+        viewportWidth: viewportSize.width,
+        viewportHeight: viewportSize.height,
+        uiScale,
+        ribbonOpen: focusRibbonOpen,
+        explorerOpen: focusExplorerOpen,
+        inspectorCollapsed: focusInspectorCollapsed,
+        consoleOpen: focusConsoleOpen,
+        showMinimap: project.visualSettings.showMinimap !== false,
+        railItemCount: focusQuickAccessIds.length,
+      }),
+    [
+      viewportSize.width,
+      viewportSize.height,
+      uiScale,
+      focusRibbonOpen,
+      focusExplorerOpen,
+      focusInspectorCollapsed,
+      focusConsoleOpen,
+      project.visualSettings.showMinimap,
+      focusQuickAccessIds.length,
+    ]
+  );
 
   const [bom, setBom] = useState<BomRow[]>(() => buildBom(project));
   const [cables, setCables] = useState<CableJournalRow[]>(() => buildCableJournal(project));
@@ -719,6 +795,19 @@ export default function App() {
       }
     }
 
+    const pendingCaptureLogs: Array<() => void> = [];
+    let pendingCaptureTimer: number | null = null;
+    const scheduleCaptureLog = (fn: () => void) => {
+      pendingCaptureLogs.push(fn);
+      if (pendingCaptureTimer === null) {
+        pendingCaptureTimer = window.setTimeout(() => {
+          pendingCaptureTimer = null;
+          const batch = pendingCaptureLogs.splice(0, pendingCaptureLogs.length);
+          for (const entry of batch) entry();
+        }, 0);
+      }
+    };
+
     const onCaptureClick = (e: MouseEvent) => {
       const targetInfo = describeInteractiveTarget(e.target);
       if (!targetInfo) return;
@@ -734,16 +823,20 @@ export default function App() {
         Boolean(targetInfo.testId);
       if (!isControl) return;
       const btnName = e.button === 1 ? 'СКМ' : e.button === 2 ? 'ПКМ' : 'ЛКМ';
-      appendLog(
-        'INFO',
-        'UI-INTERACT',
-        `Нажатие [${btnName}]: «${targetInfo.label}»`,
-        undefined,
-        undefined,
-        {
-          cause: `Взаимодействие с <${targetInfo.tag}>${targetInfo.testId ? ` [data-testid="${targetInfo.testId}"]` : ''}`,
-          outcome: `Координаты клика: (${Math.round(e.clientX)}, ${Math.round(e.clientY)})`,
-        }
+      const cx = Math.round(e.clientX);
+      const cy = Math.round(e.clientY);
+      scheduleCaptureLog(() =>
+        appendLog(
+          'INFO',
+          'UI-INTERACT',
+          `Нажатие [${btnName}]: «${targetInfo.label}»`,
+          undefined,
+          undefined,
+          {
+            cause: `Взаимодействие с <${targetInfo.tag}>${targetInfo.testId ? ` [data-testid="${targetInfo.testId}"]` : ''}`,
+            outcome: `Координаты клика: (${cx}, ${cy})`,
+          }
+        )
       );
     };
 
@@ -756,16 +849,18 @@ export default function App() {
         target instanceof HTMLInputElement && target.type === 'checkbox'
           ? String(target.checked)
           : String((target as HTMLInputElement).value ?? '').slice(0, 64);
-      appendLog(
-        'INFO',
-        'UI-INTERACT',
-        `Изменено значение «${info.label}» → "${valPreview}"`,
-        undefined,
-        undefined,
-        {
-          cause: `Событие change на <${info.tag}>${info.testId ? ` [data-testid="${info.testId}"]` : ''}`,
-          outcome: `Новое значение: "${valPreview}"`,
-        }
+      scheduleCaptureLog(() =>
+        appendLog(
+          'INFO',
+          'UI-INTERACT',
+          `Изменено значение «${info.label}» → "${valPreview}"`,
+          undefined,
+          undefined,
+          {
+            cause: `Событие change на <${info.tag}>${info.testId ? ` [data-testid="${info.testId}"]` : ''}`,
+            outcome: `Новое значение: "${valPreview}"`,
+          }
+        )
       );
     };
 
@@ -791,16 +886,19 @@ export default function App() {
         e.shiftKey ? 'Shift' : '',
         e.key === ' ' ? 'Space' : e.key,
       ].filter(Boolean);
-      appendLog(
-        'INFO',
-        'UI-INTERACT',
-        `Клавиша: ${parts.join('+')}`,
-        undefined,
-        undefined,
-        {
-          cause: `Нажатие клавиатуры${inText ? ' в поле ввода' : ' на рабочей области'}`,
-          outcome: 'Передано обработчику горячих клавиш / элемента',
-        }
+      const keyCombo = parts.join('+');
+      scheduleCaptureLog(() =>
+        appendLog(
+          'INFO',
+          'UI-INTERACT',
+          `Клавиша: ${keyCombo}`,
+          undefined,
+          undefined,
+          {
+            cause: `Нажатие клавиатуры${inText ? ' в поле ввода' : ' на рабочей области'}`,
+            outcome: 'Передано обработчику горячих клавиш / элемента',
+          }
+        )
       );
     };
 
@@ -910,6 +1008,10 @@ export default function App() {
     window.addEventListener('unhandledrejection', onUnhandledRejection);
 
     return () => {
+      if (pendingCaptureTimer !== null) {
+        window.clearTimeout(pendingCaptureTimer);
+        pendingCaptureTimer = null;
+      }
       longTaskObs?.disconnect();
       document.removeEventListener('click', onCaptureClick, true);
       document.removeEventListener('change', onCaptureChange, true);
@@ -4530,6 +4632,10 @@ export default function App() {
     [commitProject, appendLog]
   );
 
+  const handleCloseVisualModal = useCallback(() => {
+    setVisualOpen(false);
+  }, []);
+
   const handleInsertGostTable = useCallback(
     (tableKind: 'bom' | 'cables') => {
       const cur = docStateRef.current.present;
@@ -4735,6 +4841,7 @@ export default function App() {
         smartGuides: project.visualSettings.smartGuides !== false,
         showGrid: project.visualSettings.showGrid,
         showCrosshair: project.visualSettings.showCrosshair !== false,
+        showMinimap: project.visualSettings.showMinimap !== false,
       }),
     [
       project,
@@ -4819,6 +4926,15 @@ export default function App() {
             showCrosshair: nextCh,
           });
           appendLog('INFO', 'E3-CORE', `Перекрестие курсора: ${nextCh ? 'включено' : 'выключено'}.`);
+          break;
+        }
+        case 'toggle-minimap': {
+          const nextMap = !(project.visualSettings.showMinimap !== false);
+          handleApplyVisualSettings({
+            ...project.visualSettings,
+            showMinimap: nextMap,
+          });
+          appendLog('INFO', 'E3-CORE', `Мини-карта листа: ${nextMap ? 'показана' : 'скрыта'}.`);
           break;
         }
         case 'autoroute':
@@ -5634,6 +5750,9 @@ export default function App() {
           onSaveDeviceToCatalog={handleSaveDeviceToCatalog}
           onEditDeviceSymbol={openDeviceSymbolInWorkspace}
           symbolWorkspace={symbolWorkspaceActions}
+          onCollapseFocusPanel={
+            uiMode === 'focus' ? () => setFocusInspectorCollapsed(true) : undefined
+          }
           onUpdateWire={(wireId, patch) => {
             if (isLayerLocked(docStateRef.current.present.layers, 'wires')) return;
             commitCoalesced(`wire:${wireId}:${Object.keys(patch).join(',')}`, (prev) => ({
@@ -6100,6 +6219,228 @@ export default function App() {
     []
   );
 
+  const handleToggleFocusConsole = useCallback(() => {
+    setFocusConsoleOpen((o) => !o);
+  }, []);
+
+  const handleToggleFocusExplorer = useCallback(() => {
+    setFocusExplorerOpen((o) => !o);
+  }, []);
+
+  const handleOpenCommandPaletteModal = useCallback(() => {
+    setCommandPaletteInitialQuery('');
+    setCommandPaletteOpen(true);
+  }, []);
+
+  const handleOpenRibbonForQuickAccess = useCallback(() => {
+    setFocusRibbonOpen(true);
+  }, []);
+
+  const handleToggleMinimap = useCallback(() => {
+    const vs = docStateRef.current.present.visualSettings;
+    const next = !(vs.showMinimap !== false);
+    handleApplyVisualSettings({ ...vs, showMinimap: next });
+    appendLog('INFO', 'E3-CORE', `Мини-карта листа: ${next ? 'показана' : 'скрыта'}.`);
+  }, [handleApplyVisualSettings, appendLog]);
+
+  const handleAddFocusQuickAccess = useCallback(
+    (id: FocusQuickActionId) => {
+      setFocusQuickAccessIds((prev) => addQuickAccessAction(prev, id));
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Функция «${getFocusQuickActionDef(id).label}» добавлена в левую панель быстрого доступа.`
+      );
+    },
+    [appendLog]
+  );
+
+  const handleRemoveFocusQuickAccess = useCallback(
+    (id: FocusQuickActionId) => {
+      setFocusQuickAccessIds((prev) => removeQuickAccessAction(prev, id));
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Функция «${getFocusQuickActionDef(id).label}» убрана из панели быстрого доступа.`
+      );
+    },
+    [appendLog]
+  );
+
+  const handleMoveFocusQuickAccess = useCallback(
+    (id: FocusQuickActionId, delta: -1 | 1) => {
+      setFocusQuickAccessIds((prev) => moveQuickAccessAction(prev, id, delta));
+    },
+    []
+  );
+
+  const handleResetFocusQuickAccess = useCallback(() => {
+    setFocusQuickAccessIds(resetFocusQuickAccess());
+    appendLog('INFO', 'E3-CORE', 'Левая панель быстрого доступа сброшена по умолчанию.');
+  }, [appendLog]);
+
+  const handleExecuteFocusQuickAction = useCallback(
+    (id: FocusQuickActionId) => {
+      const curProj = docStateRef.current.present;
+      const curSheetId = activeSheetIdRef.current || curProj.sheets[0]?.id || 'sheet-1';
+      switch (id) {
+        case 'tool_select': setTool('select'); break;
+        case 'tool_wire': setTool('wire'); break;
+        case 'tool_measure': setTool('measure'); break;
+        case 'tool_pan': setTool('pan'); break;
+        case 'tool_rect': setTool('rect'); break;
+        case 'tool_callout': setTool('callout'); break;
+        case 'tool_text': setTool('text'); break;
+        case 'tool_offpage': setTool('offpage'); break;
+        case 'open_symbol_designer': openBlockEditorWorkspace(); break;
+        case 'auto_route': handleAutoRouteActiveSheetWires(); break;
+        case 'edit_copy': handleCopySelected(); break;
+        case 'edit_paste': handlePasteClipboard(); break;
+        case 'action_rotate': handleRotateSelected(); break;
+        case 'edit_delete': handleDeleteSelected(); break;
+        case 'mirror_x': handleMirrorSelected('x'); break;
+        case 'mirror_y': handleMirrorSelected('y'); break;
+        case 'align_left': handleAlignSelected('left'); break;
+        case 'align_center': handleAlignSelected('center'); break;
+        case 'align_top': handleAlignSelected('top'); break;
+        case 'align_middle': handleAlignSelected('middle'); break;
+        case 'open_catalog_tab':
+          setLeftTab('library');
+          if (uiModeRef.current === 'focus') setFocusExplorerOpen(true);
+          break;
+        case 'open_add_catalog':
+          setEditingCatalogItem(null);
+          setCatalogModalOpen(true);
+          break;
+        case 'run_erc':
+          setConsoleTab('erc');
+          setConsoleCollapsed(false);
+          if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
+          break;
+        case 'open_bom':
+          setConsoleTab('bom');
+          setConsoleCollapsed(false);
+          if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
+          break;
+        case 'open_report': setReportOpen(true); break;
+        case 'toggle_grid': handleCanvasToggleGrid(); break;
+        case 'toggle_snap': handleCanvasToggleSnap(); break;
+        case 'toggle_crosshair': handleCanvasToggleCrosshair(); break;
+        case 'insert_bom_table': handleInsertGostTable('bom'); break;
+        case 'insert_cable_table': handleInsertGostTable('cables'); break;
+        case 'toggle_pins':
+          handleApplyVisualSettings({ ...curProj.visualSettings, showPinNumbers: !curProj.visualSettings.showPinNumbers });
+          break;
+        case 'toggle_wires':
+          handleApplyVisualSettings({ ...curProj.visualSettings, showWireNumbers: !curProj.visualSettings.showWireNumbers });
+          break;
+        case 'toggle_crossrefs':
+          handleApplyVisualSettings({ ...curProj.visualSettings, showCrossRefs: !curProj.visualSettings.showCrossRefs });
+          break;
+        case 'toggle_frame':
+          handleApplyVisualSettings({ ...curProj.visualSettings, showGostFrame: !curProj.visualSettings.showGostFrame });
+          break;
+        case 'toggle_bridges':
+          handleApplyVisualSettings({ ...curProj.visualSettings, wireCrossingBridge: !(curProj.visualSettings.wireCrossingBridge !== false) });
+          break;
+        case 'open_visual_settings': setVisualOpen(true); break;
+        case 'add_sheet': handleAddSheet(); break;
+        case 'duplicate_sheet': handleDuplicateSheet(curSheetId); break;
+        case 'delete_sheet': handleDeleteSheet(curSheetId); break;
+        case 'open_stamp_editor':
+          if (!isLayerLocked(curProj.layers, 'frame')) {
+            setStampModalState({ open: true, sheetId: curSheetId, mode: 'values', field: null });
+          }
+          break;
+        case 'open_stamp_designer':
+          setStampModalState({ open: true, sheetId: curSheetId, mode: 'designer', field: null });
+          break;
+        case 'open_hvac_wizard': setHvacWizardOpen(true); break;
+        case 'open_terminals': setTerminalEditorOpen(true); break;
+        case 'open_autonumber': setAutoNumberModalOpen(true); break;
+        case 'viewport_single': handleSetViewportLayout('single'); break;
+        case 'viewport_two': handleSetViewportLayout('two'); break;
+        case 'viewport_three': handleSetViewportLayout('three'); break;
+        case 'viewport_four': handleSetViewportLayout('four'); break;
+        case 'action_fit': fitSheetToViewport(undefined, activeViewportIdxRef.current, true); break;
+        case 'toggle_minimap': handleToggleMinimap(); break;
+        case 'open_layers':
+          document.querySelector<HTMLButtonElement>('[data-testid="canvas-layers-btn"]')?.click();
+          break;
+        case 'reset_dock':
+          setFocusExplorerOpen(false);
+          setFocusConsoleOpen(false);
+          setFocusInspectorCollapsed(false);
+          setFocusRibbonOpen(false);
+          appendLog('INFO', 'E3-CORE', 'Расположение плавающих панелей сброшено.');
+          break;
+        case 'flux_push': void handlePushToFluxHost(); break;
+        case 'flux_bus':
+          setConsoleTab('api');
+          setRequestedApiSubTab('flux-internal');
+          setConsoleCollapsed(false);
+          if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
+          break;
+        case 'flux_publish': setFluxPublishOpen(true); break;
+        case 'flux_zip':
+          window.location.assign(`/api/export/flux-studio?projectId=${encodeURIComponent(curProj.id)}`);
+          break;
+        case 'export_bridge_json': handleExportFluxBridge(); break;
+        case 'e3_open_file':
+          document.querySelector<HTMLInputElement>('[data-testid="toolbar-e3s-input"]')?.click();
+          break;
+        case 'e3_direct':
+          void handleDirectOpenE3('build').then((res) => {
+            if (!res?.ok) setExchangeOpen(true);
+          });
+          break;
+        case 'e3_exchange': setExchangeOpen(true); break;
+        case 'open_publish': setPublishModalOpen(true); break;
+        case 'export_dxf': void handleExportDxf(); break;
+        case 'export_bom_csv':
+          downloadText(`${curProj.projectCode}-PE3.csv`, exportBomCsv(buildBom(curProj)), 'text/csv;charset=utf-8');
+          break;
+        case 'export_cables_csv':
+          downloadText(
+            `${curProj.projectCode}-cables.csv`,
+            exportCableJournalCsv(buildCableJournal(curProj), buildNetWireLengths(curProj)),
+            'text/csv;charset=utf-8'
+          );
+          break;
+        case 'open_portable': setPortableOpen(true); break;
+        case 'download_codebase':
+          window.location.assign('/api/export/codebase');
+          break;
+      }
+    },
+    [
+      openBlockEditorWorkspace,
+      handleAutoRouteActiveSheetWires,
+      handleCopySelected,
+      handlePasteClipboard,
+      handleRotateSelected,
+      handleDeleteSelected,
+      handleMirrorSelected,
+      handleAlignSelected,
+      setConsoleCollapsed,
+      handleCanvasToggleGrid,
+      handleCanvasToggleSnap,
+      handleCanvasToggleCrosshair,
+      handleInsertGostTable,
+      handleApplyVisualSettings,
+      handleAddSheet,
+      handleDuplicateSheet,
+      handleDeleteSheet,
+      handleSetViewportLayout,
+      fitSheetToViewport,
+      handleToggleMinimap,
+      appendLog,
+      handlePushToFluxHost,
+      handleDirectOpenE3,
+      handleExportDxf,
+    ]
+  );
+
   const viewportHandlers = useMemo(
     () =>
       Array.from({ length: 4 }, (_, idx) => ({
@@ -6167,7 +6508,7 @@ export default function App() {
     []
   );
 
-  const workspaceBoundsRect = workspaceRef.current?.getBoundingClientRect();
+  const workspaceBoundsRect = panelDrag ? workspaceRef.current?.getBoundingClientRect() : undefined;
 
   return (
     <MotionConfig reducedMotion="user">
@@ -6417,6 +6758,14 @@ export default function App() {
         onCreateNewProject={handleCreateNewProject}
         onOpenRecentProject={handleOpenRecentProject}
         onRemoveRecentProject={handleRemoveRecentProject}
+        ribbonCollapsed={uiMode === 'focus' ? !focusRibbonOpen : undefined}
+        onRibbonCollapsedChange={
+          uiMode === 'focus' ? (collapsed) => setFocusRibbonOpen(!collapsed) : undefined
+        }
+        focusQuickAccessIds={focusQuickAccessIds}
+        onAddQuickAccess={handleAddFocusQuickAccess}
+        onRemoveQuickAccess={handleRemoveFocusQuickAccess}
+        onToggleMinimap={handleToggleMinimap}
       />
 
       {/* Dockable Workspace Shell (Full-Bleed in Focus Mode, Docked 4-Zone Grid in Classic & Hybrid) */}
@@ -6551,7 +6900,19 @@ export default function App() {
                     catalog={mergedCatalog}
                     uiMode={uiMode}
                     focusConsoleOpen={focusConsoleOpen}
-                    onToggleFocusConsole={() => setFocusConsoleOpen((o) => !o)}
+                    onToggleFocusConsole={handleToggleFocusConsole}
+                    focusExplorerOpen={focusExplorerOpen}
+                    onToggleFocusExplorer={handleToggleFocusExplorer}
+                    focusLayout={focusLayout}
+                    focusQuickAccessIds={focusQuickAccessIds}
+                    onExecuteQuickAction={handleExecuteFocusQuickAction}
+                    onRemoveQuickAccess={handleRemoveFocusQuickAccess}
+                    onMoveQuickAccess={handleMoveFocusQuickAccess}
+                    onResetQuickAccess={handleResetFocusQuickAccess}
+                    onOpenRibbonForQuickAccess={handleOpenRibbonForQuickAccess}
+                    selectedDeviceCount={selectedDeviceIds.length > 0 ? selectedDeviceIds.length : selectedDeviceId ? 1 : 0}
+                    sheetCount={project.sheets.length}
+                    viewportLayout={viewportLayout}
                     activeSheetId={vpSheetId}
                     openSheetIds={viewportLayout === 'single' ? openSheetIds : undefined}
                     viewportIndex={idx}
@@ -6594,10 +6955,7 @@ export default function App() {
                     onDuplicateSelected={handleDuplicateSelected}
                     onPasteClipboard={handlePasteClipboard}
                     hasClipboard={hasClipboard}
-                    onOpenCommandPalette={() => {
-                      setCommandPaletteInitialQuery('');
-                      setCommandPaletteOpen(true);
-                    }}
+                    onOpenCommandPalette={handleOpenCommandPaletteModal}
                     onDeleteSelected={handleDeleteSelected}
                     onBeginDrag={handleBeginDrag}
                     onCommitDrag={handleCommitDrag}
@@ -6632,25 +6990,21 @@ export default function App() {
 
         {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(bottomPanels, 'bottom')}
 
-        {/* Focus Mode (Variant B) Glass Overlays: Left Edge Drawer, Floating Inspector, Slide-Up Console */}
+        {/* Focus Mode (Variant B) Glass Overlays: Coordinated Explorer Drawer, Floating Inspector, Slide-Up Console */}
         {uiMode === 'focus' && !symbolDraft.open && (
           <>
-            {!focusExplorerOpen && (
+            {!focusExplorerOpen && viewportLayout !== 'single' && (
               <button
                 type="button"
                 data-testid="focus-left-edge-tab"
                 onClick={() => setFocusExplorerOpen(true)}
-                title="Открыть устройства и библиотеку компонентов (Ctrl+\\)"
+                title="Открыть устройства и библиотеку компонентов (Ctrl+\)"
                 aria-label="Открыть устройства и библиотеку компонентов"
-                className="no-print fixed left-0 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1.5 py-2.5 px-1 rounded-r-[8px] border border-l-0 border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/85 hover:bg-[var(--flux-surface)] hover:border-[var(--flux-accent)] backdrop-blur-md shadow-lg text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-all"
+                style={{ top: focusLayout.explorerTop, left: focusLayout.outerPad }}
+                className="no-print absolute z-30 inline-flex items-center gap-1.5 h-[calc(34px*var(--flux-ui-scale))] px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface hover:border-[var(--flux-accent)] shadow-lg text-[11px] font-medium text-[var(--flux-text)] transition-all"
               >
                 <ChevronRight className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-                <span
-                  className="text-[10px] font-semibold tracking-wider uppercase select-none"
-                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
-                >
-                  Устройства · База
-                </span>
+                <span>Навигатор</span>
               </button>
             )}
 
@@ -6658,15 +7012,21 @@ export default function App() {
               {focusExplorerOpen && (
                 <motion.div
                   data-testid="focus-explorer-drawer"
-                  initial={{ opacity: 0, x: -16 }}
+                  initial={{ opacity: 0, x: -12 }}
                   animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -16 }}
+                  exit={{ opacity: 0, x: -12 }}
                   transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                  className="no-print absolute left-3 sm:left-[52px] top-[54px] bottom-[96px] w-[264px] max-w-[82vw] z-30 rounded-[10px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/92 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col"
+                  style={{
+                    left: focusLayout.explorerLeft,
+                    top: focusLayout.explorerTop,
+                    bottom: focusLayout.explorerBottom,
+                    width: focusLayout.explorerWidth,
+                  }}
+                  className="no-print absolute max-w-[calc(100vw-80px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col transition-[top,bottom] duration-150"
                 >
-                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between shrink-0">
-                    <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[var(--flux-text-muted)]">
-                      Устройства и библиотека
+                  <div className="h-7 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between shrink-0">
+                    <span className="text-[11px] font-semibold text-[var(--flux-text)] truncate">
+                      Навигатор проекта
                     </span>
                     <button
                       type="button"
@@ -6674,7 +7034,7 @@ export default function App() {
                       onClick={() => setFocusExplorerOpen(false)}
                       title="Свернуть панель устройств (Ctrl+\)"
                       aria-label="Закрыть панель устройств"
-                      className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                      className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
                     >
                       <ChevronLeft className="w-3.5 h-3.5" />
                     </button>
@@ -6686,14 +7046,15 @@ export default function App() {
               )}
             </AnimatePresence>
 
-            {/* Floating Semi-Transparent Right Inspector (.fl-prop) */}
+            {/* Floating Right Inspector */}
             {focusInspectorCollapsed ? (
               <button
                 type="button"
                 data-testid="focus-floating-inspector"
                 onClick={() => setFocusInspectorCollapsed(false)}
-                title="Развернуть плавающий инспектор свойств"
-                className="no-print absolute right-3 top-[54px] z-30 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/85 hover:bg-[var(--flux-surface)] hover:border-[var(--flux-accent)] backdrop-blur-md shadow-lg text-[11px] font-medium text-[var(--flux-text)] transition-all"
+                title="Развернуть инспектор свойств"
+                style={{ top: focusLayout.inspectorTop, right: focusLayout.inspectorRight }}
+                className="no-print absolute z-30 inline-flex items-center gap-1.5 h-[calc(34px*var(--flux-ui-scale))] px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface hover:border-[var(--flux-accent)] shadow-lg text-[11px] font-medium text-[var(--flux-text)] transition-[top] duration-150"
               >
                 <ChevronLeft className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                 <span>Свойства</span>
@@ -6701,23 +7062,14 @@ export default function App() {
             ) : (
               <div
                 data-testid="focus-floating-inspector"
-                className="no-print absolute right-3 top-[54px] w-[276px] max-w-[calc(100vw-24px)] max-h-[calc(100vh-124px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/90 hover:bg-[var(--flux-surface)]/97 focus-within:bg-[var(--flux-surface)]/97 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col opacity-92 hover:opacity-100 focus-within:opacity-100 transition-all"
+                style={{
+                  top: focusLayout.inspectorTop,
+                  right: focusLayout.inspectorRight,
+                  width: focusLayout.inspectorWidth,
+                  maxHeight: focusLayout.inspectorMaxHeight,
+                }}
+                className="no-print absolute max-w-[calc(100vw-24px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col transition-[top,max-height] duration-150"
               >
-                <div className="h-5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between shrink-0">
-                  <span className="text-[9.5px] font-semibold uppercase tracking-wider text-[var(--flux-text-muted)]">
-                    Плавающий инспектор
-                  </span>
-                  <button
-                    type="button"
-                    data-testid="focus-inspector-collapse-btn"
-                    onClick={() => setFocusInspectorCollapsed(true)}
-                    title="Свернуть инспектор в кнопку"
-                    aria-label="Свернуть инспектор"
-                    className="inline-flex items-center justify-center w-4 h-4 rounded-[3px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-                  >
-                    <ChevronRight className="w-3 h-3" />
-                  </button>
-                </div>
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   {renderPanelContent('inspector')}
                 </div>
@@ -6729,15 +7081,17 @@ export default function App() {
               {focusConsoleOpen && (
                 <motion.div
                   data-testid="focus-console-drawer"
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 20 }}
+                  exit={{ opacity: 0, y: 16 }}
                   transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                  className={`no-print absolute bottom-[96px] ${
-                    focusExplorerOpen ? 'left-3 sm:left-[324px]' : 'left-3'
-                  } ${
-                    focusInspectorCollapsed ? 'right-3' : 'right-3 lg:right-[296px]'
-                  } h-[225px] z-35 rounded-[10px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/95 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col`}
+                  style={{
+                    bottom: focusLayout.consoleBottom,
+                    left: focusLayout.consoleLeft,
+                    right: focusLayout.consoleRight,
+                    height: focusLayout.consoleHeight,
+                  }}
+                  className="no-print absolute z-35 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col"
                 >
                   <BottomConsole
                     project={project}
@@ -6878,7 +7232,7 @@ export default function App() {
         onChangeUiScale={handleChangeUiScale}
         uiMode={uiMode}
         onChangeUiMode={handleChangeUiMode}
-        onClose={() => setVisualOpen(false)}
+        onClose={handleCloseVisualModal}
         onApply={handleApplyVisualSettings}
       />
 

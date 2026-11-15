@@ -11,6 +11,7 @@ import {
   ArrowLeftRight,
   BookmarkPlus,
   Check,
+  ChevronRight,
   Copy,
   CopyPlus,
   FileSpreadsheet,
@@ -105,6 +106,7 @@ interface RightInspectorProps {
     sheetId: string,
     opts: { revisionLabel: string; changeDoc?: string; comment?: string }
   ) => void;
+  onCollapseFocusPanel?: () => void;
 }
 
 const parseFiniteNum = (raw: string): number | null => {
@@ -253,6 +255,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   onHighlightPotential,
   onRestoreSheetRevision,
   onReleaseSheetRevision,
+  onCollapseFocusPanel,
   symbolWorkspace,
   onEditDeviceSymbol,
 }) => {
@@ -336,18 +339,18 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
       data-testid="right-inspector"
       className="no-print w-full h-full flex-1 min-w-0 max-w-full flux-glass-surface flex flex-col min-h-0 overflow-x-hidden select-none"
     >
-      <div className="px-2 h-6 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-1.5 shrink-0">
+      <div className="px-2.5 h-7 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-1.5 shrink-0">
         <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] truncate">
           {isMultiSelection
             ? `Выборка: ${totalSelectedCount} об.`
             : selectedDevice
-              ? `Изделие · ${selectedDevice.designation}`
+              ? `Свойства · ${selectedDevice.designation}`
               : selectedWire
                 ? `Цепь · ${selectedWire.netName}`
                 : selectedAnnotation
                   ? `Аннотация · ${selectedAnnotation.kind === 'rect' ? 'Зона' : selectedAnnotation.kind === 'callout' ? 'Выноска' : 'Текст'}`
                   : activeSheet
-                    ? 'Лист ГОСТ 2.104'
+                    ? 'Свойства листа ГОСТ 2.104'
                     : 'Нет открытых листов'}
         </span>
         <div className="flex items-center gap-1 shrink-0">
@@ -403,10 +406,22 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               </button>
             );
           })()}
+          {uiMode === 'focus' && onCollapseFocusPanel && (
+            <button
+              type="button"
+              data-testid="focus-inspector-collapse-btn"
+              onClick={onCollapseFocusPanel}
+              title="Свернуть инспектор свойств"
+              aria-label="Свернуть инспектор"
+              className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden pb-2">
         {activeLayerLocked && (
           <div
             data-testid="inspector-layer-locked-banner"

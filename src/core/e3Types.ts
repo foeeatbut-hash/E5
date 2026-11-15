@@ -353,6 +353,7 @@ export interface E3VisualSettings {
   showPinNumbers: boolean;
   showWireNumbers: boolean;
   showCrossRefs: boolean;
+  showMinimap?: boolean;
   wireWidth: number;
   symbolStrokeWidth: number;
   frameStrokeWidth?: number;

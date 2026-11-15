@@ -432,7 +432,7 @@ const SIGNAL_LABELS: Record<SignalType, string> = {
   bus: 'Промышленная шина (RS-485)',
 };
 
-export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
+export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = React.memo(({
   open,
   settings,
   uiScale = 100,
@@ -442,11 +442,16 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
   onClose,
   onApply,
 }) => {
-  const [draft, setDraft] = useState<E3VisualSettings>(settings);
+  const [draft, setDraft] = useState<E3VisualSettings>(() => structuredClone(settings));
   const [error, setError] = useState('');
+  const wasOpenRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (open) setDraft(structuredClone(settings));
+    if (open && !wasOpenRef.current) {
+      setDraft(structuredClone(settings));
+      setError('');
+    }
+    wasOpenRef.current = open;
   }, [open, settings]);
 
   React.useEffect(() => {
@@ -733,6 +738,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                 ['showPinNumbers', 'Номера выводов'],
                 ['showWireNumbers', 'Маркировка проводов'],
                 ['showCrossRefs', 'Перекрёстные ссылки E3'],
+                ['showMinimap', 'Мини-карта листа (Фокус / Гибрид)'],
               ] as const
             ).map(([key, label]) => (
               <label key={key} className="flex items-center gap-2 text-[var(--flux-text)] cursor-pointer">
@@ -746,7 +752,9 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
                         ? draft.showCrosshair !== false
                         : key === 'wireCrossingBridge'
                           ? draft.wireCrossingBridge !== false
-                          : Boolean(draft[key])
+                          : key === 'showMinimap'
+                            ? draft.showMinimap !== false
+                            : Boolean(draft[key])
                   }
                   onChange={(e) => setDraft({ ...draft, [key]: e.target.checked })}
                   className="accent-[var(--flux-accent)]"
@@ -781,48 +789,51 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
           </div>
 
           {error && <div className="text-rose-600 dark:text-rose-400">{error}</div>}
+        </div>
 
-          <div className="pt-3 border-t border-[var(--flux-line)] flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleExportJson}
-                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Экспорт настроек JSON</span>
-              </button>
-              <label className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium cursor-pointer">
-                <Upload className="w-3.5 h-3.5" />
-                <span>Импорт JSON</span>
-                <input type="file" accept=".json" onChange={handleImportJson} className="sr-only" />
-              </label>
-            </div>
+        <div className="shrink-0 px-4 py-3 border-t border-[var(--flux-line)] flux-glass-bar flex flex-wrap items-center justify-between gap-2 text-[length:calc(12px*var(--flux-ui-scale))]">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportJson}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Экспорт настроек JSON</span>
+            </button>
+            <label className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium cursor-pointer">
+              <Upload className="w-3.5 h-3.5" />
+              <span>Импорт JSON</span>
+              <input type="file" accept=".json" onChange={handleImportJson} className="sr-only" />
+            </label>
+          </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="h-8 px-3 rounded border border-[var(--flux-line)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onApply(draft);
-                  onClose();
-                }}
-                className="h-8 px-3 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium"
-              >
-                Применить и синхронизировать
-              </button>
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="vs-cancel-btn"
+              onClick={onClose}
+              className="h-8 px-3 rounded border border-[var(--flux-line)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              data-testid="vs-apply-btn"
+              onClick={() => {
+                onApply(draft);
+                onClose();
+              }}
+              className="h-8 px-3 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium"
+            >
+              Применить и синхронизировать
+            </button>
           </div>
         </div>
     </StudioWindow>
   );
-};
+});
+VisualSettingsModal.displayName = 'VisualSettingsModal';
 
 interface ReportModalProps {
   open: boolean;

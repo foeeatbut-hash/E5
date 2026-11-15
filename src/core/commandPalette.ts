@@ -19,6 +19,7 @@ export type CommandPaletteAction =
   | { type: 'toggle-guides' }
   | { type: 'toggle-grid' }
   | { type: 'toggle-crosshair' }
+  | { type: 'toggle-minimap' }
   | { type: 'autoroute' }
   | { type: 'open-erc' }
   | { type: 'open-health' }
@@ -81,6 +82,7 @@ export function buildCommandPaletteItems(
     smartGuides?: boolean;
     showGrid?: boolean;
     showCrosshair?: boolean;
+    showMinimap?: boolean;
   } = {}
 ): CommandPaletteItem[] {
   const hasSel = Boolean(opts.hasSelection);
@@ -256,6 +258,14 @@ export function buildCommandPaletteItems(
       category: 'view',
       keywords: ['crosshair', 'прицел', 'перекрестие'],
       action: { type: 'toggle-crosshair' },
+    },
+    {
+      id: 'cmd-minimap',
+      title: `Мини-карта листа: ${opts.showMinimap !== false ? 'ПОКАЗАНА' : 'СКРЫТА'} (MINIMAP / МИНИКАРТА)`,
+      subtitle: 'Показать или скрыть компактную мини-карту навигации по листу',
+      category: 'view',
+      keywords: ['minimap', 'map', 'миникарта', 'мини-карта', 'карта'],
+      action: { type: 'toggle-minimap' },
     },
     {
       id: 'cmd-autoroute',

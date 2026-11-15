@@ -14,6 +14,7 @@ export const DEFAULT_VISUAL_SETTINGS: E3VisualSettings = {
   showPinNumbers: true,
   showWireNumbers: true,
   showCrossRefs: true,
+  showMinimap: true,
   wireWidth: 2,
   symbolStrokeWidth: 1.75,
   frameStrokeWidth: 1.6,

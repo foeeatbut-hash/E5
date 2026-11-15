@@ -1,0 +1,123 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { computeFocusLayoutMetrics } from './focusLayout.ts';
+
+test('computeFocusLayoutMetrics maintains strict non-overlapping clearances in default Focus state', () => {
+  const m = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 100,
+    ribbonOpen: false,
+    explorerOpen: false,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+  });
+
+  assert.equal(m.outerPad, 12);
+  assert.equal(m.topBarHeight, 34);
+  assert.equal(m.bottomBarHeight, 36);
+  assert.equal(m.topClearance, 56);
+  assert.equal(m.selectionBarTop, m.topClearance);
+  assert.equal(m.toolRailTop, m.topClearance);
+  assert.equal(m.inspectorTop, m.topClearance);
+  assert.equal(m.inspectorBottom, m.bottomDockClearance);
+  assert.ok(m.inspectorWidth >= 300);
+  assert.ok(m.sheetTabsMaxWidth >= 460);
+  assert.equal(m.minimapLeft, 12);
+  assert.equal(m.minimapBottom, 12);
+  assert.equal(m.showMinimap, true);
+});
+
+test('expanding Ribbon shifts all top-anchored panels down cleanly without overlap', () => {
+  const closed = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 100,
+    ribbonOpen: false,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+  });
+
+  const open = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 100,
+    ribbonOpen: true,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+  });
+
+  const ribbonBottom = open.ribbonTop + open.ribbonTotalHeight;
+  assert.ok(open.topClearance >= ribbonBottom + open.gutter);
+  assert.ok(open.topClearance > closed.topClearance);
+  assert.equal(open.toolRailTop, open.topClearance);
+  assert.equal(open.explorerTop, open.topClearance);
+  assert.equal(open.inspectorTop, open.topClearance);
+  assert.equal(open.selectionBarTop, open.topClearance);
+});
+
+test('opening Console lifts Inspector, Explorer, and Minimap above Console without collision at 1440x900 and 1280x720', () => {
+  for (const [vw, vh] of [
+    [1440, 900],
+    [1280, 720],
+  ] as const) {
+    const m = computeFocusLayoutMetrics({
+      viewportWidth: vw,
+      viewportHeight: vh,
+      uiScale: 100,
+      ribbonOpen: false,
+      explorerOpen: true,
+      inspectorCollapsed: false,
+      consoleOpen: true,
+    });
+
+    const consoleTopFromBottom = m.consoleBottom + m.consoleHeight;
+    assert.ok(m.explorerBottom >= consoleTopFromBottom + m.gutter);
+    assert.ok(m.inspectorBottom >= consoleTopFromBottom + m.gutter);
+    assert.ok(m.explorerLeft >= m.toolRailLeft + m.toolRailWidth + m.gutter);
+    assert.equal(m.minimapBottom, m.explorerBottom);
+    assert.ok(m.minimapLeft >= m.explorerLeft + m.explorerWidth + m.gutter);
+    assert.ok(m.inspectorMaxHeight >= 200);
+    assert.ok(m.commandPillMaxWidth >= 220);
+
+    // Top row center pill bounds remain well clear of left/right pills
+    const centerLeft = m.sheetTabsCenterX - m.sheetTabsMaxWidth / 2;
+    const centerRight = m.sheetTabsCenterX + m.sheetTabsMaxWidth / 2;
+    assert.ok(centerLeft >= m.outerPad + 280 + m.gutter);
+    assert.ok(centerRight <= vw - m.outerPad - 480 - m.gutter);
+    assert.ok(m.toolRailTop + m.toolRailMaxHeight <= vh - consoleTopFromBottom - m.gutter + 1);
+  }
+});
+
+test('disabling minimap hides minimap and reclaims bottom space for Explorer and Tool Rail', () => {
+  const withMap = computeFocusLayoutMetrics({
+    viewportWidth: 1280,
+    viewportHeight: 720,
+    uiScale: 100,
+    ribbonOpen: false,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+    showMinimap: true,
+  });
+
+  const withoutMap = computeFocusLayoutMetrics({
+    viewportWidth: 1280,
+    viewportHeight: 720,
+    uiScale: 100,
+    ribbonOpen: false,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+    showMinimap: false,
+  });
+
+  assert.equal(withMap.showMinimap, true);
+  assert.equal(withoutMap.showMinimap, false);
+  assert.ok(withoutMap.explorerBottom < withMap.explorerBottom);
+  assert.equal(withoutMap.explorerBottom, withoutMap.bottomDockClearance);
+});
+
+
