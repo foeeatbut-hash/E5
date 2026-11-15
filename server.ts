@@ -45,7 +45,30 @@ import {
   PortableBuildError,
 } from './src/server/portablePackager.ts';
 
-const PORT = Number(process.env.PORT) || 3000;
+function resolveServerPort(): number {
+  const argv = process.argv;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--port' || arg === '-p') {
+      const next = Number(argv[i + 1]);
+      if (Number.isFinite(next) && next > 0) return next;
+    } else if (arg.startsWith('--port=')) {
+      const val = Number(arg.slice('--port='.length));
+      if (Number.isFinite(val) && val > 0) return val;
+    }
+  }
+  const envPort = Number(process.env.PORT);
+  const nginxPort = Number(process.env.NGINX_PORT);
+  if (Number.isFinite(envPort) && envPort > 0) {
+    if (Number.isFinite(nginxPort) && envPort === nginxPort && process.env.FLUX_PORTABLE !== '1') {
+      return Number(process.env.DEFAULT_APP_PORT) || 3000;
+    }
+    return envPort;
+  }
+  return Number(process.env.DEFAULT_APP_PORT) || 3000;
+}
+
+const PORT = resolveServerPort();
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 app.use(express.text({ type: ['application/xml', 'text/xml', 'text/plain'], limit: '25mb' }));

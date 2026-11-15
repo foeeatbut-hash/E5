@@ -9,7 +9,7 @@ export default defineConfig(() => {
     resolve: {
       dedupe: ['react', 'react-dom'],
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     optimizeDeps: {
