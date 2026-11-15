@@ -1,20 +1,29 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Cable,
+  Check,
   ChevronRight,
   Cpu,
   Database,
   FileText,
+  Folder,
+  FolderInput,
+  FolderOpen,
+  FolderPlus,
   FolderTree,
+  Maximize2,
+  Minimize2,
   PenTool,
   Pencil,
   Plus,
   Search,
   SlidersHorizontal,
   Trash2,
+  X,
 } from 'lucide-react';
-import type { CatalogItem, E3Device, E3Project } from '../core/e3Types';
+import type { CatalogItem, E3Device, E3Project, E3Sheet } from '../core/e3Types';
 import { getSheetRevisionLabel, hasSheetUncommittedChanges } from '../core/sheetRevisions';
+import { buildSheetTree, type SheetFolderNode } from '../core/sheetTree';
 import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
 import { isNewUiMode, type UiWorkspaceMode } from '../core/uiMode';
 import { isTwoPinBreakEligible } from '../core/wireEditing';
@@ -27,6 +36,9 @@ interface LeftExplorerProps {
   activeSheetId: string;
   selectedDeviceId: string | null;
   activeTab?: 'project' | 'library';
+  splitView?: boolean;
+  canvasFocusActive?: boolean;
+  onToggleCanvasFocus?: () => void;
   symbolWorkspace?: SymbolWorkspaceActions;
   onTabChange?: (tab: 'project' | 'library') => void;
   onSelectSheet: (sheetId: string) => void;
@@ -37,6 +49,10 @@ interface LeftExplorerProps {
   onDeleteCustomCatalogItem: (itemId: string) => void;
   onOpenHvacWizard: () => void;
   onOpenSymbolDesigner?: () => void;
+  onCreateSheetFolder?: (folderPath: string) => void;
+  onRenameSheetFolder?: (oldPath: string, newNameOrPath: string) => void;
+  onDeleteSheetFolder?: (folderPath: string) => void;
+  onMoveSheetToFolder?: (sheetId: string, folderPath: string | null) => void;
 }
 
 function renderCatalogMiniSymbol(category: CatalogItem['category']) {
@@ -101,6 +117,9 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   activeSheetId,
   selectedDeviceId,
   activeTab,
+  splitView = uiMode === 'hybrid',
+  canvasFocusActive = false,
+  onToggleCanvasFocus,
   onTabChange,
   onSelectSheet,
   onSelectDevice,
@@ -110,6 +129,10 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   onDeleteCustomCatalogItem,
   onOpenHvacWizard,
   onOpenSymbolDesigner,
+  onCreateSheetFolder,
+  onRenameSheetFolder,
+  onDeleteSheetFolder,
+  onMoveSheetToFolder,
   symbolWorkspace,
 }) => {
   const isNewUi = isNewUiMode(uiMode);
@@ -126,10 +149,25 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
     devices: true,
     cables: true,
   });
+  const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
+  const [creatingFolderParent, setCreatingFolderParent] = useState<string | null>(null);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [renamingFolderPath, setRenamingFolderPath] = useState<string | null>(null);
+  const [renameFolderValue, setRenameFolderValue] = useState('');
+  const [movingSheetId, setMovingSheetId] = useState<string | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | '__root__' | null>(null);
+  const [draggingSheetId, setDraggingSheetId] = useState<string | null>(null);
+  const [splitPercent, setSplitPercent] = useState(50);
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [libQuery, setLibQuery] = useState('');
   const q = query.trim().toLowerCase();
-  const lq = (uiMode === 'hybrid' ? libQuery : query).trim().toLowerCase();
+  const lq = (splitView ? libQuery : query).trim().toLowerCase();
+
+  const sheetTree = useMemo(
+    () => buildSheetTree(project.sheets, project.sheetFolders || []),
+    [project.sheets, project.sheetFolders]
+  );
 
   const filteredDevices = useMemo(() => {
     const list = project.devices;
@@ -173,66 +211,443 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   const toggleSection = (key: string) =>
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  const toggleFolderOpen = (path: string) =>
+    setCollapsedFolders((prev) => ({ ...prev, [path]: !prev[path] }));
+
+  const submitCreateFolder = () => {
+    const trimmed = newFolderName.trim();
+    if (trimmed && onCreateSheetFolder) {
+      const fullPath = creatingFolderParent ? `${creatingFolderParent}/${trimmed}` : trimmed;
+      onCreateSheetFolder(fullPath);
+      setCollapsedFolders((prev) => ({ ...prev, [fullPath]: false }));
+      setOpenSections((prev) => ({ ...prev, sheets: true }));
+    }
+    setCreatingFolderParent(null);
+    setNewFolderName('');
+  };
+
+  const submitRenameFolder = () => {
+    const trimmed = renameFolderValue.trim();
+    if (trimmed && renamingFolderPath && onRenameSheetFolder) {
+      onRenameSheetFolder(renamingFolderPath, trimmed);
+    }
+    setRenamingFolderPath(null);
+    setRenameFolderValue('');
+  };
+
   if (symbolWorkspace?.draft.open) {
     return <SymbolLibraryBrowser workspace={symbolWorkspace} />;
   }
 
+  const renderSheetRow = (s: E3Sheet) => {
+    const active = s.id === activeSheetId;
+    const isMoving = movingSheetId === s.id;
+    return (
+      <div key={s.id} className="space-y-0.5">
+        <div
+          data-testid={`explorer-sheet-item-${s.id}`}
+          draggable={Boolean(onMoveSheetToFolder)}
+          onDragStart={(e) => {
+            e.dataTransfer.setData('application/x-flux-sheet-id', s.id);
+            e.dataTransfer.effectAllowed = 'move';
+            setDraggingSheetId(s.id);
+          }}
+          onDragEnd={() => {
+            setDraggingSheetId(null);
+            setDragOverFolder(null);
+          }}
+          className={`group/sheet flex items-center justify-between gap-1 px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-left text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
+            active
+              ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
+              : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => onSelectSheet(s.id)}
+            className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+          >
+            <FileText
+              className={`w-3 h-3 shrink-0 ${
+                active ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'
+              }`}
+            />
+            <span className="truncate">
+              {s.number}. {s.name}
+            </span>
+          </button>
+          <span className="flex items-center gap-1 shrink-0 font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+            {onMoveSheetToFolder && (
+              <button
+                type="button"
+                data-testid={`sheet-move-folder-btn-${s.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMovingSheetId((cur) => (cur === s.id ? null : s.id));
+                }}
+                title="Переместить лист в папку / раздел"
+                aria-label={`Переместить лист ${s.name} в папку`}
+                className={`inline-flex items-center justify-center w-4 h-4 rounded-[2px] transition-opacity ${
+                  isMoving
+                    ? 'opacity-100 text-[var(--flux-accent)] bg-[var(--flux-accent-soft)]'
+                    : 'opacity-0 group-hover/sheet:opacity-100 focus:opacity-100 hover:text-[var(--flux-accent)]'
+                }`}
+              >
+                <FolderInput className="w-2.5 h-2.5" />
+              </button>
+            )}
+            <span data-testid={`explorer-sheet-rev-${s.id}`}>
+              {getSheetRevisionLabel(s)}
+              {hasSheetUncommittedChanges(project, s) ? '*' : ''}
+            </span>
+            <span>{s.format}</span>
+          </span>
+        </div>
+        {isMoving && onMoveSheetToFolder && (
+          <div className="ml-3 p-1 rounded-[4px] border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] flex items-center gap-1">
+            <select
+              data-testid={`sheet-move-folder-select-${s.id}`}
+              aria-label={`Папка для листа ${s.name}`}
+              value={s.folder || ''}
+              onChange={(e) => {
+                onMoveSheetToFolder(s.id, e.target.value || null);
+                setMovingSheetId(null);
+              }}
+              className="flex-1 min-w-0 h-5 px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)]"
+            >
+              <option value="">Без папки (корень)</option>
+              {sheetTree.allFolderPaths.map((fp) => (
+                <option key={fp} value={fp}>
+                  {fp}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setMovingSheetId(null)}
+              aria-label="Закрыть выбор папки"
+              className="inline-flex items-center justify-center w-5 h-5 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderFolderNode = (node: SheetFolderNode): React.ReactNode => {
+    const isOpen = !collapsedFolders[node.path];
+    const isDragTarget = dragOverFolder === node.path;
+    const isRenaming = renamingFolderPath === node.path;
+
+    return (
+      <div
+        key={node.path}
+        data-testid={`sheet-folder-node-${node.path}`}
+        onDragOver={(e) => {
+          if (!onMoveSheetToFolder) return;
+          if (e.dataTransfer.types.includes('application/x-flux-sheet-id')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            if (dragOverFolder !== node.path) setDragOverFolder(node.path);
+          }
+        }}
+        onDragLeave={(e) => {
+          e.stopPropagation();
+          if (dragOverFolder === node.path) setDragOverFolder(null);
+        }}
+        onDrop={(e) => {
+          if (!onMoveSheetToFolder) return;
+          const sheetId = e.dataTransfer.getData('application/x-flux-sheet-id');
+          if (sheetId) {
+            e.preventDefault();
+            e.stopPropagation();
+            onMoveSheetToFolder(sheetId, node.path);
+            setCollapsedFolders((prev) => ({ ...prev, [node.path]: false }));
+          }
+          setDragOverFolder(null);
+          setDraggingSheetId(null);
+        }}
+        className={`rounded-[3px] transition-colors ${
+          isDragTarget ? 'bg-[var(--flux-accent-soft)] ring-1 ring-[var(--flux-accent)]' : ''
+        }`}
+      >
+        {isRenaming ? (
+          <div className="flex items-center gap-1 px-1 py-0.5">
+            <input
+              type="text"
+              autoFocus
+              value={renameFolderValue}
+              onChange={(e) => setRenameFolderValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitRenameFolder();
+                if (e.key === 'Escape') {
+                  setRenamingFolderPath(null);
+                  setRenameFolderValue('');
+                }
+              }}
+              aria-label="Новое имя папки"
+              className="flex-1 min-w-0 h-5 px-1.5 rounded-[2px] border border-[var(--flux-focus)] bg-[var(--flux-bg)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={submitRenameFolder}
+              aria-label="Сохранить имя папки"
+              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]"
+            >
+              <Check className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRenamingFolderPath(null);
+                setRenameFolderValue('');
+              }}
+              aria-label="Отменить переименование"
+              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ) : (
+          <div className="group/folder flex items-center justify-between gap-1 px-1 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] hover:bg-[var(--flux-hover)]">
+            <button
+              type="button"
+              onClick={() => toggleFolderOpen(node.path)}
+              className="flex items-center gap-1 min-w-0 flex-1 text-left font-medium text-[var(--flux-text)]"
+            >
+              <ChevronRight
+                className={`w-3 h-3 text-[var(--flux-text-muted)] shrink-0 transition-transform duration-150 ${
+                  isOpen ? 'rotate-90' : ''
+                }`}
+              />
+              {isOpen ? (
+                <FolderOpen className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+              ) : (
+                <Folder className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+              )}
+              <span className="truncate">{node.name}</span>
+            </button>
+            <div className="flex items-center gap-0.5 shrink-0">
+              {onCreateSheetFolder && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCollapsedFolders((prev) => ({ ...prev, [node.path]: false }));
+                    setCreatingFolderParent(node.path);
+                    setNewFolderName('');
+                  }}
+                  title="Создать вложенную папку"
+                  aria-label={`Создать подпапку в ${node.name}`}
+                  className="opacity-0 group-hover/folder:opacity-100 focus:opacity-100 w-4 h-4 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)]"
+                >
+                  <FolderPlus className="w-2.5 h-2.5" />
+                </button>
+              )}
+              {onRenameSheetFolder && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRenamingFolderPath(node.path);
+                    setRenameFolderValue(node.name);
+                  }}
+                  title="Переименовать папку"
+                  aria-label={`Переименовать папку ${node.name}`}
+                  className="opacity-0 group-hover/folder:opacity-100 focus:opacity-100 w-4 h-4 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+                >
+                  <Pencil className="w-2.5 h-2.5" />
+                </button>
+              )}
+              {onDeleteSheetFolder && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteSheetFolder(node.path)}
+                  title="Удалить папку (листы сохранятся)"
+                  aria-label={`Удалить папку ${node.name}`}
+                  className="opacity-0 group-hover/folder:opacity-100 focus:opacity-100 w-4 h-4 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:text-rose-600"
+                >
+                  <Trash2 className="w-2.5 h-2.5" />
+                </button>
+              )}
+              <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] pl-0.5">
+                {node.totalSheetCount}
+              </span>
+            </div>
+          </div>
+        )}
+        {isOpen && (
+          <div className="ml-2.5 pl-1.5 border-l border-[var(--flux-line)] space-y-px py-0.5">
+            {creatingFolderParent === node.path && (
+              <div className="flex items-center gap-1 px-1 py-0.5">
+                <input
+                  type="text"
+                  autoFocus
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitCreateFolder();
+                    if (e.key === 'Escape') {
+                      setCreatingFolderParent(null);
+                      setNewFolderName('');
+                    }
+                  }}
+                  placeholder="Имя подпапки…"
+                  aria-label="Название подпапки"
+                  className="flex-1 min-w-0 h-5 px-1.5 rounded-[2px] border border-[var(--flux-focus)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={submitCreateFolder}
+                  aria-label="Создать подпапку"
+                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreatingFolderParent(null);
+                    setNewFolderName('');
+                  }}
+                  aria-label="Отменить создание подпапки"
+                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+            {node.children.map((child) => renderFolderNode(child))}
+            {node.sheets.map((s) => renderSheetRow(s))}
+            {node.children.length === 0 && node.sheets.length === 0 && (
+              <div className="px-1.5 py-0.5 text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] italic">
+                Пустая папка (перетащите лист)
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const projectTreeContent = (
     <div className="space-y-0.5">
-      {/* Sheets */}
+      {/* Sheets with hierarchical folders */}
       <div>
-        <button
-          type="button"
-          onClick={() => toggleSection('sheets')}
-          className="w-full flex items-center justify-between px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
-        >
-          <span className="flex items-center gap-1">
+        <div className="flex items-center justify-between px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors">
+          <button
+            type="button"
+            onClick={() => toggleSection('sheets')}
+            className="flex items-center gap-1 flex-1 min-w-0 text-left"
+          >
             <ChevronRight
               className={`w-3 h-3 text-[var(--flux-text-muted)] transition-transform duration-150 ${
                 openSections.sheets ? 'rotate-90' : ''
               }`}
             />
-            <span>Листы схемы</span>
-          </span>
-          <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-            {project.sheets.length}
-          </span>
-        </button>
+            <span className="truncate">Листы схемы</span>
+          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {onCreateSheetFolder && (
+              <button
+                type="button"
+                data-testid="explorer-add-folder-btn"
+                onClick={() => {
+                  setOpenSections((prev) => ({ ...prev, sheets: true }));
+                  setCreatingFolderParent('');
+                  setNewFolderName('');
+                }}
+                title="Создать папку / раздел для группировки листов"
+                aria-label="Создать папку листов"
+                className="inline-flex items-center gap-0.5 px-1 h-4 rounded-[2px] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-bg)] transition-colors"
+              >
+                <FolderPlus className="w-3 h-3" />
+                <span>Папка</span>
+              </button>
+            )}
+            <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+              {project.sheets.length}
+            </span>
+          </div>
+        </div>
         {openSections.sheets && (
           <div className="ml-2 pl-1.5 border-l border-[var(--flux-line)] space-y-px py-0.5">
-            {project.sheets.map((s) => {
-              const active = s.id === activeSheetId;
-              return (
+            {creatingFolderParent === '' && (
+              <div className="flex items-center gap-1 px-1 py-0.5">
+                <input
+                  type="text"
+                  data-testid="explorer-new-folder-input"
+                  autoFocus
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitCreateFolder();
+                    if (e.key === 'Escape') {
+                      setCreatingFolderParent(null);
+                      setNewFolderName('');
+                    }
+                  }}
+                  placeholder="Название раздела / папки…"
+                  aria-label="Название новой папки"
+                  className="flex-1 min-w-0 h-5 px-1.5 rounded-[2px] border border-[var(--flux-focus)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
+                />
                 <button
-                  key={s.id}
                   type="button"
-                  onClick={() => onSelectSheet(s.id)}
-                  className={`w-full flex items-center justify-between gap-1 px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-left text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
-                    active
-                      ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
-                      : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-                  }`}
+                  data-testid="explorer-confirm-folder-btn"
+                  onClick={submitCreateFolder}
+                  aria-label="Создать папку"
+                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]"
                 >
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <FileText
-                      className={`w-3 h-3 shrink-0 ${
-                        active ? 'text-[var(--flux-accent)]' : 'text-[var(--flux-text-muted)]'
-                      }`}
-                    />
-                    <span className="truncate">
-                      {s.number}. {s.name}
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-1 shrink-0 font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-                    <span data-testid={`explorer-sheet-rev-${s.id}`}>
-                      {getSheetRevisionLabel(s)}
-                      {hasSheetUncommittedChanges(project, s) ? '*' : ''}
-                    </span>
-                    <span>{s.format}</span>
-                  </span>
+                  <Check className="w-3 h-3" />
                 </button>
-              );
-            })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreatingFolderParent(null);
+                    setNewFolderName('');
+                  }}
+                  aria-label="Отменить создание папки"
+                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            {sheetTree.folders.map((folderNode) => renderFolderNode(folderNode))}
+
+            {draggingSheetId && sheetTree.folders.length > 0 && (
+              <div
+                onDragOver={(e) => {
+                  if (!onMoveSheetToFolder) return;
+                  e.preventDefault();
+                  setDragOverFolder('__root__');
+                }}
+                onDragLeave={() => {
+                  if (dragOverFolder === '__root__') setDragOverFolder(null);
+                }}
+                onDrop={(e) => {
+                  if (!onMoveSheetToFolder) return;
+                  const sId = e.dataTransfer.getData('application/x-flux-sheet-id');
+                  if (sId) {
+                    e.preventDefault();
+                    onMoveSheetToFolder(sId, null);
+                  }
+                  setDragOverFolder(null);
+                  setDraggingSheetId(null);
+                }}
+                className={`px-1.5 py-1 rounded-[2px] border border-dashed text-[length:calc(10px*var(--flux-ui-scale))] text-center transition-colors ${
+                  dragOverFolder === '__root__'
+                    ? 'border-[var(--flux-accent)] bg-[var(--flux-accent-soft)] text-[var(--flux-text)]'
+                    : 'border-[var(--flux-line)] text-[var(--flux-text-muted)]'
+                }`}
+              >
+                Переместить в корень (без папки)
+              </div>
+            )}
+
+            {sheetTree.rootSheets.map((s) => renderSheetRow(s))}
           </div>
         )}
       </div>
@@ -600,20 +1015,71 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
     </div>
   );
 
-  /* HYBRID MODE (Variant A): 50/50 Simultaneous Vertical Split (Devices top + 2xN Library bottom) */
-  if (uiMode === 'hybrid') {
+  const focusCanvasStrip = onToggleCanvasFocus && (
+    <div className="px-1.5 py-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] shrink-0">
+      <button
+        type="button"
+        data-testid="explorer-focus-canvas-btn"
+        aria-pressed={canvasFocusActive}
+        onClick={onToggleCanvasFocus}
+        title={
+          canvasFocusActive
+            ? 'Вернуть панели и прежний вид интерфейса'
+            : 'Развернуть чертёж на весь экран (максимум пространства холста)'
+        }
+        className={`w-full inline-flex items-center justify-center gap-1.5 h-[calc(23px*var(--flux-ui-scale))] px-2 rounded-[4px] border text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors ${
+          canvasFocusActive
+            ? 'border-[var(--flux-accent)] bg-[var(--flux-accent-solid)] text-white'
+            : 'border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:border-[var(--flux-accent)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
+        }`}
+      >
+        {canvasFocusActive ? (
+          <Minimize2 className="w-3 h-3 shrink-0" />
+        ) : (
+          <Maximize2 className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+        )}
+        <span>{canvasFocusActive ? 'Вернуть вид' : 'Фокус холст'}</span>
+      </button>
+    </div>
+  );
+
+  /* SPLIT VIEW: Two-section vertical split (Project top + 2xN Library bottom), draggable divider */
+  if (splitView) {
+    const startSplitResize = (e: React.PointerEvent) => {
+      e.preventDefault();
+      const container = splitContainerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const onMove = (ev: PointerEvent) => {
+        if (rect.height <= 40) return;
+        const pct = ((ev.clientY - rect.top) / rect.height) * 100;
+        setSplitPercent(Math.max(24, Math.min(76, Math.round(pct))));
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    };
+
     return (
       <aside
-        aria-label="Устройства проекта и библиотека компонентов 2×N"
-        data-testid="hybrid-left-split"
-        className="no-print w-full h-full flex-1 min-w-0 flux-glass-panel flex flex-col min-h-0 select-none divide-y divide-[var(--flux-line)]"
+        ref={splitContainerRef}
+        aria-label="Навигатор проекта и база компонентов (два раздела)"
+        data-testid="explorer-split-view"
+        className="no-print w-full h-full flex-1 min-w-0 flux-glass-panel flex flex-col min-h-0 select-none"
       >
-        {/* Top 50%: Project Tree & Devices */}
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        {focusCanvasStrip}
+        {/* Top section: Project Tree & Devices */}
+        <div
+          style={{ flexBasis: `${splitPercent}%` }}
+          className="min-h-0 flex-1 flex flex-col overflow-hidden"
+        >
           <div className="h-[calc(26px*var(--flux-ui-scale))] px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1.5 shrink-0">
             <span className="inline-flex items-center gap-1.5 text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
               <FolderTree className="w-3 h-3 text-[var(--flux-accent)]" />
-              <span>Устройства</span>
+              <span>Проект</span>
             </span>
             <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
               {project.devices.length} изд. · {project.sheets.length} л.
@@ -638,12 +1104,27 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
           </div>
         </div>
 
-        {/* Bottom 50%: Simultaneous 2×N Library */}
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        {/* Resizable Horizontal Splitter */}
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Изменить высоту разделов Проект и База"
+          onPointerDown={startSplitResize}
+          title="Потяните вверх или вниз для изменения пропорций «Проект / База»"
+          className="h-1.5 shrink-0 bg-[var(--flux-line)] hover:bg-[var(--flux-accent)] transition-colors cursor-row-resize flex items-center justify-center"
+        >
+          <span className="w-6 h-0.5 rounded-full bg-[var(--flux-text-muted)]/40" />
+        </div>
+
+        {/* Bottom section: Library 2×N */}
+        <div
+          style={{ flexBasis: `${100 - splitPercent}%` }}
+          className="min-h-0 flex-1 flex flex-col overflow-hidden"
+        >
           <div className="h-[calc(26px*var(--flux-ui-scale))] px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1 shrink-0">
             <span className="inline-flex items-center gap-1.5 text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
               <Database className="w-3 h-3 text-[var(--flux-accent)]" />
-              <span>Библиотека</span>
+              <span>База</span>
               <span className="font-mono tabular-nums text-[var(--flux-text-muted)]">({catalog.length})</span>
             </span>
             <div className="flex items-center gap-0.5 shrink-0">
@@ -704,8 +1185,10 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   return (
     <aside
       aria-label="Дерево проекта и библиотека компонентов"
+      data-testid="explorer-tabbed-view"
       className="no-print w-full h-full flex-1 min-w-0 flux-glass-panel flex flex-col min-h-0 select-none"
     >
+      {focusCanvasStrip}
       {/* CAD Navigator Tabs: Segmented in Focus drawer, Flush in Classic */}
       {isNewUi ? (
         <div className="p-1.5 pb-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] shrink-0">

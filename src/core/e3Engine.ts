@@ -1730,11 +1730,20 @@ export function serializeE3Xml(project: E3Project): string {
     const tb = s.titleBlock;
     const sRev = getSheetRevisionNumber(s);
     const sUpdatedAt = s.updatedAt || project.updatedAt;
+    const folderAttr = s.folder ? ` folder="${xmlEscape(s.folder)}"` : '';
     lines.push(
-      `    <Sheet id="${xmlEscape(s.id)}" number="${s.number}" name="${xmlEscape(s.name)}" format="${s.format}" width="${s.width}" height="${s.height}" revision="${sRev}" updatedAt="${xmlEscape(sUpdatedAt)}" stampForm="${xmlEscape(tb.stampForm || 'form1')}" customTemplateId="${xmlEscape(tb.customTemplateId || '')}" documentCode="${xmlEscape(tb.documentCode)}" projectTitle="${xmlEscape(tb.projectTitle || '')}" organization="${xmlEscape(tb.organization)}" designer="${xmlEscape(tb.designer)}" checker="${xmlEscape(tb.checker)}" techControl="${xmlEscape(tb.techControl || '')}" normControl="${xmlEscape(tb.normControl || '')}" approver="${xmlEscape(tb.approver || '')}" litera="${xmlEscape(tb.litera || '')}" mass="${xmlEscape(tb.mass || '')}" scale="${xmlEscape(tb.scale || '')}" date="${xmlEscape(tb.date || '')}" invOriginal="${xmlEscape(tb.invOriginal || '')}" invDuplicate="${xmlEscape(tb.invDuplicate || '')}" izm="${xmlEscape(tb.izm || '')}" changeDoc="${xmlEscape(tb.changeDoc || '')}" changeDate="${xmlEscape(tb.changeDate || '')}" sheetTitle="${xmlEscape(tb.sheetTitle)}" />`
+      `    <Sheet id="${xmlEscape(s.id)}" number="${s.number}" name="${xmlEscape(s.name)}" format="${s.format}" width="${s.width}" height="${s.height}"${folderAttr} revision="${sRev}" updatedAt="${xmlEscape(sUpdatedAt)}" stampForm="${xmlEscape(tb.stampForm || 'form1')}" customTemplateId="${xmlEscape(tb.customTemplateId || '')}" documentCode="${xmlEscape(tb.documentCode)}" projectTitle="${xmlEscape(tb.projectTitle || '')}" organization="${xmlEscape(tb.organization)}" designer="${xmlEscape(tb.designer)}" checker="${xmlEscape(tb.checker)}" techControl="${xmlEscape(tb.techControl || '')}" normControl="${xmlEscape(tb.normControl || '')}" approver="${xmlEscape(tb.approver || '')}" litera="${xmlEscape(tb.litera || '')}" mass="${xmlEscape(tb.mass || '')}" scale="${xmlEscape(tb.scale || '')}" date="${xmlEscape(tb.date || '')}" invOriginal="${xmlEscape(tb.invOriginal || '')}" invDuplicate="${xmlEscape(tb.invDuplicate || '')}" izm="${xmlEscape(tb.izm || '')}" changeDoc="${xmlEscape(tb.changeDoc || '')}" changeDate="${xmlEscape(tb.changeDate || '')}" sheetTitle="${xmlEscape(tb.sheetTitle)}" />`
     );
   }
   lines.push('  </Sheets>');
+
+  if (project.sheetFolders?.length) {
+    lines.push('  <SheetFolders>');
+    for (const folderPath of project.sheetFolders) {
+      lines.push(`    <SheetFolder path="${xmlEscape(folderPath)}" />`);
+    }
+    lines.push('  </SheetFolders>');
+  }
 
   // Cables
   lines.push('  <Cables>');
@@ -1913,6 +1922,7 @@ export function parseE3Xml(xml: string): E3Project {
       format: validFmt,
       width: Number(sa.width || 1400),
       height: Number(sa.height || 920),
+      folder: sa.folder || undefined,
       revision: sa.revision ? Number(sa.revision) : undefined,
       updatedAt: sa.updatedAt || undefined,
       titleBlock: {
@@ -2200,6 +2210,14 @@ export function parseE3Xml(xml: string): E3Project {
     });
   }
 
+  const sheetFolders: string[] = [];
+  const folderRe = /<SheetFolder\s+([^>]+?)\s*\/?>/g;
+  let sfm: RegExpExecArray | null;
+  while ((sfm = folderRe.exec(xml)) !== null) {
+    const sfa = parseXmlAttrs(sfm[1]);
+    if (sfa.path) sheetFolders.push(sfa.path);
+  }
+
   return normalizeProjectSheetRevisions({
     schemaVersion: rootAttrs.schemaVersion || '1.0',
     id: rootAttrs.id || `proj-${Date.now()}`,
@@ -2211,6 +2229,7 @@ export function parseE3Xml(xml: string): E3Project {
     standard: rootAttrs.standard === 'IEC' ? 'IEC' : 'GOST',
     updatedAt: rootAttrs.updatedAt || new Date().toISOString(),
     sheets: sheetsWithRevisions,
+    sheetFolders: sheetFolders.length > 0 ? sheetFolders : undefined,
     devices,
     wires,
     cables,

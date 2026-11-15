@@ -7,9 +7,7 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   Archive,
-  ArrowLeft,
   ArrowLeftRight,
-  ArrowRight,
   ArrowUpRight,
   Check,
   CheckCircle2,
@@ -89,6 +87,7 @@ import {
 } from '../core/cadLayers';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type { ViewportLayoutMode } from '../core/dockLayout';
+import type { FocusLayoutMetrics } from '../core/focusLayout';
 import type { RecentProjectEntry } from '../core/sessionStorage';
 import type {
   CadLayerId,
@@ -218,6 +217,7 @@ interface TopToolbarProps {
   onOpenCatalogTab: () => void;
   onAddSheet: () => void;
   onExportDxf: () => void;
+  onExportProjectPdf?: () => void;
   onOpenStampEditor: () => void;
   onOpenStampDesigner: () => void;
   onOpenPublishModal: () => void;
@@ -245,6 +245,7 @@ interface TopToolbarProps {
   onAddQuickAccess?: (id: FocusQuickActionId) => void;
   onRemoveQuickAccess?: (id: FocusQuickActionId) => void;
   onToggleMinimap?: () => void;
+  focusLayout?: FocusLayoutMetrics;
 }
 
 const RIBBON_TABS: Array<{ id: RibbonSectionId; label: string; contextual?: boolean }> = [
@@ -606,6 +607,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   onOpenCatalogTab,
   onAddSheet,
   onExportDxf,
+  onExportProjectPdf,
   onOpenStampEditor,
   onOpenStampDesigner,
   onOpenPublishModal,
@@ -633,11 +635,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   onAddQuickAccess,
   onRemoveQuickAccess,
   onToggleMinimap,
+  focusLayout,
 }) => {
   const isDark = project.visualSettings.theme === 'dark';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const exportBtnRef = useRef<HTMLButtonElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
 
   const [activeTab, setActiveTab] = useState<RibbonSectionId>('home');
@@ -654,6 +659,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
     [onRibbonCollapsedChange, ribbonCollapsed]
   );
   const [appMenuOpen, setAppMenuOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportMenuPos, setExportMenuPos] = useState<{ left: number; top: number } | null>(null);
   const [layersPopoverOpen, setLayersPopoverOpen] = useState(false);
   const [layersPopoverPos, setLayersPopoverPos] = useState<{ left: number; top?: number } | null>(null);
   const [ribbonQuickMenu, setRibbonQuickMenu] = useState<FocusQuickAccessMenuState | null>(null);
@@ -735,19 +742,32 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   );
 
   useEffect(() => {
-    if (!appMenuOpen) return;
+    if (!appMenuOpen && !exportMenuOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setAppMenuOpen(false);
+      if (e.key === 'Escape') {
+        setAppMenuOpen(false);
+        setExportMenuOpen(false);
+      }
     };
     const onClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (
+        appMenuOpen &&
         menuRef.current &&
         !menuRef.current.contains(target) &&
         menuBtnRef.current &&
         !menuBtnRef.current.contains(target)
       ) {
         setAppMenuOpen(false);
+      }
+      if (
+        exportMenuOpen &&
+        exportMenuRef.current &&
+        !exportMenuRef.current.contains(target) &&
+        exportBtnRef.current &&
+        !exportBtnRef.current.contains(target)
+      ) {
+        setExportMenuOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -756,10 +776,25 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('mousedown', onClickOutside);
     };
-  }, [appMenuOpen]);
+  }, [appMenuOpen, exportMenuOpen]);
+
+  const toggleExportMenu = (btnEl: HTMLButtonElement | null) => {
+    setAppMenuOpen(false);
+    if (!exportMenuOpen && btnEl && headerRef.current) {
+      const hRect = headerRef.current.getBoundingClientRect();
+      const bRect = btnEl.getBoundingClientRect();
+      const maxLeft = Math.max(8, hRect.width - Math.round(316 * chrome.factor));
+      setExportMenuPos({
+        left: Math.max(8, Math.min(Math.round(bRect.left - hRect.left), maxLeft)),
+        top: Math.max(8, Math.round(bRect.bottom - hRect.top + 6)),
+      });
+    }
+    setExportMenuOpen((o) => !o);
+  };
 
   const runMenuAction = (fn: () => void) => {
     setAppMenuOpen(false);
+    setExportMenuOpen(false);
     fn();
   };
 
@@ -796,7 +831,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           {/* Top-left floating glass pill */}
           <div
             data-testid="focus-top-left"
-            className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 max-w-[34vw]"
+            style={focusLayout ? { maxWidth: focusLayout.leftPillMaxWidth } : undefined}
+            className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 max-w-[34vw] overflow-hidden"
           >
             <button
               ref={menuBtnRef}
@@ -843,6 +879,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             {onSaveSessionNow && (
               <button
                 type="button"
+                data-testid="toolbar-save-btn"
                 onClick={onSaveSessionNow}
                 title="Сохранить сессию (Ctrl+S)"
                 aria-label="Сохранить сессию"
@@ -851,30 +888,24 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
               </button>
             )}
-            {onNavBack && onNavForward && (
-              <>
-                <button
-                  type="button"
-                  onClick={onNavBack}
-                  disabled={!canNavBack}
-                  title="Назад (Alt+←)"
-                  aria-label="Назад"
-                  className="hidden min-[1400px]:inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 shrink-0"
-                >
-                  <ArrowLeft className="w-3 h-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={onNavForward}
-                  disabled={!canNavForward}
-                  title="Вперёд (Alt+→)"
-                  aria-label="Вперёд"
-                  className="hidden min-[1400px]:inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 shrink-0"
-                >
-                  <ArrowRight className="w-3 h-3" />
-                </button>
-              </>
-            )}
+            <button
+              ref={exportBtnRef}
+              type="button"
+              data-testid="toolbar-export-menu-btn"
+              aria-haspopup="menu"
+              aria-expanded={exportMenuOpen}
+              onClick={(e) => toggleExportMenu(e.currentTarget)}
+              title="Экспорт и публикация (E³.series, PDF, DWG/DXF, CSV)"
+              aria-label="Экспорт и публикация"
+              className={`inline-flex items-center gap-0.5 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                exportMenuOpen
+                  ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] border border-[var(--flux-accent)]/40'
+                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
+              <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
             <span
               className={`${
                 selectedDesignation ? 'hidden lg:inline-block' : 'hidden min-[1400px]:inline-block'
@@ -899,7 +930,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           {/* Top-right floating glass pill */}
           <div
             data-testid="focus-top-right"
-            className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg shrink-0"
+            style={focusLayout ? { maxWidth: focusLayout.rightPillMaxWidth } : undefined}
+            className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg shrink-0 overflow-hidden"
           >
             {onOpenCommandPalette && (
               <button
@@ -933,7 +965,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               type="button"
               onClick={onOpenHvacWizard}
               title="Конструктор ФСА / ОВиК"
-              className="hidden xl:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors shrink-0"
+              className="hidden min-[1400px]:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors shrink-0"
             >
               <Cpu className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.6} />
               <span>ФСА</span>
@@ -1086,6 +1118,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             {onSaveSessionNow && (
               <button
                 type="button"
+                data-testid="toolbar-save-btn"
                 onClick={onSaveSessionNow}
                 title="Сохранить сессию (Ctrl+S)"
                 aria-label="Сохранить сессию"
@@ -1094,32 +1127,24 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
               </button>
             )}
-
-            {onNavBack && onNavForward && (
-              <>
-                <span className="hidden sm:inline-block h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
-                <button
-                  type="button"
-                  onClick={onNavBack}
-                  disabled={!canNavBack}
-                  title="Назад по истории переходов (Alt+←)"
-                  aria-label="Назад"
-                  className="hidden sm:inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.6} />
-                </button>
-                <button
-                  type="button"
-                  onClick={onNavForward}
-                  disabled={!canNavForward}
-                  title="Вперёд по истории переходов (Alt+→)"
-                  aria-label="Вперёд"
-                  className="hidden sm:inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
-                >
-                  <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.6} />
-                </button>
-              </>
-            )}
+            <button
+              ref={exportBtnRef}
+              type="button"
+              data-testid="toolbar-export-menu-btn"
+              aria-haspopup="menu"
+              aria-expanded={exportMenuOpen}
+              onClick={(e) => toggleExportMenu(e.currentTarget)}
+              title="Экспорт и публикация (E³.series, PDF, DWG/DXF, CSV)"
+              aria-label="Экспорт и публикация"
+              className={`inline-flex items-center gap-0.5 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                exportMenuOpen
+                  ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] border border-[var(--flux-accent)]/40'
+                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
+              <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
 
             <span className="hidden md:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
             <div className="hidden md:flex items-center gap-1 min-w-0 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
@@ -1326,6 +1351,36 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             >
               <Redo2 className="w-3.5 h-3.5" />
             </button>
+            {onSaveSessionNow && (
+              <button
+                type="button"
+                data-testid="toolbar-save-btn"
+                onClick={onSaveSessionNow}
+                title="Сохранить сессию (Ctrl+S)"
+                aria-label="Сохранить сессию"
+                className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+              >
+                <Save className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              ref={exportBtnRef}
+              type="button"
+              data-testid="toolbar-export-menu-btn"
+              aria-haspopup="menu"
+              aria-expanded={exportMenuOpen}
+              onClick={(e) => toggleExportMenu(e.currentTarget)}
+              title="Экспорт и публикация (E³.series, PDF, DWG/DXF, CSV)"
+              aria-label="Экспорт и публикация"
+              className={`inline-flex items-center gap-0.5 h-[calc(22px*var(--flux-ui-scale))] px-1 rounded-[2px] text-[length:calc(10px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                exportMenuOpen
+                  ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]'
+                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
           </div>
 
           <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
@@ -1447,9 +1502,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 : 'top-[calc(36px*var(--flux-ui-scale))] left-1.5'
             } z-50 w-[min(calc(640px*var(--flux-ui-scale)),calc(100vw-16px))] rounded-2xl border border-[var(--flux-line-strong)] flux-glass-popover overflow-hidden flex flex-col`}
           >
-            <div className="grid grid-cols-1 sm:grid-cols-12 min-h-[340px] max-h-[78vh]">
+            <div className="grid grid-cols-1 sm:grid-cols-12 h-[min(calc(500px*var(--flux-ui-scale)),76vh)] overflow-hidden">
               {/* Left Navigation Categories */}
-              <div className="sm:col-span-4 border-b sm:border-b-0 sm:border-r border-[var(--flux-line)] bg-[var(--flux-bg)]/55 p-2 flex flex-col justify-between gap-2">
+              <div className="sm:col-span-4 border-b sm:border-b-0 sm:border-r border-[var(--flux-line)] bg-[var(--flux-bg)]/55 p-2 flex flex-col justify-between gap-2 min-h-0 overflow-y-auto">
                 <div className="space-y-0.5">
                   {(
                     [
@@ -1492,7 +1547,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               </div>
 
               {/* Right Category Actions */}
-              <div className="sm:col-span-8 p-2 overflow-y-auto divide-y divide-[var(--flux-line)]">
+              <div className="sm:col-span-8 p-2 min-h-0 h-full overflow-y-auto divide-y divide-[var(--flux-line)]">
                 {menuCategory === 'file' && (
                   <div className="space-y-0.5 pb-1">
                     {onSaveSessionNow && (
@@ -1850,6 +1905,222 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                   </div>
                 )}
               </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Expandable Compact Export Mini-Panel next to Save */}
+      <AnimatePresence>
+        {exportMenuOpen && (
+          <motion.div
+            ref={exportMenuRef}
+            role="menu"
+            aria-label="Меню экспорта и публикации"
+            data-testid="toolbar-export-popover"
+            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -3, scale: 0.98 }}
+            transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
+            style={
+              exportMenuPos
+                ? { left: exportMenuPos.left, top: exportMenuPos.top }
+                : { left: 108, top: 42 }
+            }
+            className="absolute z-50 w-[min(calc(308px*var(--flux-ui-scale)),calc(100vw-20px))] rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover shadow-2xl overflow-hidden py-1.5"
+          >
+            <div className="px-3 py-1 flex items-center justify-between border-b border-[var(--flux-line)]">
+              <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
+                Экспорт и публикация
+              </span>
+              <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                {project.projectCode}
+              </span>
+            </div>
+
+            <div className="py-1 space-y-0.5">
+              <div className="px-3 py-0.5 text-[length:calc(10px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
+                E³.series
+              </div>
+              <button
+                type="button"
+                data-testid="export-opt-e3s-ole2"
+                onClick={() => runMenuAction(onExportE3sOle2)}
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <Download className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Экспорт в E³.series (OLE2)
+                  </span>
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  .e3s
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="export-opt-e3s-xml"
+                onClick={() => runMenuAction(onExportE3sXml)}
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <FileCode2 className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Сохранить как E3 XML
+                  </span>
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  .xml
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="export-opt-e3-direct"
+                onClick={() => runMenuAction(onDirectOpenE3)}
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <Share2 className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Открыть в E³.series 2022
+                  </span>
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  COM
+                </span>
+              </button>
+            </div>
+
+            <div className="my-1 border-t border-[var(--flux-line)]" />
+
+            <div className="py-1 space-y-0.5">
+              <div className="px-3 py-0.5 text-[length:calc(10px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
+                PDF и AutoCAD (DWG / DXF)
+              </div>
+              <button
+                type="button"
+                data-testid="export-opt-project-pdf"
+                onClick={() =>
+                  runMenuAction(() => {
+                    if (onExportProjectPdf) onExportProjectPdf();
+                    else onOpenPublishModal();
+                  })
+                }
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <Printer className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Публикация проектного PDF
+                  </span>
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  .pdf
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="export-opt-dxf"
+                onClick={() => runMenuAction(onExportDxf)}
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <FileCode2 className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Сохранить как DWG / DXF
+                  </span>
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  .dxf
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="export-opt-batch-publish"
+                onClick={() => runMenuAction(onOpenPublishModal)}
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <Archive className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Настройка пакета (PDF / DXF)…
+                  </span>
+                </span>
+                <ChevronRight className="w-3 h-3 text-[var(--flux-text-muted)] shrink-0" />
+              </button>
+            </div>
+
+            <div className="my-1 border-t border-[var(--flux-line)]" />
+
+            <div className="py-1 space-y-0.5">
+              <div className="px-3 py-0.5 text-[length:calc(10px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
+                Таблицы и Flux
+              </div>
+              <button
+                type="button"
+                data-testid="export-opt-bom-csv"
+                onClick={() => runMenuAction(onDownloadBomCsv)}
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Спецификация ПЭ3
+                  </span>
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  .csv
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="export-opt-cables-csv"
+                onClick={() => runMenuAction(onDownloadCablesCsv)}
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Кабельный журнал
+                  </span>
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  .csv
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="export-opt-flux-json"
+                onClick={() => runMenuAction(onExportFluxBridge)}
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <Share2 className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Пакет Flux Bridge
+                  </span>
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  .json
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="export-opt-flux-zip"
+                onClick={() => runMenuAction(onDownloadFluxStudioZip)}
+                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <Archive className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                    Подпрограмма Flux Studio
+                  </span>
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  .zip
+                </span>
+              </button>
             </div>
           </motion.div>
         )}

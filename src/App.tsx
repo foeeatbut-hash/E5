@@ -36,6 +36,9 @@ import {
   Cpu,
   FileCode2,
   Layers,
+  Maximize2,
+  Minimize2,
+  Rows2,
   ShieldCheck,
   SlidersHorizontal,
   TerminalSquare,
@@ -254,6 +257,14 @@ import {
   removeRecentProject,
   saveActiveSession,
 } from './core/sessionStorage';
+import {
+  createSheetFolderInProject,
+  deleteSheetFolderFromProject,
+  getAdjacentSheetId,
+  getSheetPositionInfo,
+  moveSheetToFolderInProject,
+  renameSheetFolderInProject,
+} from './core/sheetTree';
 import { ecadAsync } from './workers/ecadAsync';
 
 function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
@@ -556,6 +567,33 @@ export default function App() {
   const [isBusy, setIsBusy] = useState<boolean>(false);
 
   const [leftTab, setLeftTab] = useState<'project' | 'library'>('project');
+  const [explorerSplitView, setExplorerSplitView] = useState<boolean>(() => {
+    try {
+      const saved = window.localStorage.getItem('e3promax.explorerSplitView.v1');
+      if (saved === 'true') return true;
+      if (saved === 'false') return false;
+    } catch {
+      // ignore storage failure
+    }
+    return loadUiMode() === 'hybrid';
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('e3promax.explorerSplitView.v1', explorerSplitView ? 'true' : 'false');
+    } catch {
+      // ignore storage failure
+    }
+  }, [explorerSplitView]);
+
+  const [canvasFocusActive, setCanvasFocusActive] = useState<boolean>(false);
+  const preCanvasFocusRef = useRef<{
+    uiMode: UiWorkspaceMode;
+    dockCollapsed: { explorer: boolean; inspector: boolean; console: boolean };
+    focusExplorerOpen: boolean;
+    focusConsoleOpen: boolean;
+    focusInspectorCollapsed: boolean;
+    focusRibbonOpen: boolean;
+  } | null>(null);
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [visualOpen, setVisualOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -709,6 +747,11 @@ export default function App() {
 
   const handleChangeUiMode = useCallback(
     (nextMode: UiWorkspaceMode) => {
+      preCanvasFocusRef.current = null;
+      setCanvasFocusActive(false);
+      if (typeof document !== 'undefined' && document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => {});
+      }
       setFocusExplorerOpen(false);
       setFocusConsoleOpen(false);
       setFocusInspectorCollapsed(false);
@@ -732,6 +775,89 @@ export default function App() {
     },
     [appendLog]
   );
+
+  const handleToggleCanvasFocus = useCallback(() => {
+    if (!canvasFocusActive) {
+      preCanvasFocusRef.current = {
+        uiMode: uiModeRef.current,
+        dockCollapsed: {
+          explorer: dockLayout.panels.explorer.collapsed,
+          inspector: dockLayout.panels.inspector.collapsed,
+          console: dockLayout.panels.console.collapsed,
+        },
+        focusExplorerOpen,
+        focusConsoleOpen,
+        focusInspectorCollapsed,
+        focusRibbonOpen,
+      };
+      setCanvasFocusActive(true);
+      setFocusExplorerOpen(false);
+      setFocusConsoleOpen(false);
+      setFocusInspectorCollapsed(true);
+      setFocusRibbonOpen(false);
+      if (uiModeRef.current !== 'focus') {
+        applyUiModeToDocument('focus');
+        saveUiMode('focus');
+        setUiMode('focus');
+      }
+      if (typeof document !== 'undefined' && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+      }
+      window.requestAnimationFrame(() => {
+        fitSheetToViewportRef.current?.(undefined, activeViewportIdxRef.current, true);
+      });
+      appendLog('INFO', 'UI-INTERACT', 'Включён полноэкранный режим «Фокус холст».');
+      return;
+    }
+
+    const prevSnap = preCanvasFocusRef.current;
+    preCanvasFocusRef.current = null;
+    setCanvasFocusActive(false);
+    if (typeof document !== 'undefined' && document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+    const targetMode = prevSnap?.uiMode || 'classic';
+    applyUiModeToDocument(targetMode);
+    saveUiMode(targetMode);
+    setUiMode(targetMode);
+    if (prevSnap) {
+      setFocusExplorerOpen(prevSnap.focusExplorerOpen);
+      setFocusConsoleOpen(prevSnap.focusConsoleOpen);
+      setFocusInspectorCollapsed(prevSnap.focusInspectorCollapsed);
+      setFocusRibbonOpen(prevSnap.focusRibbonOpen);
+      setDockLayout((prev) => {
+        let next = prev;
+        if (next.panels.explorer.collapsed !== prevSnap.dockCollapsed.explorer) {
+          next = togglePanelCollapse(next, 'explorer');
+        }
+        if (next.panels.inspector.collapsed !== prevSnap.dockCollapsed.inspector) {
+          next = togglePanelCollapse(next, 'inspector');
+        }
+        if (next.panels.console.collapsed !== prevSnap.dockCollapsed.console) {
+          next = togglePanelCollapse(next, 'console');
+        }
+        return next;
+      });
+    } else {
+      setFocusExplorerOpen(false);
+      setFocusConsoleOpen(false);
+      setFocusInspectorCollapsed(false);
+    }
+    window.requestAnimationFrame(() => {
+      fitSheetToViewportRef.current?.(undefined, activeViewportIdxRef.current, true);
+    });
+    appendLog('INFO', 'UI-INTERACT', 'Выход из режима «Фокус холст»: прежний вид восстановлен.');
+  }, [
+    canvasFocusActive,
+    dockLayout.panels.explorer.collapsed,
+    dockLayout.panels.inspector.collapsed,
+    dockLayout.panels.console.collapsed,
+    focusExplorerOpen,
+    focusConsoleOpen,
+    focusInspectorCollapsed,
+    focusRibbonOpen,
+    appendLog,
+  ]);
 
   const setTool = useCallback(
     (nextOrUpdater: CadTool | ((prev: CadTool) => CadTool)) => {
@@ -1456,6 +1582,25 @@ export default function App() {
     },
     [applySelection, appendLog]
   );
+
+  const sheetPositionInfo = useMemo(
+    () => getSheetPositionInfo(project.sheets, activeSheetId),
+    [project.sheets, activeSheetId]
+  );
+
+  const handlePrevSheet = useCallback(() => {
+    const prevId = getAdjacentSheetId(docStateRef.current.present.sheets, activeSheetIdRef.current, -1);
+    if (prevId) {
+      openSheetTab(prevId, activeViewportIdxRef.current);
+    }
+  }, [openSheetTab]);
+
+  const handleNextSheet = useCallback(() => {
+    const nextId = getAdjacentSheetId(docStateRef.current.present.sheets, activeSheetIdRef.current, 1);
+    if (nextId) {
+      openSheetTab(nextId, activeViewportIdxRef.current);
+    }
+  }, [openSheetTab]);
 
   const selectedDevice = useMemo(
     () => project.devices.find((d) => d.id === selectedDeviceId) || null,
@@ -3703,6 +3848,78 @@ export default function App() {
     [project, commitProject, appendLog]
   );
 
+  const handleCreateSheetFolder = useCallback(
+    (folderPath: string) => {
+      commitProject((prev) => {
+        const res = createSheetFolderInProject(prev.sheets, prev.sheetFolders, folderPath);
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          sheets: res.sheets,
+          sheetFolders: res.sheetFolders,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Создана папка листов «${folderPath}».`);
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleRenameSheetFolder = useCallback(
+    (oldPath: string, newNameOrPath: string) => {
+      commitProject((prev) => {
+        const res = renameSheetFolderInProject(prev.sheets, prev.sheetFolders, oldPath, newNameOrPath);
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          sheets: res.sheets,
+          sheetFolders: res.sheetFolders,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Папка листов переименована: «${oldPath}» → «${newNameOrPath}».`);
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleDeleteSheetFolder = useCallback(
+    (folderPath: string) => {
+      commitProject((prev) => {
+        const res = deleteSheetFolderFromProject(prev.sheets, prev.sheetFolders, folderPath);
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          sheets: res.sheets,
+          sheetFolders: res.sheetFolders,
+        };
+      });
+      appendLog('WARN', 'E3-CORE', `Папка листов «${folderPath}» удалена (листы перенесены уровнем выше).`);
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleMoveSheetToFolder = useCallback(
+    (sheetId: string, folderPath: string | null) => {
+      commitProject((prev) => {
+        const res = moveSheetToFolderInProject(prev.sheets, prev.sheetFolders, sheetId, folderPath);
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          sheets: res.sheets,
+          sheetFolders: res.sheetFolders,
+        };
+      });
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        folderPath ? `Лист перенесён в папку «${folderPath}».` : 'Лист перенесён в корень проекта.'
+      );
+    },
+    [commitProject, appendLog]
+  );
+
   // Panel dock dragging & edge resizing handlers (GPU translate3d for zero-jitter floating moves)
   const handleStartPanelDrag = useCallback(
     (panelId: PanelId, e: React.PointerEvent) => {
@@ -4572,6 +4789,23 @@ export default function App() {
     downloadText(`${project.projectCode}-sheet${activeSheet?.number || 1}.dxf`, res.dxf);
     appendLog('INFO', 'CAD-DXF', `Сформирован CAD-чертёж DXF для листа ${activeSheet?.number || 1}.`, res.durationMs);
   };
+
+  const handleExportProjectPdf = useCallback(() => {
+    void handleBatchPublish({
+      format: 'pdf',
+      sheetIds: project.sheets.map((s) => s.id),
+      includeBom: true,
+      includeCables: false,
+      includeGostFrame: true,
+      editableBlocks: false,
+    }).catch((err) => {
+      appendLog(
+        'ERROR',
+        'CAD-DXF',
+        `Ошибка экспорта проектного PDF: ${err instanceof Error ? err.message : String(err)}`
+      );
+    });
+  }, [handleBatchPublish, project.sheets, appendLog]);
 
   const handleImportPayload = async (rawText: string) => {
     const trimmed = rawText.trim();
@@ -5688,6 +5922,38 @@ export default function App() {
     [commitProject, appendLog]
   );
 
+  const explorerHeaderActions = (
+    <button
+      type="button"
+      data-testid="explorer-split-toggle-btn"
+      aria-pressed={explorerSplitView}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        setExplorerSplitView((v) => !v);
+      }}
+      title={
+        explorerSplitView
+          ? 'Переключить на вкладки «Проект | База»'
+          : 'Перенести раздел «База» вниз (два раздела одновременно)'
+      }
+      aria-label={
+        explorerSplitView
+          ? 'Переключить панель на вкладки'
+          : 'Разделить панель: проект сверху, база снизу'
+      }
+      className={`inline-flex items-center gap-0.5 h-5 px-1 rounded-[4px] border text-[9.5px] font-medium transition-colors shrink-0 ${
+        explorerSplitView
+          ? 'border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
+          : 'border-[var(--flux-line)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:border-[var(--flux-line-strong)]'
+      }`}
+    >
+      <Rows2 className="w-2.5 h-2.5 shrink-0" />
+      <span>{explorerSplitView ? 'Вкл.' : 'База↓'}</span>
+    </button>
+  );
+
   const renderPanelContent = (panelId: PanelId) => {
     if (panelId === 'explorer') {
       return (
@@ -5698,6 +5964,9 @@ export default function App() {
           activeSheetId={activeSheetId}
           selectedDeviceId={selectedDeviceId}
           activeTab={leftTab}
+          splitView={explorerSplitView}
+          canvasFocusActive={canvasFocusActive}
+          onToggleCanvasFocus={handleToggleCanvasFocus}
           onTabChange={setLeftTab}
           onSelectSheet={(id) => {
             openSheetTab(id, activeViewportIdx);
@@ -5724,6 +5993,10 @@ export default function App() {
           onOpenHvacWizard={() => setHvacWizardOpen(true)}
           onOpenSymbolDesigner={openBlockEditorWorkspace}
           symbolWorkspace={symbolWorkspaceActions}
+          onCreateSheetFolder={handleCreateSheetFolder}
+          onRenameSheetFolder={handleRenameSheetFolder}
+          onDeleteSheetFolder={handleDeleteSheetFolder}
+          onMoveSheetToFolder={handleMoveSheetToFolder}
         />
       );
     }
@@ -5968,6 +6241,7 @@ export default function App() {
             onStartDrag={handleStartPanelDrag}
             onMoveDock={handleMoveDockPanel}
             onToggleCollapse={handleToggleDockCollapse}
+            headerActions={p.id === 'explorer' ? explorerHeaderActions : undefined}
           >
             {renderPanelContent(p.id)}
           </DockablePanelFrame>
@@ -6716,6 +6990,7 @@ export default function App() {
         }}
         onAddSheet={handleAddSheet}
         onExportDxf={handleExportDxf}
+        onExportProjectPdf={handleExportProjectPdf}
         onOpenStampEditor={() => {
           if (isLayerLocked(docStateRef.current.present.layers, 'frame')) {
             appendLog('WARN', 'E3-CORE', 'Слой «Рамка и штамп ГОСТ» заблокирован.');
@@ -6766,6 +7041,7 @@ export default function App() {
         onAddQuickAccess={handleAddFocusQuickAccess}
         onRemoveQuickAccess={handleRemoveFocusQuickAccess}
         onToggleMinimap={handleToggleMinimap}
+        focusLayout={focusLayout}
       />
 
       {/* Dockable Workspace Shell (Full-Bleed in Focus Mode, Docked 4-Zone Grid in Classic & Hybrid) */}
@@ -6841,6 +7117,29 @@ export default function App() {
                 <ShieldCheck className="w-4 h-4" strokeWidth={1.6} />
               </button>
               <div className="flex-1" />
+              <button
+                type="button"
+                data-testid="left-focus-canvas-btn"
+                aria-pressed={canvasFocusActive}
+                title={
+                  canvasFocusActive
+                    ? 'Вернуть прежний вид и панели'
+                    : 'Фокус холст — полноэкранный чертёж'
+                }
+                aria-label={canvasFocusActive ? 'Вернуть прежний вид' : 'Фокус холст'}
+                onClick={handleToggleCanvasFocus}
+                className={`w-8 h-8 rounded-[4px] grid place-items-center transition-colors ${
+                  canvasFocusActive
+                    ? 'bg-[var(--flux-accent-solid)] text-white'
+                    : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)] hover:text-[var(--flux-accent)]'
+                }`}
+              >
+                {canvasFocusActive ? (
+                  <Minimize2 className="w-4 h-4" strokeWidth={1.6} />
+                ) : (
+                  <Maximize2 className="w-4 h-4" strokeWidth={1.6} />
+                )}
+              </button>
               <button
                 type="button"
                 title="Параметры визуализации, режима интерфейса и ГОСТ"
@@ -6931,8 +7230,14 @@ export default function App() {
                     onFocusViewport={vpH.onFocusViewport}
                     onFitViewport={vpH.onFitViewport}
                     onSelectSheet={vpH.onSelectSheet}
+                    onPrevSheet={handlePrevSheet}
+                    onNextSheet={handleNextSheet}
+                    canPrevSheet={Boolean(sheetPositionInfo.prevId)}
+                    canNextSheet={Boolean(sheetPositionInfo.nextId)}
                     onCloseSheet={viewportLayout === 'single' ? handleCloseSheetTab : undefined}
                     onAddSheet={handleAddSheet}
+                    canvasFocusActive={canvasFocusActive}
+                    onToggleCanvasFocus={handleToggleCanvasFocus}
                     onSetTool={setTool}
                     onSetZoom={vpH.onSetZoom}
                     onSetPan={vpH.onSetPan}
@@ -7024,17 +7329,20 @@ export default function App() {
                   }}
                   className="no-print absolute max-w-[calc(100vw-80px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col transition-[top,bottom] duration-150"
                 >
-                  <div className="h-7 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between shrink-0">
-                    <span className="text-[11px] font-semibold text-[var(--flux-text)] truncate">
-                      Навигатор проекта
-                    </span>
+                  <div className="h-7 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[11px] font-semibold text-[var(--flux-text)] truncate">
+                        Навигатор проекта
+                      </span>
+                      {explorerHeaderActions}
+                    </div>
                     <button
                       type="button"
                       data-testid="focus-explorer-close-btn"
                       onClick={() => setFocusExplorerOpen(false)}
                       title="Свернуть панель устройств (Ctrl+\)"
                       aria-label="Закрыть панель устройств"
-                      className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+                      className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
                     >
                       <ChevronLeft className="w-3.5 h-3.5" />
                     </button>
@@ -7174,6 +7482,7 @@ export default function App() {
                 onResizeFloatingStart={handleResizeFloatingStart}
                 onMoveDock={handleMoveDockPanel}
                 onToggleCollapse={handleToggleDockCollapse}
+                headerActions={fp.id === 'explorer' ? explorerHeaderActions : undefined}
               >
                 {renderPanelContent(fp.id)}
               </FloatingPanelWindow>

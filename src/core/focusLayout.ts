@@ -19,6 +19,8 @@ export interface FocusLayoutMetrics {
   ribbonTop: number;
   ribbonTotalHeight: number;
   topClearance: number;
+  leftPillMaxWidth: number;
+  rightPillMaxWidth: number;
   sheetTabsCenterX: number;
   sheetTabsMaxWidth: number;
   bottomBarHeight: number;
@@ -69,12 +71,12 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     : outerPad + topBarHeight + gutter;
 
   // Reserve asymmetric left/right pill widths and center the sheet-tabs pill cleanly inside the open gap
-  const leftPillReserve = Math.round((vw >= 1400 ? 428 : vw >= 1100 ? 292 : 228) * f);
-  const rightPillReserve = Math.round((vw >= 1400 ? 500 : vw >= 1100 ? 488 : 380) * f);
-  const sheetTabsZoneLeft = outerPad + leftPillReserve + gutter;
-  const sheetTabsZoneRight = vw - outerPad - rightPillReserve - gutter;
+  const leftPillMaxWidth = Math.round((vw >= 1400 ? 408 : vw >= 1100 ? 304 : 232) * f);
+  const rightPillMaxWidth = Math.round((vw >= 1400 ? 500 : vw >= 1100 ? 484 : 380) * f);
+  const sheetTabsZoneLeft = outerPad + leftPillMaxWidth + gutter;
+  const sheetTabsZoneRight = vw - outerPad - rightPillMaxWidth - gutter;
   const sheetTabsAvailable = Math.max(150, sheetTabsZoneRight - sheetTabsZoneLeft);
-  const sheetTabsMaxWidth = Math.min(540, sheetTabsAvailable);
+  const sheetTabsMaxWidth = Math.min(760, sheetTabsAvailable);
   const sheetTabsCenterX = Math.round((sheetTabsZoneLeft + sheetTabsZoneRight) / 2);
 
   const bottomBarHeight = Math.round(36 * f);
@@ -161,6 +163,8 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     ribbonTop,
     ribbonTotalHeight,
     topClearance,
+    leftPillMaxWidth,
+    rightPillMaxWidth,
     sheetTabsCenterX,
     sheetTabsMaxWidth,
     bottomBarHeight,

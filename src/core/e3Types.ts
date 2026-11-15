@@ -300,6 +300,7 @@ export interface E3Sheet {
   format: SheetFormat;
   width: number;
   height: number;
+  folder?: string;
   titleBlock: E3TitleBlock;
   revision?: number;
   updatedAt?: string;
@@ -412,6 +413,7 @@ export interface E3Project {
   standard: StandardType;
   updatedAt: string;
   sheets: E3Sheet[];
+  sheetFolders?: string[];
   devices: E3Device[];
   wires: E3Wire[];
   cables: E3Cable[];

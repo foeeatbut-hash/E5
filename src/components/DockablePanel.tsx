@@ -111,6 +111,7 @@ function useStabilizedFloatingRect(rect: PanelConfig['floating']): PanelCoords {
 interface PanelHeaderBarProps {
   panel: PanelConfig;
   edge?: DockEdge | 'floating';
+  headerActions?: React.ReactNode;
   onStartDrag: (panelId: PanelId, e: React.PointerEvent) => void;
   onMoveDock: (panelId: PanelId, side: DockSide) => void;
   onToggleCollapse: (panelId: PanelId) => void;
@@ -119,6 +120,7 @@ interface PanelHeaderBarProps {
 const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
   panel,
   edge = 'bottom',
+  headerActions,
   onStartDrag,
   onMoveDock,
   onToggleCollapse,
@@ -151,17 +153,20 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
         onToggleCollapse(panel.id);
       }}
       title="Перетащите заголовок для закрепления или дважды кликните для сворачивания"
-      className="group/header h-7 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1.5 shrink-0 cursor-grab active:cursor-grabbing select-none"
+      className={`group/header h-7 ${headerActions ? 'px-1.5' : 'px-2.5'} border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1 shrink-0 cursor-grab active:cursor-grabbing select-none`}
     >
-      <div className="flex items-center gap-1.5 min-w-0">
+      <div className="flex items-center gap-1 min-w-0">
         <GripHorizontal className="w-3 h-3 text-[var(--flux-text-muted)]/50 group-hover/header:text-[var(--flux-text-muted)] transition-colors shrink-0" />
         <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold tracking-normal text-[var(--flux-text)] truncate">
           {panel.title}
         </span>
+        {headerActions && (
+          <div className="flex items-center gap-0.5 shrink-0">{headerActions}</div>
+        )}
       </div>
 
       <div className="flex items-center gap-0.5 shrink-0">
-        <div className="flex items-center gap-0.5 opacity-35 group-hover/header:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
+        <div className="flex items-center gap-0 opacity-35 group-hover/header:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
           <button
             type="button"
             onClick={() => onMoveDock(panel.id, 'left')}
@@ -230,6 +235,7 @@ export interface DockablePanelFrameProps {
   hideHeaderBar?: boolean;
   isResizing?: boolean;
   className?: string;
+  headerActions?: React.ReactNode;
   onStartDrag: (panelId: PanelId, e: React.PointerEvent) => void;
   onMoveDock: (panelId: PanelId, side: DockSide) => void;
   onToggleCollapse: (panelId: PanelId) => void;
@@ -247,6 +253,7 @@ const DockablePanelFrameImpl: React.FC<DockablePanelFrameProps> = ({
   hideHeaderBar = false,
   isResizing = false,
   className = '',
+  headerActions,
   onStartDrag,
   onMoveDock,
   onToggleCollapse,
@@ -344,6 +351,7 @@ const DockablePanelFrameImpl: React.FC<DockablePanelFrameProps> = ({
             <PanelHeaderBar
               panel={panel}
               edge={edge}
+              headerActions={headerActions}
               onStartDrag={onStartDrag}
               onMoveDock={onMoveDock}
               onToggleCollapse={onToggleCollapse}
@@ -379,6 +387,7 @@ const DockablePanelFrameImpl: React.FC<DockablePanelFrameProps> = ({
       <PanelHeaderBar
         panel={panel}
         edge={edge}
+        headerActions={headerActions}
         onStartDrag={onStartDrag}
         onMoveDock={onMoveDock}
         onToggleCollapse={onToggleCollapse}
@@ -461,6 +470,7 @@ export interface FloatingPanelWindowProps {
   uiScale?: UiScalePercent;
   isResizing?: boolean;
   isMoving?: boolean;
+  headerActions?: React.ReactNode;
   onStartDrag: (panelId: PanelId, e: React.PointerEvent) => void;
   onResizeFloatingStart: (panelId: PanelId, e: React.PointerEvent) => void;
   onMoveDock: (panelId: PanelId, side: DockSide) => void;
@@ -473,6 +483,7 @@ const FloatingPanelWindowImpl: React.FC<FloatingPanelWindowProps> = ({
   uiScale = 100,
   isResizing = false,
   isMoving = false,
+  headerActions,
   onStartDrag,
   onResizeFloatingStart,
   onMoveDock,
@@ -510,6 +521,7 @@ const FloatingPanelWindowImpl: React.FC<FloatingPanelWindowProps> = ({
       <PanelHeaderBar
         panel={panel}
         edge="floating"
+        headerActions={headerActions}
         onStartDrag={onStartDrag}
         onMoveDock={onMoveDock}
         onToggleCollapse={onToggleCollapse}

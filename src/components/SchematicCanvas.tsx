@@ -3,6 +3,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   AlignStartHorizontal,
   AlignStartVertical,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Crosshair,
   FlipHorizontal2,
   FlipVertical2,
@@ -12,6 +15,7 @@ import {
   Lock,
   Magnet,
   Maximize2,
+  Minimize2,
   Minus,
   MousePointer2,
   PanelLeft,
@@ -43,6 +47,7 @@ import {
 import { resolveSchematicCssFont } from '../core/e3Catalog';
 import { buildGostTableRenderModel } from '../core/gostTables';
 import { getSheetRevisionLabel, hasSheetUncommittedChanges } from '../core/sheetRevisions';
+import { getSheetPositionInfo } from '../core/sheetTree';
 import {
   autoRouteOrthogonal,
   computeWireCrossingArcs,
@@ -141,8 +146,14 @@ interface SchematicCanvasProps {
   onFocusViewport?: () => void;
   onFitViewport?: () => void;
   onSelectSheet: (sheetId: string) => void;
+  onPrevSheet?: () => void;
+  onNextSheet?: () => void;
+  canPrevSheet?: boolean;
+  canNextSheet?: boolean;
   onCloseSheet?: (sheetId: string) => void;
   onAddSheet: () => void;
+  canvasFocusActive?: boolean;
+  onToggleCanvasFocus?: () => void;
   onSetTool?: (tool: CadTool) => void;
   onSetZoom: (zoom: number) => void;
   onSetPan: (pan: { x: number; y: number }) => void;
@@ -248,8 +259,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   onFocusViewport,
   onFitViewport,
   onSelectSheet,
+  onPrevSheet,
+  onNextSheet,
+  canPrevSheet,
+  canNextSheet,
   onCloseSheet,
   onAddSheet,
+  canvasFocusActive = false,
+  onToggleCanvasFocus,
   onSetTool,
   onSetZoom,
   onSetPan,
@@ -748,6 +765,55 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       .map((id) => byId.get(id))
       .filter((s): s is NonNullable<typeof s> => Boolean(s));
   }, [openSheetIds, project.sheets]);
+
+  const sheetPosition = useMemo(
+    () => getSheetPositionInfo(project.sheets, sheet?.id || activeSheetId),
+    [project.sheets, sheet?.id, activeSheetId]
+  );
+  const resolvedCanPrevSheet = canPrevSheet ?? Boolean(sheetPosition.prevId);
+  const resolvedCanNextSheet = canNextSheet ?? Boolean(sheetPosition.nextId);
+  const handleStepPrevSheet = () => {
+    if (onPrevSheet) onPrevSheet();
+    else if (sheetPosition.prevId) onSelectSheet(sheetPosition.prevId);
+  };
+  const handleStepNextSheet = () => {
+    if (onNextSheet) onNextSheet();
+    else if (sheetPosition.nextId) onSelectSheet(sheetPosition.nextId);
+  };
+
+  const sheetTabsScrollRef = useRef<HTMLDivElement | null>(null);
+  const [sheetPickerOpen, setSheetPickerOpen] = useState(false);
+  const sheetPickerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const raf = window.requestAnimationFrame(() => {
+      const scroller = sheetTabsScrollRef.current;
+      if (!scroller || !sheet?.id) return;
+      const activeBtn = scroller.querySelector<HTMLElement>(`[data-testid="sheet-tab-${sheet.id}"]`);
+      if (activeBtn) {
+        activeBtn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      }
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [sheet?.id, openSingleTabs.length, uiMode]);
+
+  useEffect(() => {
+    if (!sheetPickerOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (sheetPickerRef.current && !sheetPickerRef.current.contains(e.target as Node)) {
+        setSheetPickerOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSheetPickerOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [sheetPickerOpen]);
 
   const sheetLayerCounts = useMemo(
     () => countSheetLayerEntities(project, sheet?.id || ''),
@@ -2005,8 +2071,88 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         </div>
       ) : uiMode === 'focus' ? null : (
         <div className="no-print @container/sheethdr h-6 shrink-0 border-b border-[var(--flux-line)] flux-glass-bar pr-1.5 flex items-center justify-between gap-2 relative z-20">
-          <div className="flex items-center min-w-0 flex-1 overflow-hidden h-full">
-            <div className="flex items-center min-w-0 overflow-x-auto no-scrollbar h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+          <div className="flex items-center min-w-0 flex-1 overflow-visible h-full">
+            <div className="flex items-center gap-0.5 px-1 h-full border-r border-[var(--flux-line)] shrink-0">
+              <button
+                type="button"
+                data-testid="sheet-prev-btn"
+                onClick={handleStepPrevSheet}
+                disabled={!resolvedCanPrevSheet}
+                title="Предыдущий лист"
+                aria-label="Предыдущий лист"
+                className="inline-flex items-center justify-center w-4 h-4 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors"
+              >
+                <ChevronLeft className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                data-testid="sheet-next-btn"
+                onClick={handleStepNextSheet}
+                disabled={!resolvedCanNextSheet}
+                title="Следующий лист"
+                aria-label="Следующий лист"
+                className="inline-flex items-center justify-center w-4 h-4 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors"
+              >
+                <ChevronRight className="w-3 h-3" />
+              </button>
+              <div ref={sheetPickerRef} className="relative">
+                <button
+                  type="button"
+                  data-testid="sheet-picker-btn"
+                  onClick={() => setSheetPickerOpen((o) => !o)}
+                  title="Все листы проекта (быстрый переход)"
+                  aria-expanded={sheetPickerOpen}
+                  className="inline-flex items-center gap-0.5 h-4 px-1 rounded-[2px] font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+                >
+                  <span>
+                    {Math.max(1, sheetPosition.index + 1)}/{Math.max(1, sheetPosition.total)}
+                  </span>
+                  <ChevronDown className="w-2.5 h-2.5 opacity-70" />
+                </button>
+                {sheetPickerOpen && (
+                  <div
+                    data-testid="sheet-picker-popover"
+                    className="absolute left-0 top-full mt-1 z-50 w-60 max-h-64 overflow-y-auto rounded-lg border border-[var(--flux-line-strong)] flux-glass-popover shadow-xl py-1"
+                  >
+                    {project.sheets.map((ps) => {
+                      const isCur = ps.id === sheet?.id;
+                      return (
+                        <button
+                          key={ps.id}
+                          type="button"
+                          onClick={() => {
+                            onSelectSheet(ps.id);
+                            setSheetPickerOpen(false);
+                          }}
+                          className={`w-full px-2.5 py-1 text-left flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
+                            isCur
+                              ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
+                              : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                          }`}
+                        >
+                          <span className="truncate">
+                            {ps.number}. {ps.name}
+                          </span>
+                          <span className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                            {ps.folder ? `${ps.folder} · ` : ''}{ps.format}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div
+              ref={sheetTabsScrollRef}
+              onWheel={(e) => {
+                if (Math.abs(e.deltaY) > 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+                  e.currentTarget.scrollLeft += e.deltaY;
+                }
+              }}
+              className="flex items-center min-w-0 overflow-x-auto no-scrollbar h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]"
+            >
               {openSingleTabs.map((s) => {
                 const active = s.id === sheet?.id;
                 return (
@@ -2077,6 +2223,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             </div>
             <button
               type="button"
+              data-testid="sheet-add-btn"
               onClick={onAddSheet}
               aria-label="Добавить новый лист схемы"
               className="inline-flex items-center gap-1 h-[calc(18px*var(--flux-ui-scale))] px-1.5 ml-1 rounded-[2px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap shrink-0 border border-transparent hover:border-[var(--flux-line)]"
@@ -4226,9 +4373,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               transform: 'translateX(-50%)',
               maxWidth: resolvedFocusLayout.sheetTabsMaxWidth,
             }}
-            className="no-print absolute top-3 z-30 inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-[140px]"
+            className="no-print absolute top-3 z-30 inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-[200px]"
           >
+            <button
+              type="button"
+              data-testid="sheet-prev-btn"
+              onClick={handleStepPrevSheet}
+              disabled={!resolvedCanPrevSheet}
+              title="Предыдущий лист"
+              aria-label="Предыдущий лист"
+              className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 shrink-0 transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
             <div
+              ref={sheetTabsScrollRef}
               onWheel={(e) => {
                 if (Math.abs(e.deltaY) > 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
                   e.currentTarget.scrollLeft += e.deltaY;
@@ -4251,13 +4410,72 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                     }`}
                   >
-                    <span className="max-w-[144px] truncate">Л.{s.number}: {s.name}</span>
+                    <span className="max-w-[140px] truncate">Л.{s.number}: {s.name}</span>
                   </button>
                 );
               })}
             </div>
             <button
               type="button"
+              data-testid="sheet-next-btn"
+              onClick={handleStepNextSheet}
+              disabled={!resolvedCanNextSheet}
+              title="Следующий лист"
+              aria-label="Следующий лист"
+              className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 shrink-0 transition-colors"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+            <div ref={sheetPickerRef} className="relative shrink-0">
+              <button
+                type="button"
+                data-testid="sheet-picker-btn"
+                onClick={() => setSheetPickerOpen((o) => !o)}
+                aria-expanded={sheetPickerOpen}
+                title="Список всех листов проекта"
+                className="inline-flex items-center gap-0.5 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <span>
+                  {Math.max(1, sheetPosition.index + 1)}/{Math.max(1, sheetPosition.total)}
+                </span>
+                <ChevronDown className="w-2.5 h-2.5 opacity-70" />
+              </button>
+              {sheetPickerOpen && (
+                <div
+                  data-testid="sheet-picker-popover"
+                  className="absolute right-0 top-full mt-1.5 z-50 w-64 max-h-64 overflow-y-auto rounded-lg border border-[var(--flux-line-strong)] flux-glass-popover shadow-xl py-1"
+                >
+                  {project.sheets.map((ps) => {
+                    const isCur = ps.id === sheet?.id;
+                    return (
+                      <button
+                        key={ps.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectSheet(ps.id);
+                          setSheetPickerOpen(false);
+                        }}
+                        className={`w-full px-2.5 py-1.5 text-left flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
+                          isCur
+                            ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
+                            : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                        }`}
+                      >
+                        <span className="truncate">
+                          Л.{ps.number}: {ps.name}
+                        </span>
+                        <span className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                          {ps.folder ? `${ps.folder} · ` : ''}{ps.format}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              data-testid="sheet-add-btn"
               onClick={onAddSheet}
               title="Добавить новый лист схемы"
               aria-label="Добавить новый лист схемы"
@@ -4630,6 +4848,31 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   >
                     <PanelLeft className="w-3.5 h-3.5" strokeWidth={1.7} />
                   </button>
+                  {onToggleCanvasFocus && (
+                    <button
+                      type="button"
+                      data-testid="left-focus-canvas-btn"
+                      aria-pressed={canvasFocusActive}
+                      onClick={onToggleCanvasFocus}
+                      title={
+                        canvasFocusActive
+                          ? 'Фокус холст (нажмите снова, чтобы вернуть панели и прежний вид)'
+                          : 'Фокус холст — полноэкранный чертёж'
+                      }
+                      aria-label={canvasFocusActive ? 'Вернуть прежний вид' : 'Фокус холст'}
+                      className={`inline-flex items-center justify-center w-7 h-7 rounded-[6px] shrink-0 transition-colors ${
+                        canvasFocusActive
+                          ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
+                          : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]'
+                      }`}
+                    >
+                      {canvasFocusActive ? (
+                        <Minimize2 className="w-3.5 h-3.5" strokeWidth={1.7} />
+                      ) : (
+                        <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.7} />
+                      )}
+                    </button>
+                  )}
                   <span className="w-5 h-px bg-[var(--flux-line)] my-0.5 shrink-0" />
                 </>
               )}
@@ -4687,22 +4930,6 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   </React.Fragment>
                 );
               })}
-
-              {onOpenRibbonForQuickAccess && (
-                <>
-                  <span className="w-5 h-px bg-[var(--flux-line)] my-0.5 shrink-0" />
-                  <button
-                    type="button"
-                    data-testid="focus-rail-customize-btn"
-                    onClick={onOpenRibbonForQuickAccess}
-                    title="Добавить команды с ленты (откройте «Лента» и нажмите ПКМ на нужной кнопке)"
-                    aria-label="Добавить команды с ленты"
-                    className="inline-flex items-center justify-center w-7 h-7 rounded-[6px] shrink-0 text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]/70 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" strokeWidth={1.7} />
-                  </button>
-                </>
-              )}
             </div>
           );
         })()}
