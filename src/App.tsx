@@ -31,6 +31,7 @@ import { StampEditorModal, type StampModalMode } from './components/StampEditorM
 import { TerminalStripModal } from './components/TerminalStripModal';
 import { AutoNumberingModal } from './components/AutoNumberingModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { StartMenuHub } from './components/StartMenuHub';
 import { SystemHealthDashboard } from './components/SystemHealthDashboard';
 import { SymbolWorkspaceCanvas } from './components/SymbolWorkspaceCanvas';
 import {
@@ -294,6 +295,10 @@ import {
   moveSheetToFolderInProject,
   renameSheetFolderInProject,
 } from './core/sheetTree';
+import {
+  createProjectFromTemplate,
+  type StartTemplateId,
+} from './core/startHub';
 import { ecadAsync } from './workers/ecadAsync';
 
 function downloadText(filename: string, content: string, mime = 'text/plain;charset=utf-8') {
@@ -317,6 +322,9 @@ function downloadBytes(filename: string, bytes: Uint8Array, mime = 'application/
   a.click();
   URL.revokeObjectURL(url);
 }
+
+const DEFAULT_PRIMARY_VIEWPORT_TRANSFORM = { zoom: 0.56, pan: { x: 46, y: 12 } };
+const DEFAULT_SECONDARY_VIEWPORT_TRANSFORM = { zoom: 0.42, pan: { x: 20, y: 12 } };
 
 export default function App() {
   const initialSessionRef = useRef<ReturnType<typeof loadActiveSession> | undefined>(undefined);
@@ -415,10 +423,11 @@ export default function App() {
   const [activeViewportIdx, setActiveViewportIdx] = useState<number>(0);
   const activeViewportIdxRef = useRef(activeViewportIdx);
   activeViewportIdxRef.current = activeViewportIdx;
+
   const [viewportTransforms, setViewportTransforms] = useState<
     Record<number, { zoom: number; pan: { x: number; y: number } }>
   >({
-    0: { zoom: 0.56, pan: { x: 46, y: 12 } },
+    0: DEFAULT_PRIMARY_VIEWPORT_TRANSFORM,
     1: { zoom: 0.36, pan: { x: 20, y: 12 } },
     2: { zoom: 0.36, pan: { x: 20, y: 12 } },
     3: { zoom: 0.36, pan: { x: 20, y: 12 } },
@@ -440,6 +449,12 @@ export default function App() {
     ) => {
       if (fn) cameraDomSyncRef.current[vpIdx] = fn;
       else delete cameraDomSyncRef.current[vpIdx];
+    },
+    []
+  );
+  const reportLiveCameraPos = useCallback(
+    (vpIdx: number, nextZoom: number, nextPan: { x: number; y: number }) => {
+      liveCameraPosRef.current[vpIdx] = { zoom: nextZoom, pan: nextPan };
     },
     []
   );
@@ -681,6 +696,15 @@ export default function App() {
   const [terminalEditorOpen, setTerminalEditorOpen] = useState(false);
   const [autoNumberModalOpen, setAutoNumberModalOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [startHubOpen, setStartHubOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('autostart') !== '1';
+    } catch {
+      return true;
+    }
+  });
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandPaletteInitialQuery, setCommandPaletteInitialQuery] = useState('');
   const [healthOpen, setHealthOpen] = useState(false);
@@ -3546,6 +3570,7 @@ export default function App() {
       const durationMs = computeAdaptiveCameraDuration(startTransform, normTarget);
       let startTime: number | null = null;
 
+      liveCameraPosRef.current[vpIdx] = startTransform;
       cameraDomSyncRef.current[vpIdx]?.(startTransform.zoom, startTransform.pan, { animating: true });
 
       const step = () => {
@@ -5283,6 +5308,42 @@ export default function App() {
     }
     appendLog('INFO', 'E3-CORE', `Создан новый проект ${fresh.name} (${fresh.projectCode}).`);
   }, [applySelection, pushSync, fitSheetToViewport, activeViewportIdx, appendLog]);
+
+  const handleCreateProjectFromTemplate = useCallback(
+    (
+      templateId: StartTemplateId,
+      options: { standard: 'GOST' | 'IEC'; format: SheetFormat; gridSize: number }
+    ) => {
+      saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+      const fresh = createProjectFromTemplate(templateId, {
+        standard: options.standard,
+        format: options.format,
+        gridSize: options.gridSize,
+        theme: docStateRef.current.present.visualSettings.theme,
+      });
+      const nextSheetId = fresh.sheets[0]?.id || 'sheet-1';
+      setOpenedFileName(null);
+      setDocState({ past: [], present: fresh, future: [] });
+      setOpenSheetIds(fresh.sheets.map((s) => s.id));
+      setActiveSheetId(nextSheetId);
+      setViewportSheetIds(fresh.sheets.map((s) => s.id));
+      applySelection({ deviceIds: fresh.devices[0] ? [fresh.devices[0].id] : [] });
+      const res = saveActiveSession(fresh, nextSheetId);
+      setLastSavedAt(res.savedAt);
+      setRecentProjects(res.recent);
+      pushSync(fresh);
+      setStartHubOpen(false);
+      if (fresh.sheets[0]) {
+        window.requestAnimationFrame(() => fitSheetToViewport(fresh.sheets[0], activeViewportIdx));
+      }
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Создан проект из шаблона (${templateId}): ${fresh.name} (${fresh.projectCode}).`
+      );
+    },
+    [applySelection, pushSync, fitSheetToViewport, activeViewportIdx, appendLog]
+  );
 
   const handleOpenRecentProject = useCallback(
     (projectId: string) => {
@@ -7099,25 +7160,29 @@ export default function App() {
         },
         onSetZoom: (nextZ: number) => {
           cancelCameraAnimRef.current(idx);
-          setViewportTransforms((prev) => {
-            const nextPan = prev[idx]?.pan || { x: 20, y: 12 };
-            liveCameraPosRef.current[idx] = { zoom: nextZ, pan: nextPan };
-            return {
-              ...prev,
-              [idx]: { zoom: nextZ, pan: nextPan },
-            };
-          });
+          const basePan =
+            liveCameraPosRef.current[idx]?.pan ??
+            viewportTransformsRef.current[idx]?.pan ??
+            DEFAULT_SECONDARY_VIEWPORT_TRANSFORM.pan;
+          const committed = normalizeCommittedCameraTransform({ zoom: nextZ, pan: basePan });
+          liveCameraPosRef.current[idx] = committed;
+          setViewportTransforms((prev) => ({
+            ...prev,
+            [idx]: committed,
+          }));
         },
         onSetPan: (nextPan: { x: number; y: number }) => {
           cancelCameraAnimRef.current(idx);
-          setViewportTransforms((prev) => {
-            const nextZ = prev[idx]?.zoom ?? 0.45;
-            liveCameraPosRef.current[idx] = { zoom: nextZ, pan: nextPan };
-            return {
-              ...prev,
-              [idx]: { zoom: nextZ, pan: nextPan },
-            };
-          });
+          const baseZoom =
+            liveCameraPosRef.current[idx]?.zoom ??
+            viewportTransformsRef.current[idx]?.zoom ??
+            0.45;
+          const committed = normalizeCommittedCameraTransform({ zoom: baseZoom, pan: nextPan });
+          liveCameraPosRef.current[idx] = committed;
+          setViewportTransforms((prev) => ({
+            ...prev,
+            [idx]: committed,
+          }));
         },
         onSetTransform: (nextZ: number, nextPan: { x: number; y: number }) => {
           cancelCameraAnimRef.current(idx);
@@ -7195,8 +7260,26 @@ export default function App() {
           const vpIdx = activeViewportIdxRef.current;
           const cur =
             liveCameraPosRef.current[vpIdx] ||
-            viewportTransformsRef.current[vpIdx] || { zoom: 0.56, pan: { x: 24, y: 12 } };
+            viewportTransformsRef.current[vpIdx] ||
+            DEFAULT_PRIMARY_VIEWPORT_TRANSFORM;
           const clampedZ = clampCameraZoom(nextZ);
+          const sel =
+            vpIdx === 0 ? '[data-testid="schematic-canvas"]' : `[data-testid="schematic-canvas-${vpIdx}"]`;
+          const el =
+            document.querySelector(sel) || document.querySelector('[data-testid="schematic-canvas"]');
+          const rect = el?.getBoundingClientRect();
+          const cx = rect?.width ? rect.width / 2 : 410;
+          const cy = rect?.height ? rect.height / 2 : 250;
+          const nextPan = computeAnchoredZoomPan(cx, cy, cur.pan, cur.zoom, clampedZ);
+          animateCameraTo(vpIdx, clampedZ, nextPan, true);
+        }}
+        onZoomStep={(delta) => {
+          const vpIdx = activeViewportIdxRef.current;
+          const cur =
+            liveCameraPosRef.current[vpIdx] ||
+            viewportTransformsRef.current[vpIdx] ||
+            DEFAULT_PRIMARY_VIEWPORT_TRANSFORM;
+          const clampedZ = clampCameraZoom(Math.round((cur.zoom + delta) * 100) / 100);
           const sel =
             vpIdx === 0 ? '[data-testid="schematic-canvas"]' : `[data-testid="schematic-canvas-${vpIdx}"]`;
           const el =
@@ -7406,6 +7489,7 @@ export default function App() {
         onRemoveQuickAccess={handleRemoveFocusQuickAccess}
         onToggleMinimap={handleToggleMinimap}
         focusLayout={focusLayout}
+        onOpenStartHub={() => setStartHubOpen(true)}
       />
 
       {/* Dockable Workspace Shell (Full-Bleed in Focus Mode, Docked 4-Zone Grid in Classic & Hybrid) */}
@@ -7558,7 +7642,7 @@ export default function App() {
                 viewportLayout === 'single'
                   ? activeSheetId
                   : effectiveViewportSheets[idx] || activeSheetId;
-              const vpTr = viewportTransforms[idx] || { zoom: 0.42, pan: { x: 20, y: 12 } };
+              const vpTr = viewportTransforms[idx] || DEFAULT_SECONDARY_VIEWPORT_TRANSFORM;
               const vpH = viewportHandlers[idx] || viewportHandlers[0];
               const spanClass =
                 viewportLayout === 'single'
@@ -7667,6 +7751,7 @@ export default function App() {
                     }
                     onRegisterCameraSync={registerCameraDomSync}
                     onCancelCameraAnim={cancelCameraAnim}
+                    onReportLiveCamera={reportLiveCameraPos}
                   />
                 </div>
               );
@@ -7684,7 +7769,8 @@ export default function App() {
         {uiMode === 'focus' && !symbolDraft.open && (
           <>
             {viewportLayout !== 'single' && (() => {
-              const activeVpTr = viewportTransforms[activeViewportIdx] || { zoom: 0.42, pan: { x: 20, y: 12 } };
+              const activeVpTr =
+                viewportTransforms[activeViewportIdx] || DEFAULT_SECONDARY_VIEWPORT_TRANSFORM;
               const activeVpH = viewportHandlers[activeViewportIdx] || viewportHandlers[0];
               const devCount = new Set([...selectedDeviceIds, ...(selectedDeviceId ? [selectedDeviceId] : [])]).size;
               const wireCount = new Set([...selectedWireIds, ...(selectedWireId ? [selectedWireId] : [])]).size;
@@ -8166,6 +8252,49 @@ export default function App() {
             );
           })();
         }}
+      />
+      <StartMenuHub
+        open={startHubOpen}
+        currentProject={project}
+        activeSheetId={activeSheetId}
+        activeFilename={openedFileName || buildE3FluxFilename(project)}
+        recentProjects={recentProjects}
+        isDark={project.visualSettings.theme === 'dark'}
+        uiMode={uiMode}
+        uiScale={uiScale}
+        e3BridgeHost={
+          bridgeStatus.isWin32
+            ? 'Windows'
+            : bridgeStatus.bridgeConnected
+              ? bridgeStatus.bridgeHost
+              : null
+        }
+        fluxHosted={fluxHostStatus.hostedInFlux}
+        onCloseToCanvas={() => setStartHubOpen(false)}
+        onCreateProjectFromTemplate={handleCreateProjectFromTemplate}
+        onOpenRecentProject={(id) => {
+          handleOpenRecentProject(id);
+          setStartHubOpen(false);
+        }}
+        onRemoveRecentProject={handleRemoveRecentProject}
+        onImportE3sFile={async (file) => {
+          const buf = await file.arrayBuffer();
+          await handleImportE3sBytes(buf, file.name);
+        }}
+        onOpenHvacWizard={() => setHvacWizardOpen(true)}
+        onOpenSymbolDesigner={openBlockEditorWorkspace}
+        onOpenExchangeModal={() => setExchangeOpen(true)}
+        onOpenCommandPalette={() => {
+          setCommandPaletteInitialQuery('');
+          setCommandPaletteOpen(true);
+        }}
+        onToggleTheme={() =>
+          handleApplyVisualSettings({
+            ...project.visualSettings,
+            theme: project.visualSettings.theme === 'dark' ? 'light' : 'dark',
+          })
+        }
+        onChangeUiScale={handleChangeUiScale}
       />
     </div>
       {shortcutsOpen && (

@@ -158,3 +158,100 @@ export function normalizeCommittedCameraTransform(transform: CameraTransform): C
     },
   };
 }
+
+export function cameraTransformsClose(
+  a: CameraTransform,
+  b: CameraTransform,
+  zoomEps = 0.00025,
+  panEps = 0.02
+): boolean {
+  return (
+    Math.abs(a.zoom - b.zoom) <= zoomEps &&
+    Math.abs(a.pan.x - b.pan.x) <= panEps &&
+    Math.abs(a.pan.y - b.pan.y) <= panEps
+  );
+}
+
+export interface ExternalCameraSyncParams {
+  incoming: CameraTransform;
+  prevSyncedProps: CameraTransform | null;
+  pendingCommit: CameraTransform | null;
+  isLocalInteractionActive: boolean;
+}
+
+export interface ExternalCameraSyncDecision {
+  applyToLive: boolean;
+  nextPendingCommit: CameraTransform | null;
+  nextSyncedProps: CameraTransform;
+}
+
+/**
+ * Reconciles incoming React (zoom, pan) props against active local wheel/pan
+ * interactions and in-flight async React state commits so stale pre-zoom
+ * renders never snap the live camera backwards.
+ */
+export function reconcileExternalCameraProps(
+  params: ExternalCameraSyncParams
+): ExternalCameraSyncDecision {
+  const { incoming, prevSyncedProps, pendingCommit, isLocalInteractionActive } = params;
+  const incomingCopy: CameraTransform = {
+    zoom: incoming.zoom,
+    pan: { x: incoming.pan.x, y: incoming.pan.y },
+  };
+  const nextPending =
+    pendingCommit && cameraTransformsClose(incomingCopy, pendingCommit) ? null : pendingCommit;
+
+  if (isLocalInteractionActive) {
+    return {
+      applyToLive: false,
+      nextPendingCommit: nextPending,
+      nextSyncedProps: incomingCopy,
+    };
+  }
+
+  if (pendingCommit) {
+    if (nextPending === null) {
+      return {
+        applyToLive: false,
+        nextPendingCommit: null,
+        nextSyncedProps: incomingCopy,
+      };
+    }
+    if (prevSyncedProps && cameraTransformsClose(incomingCopy, prevSyncedProps)) {
+      // Stale React render still carrying pre-zoom props before async commit flushed
+      return {
+        applyToLive: false,
+        nextPendingCommit: pendingCommit,
+        nextSyncedProps: prevSyncedProps,
+      };
+    }
+    // Genuinely new external transform (e.g., Fit View / Sheet Jump) superseded pending commit
+    return {
+      applyToLive: true,
+      nextPendingCommit: null,
+      nextSyncedProps: incomingCopy,
+    };
+  }
+
+  if (prevSyncedProps && cameraTransformsClose(incomingCopy, prevSyncedProps)) {
+    return {
+      applyToLive: false,
+      nextPendingCommit: null,
+      nextSyncedProps: prevSyncedProps,
+    };
+  }
+
+  return {
+    applyToLive: true,
+    nextPendingCommit: null,
+    nextSyncedProps: incomingCopy,
+  };
+}
+
+export function normalizeWheelDeltaY(deltaY: number, deltaMode: number): number {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return 0;
+  const scale = deltaMode === 1 ? 16 : deltaMode === 2 ? 400 : 1;
+  const raw = deltaY * scale;
+  return Math.max(-360, Math.min(360, raw));
+}
+

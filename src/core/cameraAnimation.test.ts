@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  cameraTransformsClose,
   computeAdaptiveCameraDuration,
   computeAnchoredZoomPan,
   easeOutQuint,
   interpolateCameraFrame,
   normalizeCommittedCameraTransform,
+  normalizeWheelDeltaY,
+  reconcileExternalCameraProps,
   stepExponentialZoom,
 } from './cameraAnimation';
 
@@ -89,3 +92,78 @@ test('computeAnchoredZoomPan preserves cursor world point and normalizeCommitted
   assert.ok(computeAdaptiveCameraDuration({ zoom: 0.5, pan: { x: 0, y: 0 } }, { zoom: 0.5, pan: { x: 20, y: 0 } }) < 150);
   assert.ok(computeAdaptiveCameraDuration({ zoom: 0.5, pan: { x: 0, y: 0 } }, { zoom: 1.5, pan: { x: 4000, y: 0 } }) >= 240);
 });
+
+test('reconcileExternalCameraProps blocks stale pre-zoom props during async commit window while allowing external jumps', () => {
+  const preZoom = { zoom: 0.56, pan: { x: 46, y: 12 } };
+  const zoomed = { zoom: 1.42, pan: { x: -380, y: -210 } };
+  const fitJump = { zoom: 0.61, pan: { x: 30, y: 16 } };
+
+  // 1. Initial mount applies props cleanly
+  const mount = reconcileExternalCameraProps({
+    incoming: preZoom,
+    prevSyncedProps: null,
+    pendingCommit: null,
+    isLocalInteractionActive: false,
+  });
+  assert.equal(mount.applyToLive, true);
+  assert.equal(mount.nextPendingCommit, null);
+
+  // 2. Unrelated parent render with a new object instance of identical values does NOT overwrite live camera
+  const idleRerender = reconcileExternalCameraProps({
+    incoming: { zoom: 0.56, pan: { x: 46, y: 12 } },
+    prevSyncedProps: mount.nextSyncedProps,
+    pendingCommit: null,
+    isLocalInteractionActive: false,
+  });
+  assert.equal(idleRerender.applyToLive, false);
+
+  // 3. Wheel commit fires (pendingCommit = zoomed), intermediate render arrives with stale preZoom
+  const staleDuringCommit = reconcileExternalCameraProps({
+    incoming: { zoom: 0.56, pan: { x: 46, y: 12 } },
+    prevSyncedProps: mount.nextSyncedProps,
+    pendingCommit: zoomed,
+    isLocalInteractionActive: false,
+  });
+  assert.equal(staleDuringCommit.applyToLive, false);
+  assert.ok(staleDuringCommit.nextPendingCommit && cameraTransformsClose(staleDuringCommit.nextPendingCommit, zoomed));
+
+  // 4. React flushes the committed zoomed transform -> clears pendingCommit without snapping live camera
+  const flushedCommit = reconcileExternalCameraProps({
+    incoming: { zoom: 1.42, pan: { x: -380, y: -210 } },
+    prevSyncedProps: staleDuringCommit.nextSyncedProps,
+    pendingCommit: staleDuringCommit.nextPendingCommit,
+    isLocalInteractionActive: false,
+  });
+  assert.equal(flushedCommit.applyToLive, false);
+  assert.equal(flushedCommit.nextPendingCommit, null);
+
+  // 5. External Fit View / sheet change arrives -> applies immediately
+  const externalFit = reconcileExternalCameraProps({
+    incoming: fitJump,
+    prevSyncedProps: flushedCommit.nextSyncedProps,
+    pendingCommit: null,
+    isLocalInteractionActive: false,
+  });
+  assert.equal(externalFit.applyToLive, true);
+  assert.ok(cameraTransformsClose(externalFit.nextSyncedProps, fitJump));
+
+  // 6. Genuine external jump arriving before pendingCommit resolves supersedes pendingCommit
+  const superseded = reconcileExternalCameraProps({
+    incoming: fitJump,
+    prevSyncedProps: preZoom,
+    pendingCommit: zoomed,
+    isLocalInteractionActive: false,
+  });
+  assert.equal(superseded.applyToLive, true);
+  assert.equal(superseded.nextPendingCommit, null);
+});
+
+test('normalizeWheelDeltaY handles pixel, line, page modes and clamps extreme bursts cleanly', () => {
+  assert.equal(normalizeWheelDeltaY(0, 0), 0);
+  assert.equal(normalizeWheelDeltaY(Number.NaN, 0), 0);
+  assert.equal(normalizeWheelDeltaY(-120, 0), -120);
+  assert.equal(normalizeWheelDeltaY(3, 1), 48);
+  assert.equal(normalizeWheelDeltaY(-1, 2), -360);
+  assert.equal(normalizeWheelDeltaY(900, 0), 360);
+});
+
