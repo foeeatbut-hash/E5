@@ -228,6 +228,7 @@ interface TopToolbarProps {
   onShowAllLayers?: () => void;
   onUnlockAllLayers?: () => void;
   onOpenCommandPalette?: () => void;
+  commandPaletteOpen?: boolean;
   onOpenHealthDashboard?: () => void;
   errorLogCount?: number;
   onOpenSymbolDesigner?: () => void;
@@ -618,6 +619,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   onShowAllLayers,
   onUnlockAllLayers,
   onOpenCommandPalette,
+  commandPaletteOpen = false,
   onOpenHealthDashboard,
   errorLogCount = 0,
   onOpenSymbolDesigner,
@@ -932,9 +934,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 type="button"
                 data-testid="toolbar-command-palette-btn"
                 onClick={onOpenCommandPalette}
-                aria-label="Палитра команд (Ctrl+K)"
-                title="Палитра команд и быстрый поиск по проекту (Ctrl+K)"
-                className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+                aria-expanded={commandPaletteOpen}
+                aria-label="Поиск разделов, функций, листов и ОУО (Ctrl+K)"
+                title="Поиск разделов, функций, листов и ОУО (Ctrl+K)"
+                className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors shrink-0 ${
+                  commandPaletteOpen
+                    ? 'border-[var(--flux-accent)] bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
+                    : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                }`}
               >
                 <Search className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.7} />
                 <kbd className="hidden 2xl:inline font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text)]">
@@ -1168,13 +1175,18 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 type="button"
                 data-testid="toolbar-command-palette-btn"
                 onClick={onOpenCommandPalette}
-                aria-label="Палитра команд (Ctrl+K)"
-                title="Палитра команд и быстрый поиск по проекту (Ctrl+K)"
-                className="w-full max-w-[calc(320px*var(--flux-ui-scale))] inline-flex items-center justify-between gap-2 h-[calc(24px*var(--flux-ui-scale))] px-2.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-surface-alt)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
+                aria-expanded={commandPaletteOpen}
+                aria-label="Поиск разделов, функций, листов и ОУО (Ctrl+K)"
+                title="Поиск разделов, функций, листов и ОУО (Ctrl+K)"
+                className={`w-full max-w-[calc(340px*var(--flux-ui-scale))] inline-flex items-center justify-between gap-2 h-[calc(24px*var(--flux-ui-scale))] px-2.5 rounded-[4px] border text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
+                  commandPaletteOpen
+                    ? 'border-[var(--flux-accent)] bg-[var(--flux-surface)] text-[var(--flux-text)] shadow-sm'
+                    : 'border-[var(--flux-line)] bg-[var(--flux-bg)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-surface-alt)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                }`}
               >
                 <span className="inline-flex items-center gap-1.5 truncate">
                   <Search className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" strokeWidth={1.6} />
-                  <span className="truncate">Поиск команд, изделий, листов…</span>
+                  <span className="truncate">Поиск разделов, функций, листов, ОУО…</span>
                 </span>
                 <kbd className="px-1 py-0 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
                   Ctrl+K
@@ -1396,12 +1408,17 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 type="button"
                 data-testid="toolbar-command-palette-btn"
                 onClick={onOpenCommandPalette}
-                aria-label="Палитра команд (Ctrl+K)"
-                title="Палитра команд и быстрый переход (Ctrl+K)"
-                className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 mr-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+                aria-expanded={commandPaletteOpen}
+                aria-label="Поиск разделов, функций, листов и ОУО (Ctrl+K)"
+                title="Поиск разделов, функций, листов и ОУО (Ctrl+K)"
+                className={`inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 mr-0.5 rounded-[2px] border text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors shrink-0 ${
+                  commandPaletteOpen
+                    ? 'border-[var(--flux-accent)] bg-[var(--flux-sel)] text-[var(--flux-accent)]'
+                    : 'border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                }`}
               >
                 <Search className="w-3 h-3 text-[var(--flux-accent)]" />
-                <span className="hidden sm:inline">Команды</span>
+                <span className="hidden sm:inline">Поиск</span>
                 <kbd className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
                   Ctrl+K
                 </kbd>

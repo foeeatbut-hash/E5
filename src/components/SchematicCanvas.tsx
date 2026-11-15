@@ -40,7 +40,7 @@ import {
 import {
   type CommandLineResolution,
   type CommandPaletteItem,
-  filterCommandPaletteItems,
+  filterBottomCommandItems,
   pushCommandHistory,
   stepCommandHistory,
 } from '../core/commandPalette';
@@ -383,10 +383,23 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   const cmdInputRef = useRef<HTMLInputElement | null>(null);
   const cmdFeedbackTimerRef = useRef<number | null>(null);
 
+  const [activeHintIdx, setActiveHintIdx] = useState(0);
+  const [hintNavigated, setHintNavigated] = useState(false);
+
   const matchingCmdHints = useMemo(() => {
-    if (!cmdFocused || !cmdValue.trim() || commandPaletteItems.length === 0) return [];
-    return filterCommandPaletteItems(commandPaletteItems, cmdValue).slice(0, 5);
-  }, [cmdFocused, cmdValue, commandPaletteItems]);
+    if (!cmdFocused || commandPaletteItems.length === 0) return [];
+    const q = cmdValue.trim();
+    if (!q) {
+      if (cmdFeedback) return [];
+      return filterBottomCommandItems(commandPaletteItems, '').slice(0, 7);
+    }
+    return filterBottomCommandItems(commandPaletteItems, q).slice(0, 8);
+  }, [cmdFocused, cmdValue, cmdFeedback, commandPaletteItems]);
+
+  useEffect(() => {
+    setActiveHintIdx(0);
+    setHintNavigated(false);
+  }, [cmdValue]);
 
   const showCmdFeedback = useCallback(
     (status: CommandLineResolution['status'], text: string) => {
@@ -421,6 +434,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       setCmdHistIdx(-1);
       setCmdSavedDraft('');
       setCmdValue('');
+      setActiveHintIdx(0);
+      setHintNavigated(false);
       const res = onExecuteCommandLine?.(trimmed);
       if (res) {
         showCmdFeedback(res.status, res.message);
@@ -429,20 +444,66 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     [cmdHistory, onExecuteCommandLine, showCmdFeedback]
   );
 
+  const applyOrExecuteHint = useCallback(
+    (hint: CommandPaletteItem) => {
+      if (hint.disabled) return;
+      const keyword = hint.commandKeyword || hint.keywords[0] || hint.title;
+      if (hint.requiresArg) {
+        setCmdValue(keyword);
+        setHintNavigated(false);
+        setActiveHintIdx(0);
+        window.requestAnimationFrame(() => {
+          const el = cmdInputRef.current;
+          if (el) {
+            el.focus();
+            el.setSelectionRange(keyword.length, keyword.length);
+          }
+        });
+        return;
+      }
+      executeCanvasCommand(keyword);
+    },
+    [executeCanvasCommand]
+  );
+
   const handleCmdKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if ((e.ctrlKey || e.metaKey) && ['k', 's', '\\'].includes(e.key.toLowerCase())) {
         return;
       }
       e.stopPropagation();
+      if (e.key === 'Tab' && matchingCmdHints.length > 0) {
+        e.preventDefault();
+        const hint = matchingCmdHints[activeHintIdx] || matchingCmdHints[0];
+        if (hint) {
+          const keyword = hint.commandKeyword || (hint.keywords[0] || '').toUpperCase();
+          setCmdValue(keyword);
+          setHintNavigated(false);
+          setActiveHintIdx(0);
+          window.requestAnimationFrame(() => {
+            e.currentTarget.setSelectionRange(keyword.length, keyword.length);
+          });
+        }
+        return;
+      }
       if (e.key === 'Enter') {
         e.preventDefault();
+        if (hintNavigated && matchingCmdHints[activeHintIdx]) {
+          applyOrExecuteHint(matchingCmdHints[activeHintIdx]);
+          return;
+        }
         if (cmdValue.trim()) {
           executeCanvasCommand(cmdValue);
         }
         return;
       }
       if (e.key === 'ArrowUp') {
+        if (cmdValue.trim().length > 0 && matchingCmdHints.length > 0 && cmdHistIdx === -1) {
+          e.preventDefault();
+          setHintNavigated(true);
+          setActiveHintIdx((prev) => (prev - 1 + matchingCmdHints.length) % matchingCmdHints.length);
+          return;
+        }
         const el = e.currentTarget;
         const len = el.value.length;
         const atEnd =
@@ -466,6 +527,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         return;
       }
       if (e.key === 'ArrowDown') {
+        if (cmdHistIdx === -1 && matchingCmdHints.length > 0 && (cmdValue.trim().length > 0 || hintNavigated)) {
+          e.preventDefault();
+          setHintNavigated(true);
+          setActiveHintIdx((prev) => (prev + 1) % matchingCmdHints.length);
+          return;
+        }
         const el = e.currentTarget;
         const len = el.value.length;
         const atEnd =
@@ -494,10 +561,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         setCmdHistIdx(-1);
         setCmdSavedDraft('');
         setCmdFeedback(null);
+        setHintNavigated(false);
         e.currentTarget.blur();
       }
     },
-    [cmdHistory, cmdHistIdx, cmdSavedDraft, cmdValue, executeCanvasCommand]
+    [
+      activeHintIdx,
+      applyOrExecuteHint,
+      cmdHistory,
+      cmdHistIdx,
+      cmdSavedDraft,
+      cmdValue,
+      executeCanvasCommand,
+      hintNavigated,
+      matchingCmdHints,
+    ]
   );
   const cursorRef = useRef<{
     world: { x: number; y: number };
@@ -4962,7 +5040,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
             style={{ maxWidth: resolvedFocusLayout.commandPillMaxWidth }}
-            className="no-print absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(calc(430px*var(--flux-ui-scale)),92vw)] min-w-0 h-[calc(36px*var(--flux-ui-scale))] rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl px-2 flex items-center gap-1.5"
+            className="no-print absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(calc(400px*var(--flux-ui-scale)),92vw)] min-w-0 h-[calc(36px*var(--flux-ui-scale))] rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl px-2 flex items-center gap-1.5"
           >
             <div className="relative flex-1 flex items-center gap-1.5 h-[calc(26px*var(--flux-ui-scale))] px-2 rounded-[6px] border border-[var(--flux-line)] bg-[var(--flux-bg)]/85 focus-within:border-[var(--flux-accent)] min-w-0">
               <span className="font-mono font-bold text-[var(--flux-accent)] shrink-0">›</span>
@@ -4982,7 +5060,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   window.setTimeout(() => setCmdFocused(false), 120);
                 }}
                 onKeyDown={handleCmdKeyDown}
-                placeholder="Команда: ПРОВОД, НАЙТИ -QF1, ПЭ3…"
+                placeholder="Команда: ПРОВОД, ВЫБОР, СЕТКА, ВПИСАТЬ…"
                 aria-label="Командная строка САПР"
                 className="flex-1 w-full min-w-0 bg-transparent text-[length:calc(11px*var(--flux-ui-scale))] font-mono text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)]/75 focus:outline-none select-text"
               />
@@ -4990,10 +5068,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 Enter
               </span>
 
-              {cmdFeedback && !matchingCmdHints.length && (
+              {cmdFeedback && !cmdValue.trim() && (
                 <div
                   data-testid="cad-command-feedback"
-                  className={`absolute left-0 bottom-full mb-2 z-40 px-2.5 py-1.5 rounded-xl border flux-glass-popover text-[length:calc(11px*var(--flux-ui-scale))] font-sans whitespace-nowrap max-w-[calc(380px*var(--flux-ui-scale))] truncate ${
+                  className={`absolute left-0 bottom-full mb-2 z-40 px-2.5 py-1.5 rounded-[8px] border flux-glass-popover text-[length:calc(11px*var(--flux-ui-scale))] font-sans whitespace-nowrap max-w-[calc(380px*var(--flux-ui-scale))] truncate ${
                     cmdFeedback.status === 'ok'
                       ? 'border-[var(--flux-accent)]/60 text-[var(--flux-text)]'
                       : cmdFeedback.status === 'disabled'
@@ -5005,66 +5083,62 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 </div>
               )}
 
-              {cmdFocused && !matchingCmdHints.length && !cmdFeedback && (
-                <div className="absolute left-0 bottom-full mb-2 z-40 px-2 py-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-popover shadow-lg flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
-                  {[
-                    { label: 'ПРОВОД', cmd: 'ПРОВОД' },
-                    { label: 'ВЫБОР', cmd: 'ВЫБОР' },
-                    { label: 'ВПИСАТЬ', cmd: 'ВПИСАТЬ' },
-                    { label: 'ПЭ3', cmd: 'ПЭ3' },
-                    { label: 'ERC', cmd: 'ERC' },
-                  ].map((chip) => (
-                    <button
-                      key={chip.cmd}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        executeCanvasCommand(chip.cmd);
-                      }}
-                      className="px-1.5 py-0.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:border-[var(--flux-accent)] hover:text-[var(--flux-accent)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] whitespace-nowrap transition-colors"
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
               {matchingCmdHints.length > 0 && (
                 <div
                   data-testid="cad-command-suggestions"
-                  className="absolute left-0 bottom-full mb-2 z-40 w-[calc(340px*var(--flux-ui-scale))] max-w-[90vw] rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover overflow-hidden divide-y divide-[var(--flux-line)]/60 font-sans"
+                  className="absolute left-0 bottom-full mb-2 z-40 w-[min(calc(370px*var(--flux-ui-scale)),92vw)] rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-popover shadow-xl overflow-hidden font-sans"
                 >
-                  {matchingCmdHints.map((hint) => (
-                    <button
-                      key={hint.id}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        executeCanvasCommand(hint.keywords[0] || hint.title);
-                      }}
-                      className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))]"
-                    >
-                      <span className="text-[var(--flux-text)] truncate">{hint.title}</span>
-                      {hint.shortcut && (
-                        <kbd className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] px-1.5 py-0.5 rounded-md bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text-muted)] shrink-0">
-                          {hint.shortcut}
-                        </kbd>
-                      )}
-                    </button>
-                  ))}
+                  <div className="px-2.5 py-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)]/70 flex items-center justify-between gap-2 text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                    <span>
+                      {cmdValue.trim()
+                        ? `Доступные команды (${matchingCmdHints.length})`
+                        : 'Доступные команды чертежа'}
+                    </span>
+                    <span className="font-mono opacity-80">Tab · Enter</span>
+                  </div>
+                  <div className="max-h-[calc(210px*var(--flux-ui-scale))] overflow-y-auto divide-y divide-[var(--flux-line)]/50">
+                    {matchingCmdHints.map((hint, idx) => {
+                      const isActive = hintNavigated && idx === activeHintIdx;
+                      const keywordLabel =
+                        (hint.commandKeyword || hint.keywords[0] || '').trim().toUpperCase();
+                      return (
+                        <button
+                          key={hint.id}
+                          type="button"
+                          disabled={hint.disabled}
+                          data-active={isActive ? 'true' : 'false'}
+                          onMouseEnter={() => {
+                            setActiveHintIdx(idx);
+                            setHintNavigated(true);
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            applyOrExecuteHint(hint);
+                          }}
+                          className={`w-full px-2.5 py-1.5 text-left flex items-center justify-between gap-2 transition-colors disabled:opacity-45 ${
+                            isActive ? 'bg-[var(--flux-sel)]' : 'hover:bg-[var(--flux-hover)]/80'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-mono font-semibold text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-accent)] shrink-0">
+                              {keywordLabel}
+                            </span>
+                            <span className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate">
+                              {hint.commandHint || hint.subtitle}
+                            </span>
+                          </div>
+                          {hint.shortcut && (
+                            <span className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                              {hint.shortcut}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
-            {onOpenCommandPalette && (
-              <button
-                type="button"
-                onClick={onOpenCommandPalette}
-                title="Открыть палитру команд (Ctrl+K)"
-                className="h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] bg-[var(--flux-surface-alt)] border border-[var(--flux-line)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:border-[var(--flux-accent)]/50 shrink-0 transition-colors"
-              >
-                Ctrl+K
-              </button>
-            )}
           </div>
         )}
 
@@ -5223,17 +5297,17 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     window.setTimeout(() => setCmdFocused(false), 120);
                   }}
                   onKeyDown={handleCmdKeyDown}
-                  placeholder={isMultiViewport ? 'Команда…' : 'Команда: НАЙТИ, ПРОВОД…'}
+                  placeholder={isMultiViewport ? 'Команда…' : 'Команда: ПРОВОД, ВЫБОР, СЕТКА…'}
                   aria-label="Командная строка САПР"
                   className="flex-1 w-full min-w-0 bg-transparent text-[length:calc(10.5px*var(--flux-ui-scale))] leading-[calc(14px*var(--flux-ui-scale))] font-mono text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)]/70 focus:outline-none select-text"
                 />
               </div>
 
               {/* Command Feedback Echo Toast */}
-              {cmdFeedback && !matchingCmdHints.length && (
+              {cmdFeedback && !cmdValue.trim() && (
                 <div
                   data-testid="cad-command-feedback"
-                  className={`absolute left-0 bottom-full mb-1.5 z-40 px-2.5 py-1.5 rounded-xl border flux-glass-popover text-[length:calc(11px*var(--flux-ui-scale))] font-sans whitespace-nowrap max-w-[calc(380px*var(--flux-ui-scale))] truncate ${
+                  className={`absolute left-0 bottom-full mb-1.5 z-40 px-2.5 py-1.5 rounded-[8px] border flux-glass-popover text-[length:calc(11px*var(--flux-ui-scale))] font-sans whitespace-nowrap max-w-[calc(380px*var(--flux-ui-scale))] truncate ${
                     cmdFeedback.status === 'ok'
                       ? 'border-[var(--flux-accent)]/60 text-[var(--flux-text)]'
                       : cmdFeedback.status === 'disabled'
@@ -5245,30 +5319,60 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 </div>
               )}
 
-              {/* Autocomplete Hints Popover */}
+              {/* Bottom CAD Command Suggestions Popover Above Input */}
               {matchingCmdHints.length > 0 && (
                 <div
                   data-testid="cad-command-suggestions"
-                  className="absolute left-0 bottom-full mb-1.5 z-40 w-[calc(340px*var(--flux-ui-scale))] max-w-[90vw] rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover overflow-hidden divide-y divide-[var(--flux-line)]/60 font-sans"
+                  className="absolute left-0 bottom-full mb-1.5 z-40 w-[min(calc(370px*var(--flux-ui-scale)),92vw)] rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-popover shadow-xl overflow-hidden font-sans"
                 >
-                  {matchingCmdHints.map((hint) => (
-                    <button
-                      key={hint.id}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        executeCanvasCommand(hint.keywords[0] || hint.title);
-                      }}
-                      className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))]"
-                    >
-                      <span className="text-[var(--flux-text)] truncate">{hint.title}</span>
-                      {hint.shortcut && (
-                        <kbd className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] px-1.5 py-0.5 rounded-md bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text-muted)] shrink-0">
-                          {hint.shortcut}
-                        </kbd>
-                      )}
-                    </button>
-                  ))}
+                  <div className="px-2.5 py-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)]/70 flex items-center justify-between gap-2 text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                    <span>
+                      {cmdValue.trim()
+                        ? `Доступные команды (${matchingCmdHints.length})`
+                        : 'Доступные команды чертежа'}
+                    </span>
+                    <span className="font-mono opacity-80">Tab · Enter</span>
+                  </div>
+                  <div className="max-h-[calc(210px*var(--flux-ui-scale))] overflow-y-auto divide-y divide-[var(--flux-line)]/50">
+                    {matchingCmdHints.map((hint, idx) => {
+                      const isActive = hintNavigated && idx === activeHintIdx;
+                      const keywordLabel =
+                        (hint.commandKeyword || hint.keywords[0] || '').trim().toUpperCase();
+                      return (
+                        <button
+                          key={hint.id}
+                          type="button"
+                          disabled={hint.disabled}
+                          data-active={isActive ? 'true' : 'false'}
+                          onMouseEnter={() => {
+                            setActiveHintIdx(idx);
+                            setHintNavigated(true);
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            applyOrExecuteHint(hint);
+                          }}
+                          className={`w-full px-2.5 py-1.5 text-left flex items-center justify-between gap-2 transition-colors disabled:opacity-45 ${
+                            isActive ? 'bg-[var(--flux-sel)]' : 'hover:bg-[var(--flux-hover)]/80'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-mono font-semibold text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-accent)] shrink-0">
+                              {keywordLabel}
+                            </span>
+                            <span className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate">
+                              {hint.commandHint || hint.subtitle}
+                            </span>
+                          </div>
+                          {hint.shortcut && (
+                            <span className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                              {hint.shortcut}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

@@ -399,6 +399,7 @@ textarea:focus-visible,
 /* Flush-fitted inputs inside CAD chrome delegate ring cleanly to container */
 [data-testid='cad-command-input']:focus-visible,
 [data-testid^='cad-command-input-']:focus-visible,
+[data-testid='command-palette-input']:focus-visible,
 .cad-prop-input:focus-visible {
   outline: none;
   box-shadow: none;

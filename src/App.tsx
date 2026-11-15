@@ -239,7 +239,8 @@ import {
 import { findSmartCatalogSpot } from './core/smartSnap';
 import { generateOrUpdateTerminalStripSheet } from './core/terminalStrip';
 import {
-  buildCommandPaletteItems,
+  buildBottomCommandItems,
+  buildTopSearchItems,
   type CommandLineResolution,
   type CommandPaletteItem,
   resolveCommandLineInput,
@@ -5134,9 +5135,9 @@ export default function App() {
     [appendLog]
   );
 
-  const commandPaletteItems = useMemo(
+  const bottomCommandItems = useMemo(
     () =>
-      buildCommandPaletteItems(project, {
+      buildBottomCommandItems({
         hasSelection:
           selectedDeviceIds.length > 0 ||
           selectedWireIds.length > 0 ||
@@ -5152,15 +5153,21 @@ export default function App() {
         showMinimap: project.visualSettings.showMinimap !== false,
       }),
     [
-      project,
       selectedDeviceIds.length,
       selectedWireIds.length,
       selectedAnnotationIds.length,
       hasClipboard,
       history.length,
       future.length,
+      project.visualSettings.snapToGrid,
+      project.visualSettings.smartGuides,
+      project.visualSettings.showGrid,
+      project.visualSettings.showCrosshair,
+      project.visualSettings.showMinimap,
     ]
   );
+
+  const topSearchItems = useMemo(() => buildTopSearchItems(project), [project]);
 
   const handleExecuteCommandPaletteItem = useCallback(
     (item: CommandPaletteItem) => {
@@ -5171,6 +5178,9 @@ export default function App() {
           break;
         case 'set-ui-mode':
           handleChangeUiMode(act.mode);
+          break;
+        case 'toggle-canvas-focus':
+          handleToggleCanvasFocus();
           break;
         case 'copy-selected':
           handleCopySelected();
@@ -5248,10 +5258,36 @@ export default function App() {
         case 'autoroute':
           handleAutoRouteActiveSheetWires();
           break;
+        case 'open-explorer':
+          setLeftTab('project');
+          if (uiModeRef.current === 'focus') {
+            setFocusExplorerOpen(true);
+          } else {
+            setDockLayout((prev) =>
+              prev.panels.explorer.collapsed ? togglePanelCollapse(prev, 'explorer') : prev
+            );
+          }
+          break;
+        case 'open-console-tab':
+          setConsoleTab(act.tab);
+          setConsoleCollapsed(false);
+          if (uiModeRef.current === 'focus') {
+            setFocusConsoleOpen(true);
+          } else {
+            setDockLayout((prev) =>
+              prev.panels.console.collapsed ? togglePanelCollapse(prev, 'console') : prev
+            );
+          }
+          break;
         case 'open-erc':
           setConsoleTab('erc');
           setConsoleCollapsed(false);
           if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
+          else {
+            setDockLayout((prev) =>
+              prev.panels.console.collapsed ? togglePanelCollapse(prev, 'console') : prev
+            );
+          }
           break;
         case 'open-health':
           setHealthOpen(true);
@@ -5260,6 +5296,11 @@ export default function App() {
           setConsoleTab('bom');
           setConsoleCollapsed(false);
           if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
+          else {
+            setDockLayout((prev) =>
+              prev.panels.console.collapsed ? togglePanelCollapse(prev, 'console') : prev
+            );
+          }
           break;
         case 'open-terminals':
           setTerminalEditorOpen(true);
@@ -5282,6 +5323,15 @@ export default function App() {
           break;
         case 'open-symbol-designer':
           openBlockEditorWorkspace();
+          break;
+        case 'open-exchange':
+          setExchangeOpen(true);
+          break;
+        case 'open-visual-settings':
+          setVisualOpen(true);
+          break;
+        case 'open-shortcuts':
+          setShortcutsOpen(true);
           break;
         case 'insert-sheet-table':
           handleInsertGostTable(act.tableKind);
@@ -5405,12 +5455,13 @@ export default function App() {
       centerCameraOnCoords,
       openBlockEditorWorkspace,
       handleChangeUiMode,
+      handleToggleCanvasFocus,
     ]
   );
 
   const handleExecuteCommandLine = useCallback(
     (rawCommand: string): CommandLineResolution => {
-      const res = resolveCommandLineInput(rawCommand, commandPaletteItems, docStateRef.current.present);
+      const res = resolveCommandLineInput(rawCommand, bottomCommandItems, docStateRef.current.present);
       if (res.status === 'ok' && res.action) {
         handleExecuteCommandPaletteItem({
           id: 'cli-exec',
@@ -5425,7 +5476,7 @@ export default function App() {
       }
       return res;
     },
-    [commandPaletteItems, handleExecuteCommandPaletteItem, appendLog]
+    [bottomCommandItems, handleExecuteCommandPaletteItem, appendLog]
   );
 
   // Keyboard shortcuts
@@ -7094,8 +7145,9 @@ export default function App() {
         onUnlockAllLayers={handleUnlockAllLayers}
         onOpenCommandPalette={() => {
           setCommandPaletteInitialQuery('');
-          setCommandPaletteOpen(true);
+          setCommandPaletteOpen((o) => !o);
         }}
+        commandPaletteOpen={commandPaletteOpen}
         onOpenHealthDashboard={() => setHealthOpen(true)}
         errorLogCount={errorLogCount}
         onOpenSymbolDesigner={openBlockEditorWorkspace}
@@ -7354,7 +7406,7 @@ export default function App() {
                     onCommitInPlaceWireNumber={handleCommitInPlaceWireNumber}
                     onCommitInPlaceAnnotationText={handleCommitInPlaceAnnotationText}
                     onCommitInPlaceStampCell={handleCommitInPlaceStampCell}
-                    commandPaletteItems={commandPaletteItems}
+                    commandPaletteItems={bottomCommandItems}
                     onExecuteCommandLine={handleExecuteCommandLine}
                   />
                 </div>
@@ -7793,8 +7845,9 @@ export default function App() {
 
       <CommandPaletteModal
         open={commandPaletteOpen}
-        items={commandPaletteItems}
+        items={topSearchItems}
         initialQuery={commandPaletteInitialQuery}
+        uiScale={uiScale}
         onClose={() => {
           setCommandPaletteOpen(false);
           setCommandPaletteInitialQuery('');
