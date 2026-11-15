@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Crosshair, Grid3X3, Layers, Lock, Magnet, Maximize2, Minus, Plus, Ruler, Terminal, X } from 'lucide-react';
+import { AlignStartHorizontal, AlignStartVertical, Crosshair, FlipHorizontal2, FlipVertical2, Grid3X3, Hand, Layers, Lock, Magnet, Maximize2, Minus, MousePointer2, Plus, RotateCw, Ruler, Spline, Terminal, Trash2, X } from 'lucide-react';
 import {
   countSheetLayerEntities,
   resolveCadLayers,
@@ -64,9 +64,11 @@ import type {
   E3Device,
   E3Project,
   E3Wire,
+  ErcIssue,
   PinDirection,
 } from '../core/e3Types';
 import { LayerManagerPopover } from './LayerManagerPopover';
+import { CanvasMinimap } from './CanvasMinimap';
 import { SchematicSymbol } from './SchematicSymbol';
 
 interface InPlaceEditState {
@@ -83,6 +85,24 @@ interface InPlaceEditState {
   initialValue: string;
   value: string;
 }
+
+function polylineMidpoint(pts: { x: number; y: number }[]): { x: number; y: number } {
+  if (pts.length === 1) return pts[0];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  let half = total / 2;
+  for (let i = 1; i < pts.length; i++) {
+    const seg = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    if (seg >= half && seg > 0) {
+      const t = half / seg;
+      return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t };
+    }
+    half -= seg;
+  }
+  return pts[pts.length - 1];
+}
+
+const ERC_FIXABLE_CODES = new Set(['E3-DUP-DES', 'E3-POTENTIAL-CONFLICT', 'E3-FLUX-REMOVED']);
 
 interface SchematicCanvasProps {
   project: E3Project;
@@ -119,6 +139,13 @@ interface SchematicCanvasProps {
   onToggleLayerLock?: (layerId: CadLayerId) => void;
   onShowAllLayers?: () => void;
   onUnlockAllLayers?: () => void;
+  onRotateSelected?: () => void;
+  onMirrorSelected?: (axis: 'x' | 'y') => void;
+  onAlignSelected?: (mode: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
+  onDuplicateSelected?: () => void;
+  onPasteClipboard?: () => void;
+  hasClipboard?: boolean;
+  onDeleteSelected?: () => void;
   onBeginDrag?: () => void;
   onCommitDrag?: (moved: boolean, opts?: { tryWireBreakDeviceId?: string }) => void;
   onSelectDevice: (deviceId: string | null, opts?: { toggle?: boolean }) => void;
@@ -129,6 +156,10 @@ interface SchematicCanvasProps {
     additive?: boolean
   ) => void;
   highlightedTrace?: PotentialTraceResult | null;
+  ercIssues?: ErcIssue[];
+  onQuickFixIssue?: (issue: ErcIssue) => void;
+  onJumpToIssue?: (issue: ErcIssue) => void;
+  soloLayer?: CadLayerId | null;
   onHighlightPotential?: (seed: { wireId?: string; netName?: string; deviceId?: string; pinId?: string }) => void;
   onClearPotentialHighlight?: () => void;
   onNavigateOffPage?: (device: E3Device) => void;
@@ -203,6 +234,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   onToggleLayerLock,
   onShowAllLayers,
   onUnlockAllLayers,
+  onRotateSelected,
+  onMirrorSelected,
+  onAlignSelected,
+  onDuplicateSelected,
+  onPasteClipboard,
+  hasClipboard = false,
+  onDeleteSelected,
   onBeginDrag,
   onCommitDrag,
   onSelectDevice,
@@ -210,6 +248,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   onSelectAnnotation,
   onSetSelection,
   highlightedTrace = null,
+  ercIssues,
+  onQuickFixIssue,
+  onJumpToIssue,
+  soloLayer = null,
   onHighlightPotential,
   onClearPotentialHighlight,
   onNavigateOffPage,
@@ -229,6 +271,19 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   onExecuteCommandLine,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const minimapLiveRef = useRef<((zoom: number, pan: { x: number; y: number }) => void) | null>(null);
+  const [ercPopover, setErcPopover] = useState<{ key: string; x: number; y: number; issues: ErcIssue[] } | null>(null);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setViewportSize({ width: el.clientWidth, height: el.clientHeight });
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [cmdValue, setCmdValue] = useState('');
   const [cmdHistory, setCmdHistory] = useState<string[]>(() => loadSavedCommandHistory());
   const [cmdHistIdx, setCmdHistIdx] = useState<number>(-1);
@@ -391,6 +446,16 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   } | null>(null);
   const [layerPopoverOpen, setLayerPopoverOpen] = useState(false);
   const layerBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    kind: 'device' | 'wire' | 'canvas';
+  } | null>(null);
+  const [measureState, setMeasureState] = useState<{
+    start: WirePoint;
+    end: WirePoint;
+    locked: boolean;
+  } | null>(null);
   const [wireStart, setWireStart] = useState<{
     deviceId: string;
     pinId: string;
@@ -399,6 +464,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     direction: 'top' | 'right' | 'bottom' | 'left';
   } | null>(null);
   const [wireAnchors, setWireAnchors] = useState<WirePoint[]>([]);
+  const [wirePosture, setWirePosture] = useState<'hv' | 'vh'>('hv');
   const [wireBreakPreview, setWireBreakPreview] = useState<WireBreakCandidate | null>(null);
   const [hoveredPin, setHoveredPin] = useState<{
     deviceId: string;
@@ -619,10 +685,60 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     [project.devices, sheet?.id]
   );
 
+  const visibleSheetDevices = useMemo(() => {
+    if (sheetDevices.length <= 40) return sheetDevices;
+    const rect = containerRef.current?.getBoundingClientRect();
+    const vw = rect?.width || 1280;
+    const vh = rect?.height || 800;
+    const z = Math.max(0.16, zoom);
+    const pad = 320;
+    const minX = -pan.x / z - pad;
+    const minY = -pan.y / z - pad;
+    const maxX = (vw - pan.x) / z + pad;
+    const maxY = (vh - pan.y) / z + pad;
+    return sheetDevices.filter((d) => {
+      if (selectedDeviceIdSet.has(d.id)) return true;
+      return (
+        d.x + d.width >= minX &&
+        d.x <= maxX &&
+        d.y + d.height >= minY &&
+        d.y <= maxY
+      );
+    });
+  }, [sheetDevices, zoom, pan, selectedDeviceIdSet]);
+
   const sheetWires = useMemo(
     () => project.wires.filter((w) => w.sheetId === sheet?.id),
     [project.wires, sheet?.id]
   );
+
+  const visibleSheetWires = useMemo(() => {
+    if (sheetWires.length <= 60) return sheetWires;
+    const z = Math.max(0.16, zoom);
+    const vw = viewportSize.width || 1280;
+    const vh = viewportSize.height || 800;
+    const pad = 300 / z;
+    const minX = -pan.x / z - pad;
+    const minY = -pan.y / z - pad;
+    const maxX = (vw - pan.x) / z + pad;
+    const maxY = (vh - pan.y) / z + pad;
+    return sheetWires.filter((w) => {
+      if (selectedWireIdSet.has(w.id)) return true;
+      if (highlightedTrace?.wireIds.includes(w.id)) return true;
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const p of w.waypoints) {
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      }
+      if (x0 === Infinity) return true;
+      return x1 >= minX && x0 <= maxX && y1 >= minY && y0 <= maxY;
+    });
+  }, [sheetWires, zoom, pan, viewportSize, selectedWireIdSet, highlightedTrace]);
 
   const sheetAnnotations = useMemo(
     () => (project.annotations || []).filter((a) => a.sheetId === sheet?.id),
@@ -639,10 +755,66 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     return set;
   }, [sheetWires, wiresVisible]);
 
+  const layerStyle = (id: CadLayerId): React.CSSProperties | undefined =>
+    soloLayer
+      ? { opacity: soloLayer === id ? 1 : 0.2, transition: 'opacity 140ms ease' }
+      : { transition: 'opacity 140ms ease' };
+
+  const ercMarkers = useMemo(() => {
+    if (!ercIssues || ercIssues.length === 0 || !sheet) return [];
+    const groups = new Map<string, { key: string; x: number; y: number; issues: ErcIssue[] }>();
+    for (const issue of ercIssues) {
+      if (issue.sheetId && issue.sheetId !== sheet.id) continue;
+      let key = '';
+      let pos: { x: number; y: number } | null = null;
+      if (issue.deviceId) {
+        const d = sheetDevices.find((x) => x.id === issue.deviceId);
+        if (d) {
+          key = `d:${d.id}`;
+          pos = { x: d.x + d.width, y: d.y };
+        }
+      }
+      if (!pos && issue.wireId) {
+        const w = sheetWires.find((x) => x.id === issue.wireId);
+        if (w && w.waypoints.length > 0) {
+          key = `w:${w.id}`;
+          pos = polylineMidpoint(w.waypoints);
+        }
+      }
+      if (!pos) continue;
+      const g = groups.get(key);
+      if (g) g.issues.push(issue);
+      else groups.set(key, { key, x: pos.x, y: pos.y, issues: [issue] });
+    }
+    return [...groups.values()];
+  }, [ercIssues, sheet, sheetDevices, sheetWires]);
+
+  useEffect(() => {
+    setErcPopover(null);
+  }, [zoom, pan, activeSheetId]);
+
+  useEffect(() => {
+    if (!ercPopover) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setErcPopover(null);
+    };
+    const onDown = (e: MouseEvent) => {
+      if ((e.target as HTMLElement | null)?.closest('[data-testid="erc-popover"], [data-erc-marker]')) return;
+      setErcPopover(null);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown, true);
+    };
+  }, [ercPopover]);
+
   const applyDomTransform = useCallback((nextZoom: number, nextPan: { x: number; y: number }) => {
     if (worldGroupRef.current) {
       worldGroupRef.current.setAttribute('transform', `translate(${nextPan.x}, ${nextPan.y}) scale(${nextZoom})`);
     }
+    minimapLiveRef.current?.(nextZoom, nextPan);
     const zoomLabel = `${Math.round(nextZoom * 100)}%`;
     if (zoomTextRef.current) zoomTextRef.current.textContent = zoomLabel;
     if (multiZoomTextRef.current) multiZoomTextRef.current.textContent = zoomLabel;
@@ -851,12 +1023,26 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '/' && wireStart) {
+        const target = e.target as HTMLElement | null;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+          return;
+        }
+        e.preventDefault();
+        setWirePosture((p) => (p === 'hv' ? 'vh' : 'hv'));
+        return;
+      }
       if (e.key !== 'Escape') return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
         return;
       }
       if (document.querySelector('[role="dialog"]')) return;
+      if (measureState) {
+        e.preventDefault();
+        setMeasureState(null);
+        return;
+      }
       if (wireStart) {
         e.preventDefault();
         setWireStart(null);
@@ -868,7 +1054,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [wireStart, tool, isFocused, onSetTool]);
+  }, [wireStart, measureState, tool, isFocused, onSetTool]);
 
   // Cursor-centered non-passive wheel zoom (immediate GPU transform + debounced React state commit)
   useEffect(() => {
@@ -918,6 +1104,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   }, [scheduleTransformApply]);
 
   const handleMouseDownBg = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (contextMenu) setContextMenu(null);
     if (e.button === 1 || tool === 'pan') {
       if (e.button === 1) {
         e.preventDefault();
@@ -957,6 +1144,27 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       const world = toWorld(e.clientX, e.clientY);
       onCreateAnnotation(sheet.id, tool, snap(world.x), snap(world.y));
       return;
+    }
+    if (tool === 'measure') {
+      if (e.button === 2) {
+        e.preventDefault();
+        setMeasureState(null);
+        return;
+      }
+      if (e.button === 0) {
+        const world = toWorld(e.clientX, e.clientY);
+        const pt = {
+          x: e.altKey ? world.x : snap(world.x),
+          y: e.altKey ? world.y : snap(world.y),
+        };
+        setMeasureState((prev) => {
+          if (!prev || prev.locked) {
+            return { start: pt, end: pt, locked: false };
+          }
+          return { ...prev, end: pt, locked: true };
+        });
+        return;
+      }
     }
     if (tool === 'offpage' && sheet) {
       if (devicesLocked || !devicesVisible) return;
@@ -1229,6 +1437,58 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   };
   processDragSampleRef.current = processDragSample;
 
+  const finishDragRef = useRef(finishDrag);
+  finishDragRef.current = finishDrag;
+
+  useEffect(() => {
+    const onWinMouseMove = (ev: MouseEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.kind === 'pan') return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      // Only handle via window when pointer is outside SVG or during active drag
+      if (
+        ev.clientX < rect.left ||
+        ev.clientX > rect.right ||
+        ev.clientY < rect.top ||
+        ev.clientY > rect.bottom
+      ) {
+        const lp = livePanRef.current;
+        const lz = liveZoomRef.current;
+        const world = {
+          x: Math.round((ev.clientX - rect.left - lp.x) / lz),
+          y: Math.round((ev.clientY - rect.top - lp.y) / lz),
+        };
+        pendingDragSampleRef.current = {
+          clientX: ev.clientX,
+          clientY: ev.clientY,
+          altKey: ev.altKey,
+          world,
+        };
+        if (!dragMoveRafRef.current) {
+          dragMoveRafRef.current = window.requestAnimationFrame(() => {
+            dragMoveRafRef.current = null;
+            const s = pendingDragSampleRef.current;
+            pendingDragSampleRef.current = null;
+            if (s && dragRef.current) processDragSampleRef.current(s);
+          });
+        }
+      }
+    };
+    const onWinMouseUp = () => {
+      const drag = dragRef.current;
+      if (drag && drag.kind !== 'pan') {
+        finishDragRef.current();
+      }
+    };
+    window.addEventListener('mousemove', onWinMouseMove);
+    window.addEventListener('mouseup', onWinMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onWinMouseMove);
+      window.removeEventListener('mouseup', onWinMouseUp);
+    };
+  }, []);
+
   const handleMouseMove = (e: React.MouseEvent) => {
     const rect = containerRef.current?.getBoundingClientRect();
     const lp = livePanRef.current;
@@ -1297,6 +1557,15 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             prev.x === cur.world.x && prev.y === cur.world.y ? prev : cur.world
           );
         }
+        setMeasureState((prev) => {
+          if (!prev || prev.locked) return prev;
+          const pt = {
+            x: snap(cur.world.x),
+            y: snap(cur.world.y),
+          };
+          if (prev.end.x === pt.x && prev.end.y === pt.y) return prev;
+          return { ...prev, end: pt };
+        });
       });
     }
 
@@ -2031,7 +2300,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
           onMouseMove={handleMouseMove}
           onMouseUp={finishDrag}
           onContextMenu={(e) => {
-            if (wireStart) e.preventDefault();
+            e.preventDefault();
+            if (wireStart || measureState) return;
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const kind =
+              selectedDeviceIdSet.size > 0
+                ? 'device'
+                : selectedWireIdSet.size > 0
+                  ? 'wire'
+                  : 'canvas';
+            setContextMenu({
+              x: Math.min(rect.width - 190, Math.max(8, e.clientX - rect.left)),
+              y: Math.min(rect.height - 180, Math.max(8, e.clientY - rect.top)),
+              kind,
+            });
           }}
           className="absolute inset-0 block w-full h-full"
         >
@@ -2084,7 +2367,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
                 {/* GOST 2.104-2006 Frame, Zones, Left Archival Strip & Editable Form 1/2a Title Block */}
                 {frameVisible && gostGeom && (
-                  <g data-testid="layer-group-frame">
+                  <g data-testid="layer-group-frame" style={layerStyle('frame')}>
                     {/* Outer paper border & inner main GOST frame */}
                     <rect
                       data-testid="gost-main-frame"
@@ -2398,7 +2681,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
             {/* Drafting Zones / Annotations (under wires/devices for rect zones) */}
             {annotationsVisible && (
-              <g data-testid="layer-group-annotations">
+              <g data-testid="layer-group-annotations" style={layerStyle('annotations')}>
                 {sheetAnnotations.map((ann) => {
                   const selected = selectedAnnotationIdSet.has(ann.id);
                   const strokeColor = selected
@@ -2601,8 +2884,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
             {/* Wires */}
             {wiresVisible && (
-              <g data-testid="layer-group-wires">
-                {sheetWires.map((wire: E3Wire) => {
+              <g data-testid="layer-group-wires" style={layerStyle('wires')}>
+                {visibleSheetWires.map((wire: E3Wire) => {
                   const selected = selectedWireIdSet.has(wire.id);
                   const isTraced = tracedWireIdSet.has(wire.id);
                   const isDimmed = Boolean(activeTrace) && !isTraced && !selected;
@@ -2675,16 +2958,29 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     >
                       <polyline points={pts} fill="none" stroke="transparent" strokeWidth={11} />
                       {isTraced && (
-                        <polyline
-                          points={pts}
-                          fill="none"
-                          stroke={netSigColor}
-                          strokeOpacity={0.34}
-                          strokeWidth={vs.wireWidth + 7}
-                          strokeLinejoin="round"
-                          strokeLinecap="round"
-                          pointerEvents="none"
-                        />
+                        <>
+                          <polyline
+                            points={pts}
+                            fill="none"
+                            stroke={netSigColor}
+                            strokeOpacity={0.28}
+                            strokeWidth={vs.wireWidth + 7}
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                            pointerEvents="none"
+                          />
+                          <polyline
+                            points={pts}
+                            fill="none"
+                            stroke="#ffffff"
+                            strokeOpacity={0.65}
+                            strokeWidth={Math.max(1.2, vs.wireWidth * 0.65)}
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                            className="flux-potential-flow"
+                            pointerEvents="none"
+                          />
+                        </>
                       )}
                       <polyline
                         points={pts}
@@ -2819,8 +3115,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
                 {/* Wire Core Labels rendered above grips so double-click is never occluded */}
                 {vs.showWireNumbers && (
-                  <g data-testid="layer-group-wire-labels">
-                    {sheetWires.map((wire: E3Wire) => {
+                  <g data-testid="layer-group-wire-labels" style={layerStyle('wires')}>
+                    {visibleSheetWires.map((wire: E3Wire) => {
                       const midPt =
                         wireLabelMap.get(wire.id) ||
                         (wire.waypoints.length >= 2
@@ -3004,8 +3300,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
             {/* Devices */}
             {devicesVisible && (
-              <g data-testid="layer-group-devices">
-                {sheetDevices.slice(0, 1200).map((device) => {
+              <g data-testid="layer-group-devices" style={layerStyle('devices')}>
+                {visibleSheetDevices.map((device) => {
                   const link = device.category === 'offpage_ref' ? offPageLinks.get(device.id) : undefined;
                   return (
                     <SchematicSymbol
@@ -3035,9 +3331,71 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               </g>
             )}
 
+            {/* Inline ERC markers */}
+            {ercMarkers.length > 0 && (
+              <g data-testid="layer-erc-markers">
+                {ercMarkers.map((m) => {
+                  const inv = 1 / Math.max(0.05, zoom);
+                  const hasError = m.issues.some((i) => i.severity === 'error');
+                  const color = hasError ? '#EF4444' : '#F59E0B';
+                  const first = m.issues[0];
+                  return (
+                    <g
+                      key={m.key}
+                      data-testid={`erc-marker-${first.id}`}
+                      data-erc-marker=""
+                      transform={`translate(${m.x}, ${m.y}) scale(${inv})`}
+                      style={{ cursor: 'pointer' }}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const rect = containerRef.current?.getBoundingClientRect();
+                        if (!rect) return;
+                        const lz = liveZoomRef.current;
+                        const lp = livePanRef.current;
+                        setErcPopover((cur) =>
+                          cur?.key === m.key
+                            ? null
+                            : { key: m.key, x: lp.x + m.x * lz, y: lp.y + m.y * lz, issues: m.issues }
+                        );
+                      }}
+                    >
+                      <circle className="erc-marker-ring" r={7} fill="none" stroke={color} strokeWidth={1.5} />
+                      <circle r={7} fill={color} stroke="#fff" strokeWidth={1} />
+                      <text
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fontSize={m.issues.length > 1 ? 7.5 : 9}
+                        fontWeight={700}
+                        fill="#fff"
+                        pointerEvents="none"
+                        style={{ userSelect: 'none' }}
+                      >
+                        {m.issues.length > 1 ? m.issues.length : '!'}
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* Magnetic pin snap ring */}
+            {wireStart && hoveredPin && !(hoveredPin.deviceId === wireStart.deviceId && hoveredPin.pinId === wireStart.pinId) && (
+              <g transform={`translate(${hoveredPin.x}, ${hoveredPin.y})`} pointerEvents="none">
+                <circle
+                  key={`${hoveredPin.deviceId}:${hoveredPin.pinId}`}
+                  className="pin-snap-ring"
+                  r={7 / Math.max(0.05, zoom)}
+                  fill="none"
+                  stroke="var(--flux-accent)"
+                  strokeWidth={1.5 / Math.max(0.05, zoom)}
+                />
+              </g>
+            )}
+
             {/* Live GOST Tables (BOM / Cable Journal) rendered over wires & devices with opaque backing */}
             {annotationsVisible && (
-              <g data-testid="layer-group-gost-tables">
+              <g data-testid="layer-group-gost-tables" style={layerStyle('annotations')}>
                 {sheetGostTableAnnotations.map((ann) => {
                     const selected = selectedAnnotationIdSet.has(ann.id);
                     const borderColor = selected
@@ -3226,6 +3584,56 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 pointerEvents="none"
               />
             )}
+
+            {/* CAD Ruler / Distance Measurement Overlay */}
+            {measureState && (() => {
+              const dx = measureState.end.x - measureState.start.x;
+              const dy = measureState.end.y - measureState.start.y;
+              const dist = Math.round(Math.hypot(dx, dy) * 10) / 10;
+              const mx = (measureState.start.x + measureState.end.x) / 2;
+              const my = (measureState.start.y + measureState.end.y) / 2;
+              const invZ = 1 / Math.max(0.25, zoom);
+              const label = `L=${dist} мм · ΔX:${Math.abs(dx)} ΔY:${Math.abs(dy)}`;
+              const pillW = Math.max(120, label.length * 6.5 + 16) * invZ;
+              const pillH = 20 * invZ;
+              return (
+                <g data-testid="cad-measure-overlay" pointerEvents="none">
+                  <line
+                    x1={measureState.start.x}
+                    y1={measureState.start.y}
+                    x2={measureState.end.x}
+                    y2={measureState.end.y}
+                    stroke="#10b981"
+                    strokeWidth={1.6 * invZ}
+                    strokeDasharray={`${6 * invZ} ${3 * invZ}`}
+                  />
+                  <circle cx={measureState.start.x} cy={measureState.start.y} r={3.5 * invZ} fill="#10b981" />
+                  <circle cx={measureState.end.x} cy={measureState.end.y} r={3.5 * invZ} fill="#10b981" />
+                  <rect
+                    x={mx - pillW / 2}
+                    y={my - pillH - 6 * invZ}
+                    width={pillW}
+                    height={pillH}
+                    rx={5 * invZ}
+                    fill="#064e3b"
+                    stroke="#10b981"
+                    strokeWidth={1 * invZ}
+                  />
+                  <text
+                    x={mx}
+                    y={my - pillH / 2 - 6 * invZ}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill="#ecfdf5"
+                    fontSize={10.5 * invZ}
+                    fontFamily="var(--font-mono)"
+                    fontWeight={600}
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })()}
 
             {/* CAD Magnetic Alignment Guides, Pin Anchors & Spacing Cadence */}
             {activeSnapHud && (
@@ -3692,6 +4100,357 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             </div>
           );
         })()}
+        {/* CAD Right-Click Context Menu */}
+        {contextMenu && (
+          <div
+            data-testid="canvas-context-menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+            className="no-print absolute z-30 w-48 py-1 rounded-lg border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-xl text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+          >
+            {contextMenu.kind === 'device' && (
+              <>
+                {onRotateSelected && (
+                  <button
+                    type="button"
+                    onClick={() => { onRotateSelected(); setContextMenu(null); }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
+                  >
+                    <span>Повернуть на 90°</span>
+                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">R</span>
+                  </button>
+                )}
+                {onMirrorSelected && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { onMirrorSelected('x'); setContextMenu(null); }}
+                      className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)]"
+                    >
+                      Отразить по X
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { onMirrorSelected('y'); setContextMenu(null); }}
+                      className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)]"
+                    >
+                      Отразить по Y
+                    </button>
+                  </>
+                )}
+                {onDuplicateSelected && (
+                  <button
+                    type="button"
+                    onClick={() => { onDuplicateSelected(); setContextMenu(null); }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
+                  >
+                    <span>Дублировать</span>
+                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">Ctrl+D</span>
+                  </button>
+                )}
+                {onDeleteSelected && (
+                  <button
+                    type="button"
+                    onClick={() => { onDeleteSelected(); setContextMenu(null); }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-between"
+                  >
+                    <span>Удалить</span>
+                    <span className="font-mono text-[10px]">Del</span>
+                  </button>
+                )}
+              </>
+            )}
+            {contextMenu.kind === 'wire' && (
+              <>
+                {onHighlightPotential && selectedWireId && (
+                  <button
+                    type="button"
+                    onClick={() => { onHighlightPotential({ wireId: selectedWireId }); setContextMenu(null); }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)]"
+                  >
+                    Подсветить потенциал
+                  </button>
+                )}
+                {onDeleteSelected && (
+                  <button
+                    type="button"
+                    onClick={() => { onDeleteSelected(); setContextMenu(null); }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-between"
+                  >
+                    <span>Удалить цепь</span>
+                    <span className="font-mono text-[10px]">Del</span>
+                  </button>
+                )}
+              </>
+            )}
+            {contextMenu.kind === 'canvas' && (
+              <>
+                {hasClipboard && onPasteClipboard && (
+                  <button
+                    type="button"
+                    onClick={() => { onPasteClipboard(); setContextMenu(null); }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
+                  >
+                    <span>Вставить</span>
+                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">Ctrl+V</span>
+                  </button>
+                )}
+                {onFitViewport && (
+                  <button
+                    type="button"
+                    onClick={() => { onFitViewport(); setContextMenu(null); }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
+                  >
+                    <span>Вписать лист в окно</span>
+                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">Z</span>
+                  </button>
+                )}
+                {onSetTool && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { onSetTool('wire'); setContextMenu(null); }}
+                      className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
+                    >
+                      <span>Рисовать провод</span>
+                      <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">W</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { onSetTool('measure'); setContextMenu(null); }}
+                      className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)]"
+                    >
+                      Линейка (измерить)
+                    </button>
+                  </>
+                )}
+                {onToggleGrid && (
+                  <button
+                    type="button"
+                    onClick={() => { onToggleGrid(); setContextMenu(null); }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
+                  >
+                    <span>Сетка чертежа</span>
+                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">F9</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Floating Contextual Selection Action Bar */}
+        {totalSelectedCount > 0 && !inPlaceEdit && (
+          <div
+            data-testid="canvas-selection-bar"
+            onMouseDown={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
+            className="no-print absolute top-2.5 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1 px-2 py-1 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover shadow-lg text-[length:calc(11px*var(--flux-ui-scale))]"
+          >
+            <span className="px-1.5 font-mono font-semibold text-[var(--flux-accent)] tabular-nums">
+              Выбрано: {totalSelectedCount}
+            </span>
+            <span className="h-3.5 w-px bg-[var(--flux-line)]" />
+            {onRotateSelected && selectedDeviceIdSet.size > 0 && (
+              <button
+                type="button"
+                title="Повернуть на 90° (R)"
+                onClick={onRotateSelected}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-[var(--flux-hover)] text-[var(--flux-text)] transition-colors"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>90°</span>
+              </button>
+            )}
+            {onMirrorSelected && selectedDeviceIdSet.size > 0 && (
+              <>
+                <button
+                  type="button"
+                  title="Отразить по горизонтали (X)"
+                  onClick={() => onMirrorSelected('x')}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-[var(--flux-hover)] text-[var(--flux-text)] transition-colors"
+                >
+                  <FlipHorizontal2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="Отразить по вертикали (Y)"
+                  onClick={() => onMirrorSelected('y')}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-[var(--flux-hover)] text-[var(--flux-text)] transition-colors"
+                >
+                  <FlipVertical2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+            {onAlignSelected && selectedDeviceIdSet.size >= 2 && (
+              <>
+                <span className="h-3.5 w-px bg-[var(--flux-line)]" />
+                <button
+                  type="button"
+                  title="Выровнять по левому краю"
+                  onClick={() => onAlignSelected('left')}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-[var(--flux-hover)] text-[var(--flux-text)] transition-colors"
+                >
+                  <AlignStartVertical className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="Выровнять по верхнему краю"
+                  onClick={() => onAlignSelected('top')}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-[var(--flux-hover)] text-[var(--flux-text)] transition-colors"
+                >
+                  <AlignStartHorizontal className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+            {onDeleteSelected && (
+              <>
+                <span className="h-3.5 w-px bg-[var(--flux-line)]" />
+                <button
+                  type="button"
+                  title="Удалить выбранное (Del)"
+                  onClick={onDeleteSelected}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {ercPopover && (
+          <motion.div
+            key={ercPopover.key}
+            data-testid="erc-popover"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
+            className="no-print absolute z-30 flux-glass-popover rounded-md border border-[var(--flux-line-strong)] shadow-lg p-2 text-[var(--flux-text)]"
+            style={{
+              left: Math.max(8, Math.min(ercPopover.x + 10, Math.max(8, viewportSize.width - 300))),
+              top: Math.max(8, Math.min(ercPopover.y + 10, Math.max(8, viewportSize.height - 60))),
+              width: 'calc(280px*var(--flux-ui-scale))',
+              maxHeight: '60%',
+              overflowY: 'auto',
+              transformOrigin: 'top left',
+            }}
+          >
+            <div className="flex flex-col gap-2">
+              {ercPopover.issues.map((issue) => (
+                <div key={issue.id} className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block w-2 h-2 rounded-full shrink-0"
+                      style={{ background: issue.severity === 'error' ? '#EF4444' : '#F59E0B' }}
+                    />
+                    <span className="font-mono text-[calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">{issue.code}</span>
+                  </div>
+                  <div className="text-[calc(12px*var(--flux-ui-scale))] leading-snug">{issue.message}</div>
+                  <div className="flex items-center gap-1.5">
+                    {onQuickFixIssue && ERC_FIXABLE_CODES.has(issue.code) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onQuickFixIssue(issue);
+                          setErcPopover(null);
+                        }}
+                        className="px-2 py-0.5 rounded-md text-[calc(11px*var(--flux-ui-scale))] bg-[var(--flux-accent)] text-white hover:opacity-90 transition-opacity"
+                      >
+                        Исправить
+                      </button>
+                    )}
+                    {onJumpToIssue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onJumpToIssue(issue);
+                          setErcPopover(null);
+                        }}
+                        className="px-2 py-0.5 rounded-md text-[calc(11px*var(--flux-ui-scale))] border border-[var(--flux-line-strong)] hover:bg-[var(--flux-hover)] transition-colors"
+                      >
+                        Перейти →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+        {sheet && (!isMultiViewport || isFocused) && viewportSize.width >= 560 && viewportSize.height >= 260 && (
+          <CanvasMinimap
+            sheetWidth={sheet.width}
+            sheetHeight={sheet.height}
+            devices={sheetDevices}
+            wires={sheetWires}
+            selectedDeviceIds={selectedDeviceIdSet}
+            zoom={zoom}
+            pan={pan}
+            viewportSize={viewportSize}
+            onSetPan={onSetPan}
+            liveUpdateRef={minimapLiveRef}
+          />
+        )}
+        {/* Floating Bottom-Center Precision CAD Tool Dock */}
+        {sheet && !inPlaceEdit && onSetTool && (
+          <div
+            data-testid="canvas-tool-dock"
+            onMouseDown={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
+            className="no-print absolute bottom-3 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg border border-[var(--flux-line-strong)] flux-glass-popover shadow-xl backdrop-blur-md"
+          >
+            {(
+              [
+                { id: 'select' as const, label: 'Выбор', kbd: 'V', icon: MousePointer2 },
+                { id: 'wire' as const, label: 'Провод', kbd: 'W', icon: Spline },
+                { id: 'measure' as const, label: 'Линейка', kbd: '', icon: Ruler },
+                { id: 'pan' as const, label: 'Панорама', kbd: 'H', icon: Hand },
+              ]
+            ).map((item) => {
+              const Icon = item.icon;
+              const active = tool === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  title={item.kbd ? `${item.label} (${item.kbd})` : item.label}
+                  onClick={() => onSetTool(item.id)}
+                  className={`relative inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors ${
+                    active
+                      ? 'text-[var(--flux-accent)] font-semibold'
+                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId={`cad-dock-pill-${viewportIndex}`}
+                      transition={{ type: 'spring', stiffness: 520, damping: 36 }}
+                      className="absolute inset-0 rounded-md bg-[var(--flux-accent-soft)] border border-[var(--flux-accent)]/35"
+                    />
+                  )}
+                  <Icon className="relative z-10 w-3.5 h-3.5" strokeWidth={1.6} />
+                  <span className="relative z-10 hidden sm:inline">{item.label}</span>
+                </button>
+              );
+            })}
+            {onFitViewport && (
+              <>
+                <span className="mx-0.5 h-4 w-px bg-[var(--flux-line)]" />
+                <button
+                  type="button"
+                  title="Вписать лист в окно (Z)"
+                  onClick={onFitViewport}
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-md text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70 transition-colors"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Pinned Non-Shifting CAD Canvas Footer Strip */}

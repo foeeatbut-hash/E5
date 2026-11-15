@@ -5,6 +5,7 @@ import {
   Cable,
   Check,
   CheckCircle2,
+  Columns2,
   ChevronDown,
   ChevronUp,
   Copy,
@@ -26,6 +27,7 @@ import {
   Terminal,
   Trash2,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { E3_API_ENDPOINTS } from '../core/apiEcosystem';
 import type { DockSide } from '../core/dockLayout';
 import type {
@@ -65,6 +67,14 @@ interface BottomConsoleProps {
   onExpandPanel: () => void;
   onToggleCollapse: () => void;
   onJumpToIssue: (issue: ErcIssue) => void;
+  onQuickFixIssue?: (issue: ErcIssue) => void;
+  /** Сплит 50/50: слева таблица, справа замечания ERC */
+  split?: boolean;
+  onToggleSplit?: () => void;
+  /** Cross-probing: обозначения и id объектов, выделенных на схеме */
+  selectedDesignations?: string[];
+  selectedDeviceIds?: string[];
+  selectedWireIds?: string[];
   onSelectDeviceByDesignation?: (designation: string) => void;
   onHighlightNet?: (netName: string) => void;
   onDownloadBomCsv?: () => void;
@@ -99,6 +109,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
   onExpandPanel,
   onToggleCollapse,
   onJumpToIssue,
+  onQuickFixIssue,
+  split = false,
+  onToggleSplit,
+  selectedDesignations,
+  selectedDeviceIds,
+  selectedWireIds,
   onSelectDeviceByDesignation,
   onHighlightNet,
   onDownloadBomCsv,
@@ -337,7 +353,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
             <GripHorizontal className="w-3 h-3" />
           </span>
         )}
-        {tabs.map((tab) => {
+        {tabs.filter((t) => t.id !== 'api' || activeTab === 'api').map((tab) => {
           const isActive = activeTab === tab.id && !collapsed;
           const isLastSelectedCollapsed = activeTab === tab.id && collapsed;
           return (
@@ -433,6 +449,23 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
           </div>
         )}
 
+        {onToggleSplit && (
+          <button
+            type="button"
+            data-testid="console-split-btn"
+            aria-pressed={split}
+            onClick={onToggleSplit}
+            title="Сплит 50/50: таблица слева, замечания ERC справа"
+            aria-label="Сплит-режим: таблица и ERC рядом"
+            className={`inline-flex items-center justify-center w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] rounded-[2px] transition-colors ${
+              split
+                ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
+                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+            }`}
+          >
+            <Columns2 className="w-3 h-3" />
+          </button>
+        )}
         <button
           type="button"
           data-testid="console-collapse-btn"
@@ -457,8 +490,131 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
     </div>
   );
 
+  const splitActive = split && !collapsed && (activeTab === 'bom' || activeTab === 'cables');
+
+  const ercPane = (
+    <>
+                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
+                    <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
+                      {(
+                        [
+                          ['all', `Все (${erc.length})`],
+                          ['error', `Ошибки (${errorCount})`],
+                          ['warning', `Предупреждения (${warningCount})`],
+                        ] as const
+                      ).map(([fId, label]) => {
+                        const active = ercFilter === fId;
+                        return (
+                          <button
+                            key={fId}
+                            type="button"
+                            onClick={() => setErcFilter(fId)}
+                            className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
+                              active
+                                ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
+                                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <span
+                      className={`text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono ${
+                        errorCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--flux-accent)]'
+                      }`}
+                    >
+                      {errorCount > 0
+                        ? `Критических ошибок: ${errorCount}`
+                        : 'Критических ошибок ERC не выявлено'}
+                    </span>
+                  </div>
+                  <div className="flex-1 overflow-auto bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)]">
+                    {filteredErc.length === 0 ? (
+                      <div className="px-3 py-4 flex items-center gap-2 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                        <span>
+                          {erc.length === 0
+                            ? 'Проверка электрических правил (ERC) пройдена успешно. Схема готова к выпуску ПЭ3 и передаче во Flux / E³.series.'
+                            : 'Замечаний выбранной категории нет.'}
+                        </span>
+                      </div>
+                    ) : (
+                      filteredErc.map((issue) => {
+                        const targetSheet = issue.sheetId
+                          ? project.sheets.find((s) => s.id === issue.sheetId)
+                          : undefined;
+                        const probed =
+                          (!!issue.deviceId && !!selectedDeviceIds?.includes(issue.deviceId)) ||
+                          (!!issue.wireId && !!selectedWireIds?.includes(issue.wireId));
+                        return (
+                          <div
+                            key={issue.id}
+                            data-testid={`erc-issue-${issue.id}`}
+                            data-probed={probed ? 'true' : undefined}
+                            className={`w-full px-2 py-1 flex items-center justify-between gap-2 transition-colors ${
+                              probed ? 'bg-[var(--flux-sel)] shadow-[inset_2px_0_0_var(--flux-accent)]' : 'hover:bg-[var(--flux-hover)]'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => onJumpToIssue(issue)}
+                              className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-[1px] shrink-0 ${
+                                  issue.severity === 'error'
+                                    ? 'bg-rose-500'
+                                    : issue.severity === 'warning'
+                                      ? 'bg-amber-500'
+                                      : 'bg-sky-500'
+                                }`}
+                              />
+                              <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                                {issue.code}
+                              </span>
+                              {targetSheet && (
+                                <span className="px-1 py-0 rounded-[2px] bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                                  Л.{targetSheet.number}
+                                </span>
+                              )}
+                              <span className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
+                                {issue.message}
+                              </span>
+                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {onQuickFixIssue &&
+                                (issue.code === 'E3-DUP-DES' ||
+                                  issue.code === 'E3-POTENTIAL-CONFLICT' ||
+                                  issue.code === 'E3-FLUX-REMOVED') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onQuickFixIssue(issue)}
+                                    className="px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] transition-colors"
+                                  >
+                                    Исправить
+                                  </button>
+                                )}
+                              <button
+                                type="button"
+                                onClick={() => onJumpToIssue(issue)}
+                                className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)]"
+                              >
+                                Перейти →
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+  );
+
   const bodyElement = !collapsed ? (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden flux-glass-panel">
+    <div className="flex-1 min-h-0 flex overflow-hidden flux-glass-panel">
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
       {/* TAB 1: BOM (Спецификация ПЭ3) */}
       {activeTab === 'bom' && (
         <>
@@ -534,18 +690,21 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         ) : (
                           filteredBom.map((row) => {
                             const firstDes = row.designations[0];
+                            const probed = !!selectedDesignations?.length && row.designations.some((d) => selectedDesignations.includes(d));
                             return (
                               <tr
                                 key={`${row.pos}-${row.article}`}
+                                data-probed={probed ? 'true' : undefined}
+                                ref={probed ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
                                 onClick={() => firstDes && onSelectDeviceByDesignation?.(firstDes)}
                                 title={
                                   firstDes && onSelectDeviceByDesignation
                                     ? `Показать ${firstDes} на схеме`
                                     : undefined
                                 }
-                                className={`divide-x divide-[var(--flux-line)]/50 hover:bg-[var(--flux-hover)] transition-colors ${
-                                  firstDes && onSelectDeviceByDesignation ? 'cursor-pointer' : ''
-                                }`}
+                                className={`divide-x divide-[var(--flux-line)]/50 transition-colors ${
+                                  probed ? 'bg-[var(--flux-sel)] shadow-[inset_2px_0_0_var(--flux-accent)]' : 'hover:bg-[var(--flux-hover)]'
+                                } ${firstDes && onSelectDeviceByDesignation ? 'cursor-pointer' : ''}`}
                               >
                                 <td className="px-2 py-[3px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
                                   {row.pos}
@@ -861,99 +1020,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
               )}
 
               {/* TAB 3: ERC Diagnostics */}
-              {activeTab === 'erc' && (
-                <>
-                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
-                    <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
-                      {(
-                        [
-                          ['all', `Все (${erc.length})`],
-                          ['error', `Ошибки (${errorCount})`],
-                          ['warning', `Предупреждения (${warningCount})`],
-                        ] as const
-                      ).map(([fId, label]) => {
-                        const active = ercFilter === fId;
-                        return (
-                          <button
-                            key={fId}
-                            type="button"
-                            onClick={() => setErcFilter(fId)}
-                            className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
-                              active
-                                ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
-                                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <span
-                      className={`text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono ${
-                        errorCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--flux-accent)]'
-                      }`}
-                    >
-                      {errorCount > 0
-                        ? `Критических ошибок: ${errorCount}`
-                        : 'Критических ошибок ERC не выявлено'}
-                    </span>
-                  </div>
-                  <div className="flex-1 overflow-auto bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)]">
-                    {filteredErc.length === 0 ? (
-                      <div className="px-3 py-4 flex items-center gap-2 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                        <span>
-                          {erc.length === 0
-                            ? 'Проверка электрических правил (ERC) пройдена успешно. Схема готова к выпуску ПЭ3 и передаче во Flux / E³.series.'
-                            : 'Замечаний выбранной категории нет.'}
-                        </span>
-                      </div>
-                    ) : (
-                      filteredErc.map((issue) => {
-                        const targetSheet = issue.sheetId
-                          ? project.sheets.find((s) => s.id === issue.sheetId)
-                          : undefined;
-                        return (
-                          <button
-                            key={issue.id}
-                            type="button"
-                            data-testid={`erc-issue-${issue.id}`}
-                            onClick={() => onJumpToIssue(issue)}
-                            className="w-full px-2 py-1 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span
-                                className={`w-2 h-2 rounded-[1px] shrink-0 ${
-                                  issue.severity === 'error'
-                                    ? 'bg-rose-500'
-                                    : issue.severity === 'warning'
-                                      ? 'bg-amber-500'
-                                      : 'bg-sky-500'
-                                }`}
-                              />
-                              <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                                {issue.code}
-                              </span>
-                              {targetSheet && (
-                                <span className="px-1 py-0 rounded-[2px] bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                                  Л.{targetSheet.number}
-                                </span>
-                              )}
-                              <span className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
-                                {issue.message}
-                              </span>
-                            </div>
-                            <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] shrink-0">
-                              Перейти →
-                            </span>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </>
-              )}
+              {activeTab === 'erc' && ercPane}
 
               {/* TAB 4: Process Logs */}
               {activeTab === 'logs' && (
@@ -1586,6 +1653,22 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                   )}
                 </div>
               )}
+    </div>
+    <AnimatePresence initial={false}>
+      {splitActive && (
+        <motion.div
+          key="console-split-erc"
+          data-testid="console-split-erc"
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: '50%', opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
+          transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+          className="shrink-0 min-h-0 flex flex-col overflow-hidden border-l border-[var(--flux-line-strong)]"
+        >
+          {ercPane}
+        </motion.div>
+      )}
+    </AnimatePresence>
     </div>
   ) : null;
 

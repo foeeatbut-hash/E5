@@ -5,6 +5,7 @@ import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type { CatalogItem, E3Project, HvacStageRole, SchematicFontFamily, SheetFormat } from '../core/e3Types';
 import {
   buildDefaultHvacStages,
+  exportPlcIoCsv,
   type FluxHvacSpecs,
   HVAC_ROLE_LABELS,
   type HvacBuildOptions,
@@ -449,6 +450,22 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
             Схема и таблица сигналов I/O ПЛК расставятся по порядку с ровной ортогональной трассировкой.
           </span>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const csv = exportPlcIoCsv(specs.systemTag, specs.cabinetTag, stages, catalog);
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${specs.systemTag || 'HVAC'}-PLC-IO.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium"
+            >
+              I/O ПЛК (CSV)
+            </button>
             <button
               type="button"
               onClick={onClose}

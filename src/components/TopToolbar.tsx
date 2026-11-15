@@ -3,7 +3,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Activity,
   Archive,
+  ArrowLeft,
   ArrowLeftRight,
+  ArrowRight,
   ArrowUpRight,
   Check,
   CheckCircle2,
@@ -51,6 +53,11 @@ import {
   RefreshCw,
   RotateCcw,
   RotateCw,
+  Ruler,
+  AlignStartVertical,
+  AlignCenterVertical,
+  AlignStartHorizontal,
+  AlignCenterHorizontal,
   Save,
   Search,
   Send,
@@ -142,6 +149,9 @@ interface TopToolbarProps {
   onPasteClipboard?: () => void;
   onDuplicateSelected?: () => void;
   onRotateSelected: () => void;
+  onMirrorSelected?: (axis: 'x' | 'y') => void;
+  onAlignSelected?: (mode: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
+  selectedDeviceCount?: number;
   onDeleteSelected: () => void;
   onZoomChange: (nextZoom: number) => void;
   onFitView: () => void;
@@ -203,6 +213,13 @@ interface TopToolbarProps {
   recentProjects?: RecentProjectEntry[];
   lastSavedAt?: string | null;
   onSaveSessionNow?: () => void;
+  canNavBack?: boolean;
+  canNavForward?: boolean;
+  onNavBack?: () => void;
+  onNavForward?: () => void;
+  selectedDeviceIds?: string[];
+  selectedWireIds?: string[];
+  onCenterSelection?: () => void;
   onCreateNewProject?: () => void;
   onOpenRecentProject?: (projectId: string) => void;
   onRemoveRecentProject?: (projectId: string) => void;
@@ -215,7 +232,7 @@ const RIBBON_TABS: Array<{ id: RibbonSectionId; label: string; contextual?: bool
   { id: 'sheet', label: 'Лист и ФСА' },
   { id: 'view', label: 'Вид' },
   { id: 'flux', label: 'Flux' },
-  { id: 'export', label: 'E³.series' },
+  { id: 'export', label: 'Выпуск и E³' },
 ];
 
 const RibbonPanel: React.FC<{ title: string; isLast?: boolean; children: React.ReactNode }> = ({
@@ -448,6 +465,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   onCopySelected,
   onPasteClipboard,
   onRotateSelected,
+  onMirrorSelected,
+  onAlignSelected,
+  selectedDeviceCount = 0,
   onDeleteSelected,
   onZoomChange,
   onFitView,
@@ -509,6 +529,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   recentProjects = [],
   lastSavedAt = null,
   onSaveSessionNow,
+  canNavBack = false,
+  canNavForward = false,
+  onNavBack,
+  onNavForward,
+  selectedDeviceIds = [],
+  selectedWireIds = [],
+  onCenterSelection,
   onCreateNewProject,
   onOpenRecentProject,
   onRemoveRecentProject,
@@ -520,7 +547,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   const headerRef = useRef<HTMLElement | null>(null);
 
   const [activeTab, setActiveTab] = useState<RibbonSectionId>('home');
-  const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
+  const [ribbonCollapsed, setRibbonCollapsed] = useState(true);
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const [layersPopoverOpen, setLayersPopoverOpen] = useState(false);
   const [layersPopoverLeft, setLayersPopoverLeft] = useState<number | null>(null);
@@ -535,6 +562,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
       setLayersPopoverOpen(false);
     } else if (!isSymbolEditorOpen && prevSymbolOpenRef.current) {
       setActiveTab((curr) => (curr === 'ugo_editor' ? 'home' : curr));
+      setRibbonCollapsed(true);
     }
     prevSymbolOpenRef.current = isSymbolEditorOpen;
   }, [isSymbolEditorOpen]);
@@ -612,9 +640,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
         }}
       />
 
-      {/* Row 1: CAD Application Button + Monochrome Quick Access Toolbar + Document Title */}
-      <div className="flex items-center justify-between gap-2 lg:gap-4 px-1.5 h-7 border-b border-[var(--flux-line)] min-w-0 flux-glass-bar">
-        <div className="flex items-center gap-0.5 shrink-0">
+      {/* Row 1: Precision Graphite / Daylight Paper Single-Row CAD Header */}
+      <div className="flex items-center justify-between gap-2 lg:gap-3 px-2 h-[calc(34px*var(--flux-ui-scale))] border-b border-[var(--flux-line)] min-w-0 bg-[var(--flux-surface)]">
+        <div className="flex items-center gap-1 shrink-0 min-w-0">
           <button
             ref={menuBtnRef}
             type="button"
@@ -623,44 +651,43 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             aria-expanded={appMenuOpen}
             onClick={() => setAppMenuOpen((o) => !o)}
             title="Главное меню программы: файлы, экспорт, штампы, настройки"
-            className={`inline-flex items-center gap-1.5 h-[calc(21px*var(--flux-ui-scale))] pl-1.5 pr-2 rounded-[4px] font-semibold text-[length:calc(11px*var(--flux-ui-scale))] tracking-tight border transition-colors whitespace-nowrap shrink-0 mr-1 ${
+            className={`inline-flex items-center gap-1.5 h-[calc(24px*var(--flux-ui-scale))] pl-2 pr-2 rounded-[4px] font-semibold text-[length:calc(11.5px*var(--flux-ui-scale))] tracking-tight border transition-colors whitespace-nowrap shrink-0 ${
               appMenuOpen
                 ? 'bg-[var(--flux-accent-solid)] text-white border-[var(--flux-accent-solid)]'
-                : 'bg-[#12261e] dark:bg-[#193329] hover:bg-[#183428] dark:hover:bg-[#214235] text-emerald-50 border-[#285442]'
+                : 'bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] border-[var(--flux-line-strong)]'
             }`}
           >
             <svg
               viewBox="0 0 18 18"
               fill="none"
               aria-hidden="true"
-              className="w-[calc(12px*var(--flux-ui-scale))] h-[calc(12px*var(--flux-ui-scale))] shrink-0"
+              className="w-[calc(13px*var(--flux-ui-scale))] h-[calc(13px*var(--flux-ui-scale))] shrink-0 text-[var(--flux-accent)]"
             >
               <rect x="1.5" y="1.5" width="15" height="15" rx="3" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.5" />
               <path
                 d="M4.2 9h3.4l1.9-3.6 2 7.2 1.6-3.6H14"
-                stroke="#34d399"
+                stroke="currentColor"
                 strokeWidth="1.7"
                 strokeLinecap="square"
                 strokeLinejoin="miter"
               />
             </svg>
             <span style={{ fontFamily: 'var(--font-display)' }}>E3ProMax</span>
-            <ChevronDown className={`w-3 h-3 opacity-80 transition-transform duration-150 ${appMenuOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-3 h-3 opacity-70 transition-transform duration-150 ${appMenuOpen ? 'rotate-180' : ''}`} />
           </button>
 
-          <span className="h-3.5 w-px bg-[var(--flux-line)] mr-0.5 shrink-0" aria-hidden="true" />
+          <span className="h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
 
-          {/* Quick Access Toolbar (QAT): Undo / Redo */}
-
+          {/* Quick Access Toolbar (QAT): Undo / Redo / Save */}
           <button
             type="button"
             onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onUndo() : onUndo())}
             disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canUndo : !canUndo}
             title={isSymbolEditorOpen ? 'Отменить в редакторе УГО (Ctrl+Z)' : 'Отменить (Ctrl+Z)'}
             aria-label="Отменить действие"
-            className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
           >
-            <Undo2 className="w-3.5 h-3.5" />
+            <Undo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
           </button>
           <button
             type="button"
@@ -668,63 +695,200 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canRedo : !canRedo}
             title={isSymbolEditorOpen ? 'Повторить в редакторе УГО (Ctrl+Y)' : 'Повторить (Ctrl+Y)'}
             aria-label="Повторить действие"
-            className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
           >
-            <Redo2 className="w-3.5 h-3.5" />
+            <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
           </button>
+          {onSaveSessionNow && (
+            <button
+              type="button"
+              onClick={onSaveSessionNow}
+              title="Сохранить сессию (Ctrl+S)"
+              className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            >
+              <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
+            </button>
+          )}
+
+          {(onNavBack || onNavForward) && (
+            <>
+              <button
+                type="button"
+                onClick={onNavBack}
+                disabled={!canNavBack}
+                title="Назад (Alt+←)"
+                aria-label="Назад"
+                className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.6} />
+              </button>
+              <button
+                type="button"
+                onClick={onNavForward}
+                disabled={!canNavForward}
+                title="Вперёд (Alt+→)"
+                aria-label="Вперёд"
+                className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+              >
+                <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.6} />
+              </button>
+            </>
+          )}
+
+          <span className="hidden md:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
+          {isSymbolEditorOpen && symbolWorkspace ? (
+            <div className="hidden md:flex items-center gap-1.5 min-w-0">
+              <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate max-w-[calc(180px*var(--flux-ui-scale))] lg:max-w-[calc(280px*var(--flux-ui-scale))]">
+                {`УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`}
+              </span>
+              <span className="px-1.5 py-0.5 rounded-[4px] bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[length:calc(10px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
+                {`${symbolWorkspace.draft.width}×${symbolWorkspace.draft.height}`}
+              </span>
+            </div>
+          ) : (
+            (() => {
+              const crumbBase =
+                'truncate rounded-[3px] px-1 py-0.5 text-[length:calc(11.5px*var(--flux-ui-scale))] transition-colors';
+              const selCount = selectedDeviceIds.length + selectedWireIds.length;
+              let selLabel: string | null = null;
+              let selMono = false;
+              if (selCount >= 2) {
+                selLabel = `${selCount} объектов`;
+              } else if (selectedDeviceIds.length === 1) {
+                selLabel = project.devices.find((d) => d.id === selectedDeviceIds[0])?.designation || null;
+                selMono = true;
+              } else if (selectedWireIds.length === 1) {
+                const w = project.wires.find((x) => x.id === selectedWireIds[0]);
+                selLabel = w ? w.wireNumber || w.netName || null : null;
+                selMono = true;
+              }
+              const sheetLabel = activeSheet
+                ? `Лист ${activeSheet.number} · ${activeSheet.name}`
+                : null;
+              const Sep = () => (
+                <ChevronRight className="w-3 h-3 text-[var(--flux-text-muted)] opacity-60 shrink-0" strokeWidth={1.6} />
+              );
+              return (
+                <nav
+                  aria-label="Навигация по проекту"
+                  data-testid="toolbar-breadcrumbs"
+                  className="hidden md:flex items-center gap-0.5 min-w-0"
+                >
+                  <button
+                    type="button"
+                    onClick={onFitView}
+                    title={`${project.name} · ${project.projectCode} · r${project.revision}`}
+                    className={`${crumbBase} max-w-[calc(150px*var(--flux-ui-scale))] lg:max-w-[calc(220px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]`}
+                  >
+                    {project.name}
+                  </button>
+                  {sheetLabel && (
+                    <>
+                      <Sep />
+                      <button
+                        type="button"
+                        onClick={onFitView}
+                        title={sheetLabel}
+                        className={`${crumbBase} max-w-[calc(150px*var(--flux-ui-scale))] lg:max-w-[calc(240px*var(--flux-ui-scale))] ${
+                          selLabel
+                            ? 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                            : 'text-[var(--flux-accent)] font-medium'
+                        }`}
+                      >
+                        {sheetLabel}
+                      </button>
+                    </>
+                  )}
+                  {selLabel && (
+                    <>
+                      <Sep />
+                      <button
+                        type="button"
+                        onClick={onCenterSelection}
+                        title="Показать выбранное на схеме"
+                        className={`${crumbBase} max-w-[calc(140px*var(--flux-ui-scale))] text-[var(--flux-accent)] font-medium hover:bg-[var(--flux-accent-soft)] ${
+                          selMono ? 'font-mono tabular-nums' : ''
+                        }`}
+                      >
+                        {selLabel}
+                      </button>
+                    </>
+                  )}
+                </nav>
+              );
+            })()
+          )}
         </div>
 
-        {/* Centered Document Title */}
-        <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
-          <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate max-w-[calc(200px*var(--flux-ui-scale))] md:max-w-[calc(320px*var(--flux-ui-scale))] lg:max-w-[calc(460px*var(--flux-ui-scale))]">
-            {isSymbolEditorOpen && symbolWorkspace
-              ? `Редактор блока УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
-              : project.name}
-          </span>
-          <span className="hidden xl:inline text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
-            {isSymbolEditorOpen && symbolWorkspace
-              ? `${symbolWorkspace.draft.e3BlockName || 'BLOCK'} · ${symbolWorkspace.draft.width}×${symbolWorkspace.draft.height}`
-              : `${project.projectCode} · Rev ${project.revision}`}
-          </span>
-        </div>
-
-        {/* Right Window Utilities */}
-        <div className="flex items-center gap-0.5 shrink-0">
+        {/* Centered Modern CAD Command Pill */}
+        <div className="flex items-center justify-center flex-1 min-w-0 max-w-md">
           {onOpenCommandPalette && (
             <button
               type="button"
               data-testid="toolbar-command-palette-btn"
               onClick={onOpenCommandPalette}
               aria-label="Палитра команд (Ctrl+K)"
-              title="Палитра команд и быстрый переход (Ctrl+K)"
-              className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 mr-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+              title="Палитра команд и быстрый поиск по проекту (Ctrl+K)"
+              className="w-full max-w-[320px] inline-flex items-center justify-between gap-2 h-[calc(24px*var(--flux-ui-scale))] px-2.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-surface-alt)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
             >
-              <Search className="w-3 h-3 text-[var(--flux-accent)]" />
-              <span className="hidden sm:inline">Команды</span>
-              <kbd className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+              <span className="inline-flex items-center gap-1.5 truncate">
+                <Search className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" strokeWidth={1.6} />
+                <span className="truncate">Поиск команд, изделий, листов…</span>
+              </span>
+              <kbd className="px-1 py-0 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
                 Ctrl+K
               </kbd>
             </button>
           )}
+        </div>
+
+        {/* Right CAD Status & Quick Actions */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={onRunErc}
+            title="Открыть проверку электрических правил (ERC)"
+            className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[4px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono font-medium transition-colors shrink-0 ${
+              ercErrorCount > 0
+                ? 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20'
+                : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-accent)]'
+            }`}
+          >
+            <CheckCircle2 className="w-3 h-3 shrink-0" strokeWidth={1.8} />
+            <span>ERC {ercErrorCount}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenHvacWizard}
+            title="Конструктор ФСА / ОВиК"
+            className="hidden xl:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors shrink-0"
+          >
+            <Cpu className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.6} />
+            <span>ФСА</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenPublishModal}
+            title="Пакетный выпуск PDF / DXF"
+            className="hidden sm:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[4px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0"
+          >
+            <Printer className="w-3 h-3" strokeWidth={1.6} />
+            <span>Выпуск</span>
+          </button>
           {onOpenHealthDashboard && (
             <button
               type="button"
               data-testid="toolbar-health-btn"
               onClick={onOpenHealthDashboard}
               aria-label="Монитор здоровья и телеметрия процессов"
-              title="Монитор здоровья, частота логов и диагностика лагов"
-              className={`inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 mr-0.5 rounded-[2px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+              title="Монитор здоровья и диагностика"
+              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
                 errorLogCount > 0
                   ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20'
-                  : 'border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                  : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
               }`}
             >
-              <Activity
-                className={`w-3 h-3 ${
-                  errorLogCount > 0 ? 'text-rose-500' : 'text-[var(--flux-text-muted)]'
-                }`}
-              />
-              <span className="hidden lg:inline">Здоровье</span>
+              <Activity className={`w-3 h-3 ${errorLogCount > 0 ? 'text-rose-500' : 'text-[var(--flux-text-muted)]'}`} />
               {errorLogCount > 0 && (
                 <span className="font-mono tabular-nums text-[length:calc(9.5px*var(--flux-ui-scale))] font-semibold">
                   {errorLogCount}
@@ -1154,10 +1318,12 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           aria-label="Разделы ленты инструментов"
           className="flex items-end gap-0.5 h-full overflow-x-auto no-scrollbar"
         >
-          {(isSymbolEditorOpen
-            ? [...RIBBON_TABS, { id: 'ugo_editor' as const, label: 'Редактор УГО', contextual: true }]
-            : RIBBON_TABS
-          ).map((tab) => {
+          {(() => {
+            const baseTabs = fluxHosted ? RIBBON_TABS : RIBBON_TABS.filter((t) => t.id !== 'flux');
+            return isSymbolEditorOpen
+              ? [...baseTabs, { id: 'ugo_editor' as const, label: 'Редактор УГО', contextual: true }]
+              : baseTabs;
+          })().map((tab) => {
             const isActive = activeTab === tab.id;
             const isContextual = Boolean(tab.contextual);
             return (
@@ -1168,8 +1334,12 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 data-testid={`ribbon-tab-${tab.id}`}
                 aria-selected={isActive}
                 onClick={() => {
-                  setActiveTab(tab.id);
-                  if (ribbonCollapsed) setRibbonCollapsed(false);
+                  if (activeTab === tab.id) {
+                    setRibbonCollapsed((c) => !c);
+                  } else {
+                    setActiveTab(tab.id);
+                    setRibbonCollapsed(false);
+                  }
                 }}
                 className={`relative h-full px-2.5 text-[length:calc(11px*var(--flux-ui-scale))] border-x border-t transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
                   isActive
@@ -1232,6 +1402,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           active={tool === 'wire'}
                           onClick={() => onSetTool('wire')}
                         />
+                        <LargeRibbonBtn
+                          icon={<Ruler className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
+                          label="Линейка"
+                          title="Измерить расстояние и дельту координат на схеме"
+                          active={tool === 'measure'}
+                          onClick={() => onSetTool('measure')}
+                        />
                       </RibbonPanel>
 
                       <RibbonPanel title="Правка">
@@ -1272,7 +1449,62 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             onClick={onDeleteSelected}
                           />
                         </RibbonStack>
+                        {onMirrorSelected && (
+                          <RibbonStack>
+                            <SmallRibbonBtn
+                              icon={<FlipHorizontal2 className="w-3.5 h-3.5" />}
+                              label="Отр. X"
+                              title="Зеркально отразить по горизонтали"
+                              disabled={!hasSelection}
+                              onClick={() => onMirrorSelected('x')}
+                            />
+                            <SmallRibbonBtn
+                              icon={<FlipVertical2 className="w-3.5 h-3.5" />}
+                              label="Отр. Y"
+                              title="Зеркально отразить по вертикали"
+                              disabled={!hasSelection}
+                              onClick={() => onMirrorSelected('y')}
+                            />
+                          </RibbonStack>
+                        )}
                       </RibbonPanel>
+
+                      {onAlignSelected && (
+                        <RibbonPanel title="Выравнивание">
+                          <RibbonStack>
+                            <SmallRibbonBtn
+                              icon={<AlignStartVertical className="w-3.5 h-3.5" />}
+                              label="Слева"
+                              title="Выровнять выбранные изделия по левому краю"
+                              disabled={selectedDeviceCount < 2}
+                              onClick={() => onAlignSelected('left')}
+                            />
+                            <SmallRibbonBtn
+                              icon={<AlignCenterVertical className="w-3.5 h-3.5" />}
+                              label="Центр X"
+                              title="Выровнять выбранные изделия по вертикальной оси"
+                              disabled={selectedDeviceCount < 2}
+                              onClick={() => onAlignSelected('center')}
+                            />
+                          </RibbonStack>
+                          <RibbonStack>
+                            <SmallRibbonBtn
+                              icon={<AlignStartHorizontal className="w-3.5 h-3.5" />}
+                              label="Сверху"
+                              title="Выровнять выбранные изделия по верхнему краю"
+                              disabled={selectedDeviceCount < 2}
+                              onClick={() => onAlignSelected('top')}
+                            />
+                            <SmallRibbonBtn
+                              icon={<AlignCenterHorizontal className="w-3.5 h-3.5" />}
+                              label="Центр Y"
+                              title="Выровнять выбранные изделия по горизонтальной оси"
+                              disabled={selectedDeviceCount < 2}
+                              onClick={() => onAlignSelected('middle')}
+                            />
+                          </RibbonStack>
+                        </RibbonPanel>
+                      )}
 
                       <RibbonPanel title="База изделий">
                         <LargeRibbonBtn
@@ -1907,12 +2139,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           title="Сборка автономной Windows Portable (.zip)"
                           onClick={onOpenPortableBuild}
                         />
-                        <LargeRibbonBtn
-                          icon={<Archive className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
-                          label="Исходники (.zip)"
-                          title="Скачать полный архив исходного кода проекта (.zip)"
-                          onClick={onDownloadCodebase}
-                        />
+
                       </RibbonPanel>
                     </>
                   )}

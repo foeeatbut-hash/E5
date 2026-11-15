@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -58,6 +59,8 @@ import type {
 import type { StampFieldKey } from '../core/gostFrame';
 import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
 import { SymbolEditorInspector } from './SymbolEditorInspector';
+import { PinDot } from './PinDot';
+import { findPinWire, getPinPotentialColor } from './pinPotential';
 
 interface RightInspectorProps {
   project: E3Project;
@@ -75,6 +78,10 @@ interface RightInspectorProps {
   onRotateSelected?: () => void;
   onDuplicateSelected?: () => void;
   onDeleteSelected?: () => void;
+  onBatchUpdateDevices?: (
+    deviceIds: string[],
+    patch: { manufacturer?: string; article?: string; rotation?: 0 | 90 | 180 | 270 }
+  ) => void;
   onClearSelection?: () => void;
   onUpdateDevice: (deviceId: string, patch: Partial<E3Device>) => void;
   onSaveDeviceToCatalog?: (device: E3Device) => void;
@@ -121,6 +128,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   onRotateSelected,
   onDuplicateSelected,
   onDeleteSelected,
+  onBatchUpdateDevices,
   onClearSelection,
   onUpdateDevice,
   onSaveDeviceToCatalog,
@@ -145,6 +153,9 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   symbolWorkspace,
   onEditDeviceSymbol,
 }) => {
+  const [devTab, setDevTab] = useState<'main' | 'pins' | 'attrs'>('main');
+  const [batchMfr, setBatchMfr] = useState('');
+  const [batchArticle, setBatchArticle] = useState('');
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
   const [copiedElId, setCopiedElId] = useState(false);
@@ -249,7 +260,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                 }
               }}
               title="Копировать elementId"
-              className="inline-flex items-center gap-1 px-1 h-[calc(18px*var(--flux-ui-scale))] rounded-[2px] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+              className="inline-flex items-center gap-1 px-1 h-[calc(18px*var(--flux-ui-scale))] rounded-[4px] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
             >
               <span className="max-w-[calc(64px*var(--flux-ui-scale))] truncate">{selectedDevice.elementId}</span>
               {copiedElId ? (
@@ -278,7 +289,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   }
                 }}
                 title={`Открыть историю версий листа «${activeSheet.name}»${dirty ? ' (есть невыпущенные правки)' : ''}`}
-                className="inline-flex items-center gap-1 px-1.5 h-[calc(18px*var(--flux-ui-scale))] rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+                className="inline-flex items-center gap-1 px-1.5 h-[calc(18px*var(--flux-ui-scale))] rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
               >
                 <History className="w-2.5 h-2.5 text-[var(--flux-accent)] shrink-0" />
                 <span>
@@ -295,7 +306,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
         {activeLayerLocked && (
           <div
             data-testid="inspector-layer-locked-banner"
-            className="mx-2 my-1.5 px-2 py-1.5 rounded-[2px] border border-amber-500/50 bg-amber-500/10 flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))]"
+            className="mx-2 my-1.5 px-2 py-1.5 rounded-[4px] border border-amber-500/50 bg-amber-500/10 flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))]"
           >
             <div className="flex items-center gap-1.5 min-w-0 text-amber-700 dark:text-amber-300">
               <Lock className="w-3.5 h-3.5 shrink-0" />
@@ -309,7 +320,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                 type="button"
                 data-testid="inspector-unlock-layer-btn"
                 onClick={() => onToggleLayerLock(activeLayerId)}
-                className="h-6 px-2 rounded-[2px] border border-amber-500/60 bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] shrink-0 transition-colors"
+                className="h-6 px-2 rounded-[4px] border border-amber-500/60 bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] shrink-0 transition-colors"
               >
                 Разблокировать
               </button>
@@ -352,7 +363,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       data-testid="align-left-btn"
                       onClick={() => onAlignDevices('left')}
                       title="Выровнять по левому краю"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       <AlignStartVertical className="w-3 h-3" />
                       <span>Лево</span>
@@ -362,7 +373,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       data-testid="align-center-x-btn"
                       onClick={() => onAlignDevices('center-x')}
                       title="Выровнять по центру X"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       <AlignCenterVertical className="w-3 h-3" />
                       <span>Центр X</span>
@@ -372,7 +383,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       data-testid="align-right-btn"
                       onClick={() => onAlignDevices('right')}
                       title="Выровнять по правому краю"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       <AlignEndVertical className="w-3 h-3" />
                       <span>Право</span>
@@ -382,7 +393,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       data-testid="align-top-btn"
                       onClick={() => onAlignDevices('top')}
                       title="Выровнять по верхнему краю"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       <AlignStartHorizontal className="w-3 h-3" />
                       <span>Верх</span>
@@ -392,7 +403,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       data-testid="align-center-y-btn"
                       onClick={() => onAlignDevices('center-y')}
                       title="Выровнять по центру Y"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       <AlignCenterHorizontal className="w-3 h-3" />
                       <span>Центр Y</span>
@@ -402,7 +413,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       data-testid="align-bottom-btn"
                       onClick={() => onAlignDevices('bottom')}
                       title="Выровнять по нижнему краю"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                     >
                       <AlignEndHorizontal className="w-3 h-3" />
                       <span>Низ</span>
@@ -415,7 +426,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                         type="button"
                         data-testid="distribute-x-btn"
                         onClick={() => onAlignDevices('distribute-x')}
-                        className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                        className="h-6 px-2 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                       >
                         <AlignHorizontalDistributeCenter className="w-3 h-3" />
                         <span>Шаг по X</span>
@@ -424,7 +435,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                         type="button"
                         data-testid="distribute-y-btn"
                         onClick={() => onAlignDevices('distribute-y')}
-                        className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                        className="h-6 px-2 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                       >
                         <AlignVerticalDistributeCenter className="w-3 h-3" />
                         <span>Шаг по Y</span>
@@ -439,12 +450,50 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               <span>Операции над группой</span>
             </div>
             <div className="p-1.5 space-y-1">
+              {selectedDeviceIds.length >= 2 && onBatchUpdateDevices && (
+                <div className="mb-1.5 p-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] space-y-1.5">
+                  <div className="text-[length:calc(10px*var(--flux-ui-scale))] font-semibold uppercase tracking-wide text-[var(--flux-text-muted)]">
+                    Пакетные свойства ({selectedDeviceIds.length} изд.)
+                  </div>
+                  <input
+                    type="text"
+                    value={batchMfr}
+                    onChange={(e) => setBatchMfr(e.target.value)}
+                    placeholder="Производитель (для всех)…"
+                    className="w-full h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)]"
+                  />
+                  <input
+                    type="text"
+                    value={batchArticle}
+                    onChange={(e) => setBatchArticle(e.target.value)}
+                    placeholder="Артикул (для всех)…"
+                    className="w-full h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)]"
+                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={!batchMfr.trim() && !batchArticle.trim()}
+                      onClick={() => {
+                        onBatchUpdateDevices(selectedDeviceIds, {
+                          manufacturer: batchMfr.trim() || undefined,
+                          article: batchArticle.trim() || undefined,
+                        });
+                        setBatchMfr('');
+                        setBatchArticle('');
+                      }}
+                      className="flex-1 h-6 px-2 rounded-[4px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] disabled:opacity-40 text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors"
+                    >
+                      Применить ко всем
+                    </button>
+                  </div>
+                </div>
+              )}
               {selectedDeviceIds.length > 0 && onRotateSelected && (
                 <button
                   type="button"
                   data-testid="multi-rotate-btn"
                   onClick={onRotateSelected}
-                  className="w-full h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1.5 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]"
+                  className="w-full h-6 px-2 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1.5 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]"
                 >
                   <RotateCw className="w-3 h-3 text-[var(--flux-text-muted)]" />
                   <span>Повернуть изделия на 90° (R)</span>
@@ -455,7 +504,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   type="button"
                   data-testid="multi-duplicate-btn"
                   onClick={onDuplicateSelected}
-                  className="w-full h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1.5 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]"
+                  className="w-full h-6 px-2 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1.5 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]"
                 >
                   <CopyPlus className="w-3 h-3 text-[var(--flux-accent)]" />
                   <span>Дублировать группу (Ctrl+D)</span>
@@ -466,7 +515,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   type="button"
                   data-testid="multi-delete-btn"
                   onClick={onDeleteSelected}
-                  className="w-full h-6 px-2 rounded-[2px] border border-rose-500/40 bg-rose-500/5 hover:bg-rose-500/15 inline-flex items-center justify-center gap-1.5 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-rose-600 dark:text-rose-400"
+                  className="w-full h-6 px-2 rounded-[4px] border border-rose-500/40 bg-rose-500/5 hover:bg-rose-500/15 inline-flex items-center justify-center gap-1.5 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-rose-600 dark:text-rose-400"
                 >
                   <Trash2 className="w-3 h-3" />
                   <span>Удалить выделенные (Del)</span>
@@ -476,7 +525,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                 <button
                   type="button"
                   onClick={onClearSelection}
-                  className="w-full h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                  className="w-full h-[calc(22px*var(--flux-ui-scale))] rounded-[4px] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
                 >
                   Снять выделение
                 </button>
@@ -485,7 +534,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
           </div>
         ) : selectedDevice ? (
           <>
-            <div className="px-2 py-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-1.5">
+            <div className="px-2.5 py-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] truncate">
                   {selectedDevice.designation} · {selectedDevice.attributes.length} атр. · {selectedDevice.pins.length} выв.
@@ -501,7 +550,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     data-testid="insp-edit-device-symbol-btn"
                     onClick={() => onEditDeviceSymbol(selectedDevice)}
                     title="Открыть графику УГО этого объекта в редакторе блоков"
-                    className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
+                    className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
                   >
                     <span>УГО…</span>
                   </button>
@@ -511,7 +560,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     type="button"
                     onClick={() => onSaveDeviceToCatalog(selectedDevice)}
                     title="Сохранить изделие со всеми атрибутами и выводами в базу компонентов"
-                    className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                    className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
                   >
                     <BookmarkPlus className="w-3 h-3 text-[var(--flux-text-muted)]" />
                     <span>В базу</span>
@@ -520,9 +569,46 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               </div>
             </div>
 
+            <div className="px-2 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] shrink-0" data-testid="inspector-device-tabs">
+              <div role="tablist" aria-label="Разделы свойств изделия" className="relative grid grid-cols-3 p-0.5 rounded-[4px] bg-[var(--flux-bg)] border border-[var(--flux-line)]">
+                {([
+                  ['main', 'Основное'],
+                  ['pins', 'Выводы'],
+                  ['attrs', 'Атрибуты и геом.'],
+                ] as const).map(([key, label]) => {
+                  const active = devTab === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      data-testid={`inspector-tab-${key}`}
+                      title={key === 'attrs' ? 'Атрибуты и геометрия' : label}
+                      onClick={() => setDevTab(key)}
+                      className={`relative h-[calc(22px*var(--flux-ui-scale))] rounded-[4px] text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap truncate px-1 transition-colors ${
+                        active ? 'text-[var(--flux-text)] font-semibold' : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="inspector-tab"
+                          transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                          className="absolute inset-0 rounded-[4px] bg-[var(--flux-surface)] border border-[var(--flux-line-strong)]"
+                        />
+                      )}
+                      <span className="relative">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <fieldset disabled={activeLayerLocked} className="min-w-0 disabled:opacity-65">
+            {devTab === 'main' && (
+            <div>
               <div className="cad-prop-section">
-                <span>Идентификация и позиция</span>
+                <span>Основное</span>
               </div>
               <div className="cad-prop-grid">
                 <label htmlFor="insp-designation" className="cad-prop-label" title="Позиционное обозначение (Device Designation)">
@@ -577,54 +663,6 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     onChange={(e) => onUpdateDevice(selectedDevice.id, { manufacturer: e.target.value })}
                     className="cad-prop-input"
                   />
-                </div>
-
-                <label htmlFor="insp-x" className="cad-prop-label">
-                  Координата X (мм)
-                </label>
-                <div className="cad-prop-cell">
-                  <input
-                    id="insp-x"
-                    type="number"
-                    value={selectedDevice.x}
-                    onChange={(e) => {
-                      const n = parseFiniteNum(e.target.value);
-                      if (n !== null) onUpdateDevice(selectedDevice.id, { x: n });
-                    }}
-                    className="cad-prop-input font-mono tabular-nums"
-                  />
-                </div>
-
-                <label htmlFor="insp-y" className="cad-prop-label">
-                  Координата Y (мм)
-                </label>
-                <div className="cad-prop-cell">
-                  <input
-                    id="insp-y"
-                    type="number"
-                    value={selectedDevice.y}
-                    onChange={(e) => {
-                      const n = parseFiniteNum(e.target.value);
-                      if (n !== null) onUpdateDevice(selectedDevice.id, { y: n });
-                    }}
-                    className="cad-prop-input font-mono tabular-nums"
-                  />
-                </div>
-
-                <span className="cad-prop-label">Поворот УГО</span>
-                <div className="cad-prop-cell px-1">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onUpdateDevice(selectedDevice.id, {
-                        rotation: ((selectedDevice.rotation + 90) % 360) as 0 | 90 | 180 | 270,
-                      })
-                    }
-                    className="w-full h-[calc(20px*var(--flux-ui-scale))] px-1.5 rounded-[2px] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] inline-flex items-center justify-between gap-1"
-                  >
-                    <span>{selectedDevice.rotation}°</span>
-                    <RotateCw className="w-3 h-3 text-[var(--flux-text-muted)]" />
-                  </button>
                 </div>
 
                 <label htmlFor="insp-e3block" className="cad-prop-label">
@@ -787,7 +825,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       data-testid="inspector-offpage-jump-btn"
                       disabled={!link?.primaryCounterpart}
                       onClick={() => onNavigateOffPage?.(selectedDevice)}
-                      className="w-full h-6 inline-flex items-center justify-center gap-1.5 rounded-[2px] border border-[var(--flux-accent)]/70 bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                      className="w-full h-6 inline-flex items-center justify-center gap-1.5 rounded-[4px] border border-[var(--flux-accent)]/70 bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none"
                     >
                       <Navigation className="w-3 h-3" />
                       <span>Перейти на ответный лист</span>
@@ -797,7 +835,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       type="button"
                       data-testid="inspector-highlight-potential-btn"
                       onClick={() => onHighlightPotential?.({ deviceId: selectedDevice.id })}
-                      className="w-full h-6 inline-flex items-center justify-center gap-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium"
+                      className="w-full h-6 inline-flex items-center justify-center gap-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium"
                     >
                       <Zap className="w-3 h-3 text-amber-500" />
                       <span>Подсветить весь потенциал</span>
@@ -810,7 +848,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                           data-testid="inspector-offpage-target-sheet"
                           value={targetSheetId}
                           onChange={(e) => setCounterpartSheetId(e.target.value)}
-                          className="flex-1 min-w-0 h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                          className="flex-1 min-w-0 h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                         >
                           {otherSheets.map((s) => (
                             <option key={s.id} value={s.id}>
@@ -822,7 +860,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                           type="button"
                           data-testid="inspector-create-counterpart-btn"
                           onClick={() => onCreateOffPageCounterpart(selectedDevice, targetSheetId)}
-                          className="h-6 px-2 shrink-0 inline-flex items-center gap-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]"
+                          className="h-6 px-2 shrink-0 inline-flex items-center gap-1 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]"
                         >
                           <Plus className="w-3 h-3" />
                           <span>Создать</span>
@@ -834,6 +872,160 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               );
             })()}
 
+            </div>
+            )}
+            {devTab === 'pins' && (
+            <div data-testid="inspector-pins-tab">
+              <div className="cad-prop-section">
+                <span>Выводы и связи</span>
+                <span className="font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] tabular-nums text-[var(--flux-text-muted)]">
+                  {selectedDevice.pins.length}
+                </span>
+              </div>
+              <div>
+                {selectedDevice.pins.length === 0 && (
+                  <div className="px-2.5 py-3 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                    У изделия нет выводов.
+                  </div>
+                )}
+                {selectedDevice.pins.map((pin) => {
+                  const wire = findPinWire(project, selectedDevice.id, pin.id);
+                  const color = getPinPotentialColor(project, selectedDevice, pin);
+                  return (
+                    <div
+                      key={pin.id}
+                      className="flex items-center gap-1.5 px-2 min-h-[calc(24px*var(--flux-ui-scale))] border-b border-[var(--flux-line)] text-[length:calc(11px*var(--flux-ui-scale))]"
+                    >
+                      <PinDot color={color} />
+                      <span className="font-mono font-medium text-[var(--flux-text)] w-[calc(34px*var(--flux-ui-scale))] shrink-0 truncate" title={pin.name}>
+                        {pin.name}
+                      </span>
+                      {wire ? (
+                        <>
+                          <span className="flex-1 min-w-0 truncate font-mono tabular-nums text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]" title={`${wire.netName} (${wire.wireNumber})`}>
+                            {wire.netName}
+                            <span className="text-[var(--flux-text-muted)]"> · {wire.wireNumber}</span>
+                          </span>
+                          {onHighlightPotential && (
+                            <button
+                              type="button"
+                              onClick={() => onHighlightPotential({ wireId: wire.id })}
+                              aria-label={`Подсветить цепь вывода ${pin.name}`}
+                              title="Подсветить цепь"
+                              className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] inline-flex items-center justify-center rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] shrink-0 transition-colors"
+                            >
+                              <Zap className="w-3 h-3" strokeWidth={1.6} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={activeLayerLocked || wiresLocked}
+                            onClick={() => onDeleteWire(wire.id)}
+                            aria-label={`Отключить цепь от вывода ${pin.name}`}
+                            title="Отключить цепь"
+                            className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] inline-flex items-center justify-center rounded-[4px] text-[var(--flux-text-muted)] hover:text-rose-600 hover:bg-[var(--flux-hover)] disabled:opacity-35 shrink-0 transition-colors"
+                          >
+                            <Unlink className="w-3 h-3" strokeWidth={1.6} />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">Свободен</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            )}
+            {devTab === 'attrs' && (
+            <div>
+              <div className="cad-prop-section">
+                <span>Положение и геометрия</span>
+              </div>
+              <div className="cad-prop-grid">
+                <label htmlFor="insp-x" className="cad-prop-label">
+                  Координата X (мм)
+                </label>
+                <div className="cad-prop-cell">
+                  <input
+                    id="insp-x"
+                    type="number"
+                    value={selectedDevice.x}
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null) onUpdateDevice(selectedDevice.id, { x: n });
+                    }}
+                    className="cad-prop-input font-mono tabular-nums"
+                  />
+                </div>
+
+                <label htmlFor="insp-y" className="cad-prop-label">
+                  Координата Y (мм)
+                </label>
+                <div className="cad-prop-cell">
+                  <input
+                    id="insp-y"
+                    type="number"
+                    value={selectedDevice.y}
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null) onUpdateDevice(selectedDevice.id, { y: n });
+                    }}
+                    className="cad-prop-input font-mono tabular-nums"
+                  />
+                </div>
+
+                <span className="cad-prop-label">Поворот УГО</span>
+                <div className="cad-prop-cell px-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateDevice(selectedDevice.id, {
+                        rotation: ((selectedDevice.rotation + 90) % 360) as 0 | 90 | 180 | 270,
+                      })
+                    }
+                    className="w-full h-[calc(20px*var(--flux-ui-scale))] px-1.5 rounded-[4px] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] inline-flex items-center justify-between gap-1"
+                  >
+                    <span>{selectedDevice.rotation}°</span>
+                    <RotateCw className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                  </button>
+                </div>
+
+                <label htmlFor="insp-w" className="cad-prop-label">
+                  Ширина (мм)
+                </label>
+                <div className="cad-prop-cell">
+                  <input
+                    id="insp-w"
+                    type="number"
+                    min={1}
+                    value={selectedDevice.width}
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null && n > 0) onUpdateDevice(selectedDevice.id, { width: n });
+                    }}
+                    className="cad-prop-input font-mono tabular-nums"
+                  />
+                </div>
+
+                <label htmlFor="insp-h" className="cad-prop-label">
+                  Высота (мм)
+                </label>
+                <div className="cad-prop-cell">
+                  <input
+                    id="insp-h"
+                    type="number"
+                    min={1}
+                    value={selectedDevice.height}
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null && n > 0) onUpdateDevice(selectedDevice.id, { height: n });
+                    }}
+                    className="cad-prop-input font-mono tabular-nums"
+                  />
+                </div>
+
+              </div>
             {/* E3 Attributes 2-Column Table */}
             <div>
               <div className="cad-prop-section">
@@ -866,7 +1058,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                             conflict: e.target.value as E3Attribute['conflict'],
                           })
                         }
-                        className="h-[calc(17px*var(--flux-ui-scale))] w-[calc(58px*var(--flux-ui-scale))] px-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] text-[length:calc(9.5px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)] shrink-0"
+                        className="h-[calc(17px*var(--flux-ui-scale))] w-[calc(58px*var(--flux-ui-scale))] px-0.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] text-[length:calc(9.5px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)] shrink-0"
                       >
                         <option value="flux">flux</option>
                         <option value="script">script</option>
@@ -876,7 +1068,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                         type="button"
                         onClick={() => handleRemoveAttr(idx)}
                         aria-label={`Удалить атрибут ${attr.name}`}
-                        className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:text-rose-600 shrink-0"
+                        className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] inline-flex items-center justify-center rounded-[4px] text-[var(--flux-text-muted)] hover:text-rose-600 shrink-0"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -894,7 +1086,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   onChange={(e) => setNewAttrName(e.target.value)}
                   placeholder="Атрибут"
                   aria-label="Название нового атрибута"
-                  className="w-1/2 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                  className="w-1/2 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                 />
                 <input
                   type="text"
@@ -903,64 +1095,21 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   onChange={(e) => setNewAttrValue(e.target.value)}
                   placeholder="Значение"
                   aria-label="Значение нового атрибута"
-                  className="w-1/2 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                  className="w-1/2 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                 />
                 <button
                   type="submit"
                   disabled={!newAttrName.trim()}
                   aria-label="Добавить атрибут"
-                  className="h-[calc(22px*var(--flux-ui-scale))] w-[calc(22px*var(--flux-ui-scale))] shrink-0 inline-flex items-center justify-center rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] disabled:opacity-40 transition-colors"
+                  className="h-[calc(22px*var(--flux-ui-scale))] w-[calc(22px*var(--flux-ui-scale))] shrink-0 inline-flex items-center justify-center rounded-[4px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] disabled:opacity-40 transition-colors"
                 >
                   <Plus className="w-3 h-3" />
                 </button>
               </form>
             </div>
 
-            {/* Pin Connections Matrix */}
-            <div>
-              <div className="cad-prop-section">
-                <span>Выводы и связи</span>
-                <span className="font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] tabular-nums text-[var(--flux-text-muted)]">
-                  {selectedDevice.pins.length}
-                </span>
-              </div>
-              <div className="cad-prop-grid">
-                {selectedDevice.pins.map((pin) => {
-                  const wire = project.wires.find(
-                    (w) =>
-                      (w.fromDeviceId === selectedDevice.id && w.fromPinId === pin.id) ||
-                      (w.toDeviceId === selectedDevice.id && w.toPinId === pin.id)
-                  );
-                  return (
-                    <React.Fragment key={pin.id}>
-                      <span className="cad-prop-label font-mono font-medium text-[var(--flux-text)]">
-                        {pin.name}
-                      </span>
-                      <div className="cad-prop-cell px-1.5 justify-between gap-1 text-[length:calc(11px*var(--flux-ui-scale))]">
-                        {wire ? (
-                          <>
-                            <span className="font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-accent)] truncate">
-                              {wire.netName} ({wire.wireNumber})
-                            </span>
-                            <button
-                              type="button"
-                              disabled={activeLayerLocked || wiresLocked}
-                              onClick={() => onDeleteWire(wire.id)}
-                              aria-label={`Отключить цепь от вывода ${pin.name}`}
-                              className="text-[var(--flux-text-muted)] hover:text-rose-600 disabled:opacity-35 shrink-0"
-                            >
-                              <Unlink className="w-3 h-3" />
-                            </button>
-                          </>
-                        ) : (
-                          <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">Свободен</span>
-                        )}
-                      </div>
-                    </React.Fragment>
-                  );
-                })}
-              </div>
             </div>
+            )}
             </fieldset>
           </>
         ) : selectedWire ? (
@@ -1091,7 +1240,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   type="button"
                   data-testid="inspector-highlight-net-btn"
                   onClick={() => onHighlightPotential({ wireId: selectedWire.id })}
-                  className="w-full h-6 inline-flex items-center justify-center gap-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors"
+                  className="w-full h-6 inline-flex items-center justify-center gap-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors"
                 >
                   <Zap className="w-3 h-3 text-amber-500" />
                   <span>Подсветить весь потенциал</span>
@@ -1103,7 +1252,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   type="button"
                   data-testid="inspector-reroute-wire-btn"
                   onClick={() => onRerouteWire(selectedWire.id)}
-                  className="w-full h-6 inline-flex items-center justify-center gap-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors"
+                  className="w-full h-6 inline-flex items-center justify-center gap-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors"
                 >
                   <Workflow className="w-3 h-3 text-[var(--flux-accent)]" />
                   <span>{selectedWire.manualRoute ? 'Перестроить (сброс ручной)' : 'Перестроить трассу'}</span>
@@ -1113,7 +1262,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => onDeleteWire(selectedWire.id)}
-                className="w-full h-6 rounded-[2px] border border-rose-500/40 bg-rose-500/5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/15 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium"
+                className="w-full h-6 rounded-[4px] border border-rose-500/40 bg-rose-500/5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/15 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium"
               >
                 Удалить соединение
               </button>
@@ -1224,7 +1373,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                               data-testid="inspector-table-sheetonly-checkbox"
                               checked={Boolean(cfg.sheetOnly)}
                               onChange={(e) => updateCfg({ sheetOnly: e.target.checked })}
-                              className="rounded-[2px] border-[var(--flux-line-strong)] accent-[var(--flux-accent)]"
+                              className="rounded-[4px] border-[var(--flux-line-strong)] accent-[var(--flux-accent)]"
                             />
                             <span className="truncate">Только текущий лист</span>
                           </label>
@@ -1249,7 +1398,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   onChange={(e) =>
                     onUpdateAnnotation(selectedAnnotation.id, { text: e.target.value })
                   }
-                  className="w-full p-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                  className="w-full p-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
                 />
               </div>
             )}
@@ -1424,7 +1573,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               <button
                 type="button"
                 onClick={() => onDeleteAnnotation(selectedAnnotation.id)}
-                className="w-full h-6 rounded-[2px] border border-rose-500/40 bg-rose-500/5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/15 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium"
+                className="w-full h-6 rounded-[4px] border border-rose-500/40 bg-rose-500/5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/15 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium"
               >
                 Удалить аннотацию
               </button>
@@ -1444,7 +1593,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       disabled={activeLayerLocked}
                       data-testid="inspector-open-stamp-btn"
                       onClick={() => onOpenStampEditor(activeSheet.id)}
-                      className="inline-flex items-center justify-center gap-1 h-6 px-1.5 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap truncate disabled:opacity-45 transition-colors"
+                      className="inline-flex items-center justify-center gap-1 h-6 px-1.5 rounded-[4px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap truncate disabled:opacity-45 transition-colors"
                     >
                       <Type className="w-3 h-3 shrink-0" />
                       <span className="truncate">Заполнить штамп</span>
@@ -1455,7 +1604,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       type="button"
                       onClick={() => onOpenStampDesigner(activeSheet.id)}
                       data-testid="inspector-open-designer-btn"
-                      className="inline-flex items-center justify-center gap-1 h-6 px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap truncate transition-colors"
+                      className="inline-flex items-center justify-center gap-1 h-6 px-1.5 rounded-[4px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap truncate transition-colors"
                     >
                       <LayoutTemplate className="w-3 h-3 text-[var(--flux-text-muted)] shrink-0" />
                       <span className="truncate">Конструктор</span>
@@ -1468,7 +1617,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   type="button"
                   data-testid="inspector-open-bom-btn"
                   onClick={onOpenBomPanel}
-                  className="w-full inline-flex items-center justify-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+                  className="w-full inline-flex items-center justify-center gap-1.5 h-6 px-2 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
                 >
                   <FileSpreadsheet className="w-3 h-3 text-[var(--flux-text-muted)] shrink-0" />
                   <span>Открыть спецификацию ПЭ3</span>
@@ -1752,7 +1901,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     {isDirty && (
                       <div
                         data-testid="sheet-uncommitted-badge"
-                        className="px-2 py-1 rounded-[2px] border border-amber-500/50 bg-amber-500/10 text-[length:calc(10px*var(--flux-ui-scale))] text-amber-700 dark:text-amber-300 leading-snug"
+                        className="px-2 py-1 rounded-[4px] border border-amber-500/50 bg-amber-500/10 text-[length:calc(10px*var(--flux-ui-scale))] text-amber-700 dark:text-amber-300 leading-snug"
                       >
                         Есть невыпущенные правки. Выпустите ревизию, чтобы зафиксировать снимок.
                       </div>
@@ -1761,7 +1910,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     {onReleaseSheetRevision && (
                       <form
                         onSubmit={submitRelease}
-                        className="p-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] space-y-1"
+                        className="p-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] space-y-1"
                       >
                         <div className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
                           Выпуск ревизии листа
@@ -1775,7 +1924,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                             onChange={(e) => setReleaseCode(e.target.value)}
                             placeholder="Изм. (1, 2, А…)"
                             aria-label="Код ревизии (Изм.)"
-                            className="h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                            className="h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
                           />
                           <input
                             type="text"
@@ -1785,7 +1934,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                             onChange={(e) => setReleaseDoc(e.target.value)}
                             placeholder="№ докум."
                             aria-label="Номер документа изменения"
-                            className="h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                            className="h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
                           />
                         </div>
                         <div className="flex items-center gap-1">
@@ -1796,13 +1945,13 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                             onChange={(e) => setReleaseNote(e.target.value)}
                             placeholder="Примечание к выпуску…"
                             aria-label="Примечание к ревизии"
-                            className="flex-1 min-w-0 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
+                            className="flex-1 min-w-0 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-focus)]"
                           />
                           <button
                             type="submit"
                             data-testid="release-revision-submit-btn"
                             disabled={!releaseCode.trim() || activeLayerLocked}
-                            className="h-[calc(22px*var(--flux-ui-scale))] px-2 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                            className="h-[calc(22px*var(--flux-ui-scale))] px-2 rounded-[4px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 disabled:opacity-40 disabled:pointer-events-none transition-colors"
                           >
                             Выпустить
                           </button>
@@ -1812,7 +1961,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
 
                     <div
                       data-testid="sheet-history-list"
-                      className="max-h-[240px] overflow-y-auto border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)]"
+                      className="max-h-[240px] overflow-y-auto border border-[var(--flux-line)] rounded-[4px] bg-[var(--flux-surface)] divide-y divide-[var(--flux-line)]"
                     >
                       {reversedHistory.length === 0 ? (
                         <div className="px-2 py-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
@@ -1859,7 +2008,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                                     data-testid={`restore-sheet-rev-${entry.revision}`}
                                     onClick={() => onRestoreSheetRevision?.(activeSheet.id, entry.revision)}
                                     title={`Откатить лист к снимку ${isReleasedEntry ? `Изм.${entry.revisionLabel || entry.revision}` : `v${entry.revision}`}`}
-                                    className="inline-flex items-center gap-1 h-5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] shrink-0 transition-colors"
+                                    className="inline-flex items-center gap-1 h-5 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] shrink-0 transition-colors"
                                   >
                                     <RotateCcw className="w-2.5 h-2.5" />
                                     <span>Откатить</span>
