@@ -6,13 +6,12 @@ export const DEFAULT_CANVAS_VIEW_MODE: CanvasViewMode = 'single';
 export const CANVAS_VIEW_MODE_STORAGE_KEY = 'e3promax.canvasViewMode.v1';
 
 /**
- * Fixed horizontal slot pitch for multi-sheet ("all sheets") canvas layout.
- * Sized larger than standard GOST A1 width (3360) + 240 px gutter so resizing any sheet
- * across standard formats (A4 -> A3 -> A2 -> A1) never shifts subsequent sheets.
- * Also divisible by all standard grid steps (5, 10, 20, 25, 40, 50, 100).
+ * Compact horizontal gap between consecutive sheets in "all sheets" mode.
+ * Divisible by standard grid steps (5, 10, 20, 40) so sheets sit side-by-side
+ * without vast empty voids and naturally shift when inserting a sheet in between.
  */
-export const ALL_SHEETS_SLOT_STEP_X = 3600;
-export const ALL_SHEETS_MIN_GAP = 240;
+export const ALL_SHEETS_MIN_GAP = 80;
+export const ALL_SHEETS_SLOT_STEP_X = ALL_SHEETS_MIN_GAP;
 
 export interface SheetCanvasSlot {
   sheet: E3Sheet;
@@ -70,15 +69,14 @@ export function saveCanvasViewMode(
 }
 
 /**
- * Places all sheets in order horizontally using stable slot anchors.
- * Resizing a sheet within standard formats (A4..A1, width <= 3360) does not
- * move any following sheet. Extreme custom widths > (ALL_SHEETS_SLOT_STEP_X - ALL_SHEETS_MIN_GAP)
- * safely push only if physical paper + minimum gutter would otherwise collide.
+ * Places all sheets sequentially right after one another with a compact uniform gap.
+ * Inserting a new sheet between existing sheets or resizing an earlier sheet
+ * smoothly shifts subsequent sheets without overlapping.
  */
 export function computeAllSheetsLayout(sheets: E3Sheet[]): AllSheetsCanvasLayout {
   const slots: SheetCanvasSlot[] = [];
   const bySheetId = new Map<string, SheetCanvasSlot>();
-  let minNextX = 0;
+  let nextOriginX = 0;
   let maxRight = 1200;
   let maxBottom = 848;
 
@@ -86,8 +84,7 @@ export function computeAllSheetsLayout(sheets: E3Sheet[]): AllSheetsCanvasLayout
     const sheet = sheets[i];
     const width = Math.max(200, Math.round(sheet.width || 1200));
     const height = Math.max(200, Math.round(sheet.height || 848));
-    const anchorX = i * ALL_SHEETS_SLOT_STEP_X;
-    const originX = i === 0 ? 0 : Math.max(anchorX, minNextX);
+    const originX = i === 0 ? 0 : nextOriginX;
     const originY = 0;
 
     const slot: SheetCanvasSlot = {
@@ -101,7 +98,7 @@ export function computeAllSheetsLayout(sheets: E3Sheet[]): AllSheetsCanvasLayout
     slots.push(slot);
     bySheetId.set(sheet.id, slot);
 
-    minNextX = originX + width + ALL_SHEETS_MIN_GAP;
+    nextOriginX = originX + width + ALL_SHEETS_MIN_GAP;
     maxRight = Math.max(maxRight, originX + width);
     maxBottom = Math.max(maxBottom, originY + height);
   }

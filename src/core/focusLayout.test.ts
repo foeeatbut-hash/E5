@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { computeFocusLayoutMetrics, isMinimapEnabled } from './focusLayout.ts';
+import { computeFocusLayoutMetrics, isMinimapEnabled, packToolRailColumns } from './focusLayout.ts';
+import { FOCUS_QUICK_ACTIONS, type FocusQuickActionId } from './focusQuickAccess.ts';
 import { DEFAULT_VISUAL_SETTINGS, createSeedProject } from './e3Seed.ts';
 import { parseE3Xml, serializeE3Xml } from './e3Engine.ts';
 import { hydrateProjectDefaults } from './sessionStorage.ts';
@@ -264,4 +265,67 @@ test('computeFocusLayoutMetrics computes collision-free multiViewport safe-area 
   });
   assert.ok(collapsedInspector.multiViewportRight < allOpen.multiViewportRight);
   assert.ok(collapsedInspector.multiViewportRight >= collapsedInspector.inspectorRight + 160);
+});
+
+test('packToolRailColumns and computeFocusLayoutMetrics split overflow items into sequential columns without panel collisions', () => {
+  const allActionIds = Object.keys(FOCUS_QUICK_ACTIONS) as FocusQuickActionId[];
+
+  // Default 11 quick-access items stay single-column at 100% 1440x900
+  const defLayout = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 100,
+    ribbonOpen: false,
+    explorerOpen: false,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+  });
+  assert.equal(defLayout.toolRailColumnCount, 1);
+  assert.equal(defLayout.toolRailWidth, 40);
+
+  // Pinning all 66 actions creates multiple sequential columns and pushes Explorer & multiViewport right
+  const fullRail = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 100,
+    ribbonOpen: true,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+    railItemIds: allActionIds,
+  });
+  assert.ok(fullRail.toolRailColumnCount >= 3, `Expected >=3 columns for all ${allActionIds.length} items, got ${fullRail.toolRailColumnCount}`);
+  assert.equal(fullRail.toolRailColumns.flat().length, allActionIds.length);
+  assert.deepEqual(fullRail.toolRailColumns.flat(), allActionIds);
+  assert.ok(fullRail.toolRailWidth > 100);
+  assert.ok(fullRail.explorerLeft >= fullRail.toolRailLeft + fullRail.toolRailWidth + fullRail.gutter);
+  assert.ok(fullRail.multiViewportLeft >= fullRail.explorerLeft + fullRail.explorerWidth + fullRail.gutter);
+
+  // Large UI scale (150%) on shorter 720px viewport triggers multi-column even with moderate item count
+  const scaledCompact = packToolRailColumns({
+    itemIds: allActionIds.slice(0, 22),
+    uiScale: 150,
+    maxHeight: 540,
+    hasExplorerButtons: true,
+  });
+  assert.ok(scaledCompact.columnCount >= 2);
+  assert.equal(scaledCompact.columns.flat().length, 22);
+
+  // Multi-column with Console & Minimap never collides with Minimap or Explorer
+  const fullWithConsoleAndMap = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 760,
+    uiScale: 130,
+    ribbonOpen: false,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: true,
+    showMinimap: true,
+    railItemIds: allActionIds,
+  });
+  assert.ok(fullWithConsoleAndMap.toolRailColumnCount >= 3);
+  assert.ok(fullWithConsoleAndMap.explorerLeft >= fullWithConsoleAndMap.toolRailLeft + fullWithConsoleAndMap.toolRailWidth + fullWithConsoleAndMap.gutter);
+  if (fullWithConsoleAndMap.showMinimap) {
+    assert.ok(fullWithConsoleAndMap.minimapLeft >= fullWithConsoleAndMap.explorerLeft + fullWithConsoleAndMap.explorerWidth + fullWithConsoleAndMap.gutter);
+  }
 });

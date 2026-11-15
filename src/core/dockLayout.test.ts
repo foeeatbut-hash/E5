@@ -12,6 +12,7 @@ import {
   duplicateSheetInProject,
   ensureSheetTabOpen,
   getPanelsByDock,
+  insertSheetInProject,
   movePanelDock,
   resizeDockEdge,
   syncOpenSheetIds,
@@ -128,6 +129,27 @@ test('duplicateSheetInProject and deleteSheetFromProject manage sheets safely', 
   assert.ok(!deleted.nextProject.devices.some((d) => d.sheetId === newSheetId));
 });
 
+test('insertSheetInProject inserts between first and second sheet and renumbers subsequent sheets', () => {
+  const proj = createSeedProject();
+  const originalSecondId = proj.sheets[1].id;
+  const originalThirdId = proj.sheets[2].id;
+
+  const { nextProject, newSheet } = insertSheetInProject(proj, {
+    afterSheetId: proj.sheets[0].id,
+    sheetId: 'sheet-inserted-mid',
+  });
+
+  assert.equal(nextProject.sheets.length, proj.sheets.length + 1);
+  assert.equal(nextProject.sheets[0].id, proj.sheets[0].id);
+  assert.equal(nextProject.sheets[0].number, 1);
+  assert.equal(nextProject.sheets[1].id, newSheet.id);
+  assert.equal(nextProject.sheets[1].number, 2);
+  assert.equal(nextProject.sheets[2].id, originalSecondId);
+  assert.equal(nextProject.sheets[2].number, 3);
+  assert.equal(nextProject.sheets[3].id, originalThirdId);
+  assert.equal(nextProject.sheets[3].number, 4);
+});
+
 test('clampDockSize enforces minimum width and height', () => {
   assert.equal(clampDockSize('right', 50, 1440, 900), 210);
   assert.equal(clampDockSize('top', 40, 1440, 900), 120);
@@ -177,11 +199,11 @@ test('closeSheetTab, ensureSheetTabOpen, and syncOpenSheetIds manage open canvas
   assert.deepEqual(closeFinal.nextOpenSheetIds, []);
   assert.equal(closeFinal.nextActiveSheetId, '');
 
-  // Reopening a closed sheet from project tree appends tab without duplicates
-  const reopened = ensureSheetTabOpen(['sheet-1'], 'sheet-2', proj.sheets);
-  assert.deepEqual(reopened, ['sheet-1', 'sheet-2']);
-  assert.deepEqual(ensureSheetTabOpen(reopened, 'sheet-2', proj.sheets), ['sheet-1', 'sheet-2']);
-  assert.deepEqual(ensureSheetTabOpen(reopened, 'nonexistent', proj.sheets), ['sheet-1', 'sheet-2']);
+  // Reopening a closed sheet from project tree inserts tab in project sheet order without duplicates
+  const reopened = ensureSheetTabOpen(['sheet-1', 'sheet-3'], 'sheet-2', proj.sheets);
+  assert.deepEqual(reopened, ['sheet-1', 'sheet-2', 'sheet-3']);
+  assert.deepEqual(ensureSheetTabOpen(reopened, 'sheet-2', proj.sheets), ['sheet-1', 'sheet-2', 'sheet-3']);
+  assert.deepEqual(ensureSheetTabOpen(reopened, 'nonexistent', proj.sheets), ['sheet-1', 'sheet-2', 'sheet-3']);
 
   // Sync removes deleted IDs while respecting intentionally closed sheets
   assert.deepEqual(syncOpenSheetIds(['sheet-1', 'deleted-99', 'sheet-1'], proj.sheets), ['sheet-1']);

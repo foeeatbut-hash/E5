@@ -53,6 +53,7 @@ interface LeftExplorerProps {
   onRenameSheetFolder?: (oldPath: string, newNameOrPath: string) => void;
   onDeleteSheetFolder?: (folderPath: string) => void;
   onMoveSheetToFolder?: (sheetId: string, folderPath: string | null) => void;
+  onInsertSheetAfter?: (afterSheetId: string) => void;
 }
 
 function renderCatalogMiniSymbol(category: CatalogItem['category']) {
@@ -133,6 +134,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   onRenameSheetFolder,
   onDeleteSheetFolder,
   onMoveSheetToFolder,
+  onInsertSheetAfter,
   symbolWorkspace,
 }) => {
   const isNewUi = isNewUiMode(uiMode);
@@ -277,6 +279,21 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
             </span>
           </button>
           <span className="flex items-center gap-1 shrink-0 font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+            {onInsertSheetAfter && (
+              <button
+                type="button"
+                data-testid={`explorer-insert-sheet-after-${s.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onInsertSheetAfter(s.id);
+                }}
+                title={`Вставить новый лист после Л.${s.number}`}
+                aria-label={`Вставить новый лист после ${s.name}`}
+                className="inline-flex items-center justify-center w-4 h-4 rounded-[2px] opacity-0 group-hover/sheet:opacity-100 focus:opacity-100 hover:text-[var(--flux-accent)] hover:bg-[var(--flux-bg)] transition-opacity"
+              >
+                <Plus className="w-2.5 h-2.5" />
+              </button>
+            )}
             {onMoveSheetToFolder && (
               <button
                 type="button"

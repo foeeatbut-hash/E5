@@ -1,3 +1,8 @@
+import {
+  DEFAULT_FOCUS_QUICK_ACCESS_IDS,
+  getFocusQuickActionDef,
+  type FocusQuickActionId,
+} from './focusQuickAccess';
 import { getScaledChromeMetrics, normalizeUiScalePercent, type UiScalePercent } from './uiScale';
 
 export function isMinimapEnabled(
@@ -6,6 +11,88 @@ export function isMinimapEnabled(
   if (typeof value === 'boolean') return value === true;
   if (value && typeof value === 'object') return value.showMinimap === true;
   return false;
+}
+
+export interface PackToolRailColumnsInput {
+  itemIds?: FocusQuickActionId[];
+  itemCount?: number;
+  uiScale: UiScalePercent;
+  maxHeight: number;
+  hasExplorerButtons?: boolean;
+}
+
+export interface PackedToolRailColumns {
+  columns: FocusQuickActionId[][];
+  columnCount: number;
+  width: number;
+  btnSize: number;
+}
+
+export function packToolRailColumns(input: PackToolRailColumnsInput): PackedToolRailColumns {
+  const safeScale = normalizeUiScalePercent(input.uiScale);
+  const f = getScaledChromeMetrics(safeScale).factor;
+  const btnSize = Math.round(28 * f);
+  const btnStepSize = Math.ceil(28 * f);
+  const gapY = 2;
+  const dividerH = 5; // h-px (1px) + my-[2px] (4px)
+  const padX = 10; // p-[4px] (8px) + border (2px)
+  const padY = 10; // p-[4px] (8px) + border (2px)
+  const colSeparatorAdvance = 9; // gap-[4px] (4px) + w-px (1px) + gap-[4px] (4px)
+
+  let ids: FocusQuickActionId[];
+  if (input.itemIds) {
+    ids = input.itemIds;
+  } else {
+    const count = Math.max(0, Math.round(input.itemCount ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS.length));
+    ids = DEFAULT_FOCUS_QUICK_ACCESS_IDS.slice(0, count);
+    if (ids.length < count) {
+      const extraCount = count - ids.length;
+      for (let i = 0; i < extraCount; i++) {
+        ids.push(DEFAULT_FOCUS_QUICK_ACCESS_IDS[i % DEFAULT_FOCUS_QUICK_ACCESS_IDS.length]);
+      }
+    }
+  }
+
+  const innerMaxH = Math.max(btnStepSize + 12, Math.floor(input.maxHeight) - padY - 2);
+  const hasExplorer = input.hasExplorerButtons ?? true;
+
+  const columns: FocusQuickActionId[][] = [[]];
+  let colHeight = hasExplorer ? btnStepSize * 2 + gapY * 2 + dividerH : 0;
+
+  for (const id of ids) {
+    const curCol = columns[columns.length - 1];
+    const curGroup = getFocusQuickActionDef(id).group;
+    const prevIdInCol = curCol.length > 0 ? curCol[curCol.length - 1] : null;
+    const prevGroupInCol = prevIdInCol ? getFocusQuickActionDef(prevIdInCol).group : null;
+    const hasAboveInCol = curCol.length > 0 || (columns.length === 1 && hasExplorer);
+    const needsDivider = prevGroupInCol !== null && prevGroupInCol !== curGroup;
+    const stepH =
+      (hasAboveInCol ? gapY : 0) +
+      (needsDivider ? dividerH + gapY : 0) +
+      btnStepSize;
+
+    if (curCol.length > 0 && colHeight + stepH > innerMaxH) {
+      columns.push([id]);
+      colHeight = btnStepSize;
+    } else {
+      curCol.push(id);
+      colHeight += stepH;
+    }
+  }
+
+  const columnCount = columns.length;
+  const rawWidth =
+    padX +
+    columnCount * btnSize +
+    Math.max(0, columnCount - 1) * colSeparatorAdvance;
+  const width = Math.max(Math.round(40 * f), rawWidth);
+
+  return {
+    columns,
+    columnCount,
+    width,
+    btnSize,
+  };
 }
 
 export interface FocusLayoutInput {
@@ -18,6 +105,8 @@ export interface FocusLayoutInput {
   consoleOpen: boolean;
   showMinimap?: boolean;
   railItemCount?: number;
+  railItemIds?: FocusQuickActionId[];
+  hasRailExplorerButtons?: boolean;
   explorerWidthOverride?: number;
   inspectorWidthOverride?: number;
   consoleHeightOverride?: number;
@@ -42,6 +131,8 @@ export interface FocusLayoutMetrics {
   toolRailTop: number;
   toolRailWidth: number;
   toolRailMaxHeight: number;
+  toolRailColumns: FocusQuickActionId[][];
+  toolRailColumnCount: number;
   explorerLeft: number;
   explorerTop: number;
   explorerBottom: number;
@@ -61,6 +152,8 @@ export interface FocusLayoutMetrics {
   minimapHeight: number;
   showMinimap: boolean;
   selectionBarTop: number;
+  selectionBarCenterX: number;
+  selectionBarMaxWidth: number;
   multiViewportTop: number;
   multiViewportLeft: number;
   multiViewportRight: number;
@@ -130,9 +223,47 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
   const consoleLeft = outerPad;
   const consoleRight = outerPad;
 
-  const toolRailWidth = Math.round(40 * f);
+  const aboveConsoleBottom = consoleBottom + consoleHeight + gutter;
   const toolRailLeft = outerPad;
   const toolRailTop = topClearance;
+  const minimapEnabled = isMinimapEnabled(input.showMinimap);
+  const hasRailExplorer = input.hasRailExplorerButtons ?? true;
+
+  const minimapLikelyNoConsole =
+    minimapEnabled && vw >= 768 && vh - minimapHeight - outerPad > topClearance + 180;
+  const preliminaryBottomClearance = input.consoleOpen
+    ? aboveConsoleBottom
+    : minimapLikelyNoConsole
+      ? outerPad + minimapHeight + gutter
+      : bottomDockClearance;
+  const preliminaryMaxHeight = Math.max(180, vh - toolRailTop - preliminaryBottomClearance);
+  let packedRail = packToolRailColumns({
+    itemIds: input.railItemIds,
+    itemCount: input.railItemCount,
+    uiScale: safeScale,
+    maxHeight: preliminaryMaxHeight,
+    hasExplorerButtons: hasRailExplorer,
+  });
+
+  // If 1 column + Explorer open does not touch the bottom-left minimap slot (because Explorer sits right of rail and leaves bottom clearance),
+  // we still check if multi-column exceeds single-column width into the minimap zone.
+  if (!input.consoleOpen && minimapLikelyNoConsole && input.explorerOpen && packedRail.columnCount === 1) {
+    const fullHeightMax = Math.max(180, vh - toolRailTop - bottomDockClearance);
+    const fullPacked = packToolRailColumns({
+      itemIds: input.railItemIds,
+      itemCount: input.railItemCount,
+      uiScale: safeScale,
+      maxHeight: fullHeightMax,
+      hasExplorerButtons: hasRailExplorer,
+    });
+    if (fullPacked.columnCount === 1) {
+      packedRail = fullPacked;
+    }
+  }
+
+  const toolRailWidth = packedRail.width;
+  const toolRailColumns = packedRail.columns;
+  const toolRailColumnCount = packedRail.columnCount;
 
   const explorerLeft = outerPad + toolRailWidth + gutter;
   const explorerTop = topClearance;
@@ -171,11 +302,9 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     Math.min(inspectorMaxW, Math.round(input.inspectorWidthOverride ?? defaultInspectorW))
   );
 
-  const aboveConsoleBottom = consoleBottom + consoleHeight + gutter;
   const inspectorBottom = input.consoleOpen ? aboveConsoleBottom : bottomDockClearance;
   const inspectorMaxHeight = Math.max(180, vh - inspectorTop - inspectorBottom);
 
-  const minimapEnabled = isMinimapEnabled(input.showMinimap);
   const minimapBottom = input.consoleOpen ? aboveConsoleBottom : outerPad;
   const minimapLeft = input.consoleOpen
     ? input.explorerOpen
@@ -187,7 +316,10 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     180,
     vh - toolRailTop - (input.consoleOpen ? aboveConsoleBottom : bottomDockClearance)
   );
-  const estRailItems = Math.max(3, input.railItemCount ?? 11);
+  const estRailItems = Math.max(
+    3,
+    input.railItemIds?.length ?? input.railItemCount ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS.length
+  );
   const approxRailBottom =
     toolRailTop + Math.min(unreservedRailMaxHeight, Math.round((estRailItems * 30 + 64) * f));
 
@@ -210,10 +342,19 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
 
   const toolRailBottomClearance = input.consoleOpen
     ? aboveConsoleBottom
-    : !showMinimap || input.explorerOpen
+    : !showMinimap || (input.explorerOpen && toolRailColumnCount === 1)
       ? bottomDockClearance
       : outerPad + minimapHeight + gutter;
   const toolRailMaxHeight = Math.max(180, vh - toolRailTop - toolRailBottomClearance);
+
+  // Re-pack once with final toolRailMaxHeight to stay 100% consistent with returned container maxHeight
+  const finalPackedRail = packToolRailColumns({
+    itemIds: input.railItemIds,
+    itemCount: input.railItemCount,
+    uiScale: safeScale,
+    maxHeight: toolRailMaxHeight,
+    hasExplorerButtons: hasRailExplorer,
+  });
 
   // Bottom-center command bar sits cleanly between minimap (if visible) and scaled right status pill
   const leftBottomEdge = !input.consoleOpen && showMinimap ? outerPad + minimapWidth + gutter : outerPad;
@@ -235,6 +376,10 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     (input.inspectorCollapsed ? inspectorRight + collapsedInspectorWidth : inspectorRight + inspectorWidth) +
     gutter;
   const multiViewportBottom = input.consoleOpen ? aboveConsoleBottom : bottomDockClearance;
+  const selectionBarLeftEdge = multiViewportLeft;
+  const selectionBarRightEdge = Math.max(selectionBarLeftEdge + 180, vw - multiViewportRight);
+  const selectionBarMaxWidth = Math.max(180, selectionBarRightEdge - selectionBarLeftEdge);
+  const selectionBarCenterX = Math.round((selectionBarLeftEdge + selectionBarRightEdge) / 2);
 
   return {
     outerPad,
@@ -255,6 +400,8 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     toolRailTop,
     toolRailWidth,
     toolRailMaxHeight,
+    toolRailColumns: finalPackedRail.columns,
+    toolRailColumnCount: finalPackedRail.columnCount,
     explorerLeft,
     explorerTop,
     explorerBottom,
@@ -274,6 +421,8 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     minimapHeight,
     showMinimap,
     selectionBarTop: topClearance,
+    selectionBarCenterX,
+    selectionBarMaxWidth,
     multiViewportTop,
     multiViewportLeft,
     multiViewportRight,

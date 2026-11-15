@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ALL_SHEETS_SLOT_STEP_X,
+  ALL_SHEETS_MIN_GAP,
   CANVAS_VIEW_MODE_STORAGE_KEY,
   computeAllSheetsLayout,
   computeSheetViewportFitTransform,
@@ -65,7 +65,7 @@ test('canvas view mode normalization and storage persistence', () => {
   assert.equal(loadCanvasViewMode(mockStore), 'single');
 });
 
-test('computeAllSheetsLayout keeps following sheets anchored when resizing earlier sheets across A4..A1', () => {
+test('computeAllSheetsLayout places heterogeneous sheets compactly in sequence without gaps or overlap', () => {
   const s1Small = makeSheet('s1', 1, 1200, 848); // A4
   const s2 = makeSheet('s2', 2, 1680, 1188); // A3
   const s3 = makeSheet('s3', 3, 2380, 1684); // A2
@@ -73,49 +73,64 @@ test('computeAllSheetsLayout keeps following sheets anchored when resizing earli
   const layoutA4 = computeAllSheetsLayout([s1Small, s2, s3]);
   assert.equal(layoutA4.slots.length, 3);
   assert.equal(layoutA4.bySheetId.get('s1')?.originX, 0);
-  assert.equal(layoutA4.bySheetId.get('s2')?.originX, ALL_SHEETS_SLOT_STEP_X);
-  assert.equal(layoutA4.bySheetId.get('s3')?.originX, ALL_SHEETS_SLOT_STEP_X * 2);
+  assert.equal(layoutA4.bySheetId.get('s2')?.originX, 1200 + ALL_SHEETS_MIN_GAP);
+  assert.equal(
+    layoutA4.bySheetId.get('s3')?.originX,
+    1200 + ALL_SHEETS_MIN_GAP + 1680 + ALL_SHEETS_MIN_GAP
+  );
 
-  // Resize Sheet 1 to A1 (3360x2376) -> Sheets 2 and 3 MUST NOT move!
+  // Resize Sheet 1 to A1 (3360x2376) -> subsequent sheets shift sequentially with zero overlap
   const s1Large = makeSheet('s1', 1, 3360, 2376);
   const layoutA1 = computeAllSheetsLayout([s1Large, s2, s3]);
   assert.equal(layoutA1.bySheetId.get('s1')?.originX, 0);
-  assert.equal(layoutA1.bySheetId.get('s2')?.originX, layoutA4.bySheetId.get('s2')?.originX);
-  assert.equal(layoutA1.bySheetId.get('s3')?.originX, layoutA4.bySheetId.get('s3')?.originX);
+  assert.equal(layoutA1.bySheetId.get('s2')?.originX, 3360 + ALL_SHEETS_MIN_GAP);
+  assert.equal(
+    layoutA1.bySheetId.get('s3')?.originX,
+    3360 + ALL_SHEETS_MIN_GAP + 1680 + ALL_SHEETS_MIN_GAP
+  );
 
-  // Zero overlap between adjacent sheets
   for (let i = 0; i < layoutA1.slots.length - 1; i++) {
     const cur = layoutA1.slots[i];
     const next = layoutA1.slots[i + 1];
-    assert.ok(cur.originX + cur.width < next.originX);
+    assert.equal(next.originX, cur.originX + cur.width + ALL_SHEETS_MIN_GAP);
   }
 });
 
-test('computeAllSheetsLayout guards against huge custom sheet overlap while preserving slot pitch thereafter', () => {
-  const huge = makeSheet('s1', 1, 4500, 2400);
-  const s2 = makeSheet('s2', 2, 1680, 1188);
-  const s3 = makeSheet('s3', 3, 1200, 848);
-  const layout = computeAllSheetsLayout([huge, s2, s3]);
-  const slot1 = layout.bySheetId.get('s1')!;
-  const slot2 = layout.bySheetId.get('s2')!;
-  const slot3 = layout.bySheetId.get('s3')!;
-  assert.equal(slot1.originX, 0);
-  assert.ok(slot2.originX >= slot1.originX + slot1.width + 240);
-  assert.equal(slot3.originX, ALL_SHEETS_SLOT_STEP_X * 2);
+test('inserting a new sheet between Sheet 1 and Sheet 2 shifts old Sheet 2 and subsequent sheets sequentially', () => {
+  const s1 = makeSheet('s1', 1, 1200, 848);
+  const s2 = makeSheet('s2', 2, 1400, 920);
+  const s3 = makeSheet('s3', 3, 1680, 1188);
+  const inserted = makeSheet('s-new', 2, 1400, 920);
+
+  const before = computeAllSheetsLayout([s1, s2, s3]);
+  assert.equal(before.bySheetId.get('s2')?.originX, 1200 + ALL_SHEETS_MIN_GAP);
+
+  const after = computeAllSheetsLayout([s1, inserted, { ...s2, number: 3 }, { ...s3, number: 4 }]);
+  assert.equal(after.bySheetId.get('s1')?.originX, 0);
+  assert.equal(after.bySheetId.get('s-new')?.originX, 1200 + ALL_SHEETS_MIN_GAP);
+  assert.equal(
+    after.bySheetId.get('s2')?.originX,
+    1200 + ALL_SHEETS_MIN_GAP + 1400 + ALL_SHEETS_MIN_GAP
+  );
+  assert.equal(
+    after.bySheetId.get('s3')?.originX,
+    1200 + ALL_SHEETS_MIN_GAP + 1400 + ALL_SHEETS_MIN_GAP + 1400 + ALL_SHEETS_MIN_GAP
+  );
 });
 
 test('getSheetCanvasOrigin, hit-testing, and camera fit transform target the clicked sheet in all mode', () => {
   const s1 = makeSheet('s1', 1, 1680, 1188);
   const s2 = makeSheet('s2', 2, 1200, 848);
   const layout = computeAllSheetsLayout([s1, s2]);
+  const expectedS2OriginX = 1680 + ALL_SHEETS_MIN_GAP;
 
   assert.deepEqual(getSheetCanvasOrigin(layout, 's2', 'single'), { x: 0, y: 0 });
   const origin2 = getSheetCanvasOrigin(layout, 's2', 'all');
-  assert.deepEqual(origin2, { x: ALL_SHEETS_SLOT_STEP_X, y: 0 });
+  assert.deepEqual(origin2, { x: expectedS2OriginX, y: 0 });
 
   assert.equal(findSheetSlotAtCanvasPoint(layout, 400, 300)?.sheet.id, 's1');
-  assert.equal(findSheetSlotAtCanvasPoint(layout, ALL_SHEETS_SLOT_STEP_X + 300, 200)?.sheet.id, 's2');
-  assert.equal(findSheetSlotAtCanvasPoint(layout, ALL_SHEETS_SLOT_STEP_X - 60, 200), null);
+  assert.equal(findSheetSlotAtCanvasPoint(layout, expectedS2OriginX + 300, 200)?.sheet.id, 's2');
+  assert.equal(findSheetSlotAtCanvasPoint(layout, expectedS2OriginX - 40, 200), null);
 
   const fit2 = computeSheetViewportFitTransform(s2, origin2, 1280, 760);
   const centeredSheetLeft = origin2.x * fit2.zoom + fit2.pan.x;

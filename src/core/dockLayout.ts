@@ -433,16 +433,73 @@ export function computeViewportSheets(
   return result;
 }
 
+export function insertSheetInProject(
+  project: E3Project,
+  opts?: { afterSheetId?: string | null; sheetId?: string }
+): { nextProject: E3Project; newSheet: E3Sheet } {
+  const afterIdx = opts?.afterSheetId
+    ? project.sheets.findIndex((s) => s.id === opts.afterSheetId)
+    : -1;
+  const insertAt = afterIdx >= 0 ? afterIdx + 1 : project.sheets.length;
+  const newNum = insertAt + 1;
+  const firstStamp = project.sheets[0]?.titleBlock;
+  const templateSheet = afterIdx >= 0 ? project.sheets[afterIdx] : project.sheets[0];
+  const newSheet: E3Sheet = {
+    id: opts?.sheetId || `sheet-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    number: newNum,
+    name: `Доп. схема ${project.sheets.length + 1}`,
+    format: templateSheet?.format || 'A3',
+    width: templateSheet?.width || 1400,
+    height: templateSheet?.height || 920,
+    folder: templateSheet?.folder,
+    titleBlock: {
+      stampForm: 'form2a',
+      documentCode: firstStamp?.documentCode || project.projectCode,
+      projectTitle: firstStamp?.projectTitle || project.name,
+      organization: firstStamp?.organization || 'ООО «ПромВентАвтоматика»',
+      designer: firstStamp?.designer || project.author,
+      checker: firstStamp?.checker || '',
+      techControl: firstStamp?.techControl || '',
+      normControl: firstStamp?.normControl || '',
+      approver: firstStamp?.approver || '',
+      litera: firstStamp?.litera || 'Р',
+      mass: '—',
+      scale: 'б/м',
+      date: firstStamp?.date || '',
+      invOriginal: firstStamp?.invOriginal || '',
+      invDuplicate: firstStamp?.invDuplicate || '',
+      sheetTitle: `Лист ${newNum}. Принципиальная схема`,
+    },
+  };
+  const nextSheets = [
+    ...project.sheets.slice(0, insertAt),
+    newSheet,
+    ...project.sheets.slice(insertAt),
+  ].map((s, idx) => ({ ...s, number: idx + 1 }));
+
+  return {
+    newSheet: nextSheets[insertAt],
+    nextProject: normalizeProjectSheetRevisions({
+      ...project,
+      revision: project.revision + 1,
+      updatedAt: new Date().toISOString(),
+      sheets: nextSheets,
+    }),
+  };
+}
+
 export function duplicateSheetInProject(
   project: E3Project,
   sheetId: string
 ): { nextProject: E3Project; newSheetId: string } {
-  const srcSheet = project.sheets.find((s) => s.id === sheetId) || project.sheets[0];
+  const srcIndex = project.sheets.findIndex((s) => s.id === sheetId);
+  const srcSheet = srcIndex >= 0 ? project.sheets[srcIndex] : project.sheets[0];
   if (!srcSheet) {
     throw new Error('В проекте нет листов для дублирования.');
   }
 
-  const nextNum = project.sheets.length + 1;
+  const insertAt = srcIndex >= 0 ? srcIndex + 1 : project.sheets.length;
+  const nextNum = insertAt + 1;
   const nowIso = new Date().toISOString();
   const newSheetId = `sheet-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
   const newSheet: E3Sheet = {
@@ -509,13 +566,19 @@ export function duplicateSheetInProject(
       sheetId: newSheetId,
     }));
 
+  const nextSheets = [
+    ...project.sheets.slice(0, insertAt),
+    newSheet,
+    ...project.sheets.slice(insertAt),
+  ].map((s, idx) => ({ ...s, number: idx + 1 }));
+
   return {
     newSheetId,
     nextProject: normalizeProjectSheetRevisions({
       ...project,
       revision: project.revision + 1,
       updatedAt: nowIso,
-      sheets: [...project.sheets, newSheet],
+      sheets: nextSheets,
       devices: [...project.devices, ...clonedDevices],
       wires: [...project.wires, ...clonedWires],
       annotations: [...(project.annotations || []), ...clonedAnnotations],
@@ -567,13 +630,23 @@ export function ensureSheetTabOpen(
   sheetId: string,
   sheets: E3Sheet[]
 ): string[] {
-  if (!sheetId || !sheets.some((s) => s.id === sheetId)) {
+  const sheetIdx = sheets.findIndex((s) => s.id === sheetId);
+  if (!sheetId || sheetIdx < 0) {
     return openSheetIds;
   }
   if (openSheetIds.includes(sheetId)) {
     return openSheetIds;
   }
-  return [...openSheetIds, sheetId];
+  const orderMap = new Map(sheets.map((s, idx) => [s.id, idx]));
+  const insertPos = openSheetIds.findIndex((id) => (orderMap.get(id) ?? Infinity) > sheetIdx);
+  if (insertPos === -1) {
+    return [...openSheetIds, sheetId];
+  }
+  return [
+    ...openSheetIds.slice(0, insertPos),
+    sheetId,
+    ...openSheetIds.slice(insertPos),
+  ];
 }
 
 export function closeSheetTab(

@@ -155,6 +155,7 @@ interface SchematicCanvasProps {
   canNextSheet?: boolean;
   onCloseSheet?: (sheetId: string) => void;
   onAddSheet: () => void;
+  onInsertSheetAfter?: (afterSheetId: string) => void;
   canvasFocusActive?: boolean;
   onToggleCanvasFocus?: () => void;
   onSetTool?: (tool: CadTool) => void;
@@ -257,6 +258,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   canNextSheet,
   onCloseSheet,
   onAddSheet,
+  onInsertSheetAfter,
   canvasFocusActive = false,
   onToggleCanvasFocus,
   onSetTool,
@@ -338,6 +340,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         consoleOpen: focusConsoleOpen,
         showMinimap: isMinimapEnabled(project.visualSettings),
         railItemCount: (focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS).length,
+        railItemIds: focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS,
       }),
     [
       focusLayout,
@@ -2199,26 +2202,46 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     {project.sheets.map((ps) => {
                       const isCur = ps.id === sheet?.id;
                       return (
-                        <button
+                        <div
                           key={ps.id}
-                          type="button"
-                          onClick={() => {
-                            onSelectSheet(ps.id);
-                            setSheetPickerOpen(false);
-                          }}
-                          className={`w-full px-2.5 py-1 text-left flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
+                          className={`flex items-center gap-0.5 px-1 transition-colors ${
                             isCur
                               ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
                               : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
                           }`}
                         >
-                          <span className="truncate">
-                            {ps.number}. {ps.name}
-                          </span>
-                          <span className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                            {ps.folder ? `${ps.folder} · ` : ''}{ps.format}
-                          </span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectSheet(ps.id);
+                              setSheetPickerOpen(false);
+                            }}
+                            className="flex-1 min-w-0 px-1.5 py-1 text-left flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))]"
+                          >
+                            <span className="truncate">
+                              {ps.number}. {ps.name}
+                            </span>
+                            <span className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                              {ps.folder ? `${ps.folder} · ` : ''}{ps.format}
+                            </span>
+                          </button>
+                          {onInsertSheetAfter && (
+                            <button
+                              type="button"
+                              data-testid={`picker-insert-after-${ps.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onInsertSheetAfter(ps.id);
+                                setSheetPickerOpen(false);
+                              }}
+                              title={`Вставить новый лист после Л.${ps.number}`}
+                              aria-label={`Вставить новый лист после Л.${ps.number}`}
+                              className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-bg)] shrink-0 transition-colors"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -2306,7 +2329,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             <button
               type="button"
               data-testid="sheet-add-btn"
-              onClick={onAddSheet}
+              onClick={() => onAddSheet()}
               aria-label="Добавить новый лист схемы"
               className="inline-flex items-center gap-1 h-[calc(18px*var(--flux-ui-scale))] px-1.5 ml-1 rounded-[2px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap shrink-0 border border-transparent hover:border-[var(--flux-line)]"
             >
@@ -2541,7 +2564,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 <button
                   type="button"
                   data-testid="empty-add-sheet-btn"
-                  onClick={onAddSheet}
+                  onClick={() => onAddSheet()}
                   className="inline-flex items-center gap-1.5 h-7 px-3 rounded-lg bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -4657,26 +4680,46 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   {project.sheets.map((ps) => {
                     const isCur = ps.id === sheet?.id;
                     return (
-                      <button
+                      <div
                         key={ps.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectSheet(ps.id);
-                          setSheetPickerOpen(false);
-                        }}
-                        className={`w-full px-2.5 py-1.5 text-left flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
+                        className={`flex items-center gap-0.5 px-1 transition-colors ${
                           isCur
                             ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
                             : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
                         }`}
                       >
-                        <span className="truncate">
-                          Л.{ps.number}: {ps.name}
-                        </span>
-                        <span className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                          {ps.folder ? `${ps.folder} · ` : ''}{ps.format}
-                        </span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onSelectSheet(ps.id);
+                            setSheetPickerOpen(false);
+                          }}
+                          className="flex-1 min-w-0 px-1.5 py-1.5 text-left flex items-center justify-between gap-2 text-[length:calc(11px*var(--flux-ui-scale))]"
+                        >
+                          <span className="truncate">
+                            Л.{ps.number}: {ps.name}
+                          </span>
+                          <span className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                            {ps.folder ? `${ps.folder} · ` : ''}{ps.format}
+                          </span>
+                        </button>
+                        {onInsertSheetAfter && (
+                          <button
+                            type="button"
+                            data-testid={`picker-insert-after-${ps.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onInsertSheetAfter(ps.id);
+                              setSheetPickerOpen(false);
+                            }}
+                            title={`Вставить новый лист после Л.${ps.number}`}
+                            aria-label={`Вставить новый лист после Л.${ps.number}`}
+                            className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-bg)] shrink-0 transition-colors"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -4685,7 +4728,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             <button
               type="button"
               data-testid="sheet-add-btn"
-              onClick={onAddSheet}
+              onClick={() => onAddSheet()}
               title="Добавить новый лист схемы"
               aria-label="Добавить новый лист схемы"
               className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] shrink-0"
@@ -4759,10 +4802,18 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             data-testid="canvas-selection-bar"
             onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
-            style={uiMode === 'focus' ? { top: resolvedFocusLayout.selectionBarTop } : undefined}
+            style={
+              uiMode === 'focus'
+                ? {
+                    top: resolvedFocusLayout.selectionBarTop,
+                    left: resolvedFocusLayout.selectionBarCenterX,
+                    maxWidth: resolvedFocusLayout.selectionBarMaxWidth,
+                  }
+                : undefined
+            }
             className={`no-print absolute ${
-              uiMode === 'focus' ? 'transition-[top] duration-150' : 'top-2.5'
-            } left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1 h-[calc(32px*var(--flux-ui-scale))] px-2 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-popover shadow-lg text-[length:calc(11px*var(--flux-ui-scale))]`}
+              uiMode === 'focus' ? 'transition-[top,left] duration-150 overflow-x-auto no-scrollbar' : 'top-2.5 left-1/2'
+            } -translate-x-1/2 z-20 inline-flex items-center gap-1 h-[calc(32px*var(--flux-ui-scale))] px-2 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-popover shadow-lg text-[length:calc(11px*var(--flux-ui-scale))]`}
           >
             <span className="px-1.5 font-mono font-semibold text-[var(--flux-accent)] tabular-nums">
               Выбрано: {totalSelectedCount}

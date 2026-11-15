@@ -1534,7 +1534,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         key={catId}
                         type="button"
                         data-testid={`app-menu-cat-${catId}`}
-                        onMouseEnter={() => setMenuCategory(catId)}
+                        aria-pressed={active}
                         onClick={() => setMenuCategory(catId)}
                         className={`w-full px-2 min-h-8 h-auto py-1 rounded-[2px] flex items-center justify-between gap-2 text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium transition-colors ${
                           active

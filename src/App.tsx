@@ -64,6 +64,7 @@ import {
   duplicateSheetInProject,
   ensureSheetTabOpen,
   getPanelsByDock,
+  insertSheetInProject,
   loadDockLayout,
   movePanelDock,
   rescaleDockLayoutForUiScale,
@@ -571,6 +572,7 @@ export default function App() {
         consoleOpen: focusConsoleOpen,
         showMinimap: isMinimapEnabled(project.visualSettings),
         railItemCount: focusQuickAccessIds.length,
+        railItemIds: focusQuickAccessIds,
         explorerWidthOverride: focusPanelSizes.explorerWidth,
         inspectorWidthOverride: focusPanelSizes.inspectorWidth,
         consoleHeightOverride: focusPanelSizes.consoleHeight,
@@ -584,7 +586,7 @@ export default function App() {
       focusInspectorCollapsed,
       focusConsoleOpen,
       project.visualSettings.showMinimap,
-      focusQuickAccessIds.length,
+      focusQuickAccessIds,
       focusPanelSizes.explorerWidth,
       focusPanelSizes.inspectorWidth,
       focusPanelSizes.consoleHeight,
@@ -2659,52 +2661,34 @@ export default function App() {
     [commitProject, appendLog]
   );
 
-  const handleAddSheet = useCallback(() => {
-    const num = project.sheets.length + 1;
-    const firstStamp = project.sheets[0]?.titleBlock;
-    const newSheet: E3Sheet = {
-      id: `sheet-${Date.now()}`,
-      number: num,
-      name: `Доп. схема ${num}`,
-      format: 'A3',
-      width: 1400,
-      height: 920,
-      titleBlock: {
-        stampForm: 'form2a',
-        documentCode: firstStamp?.documentCode || project.projectCode,
-        projectTitle: firstStamp?.projectTitle || project.name,
-        organization: firstStamp?.organization || 'ООО «ПромВентАвтоматика»',
-        designer: firstStamp?.designer || project.author,
-        checker: firstStamp?.checker || '',
-        techControl: firstStamp?.techControl || '',
-        normControl: firstStamp?.normControl || '',
-        approver: firstStamp?.approver || '',
-        litera: firstStamp?.litera || 'Р',
-        mass: '—',
-        scale: 'б/м',
-        date: firstStamp?.date || '',
-        invOriginal: firstStamp?.invOriginal || '',
-        invDuplicate: firstStamp?.invDuplicate || '',
-        sheetTitle: `Лист ${num}. Принципиальная схема`,
-      },
-    };
-    commitProject((prev) => ({
-      ...prev,
-      revision: prev.revision + 1,
-      sheets: [...prev.sheets, newSheet],
-    }));
-    setOpenSheetIds((prev) => ensureSheetTabOpen(prev, newSheet.id, [...project.sheets, newSheet]));
-    setActiveSheetId(newSheet.id);
-    setViewportSheetIds((prev) =>
-      prev.map((sId, idx) => (idx === activeViewportIdxRef.current ? newSheet.id : sId))
-    );
-    if (canvasViewModeRef.current === 'all') {
-      window.requestAnimationFrame(() => {
-        fitSheetToViewportRef.current?.(newSheet, activeViewportIdxRef.current, true);
+  const handleAddSheet = useCallback(
+    (afterSheetId?: string) => {
+      const currentProject = docStateRef.current.present;
+      const targetAfterId = typeof afterSheetId === 'string' ? afterSheetId : undefined;
+      const { nextProject, newSheet } = insertSheetInProject(currentProject, {
+        afterSheetId: targetAfterId,
       });
-    }
-    appendLog('INFO', 'E3-CORE', `Добавлен новый лист: ${newSheet.name}.`);
-  }, [project.sheets, project.projectCode, project.name, project.author, commitProject, appendLog]);
+      commitProject(() => nextProject);
+      setOpenSheetIds((prev) => ensureSheetTabOpen(prev, newSheet.id, nextProject.sheets));
+      setActiveSheetId(newSheet.id);
+      setViewportSheetIds((prev) =>
+        prev.map((sId, idx) => (idx === activeViewportIdxRef.current ? newSheet.id : sId))
+      );
+      if (canvasViewModeRef.current === 'all') {
+        window.requestAnimationFrame(() => {
+          fitSheetToViewportRef.current?.(newSheet, activeViewportIdxRef.current, true);
+        });
+      }
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        targetAfterId
+          ? `Вставлен лист №${newSheet.number}: ${newSheet.name}.`
+          : `Добавлен новый лист: ${newSheet.name}.`
+      );
+    },
+    [commitProject, appendLog]
+  );
 
   const handleSaveCustomCatalogItem = useCallback(
     (item: CatalogItem) => {
@@ -3564,10 +3548,7 @@ export default function App() {
       const rect = el?.getBoundingClientRect();
       const vw = rect?.width && rect.width > 100 ? rect.width : 820;
       const vh = rect?.height && rect.height > 100 ? rect.height : 500;
-      const layout =
-        allSheetsLayoutRef.current.bySheetId.has(target.id)
-          ? allSheetsLayoutRef.current
-          : computeAllSheetsLayout(sheets);
+      const layout = computeAllSheetsLayout(sheets);
       const origin = getSheetCanvasOrigin(layout, target.id, canvasViewModeRef.current);
       const fitted = computeSheetViewportFitTransform(target, origin, vw, vh);
       animateCameraTo(vpIdx, fitted.zoom, fitted.pan, animate);
@@ -6242,6 +6223,7 @@ export default function App() {
           onRenameSheetFolder={handleRenameSheetFolder}
           onDeleteSheetFolder={handleDeleteSheetFolder}
           onMoveSheetToFolder={handleMoveSheetToFolder}
+          onInsertSheetAfter={handleAddSheet}
         />
       );
     }
@@ -7249,7 +7231,7 @@ export default function App() {
             );
           }
         }}
-        onAddSheet={handleAddSheet}
+        onAddSheet={() => handleAddSheet()}
         onExportDxf={handleExportDxf}
         onExportProjectPdf={handleExportProjectPdf}
         onOpenStampEditor={() => {
@@ -7512,7 +7494,8 @@ export default function App() {
                     canPrevSheet={Boolean(sheetPositionInfo.prevId)}
                     canNextSheet={Boolean(sheetPositionInfo.nextId)}
                     onCloseSheet={viewportLayout === 'single' ? handleCloseSheetTab : undefined}
-                    onAddSheet={handleAddSheet}
+                    onAddSheet={() => handleAddSheet()}
+                    onInsertSheetAfter={handleAddSheet}
                     canvasFocusActive={canvasFocusActive}
                     onToggleCanvasFocus={handleToggleCanvasFocus}
                     onSetTool={setTool}
