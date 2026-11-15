@@ -380,20 +380,20 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
 
   const handleChangeUiScale = useCallback((nextScale: UiScalePercent) => {
-    setUiScale((prevScale) => {
-      if (prevScale === nextScale) return prevScale;
-      applyUiScaleToDocument(nextScale);
-      setDockLayout((prevLayout) =>
-        rescaleDockLayoutForUiScale(
-          prevLayout,
-          prevScale,
-          nextScale,
-          typeof window !== 'undefined' ? window.innerWidth : 1440,
-          typeof window !== 'undefined' ? window.innerHeight : 900
-        )
-      );
-      return nextScale;
-    });
+    const prevScale = uiScaleRef.current;
+    if (prevScale === nextScale) return;
+    applyUiScaleToDocument(nextScale);
+    saveUiScale(nextScale);
+    setUiScale(nextScale);
+    setDockLayout((prevLayout) =>
+      rescaleDockLayoutForUiScale(
+        prevLayout,
+        prevScale,
+        nextScale,
+        typeof window !== 'undefined' ? window.innerWidth : 1440,
+        typeof window !== 'undefined' ? window.innerHeight : 900
+      )
+    );
   }, []);
 
   useEffect(() => {
@@ -460,6 +460,7 @@ export default function App() {
   const [terminalEditorOpen, setTerminalEditorOpen] = useState(false);
   const [autoNumberModalOpen, setAutoNumberModalOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandPaletteInitialQuery, setCommandPaletteInitialQuery] = useState('');
   const [healthOpen, setHealthOpen] = useState(false);
   const [perfSnapshot, setPerfSnapshot] = useState<PerfSnapshot>({
@@ -1516,6 +1517,145 @@ export default function App() {
     }
   }, [selectedDeviceIds, selectedDeviceId, project.devices, commitProject, appendLog]);
 
+  const handleMirrorSelected = useCallback(
+    (axis: 'x' | 'y') => {
+      const devIds = selectedDeviceIds.length > 0 ? selectedDeviceIds : selectedDeviceId ? [selectedDeviceId] : [];
+      if (devIds.length === 0) return;
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Нельзя отразить: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const idSet = new Set(devIds);
+      commitProject((prev) => {
+        const devices = prev.devices.map((d) => {
+          if (!idSet.has(d.id)) return d;
+          const flipPinDir = (dir: E3Device['pins'][number]['direction']) => {
+            if (axis === 'x') return dir === 'left' ? 'right' : dir === 'right' ? 'left' : dir;
+            return dir === 'top' ? 'bottom' : dir === 'bottom' ? 'top' : dir;
+          };
+          const pins = d.pins.map((p) => ({
+            ...p,
+            dx: axis === 'x' ? d.width - p.dx : p.dx,
+            dy: axis === 'y' ? d.height - p.dy : p.dy,
+            direction: flipPinDir(p.direction),
+          }));
+          const customSymbol = d.customSymbol
+            ? {
+                ...d.customSymbol,
+                shapes: d.customSymbol.shapes.map((sh) => {
+                  if (sh.kind === 'line') {
+                    return {
+                      ...sh,
+                      x1: axis === 'x' ? d.width - sh.x1 : sh.x1,
+                      y1: axis === 'y' ? d.height - sh.y1 : sh.y1,
+                      x2: axis === 'x' ? d.width - sh.x2 : sh.x2,
+                      y2: axis === 'y' ? d.height - sh.y2 : sh.y2,
+                    };
+                  }
+                  if (sh.kind === 'rect') {
+                    return {
+                      ...sh,
+                      x: axis === 'x' ? d.width - (sh.x + sh.width) : sh.x,
+                      y: axis === 'y' ? d.height - (sh.y + sh.height) : sh.y,
+                    };
+                  }
+                  if (sh.kind === 'circle') {
+                    return {
+                      ...sh,
+                      cx: axis === 'x' ? d.width - sh.cx : sh.cx,
+                      cy: axis === 'y' ? d.height - sh.cy : sh.cy,
+                    };
+                  }
+                  if (sh.kind === 'polyline') {
+                    return {
+                      ...sh,
+                      points: sh.points.map((pt) => ({
+                        x: axis === 'x' ? d.width - pt.x : pt.x,
+                        y: axis === 'y' ? d.height - pt.y : pt.y,
+                      })),
+                    };
+                  }
+                  if (sh.kind === 'text') {
+                    return {
+                      ...sh,
+                      x: axis === 'x' ? d.width - sh.x : sh.x,
+                      y: axis === 'y' ? d.height - sh.y : sh.y,
+                    };
+                  }
+                  return sh;
+                }),
+              }
+            : undefined;
+          return { ...d, pins, ...(customSymbol ? { customSymbol } : {}) };
+        });
+        let wires = prev.wires;
+        for (const id of idSet) {
+          const updated = devices.find((d) => d.id === id);
+          if (updated) wires = rerouteDeviceWires(updated, devices, wires, prev.sheets);
+        }
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices,
+          wires,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Зеркальное отражение по оси ${axis.toUpperCase()} (${devIds.length} изд.).`);
+    },
+    [selectedDeviceIds, selectedDeviceId, commitProject, appendLog]
+  );
+
+  const handleAlignSelected = useCallback(
+    (mode: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+      const devIds = selectedDeviceIds.length > 0 ? selectedDeviceIds : selectedDeviceId ? [selectedDeviceId] : [];
+      if (devIds.length < 2) return;
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Нельзя выровнять: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const idSet = new Set(devIds);
+      commitProject((prev) => {
+        const targets = prev.devices.filter((d) => idSet.has(d.id));
+        if (targets.length < 2) return prev;
+        const minX = Math.min(...targets.map((d) => d.x));
+        const maxX = Math.max(...targets.map((d) => d.x + d.width));
+        const midX = Math.round((minX + maxX) / 2);
+        const minY = Math.min(...targets.map((d) => d.y));
+        const maxY = Math.max(...targets.map((d) => d.y + d.height));
+        const midY = Math.round((minY + maxY) / 2);
+
+        const devices = prev.devices.map((d) => {
+          if (!idSet.has(d.id)) return d;
+          let nx = d.x;
+          let ny = d.y;
+          if (mode === 'left') nx = minX;
+          else if (mode === 'center') nx = Math.round(midX - d.width / 2);
+          else if (mode === 'right') nx = maxX - d.width;
+          else if (mode === 'top') ny = minY;
+          else if (mode === 'middle') ny = Math.round(midY - d.height / 2);
+          else if (mode === 'bottom') ny = maxY - d.height;
+          return nx === d.x && ny === d.y ? d : { ...d, x: nx, y: ny };
+        });
+
+        let wires = prev.wires;
+        for (const id of idSet) {
+          const updated = devices.find((d) => d.id === id);
+          if (updated) wires = rerouteDeviceWires(updated, devices, wires, prev.sheets);
+        }
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices,
+          wires,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Выравнивание элементов (${mode}): ${devIds.length} шт.`);
+    },
+    [selectedDeviceIds, selectedDeviceId, commitProject, appendLog]
+  );
+
   const handleDeleteSelected = useCallback(() => {
     const curLayers = docStateRef.current.present.layers;
     const devIds = new Set(selectedDeviceIds);
@@ -1836,16 +1976,74 @@ export default function App() {
         const dy = y - target.y;
         if (dx === 0 && dy === 0) return s;
 
-        const moveAnnSet = new Set(
-          selectedAnnotationIds.includes(annId) && selectedAnnotationIds.length > 1
-            ? selectedAnnotationIds
-            : [annId]
+        const isMultiGroup =
+          selectedAnnotationIds.includes(annId) &&
+          (selectedAnnotationIds.length > 1 || selectedDeviceIds.length > 0);
+        const moveAnnSet = new Set(isMultiGroup ? selectedAnnotationIds : [annId]);
+        const moveDevSet = new Set(
+          isMultiGroup && !isLayerLocked(prev.layers, 'devices') ? selectedDeviceIds : []
         );
+
+        const devices =
+          moveDevSet.size > 0
+            ? prev.devices.map((d) =>
+                moveDevSet.has(d.id) && d.sheetId === target.sheetId
+                  ? { ...d, x: d.x + dx, y: d.y + dy }
+                  : d
+              )
+            : prev.devices;
+        const actuallyMovedDevIds = new Set(
+          moveDevSet.size > 0
+            ? devices
+                .filter((d) => moveDevSet.has(d.id) && d.sheetId === target.sheetId)
+                .map((d) => d.id)
+            : []
+        );
+
+        let wires = prev.wires;
+        if (actuallyMovedDevIds.size > 0) {
+          const internalWireIds = new Set(
+            prev.wires
+              .filter((w) => actuallyMovedDevIds.has(w.fromDeviceId) && actuallyMovedDevIds.has(w.toDeviceId))
+              .map((w) => w.id)
+          );
+          const translatedWires = prev.wires.map((w) =>
+            internalWireIds.has(w.id)
+              ? { ...w, waypoints: w.waypoints.map((pt) => ({ x: pt.x + dx, y: pt.y + dy })) }
+              : w
+          );
+          const devMap = new Map(devices.map((d) => [d.id, d]));
+          const sheetObj = prev.sheets.find((sh) => sh.id === target.sheetId);
+          const sheetDrawableBounds = getSheetDrawableBounds(sheetObj);
+          const sheetObstacles = devices
+            .filter((d) => d.sheetId === target.sheetId && d.bindingState !== 'REMOVED_IN_FLUX')
+            .map((d) => getDeviceBounds(d));
+          wires = translatedWires.map((w) => {
+            if (w.sheetId !== target.sheetId || internalWireIds.has(w.id)) return w;
+            if (!actuallyMovedDevIds.has(w.fromDeviceId) && !actuallyMovedDevIds.has(w.toDeviceId)) return w;
+            const d1 = devMap.get(w.fromDeviceId);
+            const d2 = devMap.get(w.toDeviceId);
+            const p1 = d1?.pins.find((p) => p.id === w.fromPinId);
+            const p2 = d2?.pins.find((p) => p.id === w.toPinId);
+            if (!d1 || !d2 || !p1 || !p2) return w;
+            const abs1 = getAbsolutePinPos(d1, p1);
+            const abs2 = getAbsolutePinPos(d2, p2);
+            const obstacles = sheetObstacles.filter((o) => o.id !== d1.id && o.id !== d2.id);
+            return {
+              ...w,
+              manualRoute: false,
+              waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles),
+            };
+          });
+        }
+
         return {
           ...s,
           present: {
             ...prev,
             updatedAt: new Date().toISOString(),
+            devices,
+            wires,
             annotations: (prev.annotations || []).map((a) =>
               moveAnnSet.has(a.id) && a.sheetId === target.sheetId
                 ? { ...a, x: a.x + dx, y: a.y + dy }
@@ -1855,7 +2053,7 @@ export default function App() {
         };
       });
     },
-    [selectedAnnotationIds]
+    [selectedAnnotationIds, selectedDeviceIds]
   );
 
   const handleUpdateAnnotation = useCallback(
@@ -4721,6 +4919,20 @@ export default function App() {
             target.isContentEditable ||
             target.closest('.select-text, pre, [data-selectable="true"]'))
       );
+      if ((e.ctrlKey || e.metaKey) && key === 's') {
+        e.preventDefault();
+        if (symbolDraft.open) {
+          saveSymbolWorkspace();
+        } else {
+          handleSaveSessionNow();
+        }
+        return;
+      }
+      if ((e.key === 'F1' || (e.key === '?' && !e.ctrlKey && !e.metaKey)) && !inEditableText) {
+        e.preventDefault();
+        setShortcutsOpen((o) => !o);
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && key === 'k') {
         if (anyModalOpen) return;
         e.preventDefault();
@@ -4811,6 +5023,9 @@ export default function App() {
         setTool('wire');
       } else if (!e.ctrlKey && !e.metaKey && key === 'h') {
         setTool('pan');
+      } else if (!e.ctrlKey && !e.metaKey && key === 'z') {
+        e.preventDefault();
+        fitSheetToViewport(undefined, activeViewportIdx, true);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -5132,6 +5347,103 @@ export default function App() {
     dockLayout.panels.console.dock === 'bottom' &&
     getPanelsByDock(dockLayout, 'bottom').length === 1;
 
+  const handleQuickFixErc = useCallback(
+    (issue: ErcIssue) => {
+      if (issue.code === 'E3-DUP-DES' && issue.deviceId) {
+        commitProject((prev) => {
+          const target = prev.devices.find((d) => d.id === issue.deviceId);
+          if (!target) return prev;
+          const prefixMatch = /^([A-Za-zА-Яа-яЁё_-]*?[A-Za-zА-Яа-яЁё]+)/.exec(target.designation);
+          const prefix = prefixMatch ? prefixMatch[1] : '-K';
+          const nextDes = nextUniqueDesignation(prev.devices, prefix);
+          return {
+            ...prev,
+            revision: prev.revision + 1,
+            updatedAt: new Date().toISOString(),
+            devices: prev.devices.map((d) =>
+              d.id === target.id ? { ...d, designation: nextDes } : d
+            ),
+          };
+        });
+        appendLog('INFO', 'E3-CORE', `Автоперенумерация дубликата ОУО (${issue.message}).`);
+      } else if (issue.code === 'E3-POTENTIAL-CONFLICT' && issue.wireId) {
+        commitProject((prev) => {
+          const wire = prev.wires.find((w) => w.id === issue.wireId);
+          if (!wire) return prev;
+          const dFrom = prev.devices.find((d) => d.id === wire.fromDeviceId);
+          const pFrom = dFrom?.pins.find((p) => p.id === wire.fromPinId);
+          if (!pFrom) return prev;
+          return {
+            ...prev,
+            revision: prev.revision + 1,
+            updatedAt: new Date().toISOString(),
+            wires: prev.wires.map((w) =>
+              w.id === wire.id ? { ...w, signalType: pFrom.signalType } : w
+            ),
+          };
+        });
+        appendLog('INFO', 'E3-CORE', `Потенциал цепи согласован с источником (${issue.wireId}).`);
+      } else if (issue.code === 'E3-FLUX-REMOVED' && issue.deviceId) {
+        commitProject((prev) => ({
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices: prev.devices.filter((d) => d.id !== issue.deviceId),
+          wires: prev.wires.filter(
+            (w) => w.fromDeviceId !== issue.deviceId && w.toDeviceId !== issue.deviceId
+          ),
+        }));
+        appendLog('INFO', 'E3-CORE', `Удалена устаревшая позиция ${issue.deviceId}.`);
+      }
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleBatchUpdateDevices = useCallback(
+    (
+      deviceIds: string[],
+      patch: { manufacturer?: string; article?: string; rotation?: 0 | 90 | 180 | 270 }
+    ) => {
+      if (deviceIds.length === 0) return;
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Нельзя изменить: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const idSet = new Set(deviceIds);
+      commitProject((prev) => {
+        const devices = prev.devices.map((d) => {
+          if (!idSet.has(d.id)) return d;
+          return {
+            ...d,
+            ...(patch.manufacturer !== undefined && patch.manufacturer !== ''
+              ? { manufacturer: patch.manufacturer }
+              : {}),
+            ...(patch.article !== undefined && patch.article !== ''
+              ? { article: patch.article }
+              : {}),
+            ...(patch.rotation !== undefined ? { rotation: patch.rotation } : {}),
+          };
+        });
+        let wires = prev.wires;
+        if (patch.rotation !== undefined) {
+          for (const id of idSet) {
+            const updated = devices.find((d) => d.id === id);
+            if (updated) wires = rerouteDeviceWires(updated, devices, wires, prev.sheets);
+          }
+        }
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices,
+          wires,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Пакетно обновлено изделий: ${deviceIds.length}.`);
+    },
+    [commitProject, appendLog]
+  );
+
   const renderPanelContent = (panelId: PanelId) => {
     if (panelId === 'explorer') {
       return (
@@ -5244,6 +5556,7 @@ export default function App() {
           onUpdateOffPageMeta={handleUpdateOffPageMeta}
           onHighlightPotential={(seed) => setHighlightedPotentialSeed(seed)}
           onRestoreSheetRevision={handleRestoreSheetRevision}
+          onBatchUpdateDevices={handleBatchUpdateDevices}
           onReleaseSheetRevision={handleReleaseSheetRevision}
         />
       );
@@ -5288,6 +5601,7 @@ export default function App() {
         onExpandPanel={() => setConsoleCollapsed(false)}
         onToggleCollapse={() => setConsoleCollapsed((c) => !c)}
         onJumpToIssue={handleJumpToIssue}
+        onQuickFixIssue={handleQuickFixErc}
         onSelectDeviceByDesignation={(designation) => {
           const dev = project.devices.find((d) => d.designation === designation);
           if (!dev) return;
@@ -6043,6 +6357,13 @@ export default function App() {
                     onSelectWire={handleCanvasSelectWire}
                     onSelectAnnotation={handleCanvasSelectAnnotation}
                     onSetSelection={handleCanvasSetSelection}
+                    onRotateSelected={handleRotateSelected}
+                    onMirrorSelected={handleMirrorSelected}
+                    onAlignSelected={handleAlignSelected}
+                    onDuplicateSelected={handleDuplicateSelected}
+                    onPasteClipboard={handlePasteClipboard}
+                    hasClipboard={hasClipboard}
+                    onDeleteSelected={handleDeleteSelected}
                     onBeginDrag={handleBeginDrag}
                     onCommitDrag={handleCommitDrag}
                     highlightedTrace={highlightedTrace}
@@ -6323,6 +6644,53 @@ export default function App() {
         }}
       />
     </div>
+      {shortcutsOpen && (
+        <div
+          role="dialog"
+          aria-label="Справка по горячим клавишам"
+          onClick={() => setShortcutsOpen(false)}
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-xl border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden text-[var(--flux-text)]"
+          >
+            <div className="px-4 py-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between">
+              <span className="font-semibold text-[13px]">Горячие клавиши САПР E3ProMax</span>
+              <button
+                type="button"
+                onClick={() => setShortcutsOpen(false)}
+                className="px-2 py-0.5 rounded border border-[var(--flux-line)] text-[11px] hover:bg-[var(--flux-hover)]"
+              >
+                Esc
+              </button>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-x-6 gap-y-2 text-[11.5px]">
+              {[
+                ['V / Esc', 'Выбор (Select)'],
+                ['W / Пробел', 'Провод (Wire)'],
+                ['H / СКМ', 'Панорама (Pan)'],
+                ['/', 'Сменить изгиб провода'],
+                ['R', 'Повернуть на 90°'],
+                ['Z', 'Вписать лист в окно'],
+                ['Ctrl + S', 'Сохранить сессию'],
+                ['Ctrl + K', 'Палитра команд'],
+                ['Ctrl + Z / Y', 'Отменить / Повторить'],
+                ['Ctrl + C / V / D', 'Копия / Вставка / Дубль'],
+                ['F3 / F8 / F9', 'Привязка / Орто / Сетка'],
+                ['F1 или ?', 'Эта справка'],
+              ].map(([k, desc]) => (
+                <div key={k} className="flex items-center justify-between gap-2 border-b border-[var(--flux-line)]/60 pb-1">
+                  <span className="text-[var(--flux-text-muted)]">{desc}</span>
+                  <kbd className="px-1.5 py-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[10.5px] font-semibold">
+                    {k}
+                  </kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </MotionConfig>
   );
 }

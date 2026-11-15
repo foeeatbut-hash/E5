@@ -39,7 +39,7 @@ export function getAbsolutePinPos(device: E3Device, pin: E3Pin): { x: number; y:
   const ly = pin.dy - cy;
   const dirs: PinDirection[] = ['top', 'right', 'bottom', 'left'];
   const idx = dirs.indexOf(pin.direction);
-  const steps = (device.rotation / 90) % 4;
+  const steps = ((((device.rotation || 0) / 90) % 4) + 4) % 4;
   const rotatedDir = dirs[(idx + steps) % 4];
 
   let rx = lx;
@@ -2583,10 +2583,22 @@ export function generateE3ComScript(
   If ${varName} > 0 Then
     sheetsOk = sheetsOk + 1
     Call GetSheetBounds(Sheet, ${varName}, "${vbsEsc(s.format)}", shX1_${idx}, shY1_${idx}, shX2_${idx}, shY2_${idx})
-    Call DrawGostFrame(Graph, ${varName}, shX1_${idx}, shY1_${idx}, shX2_${idx}, shY2_${idx}, "${vbsEsc(s.titleBlock.documentCode)}", "${vbsEsc(s.name)}", "${vbsEsc(s.titleBlock.designer)}")
+    Call DrawGostFrame(Graph, ${varName}, shX1_${idx}, shY1_${idx}, shX2_${idx}, shY2_${idx}, "${vbsEsc(s.titleBlock.documentCode)}", "${vbsEsc(s.name)}", "${vbsEsc(s.titleBlock.designer)}", "${vbsEsc(s.titleBlock.organization || '')}", "${vbsEsc(s.titleBlock.checker || '')}", ${s.number}, ${sheets.length})
   End If`;
     })
     .join('\n');
+
+  const rotateLocalPt = (dev: E3Device, lx: number, ly: number): { x: number; y: number } => {
+    const cx = dev.width / 2;
+    const cy = dev.height / 2;
+    const dx = lx - cx;
+    const dy = ly - cy;
+    const steps = ((((dev.rotation || 0) / 90) % 4) + 4) % 4;
+    if (steps === 1) return { x: dev.x + cx - dy, y: dev.y + cy + dx };
+    if (steps === 2) return { x: dev.x + cx - dx, y: dev.y + cy - dy };
+    if (steps === 3) return { x: dev.x + cx + dy, y: dev.y + cy - dx };
+    return { x: dev.x + lx, y: dev.y + ly };
+  };
 
   const e3ColorIndexForHex = (hex?: string): number => {
     if (!hex) return 0;
@@ -2660,61 +2672,77 @@ export function generateE3ComScript(
         })
         .join('\n');
 
+      const bounds = getDeviceBounds(d);
       const customDrawLines: string[] = [];
       if (d.customSymbol && d.customSymbol.shapes.length > 0) {
-        const mx = (lx: number) => `MapX(shX1_${idx}, shX2_${idx}, ${d.x + lx}, ${sw})`;
-        const my = (ly: number) => `MapY(shY1_${idx}, shY2_${idx}, ${d.y + ly}, ${sh})`;
+        const mwX = (wx: number) => `MapX(shX1_${idx}, shX2_${idx}, ${Math.round(wx * 100) / 100}, ${sw})`;
+        const mwY = (wy: number) => `MapY(shY1_${idx}, shY2_${idx}, ${Math.round(wy * 100) / 100}, ${sh})`;
         for (const shape of d.customSymbol.shapes) {
           const col = e3ColorIndexForHex(shape.strokeColor);
           const lStyle = shape.kind !== 'text' ? e3StyleCode(shape.strokeStyle, shape.dashed) : 1;
           const lwMm = shape.kind !== 'text' && shape.strokeWidth ? Number((shape.strokeWidth * 0.2).toFixed(2)) : 0.35;
           if (shape.kind === 'line') {
+            const p1 = rotateLocalPt(d, shape.x1, shape.y1);
+            const p2 = rotateLocalPt(d, shape.x2, shape.y2);
             customDrawLines.push(
-              `    Call DrawCustomLine(Graph, ${shVar}, ${mx(shape.x1)}, ${my(shape.y1)}, ${mx(shape.x2)}, ${my(shape.y2)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+              `    Call DrawCustomLine(Graph, ${shVar}, ${mwX(p1.x)}, ${mwY(p1.y)}, ${mwX(p2.x)}, ${mwY(p2.y)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
             );
           } else if (shape.kind === 'rect') {
+            const c1 = rotateLocalPt(d, shape.x, shape.y);
+            const c2 = rotateLocalPt(d, shape.x + shape.width, shape.y + shape.height);
+            const rx1 = Math.min(c1.x, c2.x);
+            const rx2 = Math.max(c1.x, c2.x);
+            const ry1 = Math.min(c1.y, c2.y);
+            const ry2 = Math.max(c1.y, c2.y);
             customDrawLines.push(
-              `    Call DrawCustomRect(Graph, ${shVar}, ${mx(shape.x)}, ${my(shape.y + shape.height)}, ${mx(shape.x + shape.width)}, ${my(shape.y)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+              `    Call DrawCustomRect(Graph, ${shVar}, ${mwX(rx1)}, ${mwY(ry2)}, ${mwX(rx2)}, ${mwY(ry1)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
             );
           } else if (shape.kind === 'circle') {
+            const pc = rotateLocalPt(d, shape.cx, shape.cy);
+            const pr = rotateLocalPt(d, shape.cx + shape.r, shape.cy);
             customDrawLines.push(
-              `    Call DrawCustomCircle(Graph, ${shVar}, ${mx(shape.cx)}, ${my(shape.cy)}, Abs(${mx(shape.cx + shape.r)} - ${mx(shape.cx)}), ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+              `    Call DrawCustomCircle(Graph, ${shVar}, ${mwX(pc.x)}, ${mwY(pc.y)}, Sqr((${mwX(pr.x)} - ${mwX(pc.x)}) ^ 2 + (${mwY(pr.y)} - ${mwY(pc.y)}) ^ 2), ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
             );
           } else if (shape.kind === 'polyline' && (shape.points?.length || 0) >= 2) {
-            const pts = shape.closed ? [...shape.points, shape.points[0]] : shape.points;
+            const pts = (shape.closed ? [...shape.points, shape.points[0]] : shape.points).map((pt) =>
+              rotateLocalPt(d, pt.x, pt.y)
+            );
             for (let pi = 0; pi < pts.length - 1; pi++) {
               customDrawLines.push(
-                `    Call DrawCustomLine(Graph, ${shVar}, ${mx(pts[pi].x)}, ${my(pts[pi].y)}, ${mx(pts[pi + 1].x)}, ${my(pts[pi + 1].y)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+                `    Call DrawCustomLine(Graph, ${shVar}, ${mwX(pts[pi].x)}, ${mwY(pts[pi].y)}, ${mwX(pts[pi + 1].x)}, ${mwY(pts[pi + 1].y)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
               );
             }
           } else if (shape.kind === 'arc') {
-            const pts = sampleArcPoints(shape.cx, shape.cy, shape.r, shape.startAngle, shape.endAngle, 14);
+            const pts = sampleArcPoints(shape.cx, shape.cy, shape.r, shape.startAngle, shape.endAngle, 14).map((pt) =>
+              rotateLocalPt(d, pt.x, pt.y)
+            );
             for (let pi = 0; pi < pts.length - 1; pi++) {
               customDrawLines.push(
-                `    Call DrawCustomLine(Graph, ${shVar}, ${mx(pts[pi].x)}, ${my(pts[pi].y)}, ${mx(pts[pi + 1].x)}, ${my(pts[pi + 1].y)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
+                `    Call DrawCustomLine(Graph, ${shVar}, ${mwX(pts[pi].x)}, ${mwY(pts[pi].y)}, ${mwX(pts[pi + 1].x)}, ${mwY(pts[pi + 1].y)}, ${col}, ${lwMm}, ${lStyle}, gIds, gCnt)`
               );
             }
           } else if (shape.kind === 'text') {
             const txt = resolveDynamicSymbolText(shape, d);
+            const pt = rotateLocalPt(d, shape.x, shape.y);
             customDrawLines.push(
-              `    Call DrawCustomText(Graph, ${shVar}, ${mx(shape.x)}, ${my(shape.y)}, "${vbsEsc(txt)}", ${Number(((shape.fontSize || 10) * 0.26).toFixed(2))}, ${col}, gIds, gCnt)`
+              `    Call DrawCustomText(Graph, ${shVar}, ${mwX(pt.x)}, ${mwY(pt.y)}, "${vbsEsc(txt)}", ${Number(((shape.fontSize || 10) * 0.26).toFixed(2))}, ${col}, gIds, gCnt)`
             );
           }
         }
         customDrawLines.push(
-          `    Call DrawCustomText(Graph, ${shVar}, ${mx(0)}, ${my(-6)}, "${vbsEsc(d.designation)}", 3.5, 0, gIds, gCnt)`
+          `    Call DrawCustomText(Graph, ${shVar}, ${mwX(bounds.x)}, ${mwY(bounds.y - 6)}, "${vbsEsc(d.designation)}", 3.5, 0, gIds, gCnt)`
         );
       }
 
       const drawBodyBlock =
         customDrawLines.length > 0
           ? customDrawLines.join('\n')
-          : `    Call DrawDeviceBox(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${d.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y + d.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${d.x + d.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.article)}", "${vbsEsc(d.category)}", gIds, gCnt)`;
+          : `    Call DrawDeviceBox(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${bounds.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${bounds.y + bounds.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${bounds.x + bounds.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${bounds.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.article)}", "${vbsEsc(d.category)}", ${d.pins.filter((p) => p.direction === 'top').length || 1}, gIds, gCnt)`;
 
       const gCap = Math.max(128, customDrawLines.length + d.pins.length + 32);
 
       return `  ' --- Цельное изделие ${vbsEsc(d.designation)} (${vbsEsc(d.componentName)}) ---
-  curDevId = CreateFluxDevice(Prj, Dev, Sym, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${d.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y + d.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${d.x + d.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${d.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.componentName)}", "${vbsEsc(d.article)}", "${vbsEsc(d.e3BlockName)}", "${vbsEsc(d.manufacturer)}")
+  curDevId = CreateFluxDevice(Prj, Dev, Sym, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${bounds.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${bounds.y + bounds.height}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${bounds.x + bounds.width}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${bounds.y}, ${sh}), "${vbsEsc(d.designation)}", "${vbsEsc(d.componentName)}", "${vbsEsc(d.article)}", "${vbsEsc(d.e3BlockName)}", "${vbsEsc(d.manufacturer)}")
   If curDevId > 0 Then
     devDbOk = devDbOk + 1
 ${attrsOnDevLines}
@@ -2746,19 +2774,55 @@ ${attrsOnGrpLines}
       const shVar = idx > 0 ? `shId_${idx}` : '0';
       const colCode =
         w.signalType === 'power' ? 1 : w.signalType === 'neutral' ? 4 : w.signalType === 'pe' ? 3 : 6;
-      const segs: string[] = [];
-      for (let i = 0; i < w.waypoints.length - 1; i++) {
-        const p1 = w.waypoints[i];
-        const p2 = w.waypoints[i + 1];
-        segs.push(
-          `    If DrawWireSeg(Prj, Con, Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${p1.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${p1.y}, ${sh}), MapX(shX1_${idx}, shX2_${idx}, ${p2.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${p2.y}, ${sh}), ${colCode}) Then wiresOk = wiresOk + 1 Else wiresErr = wiresErr + 1`
-        );
+      const nPts = w.waypoints.length;
+      const ptAssign = w.waypoints
+        .map(
+          (pt, pi) =>
+            `    wXs(${pi + 1}) = MapX(shX1_${idx}, shX2_${idx}, ${pt.x}, ${sw}) : wYs(${pi + 1}) = MapY(shY1_${idx}, shY2_${idx}, ${pt.y}, ${sh})`
+        )
+        .join('\n');
+      const mid = w.waypoints[Math.floor(nPts / 2)];
+      return `  If ${shVar} > 0 Then
+    ReDim wXs(${nPts}) : ReDim wYs(${nPts})
+${ptAssign}
+    If DrawWirePolyline(Prj, Con, Graph, ${shVar}, ${nPts}, wXs, wYs, ${colCode}, "${vbsEsc(w.netName)}", "${vbsEsc(w.wireNumber || '')}", "${vbsEsc(w.crossSection || '')}") Then wiresOk = wiresOk + 1 Else wiresErr = wiresErr + 1
+    Call DrawWireLabel(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${mid.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${mid.y}, ${sh}), "${vbsEsc(w.wireNumber || w.netName)}", ${colCode})
+  End If`;
+    })
+    .join('\n');
+
+  const junctionLines = sheets
+    .flatMap((s, i) => {
+      const idx = i + 1;
+      const sw = s.width || 1400;
+      const sh = s.height || 920;
+      const dots = computeWireJunctionDots(wires.filter((w) => w.sheetId === s.id));
+      return dots.map((dot) => {
+        const colCode =
+          dot.signalType === 'power' ? 1 : dot.signalType === 'neutral' ? 4 : dot.signalType === 'pe' ? 3 : 6;
+        return `  If shId_${idx} > 0 Then Call DrawCustomCircle(Graph, shId_${idx}, MapX(shX1_${idx}, shX2_${idx}, ${dot.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${dot.y}, ${sh}), 0.85, ${colCode}, 0.5, 1, tmpGIds, tmpGCnt)`;
+      });
+    })
+    .join('\n');
+
+  const annLines = (project?.annotations || [])
+    .map((ann) => {
+      const shEntry = sheetMap.get(ann.sheetId);
+      const sw = shEntry?.sheet.width || 1400;
+      const sh = shEntry?.sheet.height || 920;
+      const idx = shEntry?.idx || (sheets.length > 0 ? 1 : 0);
+      const shVar = idx > 0 ? `shId_${idx}` : '0';
+      const col = e3ColorIndexForHex(ann.color) || 8;
+      const lStyle = e3StyleCode(ann.strokeStyle);
+      const mx = (wx: number) => `MapX(shX1_${idx}, shX2_${idx}, ${wx}, ${sw})`;
+      const my = (wy: number) => `MapY(shY1_${idx}, shY2_${idx}, ${wy}, ${sh})`;
+      if (ann.kind === 'rect') {
+        return `  If ${shVar} > 0 Then
+    Call DrawCustomRect(Graph, ${shVar}, ${mx(ann.x)}, ${my(ann.y + ann.height)}, ${mx(ann.x + ann.width)}, ${my(ann.y)}, ${col}, 0.25, ${lStyle}, tmpGIds, tmpGCnt)
+    Call DrawCustomText(Graph, ${shVar}, ${mx(ann.x + 6)}, ${my(ann.y + 14)}, "${vbsEsc(ann.text)}", 3.0, ${col}, tmpGIds, tmpGCnt)
+  End If`;
       }
-      const mid = w.waypoints[Math.floor(w.waypoints.length / 2)];
-      segs.push(
-        `    Call DrawWireLabel(Graph, ${shVar}, MapX(shX1_${idx}, shX2_${idx}, ${mid.x}, ${sw}), MapY(shY1_${idx}, shY2_${idx}, ${mid.y}, ${sh}), "${vbsEsc(w.wireNumber || w.netName)}", ${colCode})`
-      );
-      return `  If ${shVar} > 0 Then\n${segs.join('\n')}\n  End If`;
+      return `  If ${shVar} > 0 Then Call DrawCustomText(Graph, ${shVar}, ${mx(ann.x)}, ${my(ann.y + 12)}, "${vbsEsc(ann.text)}", ${Number(((ann.fontSize || 12) * 0.26).toFixed(2))}, ${col}, tmpGIds, tmpGCnt)`;
     })
     .join('\n');
 
@@ -2786,7 +2850,7 @@ ${attrsOnGrpLines}
 Option Explicit
 
 Dim App, Prj, Sheet, Dev, Sym, PinObj, Graph, Con, outFolder, fso, logFilePath, gImportFilePath
-Dim curDevId, curGrpId, gIds(), gCnt
+Dim curDevId, curGrpId, gIds(), gCnt, wXs(), wYs(), tmpGIds(16), tmpGCnt
 ${sheetDecl ? `Dim ${sheetDecl}` : ''}
 Set fso = CreateObject("Scripting.FileSystemObject")
 
@@ -2980,6 +3044,11 @@ ${devLines || "  ' (нет устройств)"}
   ' 3. Цепи и соединения (${wires.length})
 ${wireLines || "  ' (нет цепей)"}
 
+  ' 3.1. Узлы соединений и аннотации
+  tmpGCnt = 0
+${junctionLines || "  ' (нет узлов)"}
+${annLines || "  ' (нет аннотаций)"}
+
   ' 4. Кабельные связи (${cables.length})
 ${cableLines || "  ' (нет кабелей)"}
 
@@ -3084,9 +3153,9 @@ Sub GetSheetBounds(ByRef sh, ByVal shId, ByVal fmt, ByRef xMin, ByRef yMin, ByRe
   On Error GoTo 0
 End Sub
 
-Sub DrawGostFrame(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal docCode, ByVal shName, ByVal designer)
+Sub DrawGostFrame(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal docCode, ByVal shName, ByVal designer, ByVal orgName, ByVal checker, ByVal shNum, ByVal shTotal)
   On Error Resume Next
-  Dim gid, bx(5), by(5), tbLeft
+  Dim gid, bx(5), by(5), tbLeft, lx(2), ly(2)
   gid = g.CreateRectangle(shId, x1, y1, x2, y2)
   If gid <= 0 Or Err.Number <> 0 Then
     Err.Clear
@@ -3094,14 +3163,34 @@ Sub DrawGostFrame(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, B
     gid = g.CreateLine(shId, 5, bx, by)
   End If
   If gid > 0 Then
-    g.SetId gid
-    g.SetColour 0
-    g.SetLineWidth 0.5
+    g.SetId gid : g.SetColour 0 : g.SetLineWidth 0.5
   End If
   tbLeft = x2 - 185
   If tbLeft < x1 + 10 Then tbLeft = x1 + 10
-  gid = g.CreateRectangle(shId, tbLeft, y1, x2, y1 + 35)
-  gid = g.CreateText(shId, docCode & " - " & shName & " (" & designer & ")", tbLeft + 4, y1 + 14)
+  gid = g.CreateRectangle(shId, tbLeft, y1, x2, y1 + 55)
+  If gid > 0 Then g.SetId gid : g.SetColour 0 : g.SetLineWidth 0.45
+  lx(1) = tbLeft : ly(1) = y1 + 40 : lx(2) = x2 : ly(2) = y1 + 40
+  Call g.CreateLine(shId, 2, lx, ly)
+  lx(1) = tbLeft + 65 : ly(1) = y1 : lx(2) = tbLeft + 65 : ly(2) = y1 + 40
+  Call g.CreateLine(shId, 2, lx, ly)
+  lx(1) = x2 - 50 : ly(1) = y1 : lx(2) = x2 - 50 : ly(2) = y1 + 40
+  Call g.CreateLine(shId, 2, lx, ly)
+  gid = g.CreateText(shId, docCode, tbLeft + 68, y1 + 44)
+  If gid > 0 Then g.SetId gid : g.SetTextHeight 3.8
+  gid = g.CreateText(shId, shName, tbLeft + 68, y1 + 18)
+  If gid > 0 Then g.SetId gid : g.SetTextHeight 3.2
+  gid = g.CreateText(shId, "Разраб.: " & designer, tbLeft + 3, y1 + 26)
+  If gid > 0 Then g.SetId gid : g.SetTextHeight 2.4
+  If checker <> "" Then
+    gid = g.CreateText(shId, "Пров.: " & checker, tbLeft + 3, y1 + 14)
+    If gid > 0 Then g.SetId gid : g.SetTextHeight 2.4
+  End If
+  gid = g.CreateText(shId, "Лист " & shNum & " / Листов " & shTotal, x2 - 47, y1 + 16)
+  If gid > 0 Then g.SetId gid : g.SetTextHeight 2.6
+  If orgName <> "" Then
+    gid = g.CreateText(shId, orgName, x2 - 47, y1 + 4)
+    If gid > 0 Then g.SetId gid : g.SetTextHeight 2.6
+  End If
   Err.Clear
   On Error GoTo 0
 End Sub
@@ -3140,7 +3229,7 @@ Function FinalizeIntegralDeviceGroup(ByRef g, ByVal shId, ByRef gIds, ByVal gCnt
   On Error GoTo 0
 End Function
 
-Sub DrawDeviceBox(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal des, ByVal art, ByVal cat, ByRef gIds, ByRef gCnt)
+Sub DrawDeviceBox(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal des, ByVal art, ByVal cat, ByVal poles, ByRef gIds, ByRef gCnt)
   On Error Resume Next
   Dim gid, bx(5), by(5), cx, cy, r, fx(2), fy(2), w, h
   cx = (x1 + x2) / 2
@@ -3190,7 +3279,46 @@ Sub DrawDeviceBox(ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, B
       g.SetLineWidth 0.35
       Call AddGraphicId(gIds, gCnt, gid)
     End If
-    If cat = "damper" Or cat = "filter" Then
+    If cat = "breaker" Then
+      Dim pIdx, pStep, px
+      If poles < 1 Then poles = 1
+      pStep = w / (poles + 1)
+      For pIdx = 1 To poles
+        px = x1 + pIdx * pStep
+        fx(1) = px : fy(1) = y2 - 2 : fx(2) = px : fy(2) = cy + 3
+        gid = g.CreateLine(shId, 2, fx, fy)
+        If gid > 0 Then g.SetId gid : g.SetColour 0 : Call AddGraphicId(gIds, gCnt, gid)
+        fx(1) = px : fy(1) = cy + 3 : fx(2) = px - 2.5 : fy(2) = cy - 3
+        gid = g.CreateLine(shId, 2, fx, fy)
+        If gid > 0 Then g.SetId gid : g.SetColour 0 : Call AddGraphicId(gIds, gCnt, gid)
+        fx(1) = px : fy(1) = cy - 3.5 : fx(2) = px : fy(2) = y1 + 2
+        gid = g.CreateLine(shId, 2, fx, fy)
+        If gid > 0 Then g.SetId gid : g.SetColour 0 : Call AddGraphicId(gIds, gCnt, gid)
+      Next
+      If poles > 1 Then
+        fx(1) = x1 + pStep * 0.6 : fy(1) = cy : fx(2) = x2 - pStep * 0.6 : fy(2) = cy
+        gid = g.CreateLine(shId, 2, fx, fy)
+        If gid > 0 Then g.SetId gid : g.SetColour 8 : Call g.SetLineStyle(2) : Call AddGraphicId(gIds, gCnt, gid)
+      End If
+    ElseIf cat = "contactor" Or cat = "relay" Then
+      gid = g.CreateRectangle(shId, x1 + 3, cy - h * 0.2, x1 + w * 0.45, cy + h * 0.2)
+      If gid > 0 Then g.SetId gid : g.SetColour 0 : Call AddGraphicId(gIds, gCnt, gid)
+      fx(1) = x1 + w * 0.65 : fy(1) = y2 - 3 : fx(2) = x1 + w * 0.65 : fy(2) = y1 + 3
+      gid = g.CreateLine(shId, 2, fx, fy)
+      If gid > 0 Then g.SetId gid : g.SetColour 0 : Call AddGraphicId(gIds, gCnt, gid)
+    ElseIf cat = "terminal" Then
+      r = w * 0.26 : If h * 0.26 < r Then r = h * 0.26
+      If r < 2 Then r = 2
+      gid = g.CreateCircle(shId, cx, cy, r)
+      If gid > 0 Then g.SetId gid : g.SetColour 0 : Call AddGraphicId(gIds, gCnt, gid)
+      fx(1) = cx : fy(1) = y1 : fx(2) = cx : fy(2) = y2
+      gid = g.CreateLine(shId, 2, fx, fy)
+      If gid > 0 Then g.SetId gid : g.SetColour 0 : Call AddGraphicId(gIds, gCnt, gid)
+    ElseIf cat = "drive" Or cat = "plc" Or cat = "psu" Then
+      fx(1) = x1 + 2 : fy(1) = y2 - 5 : fx(2) = x2 - 2 : fy(2) = y2 - 5
+      gid = g.CreateLine(shId, 2, fx, fy)
+      If gid > 0 Then g.SetId gid : g.SetColour 8 : Call AddGraphicId(gIds, gCnt, gid)
+    ElseIf cat = "damper" Or cat = "filter" Then
       fx(1) = x1 : fy(1) = y1 : fx(2) = x2 : fy(2) = y2
       gid = g.CreateLine(shId, 2, fx, fy)
       If gid > 0 Then g.SetId gid : g.SetColour 3 : Call AddGraphicId(gIds, gCnt, gid)
@@ -3325,6 +3453,32 @@ Sub DrawPinTick(ByRef g, ByVal shId, ByVal px, ByVal py, ByVal dir, ByVal pName)
   cnt = 0
   Call DrawPinTickGrouped(g, shId, px, py, dir, pName, tmp, cnt)
 End Sub
+
+Function DrawWirePolyline(ByRef p, ByRef cn, ByRef g, ByVal shId, ByVal nPts, ByRef xs, ByRef ys, ByVal colIdx, ByVal netName, ByVal wireNum, ByVal crossSec)
+  On Error Resume Next
+  Dim cid, gid
+  DrawWirePolyline = False
+  Err.Clear
+  cid = cn.Create(shId, nPts, xs, ys)
+  If Err.Number = 0 And cid > 0 Then
+    cn.SetId cid
+    If netName <> "" Then Call cn.SetName(netName)
+    If wireNum <> "" Then Call cn.SetAttributeValue("Номер провода", wireNum)
+    If crossSec <> "" Then Call cn.SetAttributeValue("Сечение", crossSec)
+    DrawWirePolyline = True
+  Else
+    Err.Clear
+    gid = g.CreateLine(shId, nPts, xs, ys)
+    If gid > 0 Then
+      g.SetId gid
+      g.SetColour colIdx
+      g.SetLineWidth 0.35
+      DrawWirePolyline = True
+    End If
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Function
 
 Function DrawWireSeg(ByRef p, ByRef cn, ByRef g, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal colIdx)
   On Error Resume Next

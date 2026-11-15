@@ -383,3 +383,13 @@ textarea:focus-visible,
     display: none !important;
   }
 }
+
+@keyframes fluxPotentialFlow {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+.flux-potential-flow {
+  stroke-dasharray: 6 6;
+  animation: fluxPotentialFlow 0.75s linear infinite;
+}

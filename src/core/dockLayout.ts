@@ -62,7 +62,7 @@ export function createDefaultDockLayout(): DockLayoutState {
     },
     sizes: {
       left: 244,
-      right: 268,
+      right: 320,
       bottom: 184,
       top: 168,
     },
@@ -223,11 +223,19 @@ export function clampDockLayoutToViewport(
   let nextLeft = clampDockSize('left', state.sizes.left, safeW, safeH, safeScale);
   let nextRight = clampDockSize('right', state.sizes.right, safeW, safeH, safeScale);
 
-  // Proportional clamping on narrower viewports or large UI scales so neither left nor right clips
+  // Proportional clamping on narrower viewports or large UI scales so neither left nor right clips.
+  // Result is a fixed point: clamping an already clamped layout never shifts the docks again.
   if (leftActive && rightActive && nextLeft + nextRight > maxSideBudget) {
-    const ratio = maxSideBudget / (nextLeft + nextRight);
-    nextLeft = Math.max(190, Math.floor(nextLeft * ratio));
-    nextRight = Math.max(210, maxSideBudget - nextLeft);
+    const minSide = clampDockSize('left', 0, safeW, safeH, safeScale);
+    if (minSide * 2 >= maxSideBudget) {
+      nextLeft = minSide;
+      nextRight = minSide;
+    } else {
+      const ratio = maxSideBudget / (nextLeft + nextRight);
+      nextLeft = Math.max(minSide, Math.floor(nextLeft * ratio));
+      nextRight = Math.max(minSide, maxSideBudget - nextLeft);
+      if (nextLeft + nextRight > maxSideBudget) nextLeft = maxSideBudget - nextRight;
+    }
   } else if (leftActive && !rightActive && nextLeft > maxSideBudget) {
     nextLeft = Math.max(200, maxSideBudget);
   } else if (rightActive && !leftActive && nextRight > maxSideBudget) {

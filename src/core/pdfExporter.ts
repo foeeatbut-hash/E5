@@ -871,6 +871,9 @@ export function exportProjectToPdfBytes(project: E3Project, options: PdfExportOp
     baseName: string
   ) => {
     if (!font) {
+      if (usedMap.size > 0 && Array.from(usedMap.keys()).some((cp) => cp > 255)) {
+        throw new Error('Не удалось загрузить кириллический шрифт LiberationSans для PDF-экспорта.');
+      }
       addTextObj(type0Id, `<< /Type /Font /Subtype /Type1 /BaseFont /${baseName} /Encoding /WinAnsiEncoding >>`);
       return;
     }

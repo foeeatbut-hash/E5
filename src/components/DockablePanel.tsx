@@ -151,7 +151,7 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
         onToggleCollapse(panel.id);
       }}
       title="Перетащите заголовок для закрепления или дважды кликните для сворачивания"
-      className="group/header h-6 px-2 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-1.5 shrink-0 cursor-grab active:cursor-grabbing select-none"
+      className="group/header h-7 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1.5 shrink-0 cursor-grab active:cursor-grabbing select-none"
     >
       <div className="flex items-center gap-1.5 min-w-0">
         <GripHorizontal className="w-3 h-3 text-[var(--flux-text-muted)]/50 group-hover/header:text-[var(--flux-text-muted)] transition-colors shrink-0" />
