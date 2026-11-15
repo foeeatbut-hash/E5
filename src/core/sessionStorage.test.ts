@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createSeedProject } from './e3Seed.ts';
+import { E3FLUX_ENVELOPE_PREFIX } from './e3FluxFormat.ts';
 import {
   ACTIVE_SESSION_STORAGE_KEY,
+  RECENT_PROJECTS_STORAGE_KEY,
   hydrateProjectDefaults,
   loadActiveSession,
   loadRecentProjects,
+  saveActiveSession,
 } from './sessionStorage.ts';
 
 function createMemoryStorage(initial: Record<string, string> = {}) {
@@ -87,4 +91,30 @@ test('loadActiveSession safely ignores corrupted JSON or malformed sheets', () =
   assert.equal(loaded?.activeSheetId, 's1');
   assert.ok(loaded?.project.visualSettings.netColors.pe);
   assert.deepEqual(loadRecentProjects(corrupted), []);
+});
+
+test('saveActiveSession encrypts active session and recent projects in E3Flux format rather than plaintext JSON', () => {
+  const storage = createMemoryStorage();
+  const project = createSeedProject();
+  project.name = 'Закрытая схема ВРУ';
+
+  saveActiveSession(project, project.sheets[0].id, storage);
+
+  const rawSession = storage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+  const rawRecent = storage.getItem(RECENT_PROJECTS_STORAGE_KEY);
+  assert.ok(rawSession && rawSession.startsWith(E3FLUX_ENVELOPE_PREFIX));
+  assert.ok(rawRecent && rawRecent.startsWith(E3FLUX_ENVELOPE_PREFIX));
+  assert.equal(rawSession.includes('"devices"'), false);
+  assert.equal(rawSession.includes('Закрытая схема ВРУ'), false);
+  assert.equal(rawRecent.includes('"devices"'), false);
+
+  const restored = loadActiveSession(storage);
+  assert.ok(restored);
+  assert.equal(restored?.project.id, project.id);
+  assert.equal(restored?.project.name, 'Закрытая схема ВРУ');
+  assert.equal(restored?.project.devices.length, project.devices.length);
+
+  const recent = loadRecentProjects(storage);
+  assert.equal(recent.length, 1);
+  assert.equal(recent[0].project.name, 'Закрытая схема ВРУ');
 });

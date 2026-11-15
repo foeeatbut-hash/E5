@@ -153,32 +153,32 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
     >
       {/* Flush CAD Switcher: УГО (Графика) vs Изделия (БД) */}
       <div className="border-b border-[var(--flux-line)] flux-glass-surface">
-        <div className="grid grid-cols-2 h-6 border-b border-[var(--flux-line)] flux-glass-bar">
+        <div className="flex flex-wrap min-h-[calc(26px*var(--flux-ui-scale))] h-auto border-b border-[var(--flux-line)] flux-glass-bar gap-px bg-[var(--flux-line)]">
           <button
             type="button"
             data-testid="sym-lib-tab-symbols"
             onClick={() => setSubTab('symbols')}
-            className={`inline-flex items-center justify-center gap-1 h-full border-r border-[var(--flux-line)] text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap transition-colors ${
+            className={`flex-1 min-w-[calc(92px*var(--flux-ui-scale))] px-1.5 inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 text-[length:calc(11px*var(--flux-ui-scale))] overflow-hidden transition-colors ${
               subTab === 'symbols'
                 ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
-                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                : 'bg-[var(--flux-surface-alt)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
-            <Layers className={`w-3 h-3 ${subTab === 'symbols' ? 'text-[var(--flux-accent)]' : ''}`} />
-            <span>УГО ({symbolLibrary.length})</span>
+            <Layers className={`w-3 h-3 shrink-0 ${subTab === 'symbols' ? 'text-[var(--flux-accent)]' : ''}`} />
+            <span className="truncate">УГО ({symbolLibrary.length})</span>
           </button>
           <button
             type="button"
             data-testid="sym-lib-tab-components"
             onClick={() => setSubTab('components')}
-            className={`inline-flex items-center justify-center gap-1 h-full text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap transition-colors ${
+            className={`flex-1 min-w-[calc(92px*var(--flux-ui-scale))] px-1.5 inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 text-[length:calc(11px*var(--flux-ui-scale))] overflow-hidden transition-colors ${
               subTab === 'components'
                 ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
-                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                : 'bg-[var(--flux-surface-alt)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
-            <Database className={`w-3 h-3 ${subTab === 'components' ? 'text-[var(--flux-accent)]' : ''}`} />
-            <span>Изделия ({catalog.length})</span>
+            <Database className={`w-3 h-3 shrink-0 ${subTab === 'components' ? 'text-[var(--flux-accent)]' : ''}`} />
+            <span className="truncate">Изделия ({catalog.length})</span>
           </button>
         </div>
 
@@ -191,24 +191,24 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
 
       {/* Actions + Search + Filter */}
       <div className="p-1.5 border-b border-[var(--flux-line)] space-y-1">
-        <div className="grid grid-cols-2 gap-1">
+        <div className="flex flex-wrap gap-1">
           <button
             type="button"
             data-testid="sym-lib-new-symbol-btn"
             onClick={workspace.onCreateNewBlankSymbol}
-            className="inline-flex items-center justify-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="flex-1 min-w-[calc(94px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors"
           >
-            <Plus className="w-3 h-3 text-[var(--flux-accent)]" />
-            <span>Новое УГО</span>
+            <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+            <span className="truncate">Новое УГО</span>
           </button>
           <button
             type="button"
             data-testid="sym-lib-new-component-btn"
             onClick={workspace.onCreateNewComponentFromSymbol}
-            className="inline-flex items-center justify-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="flex-1 min-w-[calc(88px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors"
           >
-            <Plus className="w-3 h-3 text-[var(--flux-accent)]" />
-            <span>Изделие</span>
+            <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+            <span className="truncate">Изделие</span>
           </button>
         </div>
 
@@ -221,14 +221,14 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             spellCheck={false}
             aria-label={subTab === 'symbols' ? 'Поиск блока УГО' : 'Поиск изделия или артикула'}
             placeholder={subTab === 'symbols' ? 'Поиск блока УГО…' : 'Поиск изделия или артикула…'}
-            className="w-full h-[calc(22px*var(--flux-ui-scale))] pl-6 pr-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
+            className="w-full min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 pl-6 pr-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
           />
         </div>
 
         <div
           role="group"
           aria-label="Фильтр библиотеки УГО"
-          className="grid grid-cols-3 rounded-[2px] border border-[var(--flux-line)] divide-x divide-[var(--flux-line)] bg-[var(--flux-surface)] overflow-hidden"
+          className="flex flex-wrap rounded-[2px] border border-[var(--flux-line)] gap-px bg-[var(--flux-line)] overflow-hidden"
         >
           {(
             [
@@ -243,10 +243,10 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
                 key={k}
                 type="button"
                 onClick={() => setFilterKind(k)}
-                className={`h-[calc(21px*var(--flux-ui-scale))] text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
+                className={`flex-1 min-w-[calc(52px*var(--flux-ui-scale))] px-1 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 truncate text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
                   active
                     ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
-                    : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                    : 'bg-[var(--flux-surface)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                 }`}
               >
                 {lbl}

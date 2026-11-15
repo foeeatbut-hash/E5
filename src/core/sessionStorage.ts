@@ -1,4 +1,9 @@
 import { SHEET_DIMENSIONS } from './e3Catalog.ts';
+import {
+  isE3FluxEnvelope,
+  parseE3FluxEnvelope,
+  serializeE3FluxEnvelope,
+} from './e3FluxFormat.ts';
 import { DEFAULT_VISUAL_SETTINGS } from './e3Seed.ts';
 import { resolveCadLayers } from './cadLayers.ts';
 import type { E3Project, E3Sheet, SheetFormat } from './e3Types.ts';
@@ -145,7 +150,9 @@ export function loadActiveSession(
   try {
     const raw = store.getItem(ACTIVE_SESSION_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<ActiveSessionRecord>;
+    const parsed = isE3FluxEnvelope(raw)
+      ? parseE3FluxEnvelope<Partial<ActiveSessionRecord>>(raw).data
+      : (JSON.parse(raw) as Partial<ActiveSessionRecord>);
     if (!parsed || !isValidProjectShape(parsed.project)) return null;
     const normalized = hydrateProjectDefaults(parsed.project);
     const activeSheetId =
@@ -171,7 +178,9 @@ export function loadRecentProjects(
   try {
     const raw = store.getItem(RECENT_PROJECTS_STORAGE_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    const parsed = isE3FluxEnvelope(raw)
+      ? parseE3FluxEnvelope<unknown>(raw).data
+      : JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     const valid: RecentProjectEntry[] = [];
     for (const item of parsed) {
@@ -228,7 +237,12 @@ export function upsertRecentProject(
   if (store) {
     while (next.length > 0) {
       try {
-        store.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(next));
+        const encryptedList = serializeE3FluxEnvelope(
+          next,
+          { projectCode: project.projectCode, revision: project.revision },
+          { kind: 'recent-list' }
+        );
+        store.setItem(RECENT_PROJECTS_STORAGE_KEY, encryptedList);
         break;
       } catch {
         // QuotaExceededError: drop oldest recent snapshot
@@ -248,7 +262,8 @@ export function removeRecentProject(
   const next = loadRecentProjects(store).filter((e) => e.id !== projectId);
   if (store) {
     try {
-      store.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(next));
+      const encryptedList = serializeE3FluxEnvelope(next, {}, { kind: 'recent-list' });
+      store.setItem(RECENT_PROJECTS_STORAGE_KEY, encryptedList);
     } catch {
       // Ignore storage write failure
     }
@@ -273,7 +288,16 @@ export function saveActiveSession(
         activeSheetId: validSheetId,
         savedAt,
       };
-      store.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(payload));
+      const encryptedSession = serializeE3FluxEnvelope(
+        payload,
+        {
+          projectCode: project.projectCode,
+          revision: project.revision,
+          sheetsCount: project.sheets.length,
+        },
+        { kind: 'session' }
+      );
+      store.setItem(ACTIVE_SESSION_STORAGE_KEY, encryptedSession);
     } catch {
       // Ignore quota exceeded on active snapshot
     }

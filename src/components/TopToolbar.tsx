@@ -39,6 +39,7 @@ import {
   Layers,
   LayoutGrid,
   LayoutTemplate,
+  Lock,
   Magnet,
   Map as MapIcon,
   Maximize2,
@@ -87,7 +88,7 @@ import {
 } from '../core/cadLayers';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type { ViewportLayoutMode } from '../core/dockLayout';
-import type { FocusLayoutMetrics } from '../core/focusLayout';
+import { isMinimapEnabled, type FocusLayoutMetrics } from '../core/focusLayout';
 import type { RecentProjectEntry } from '../core/sessionStorage';
 import type {
   CadLayerId,
@@ -237,6 +238,7 @@ interface TopToolbarProps {
   recentProjects?: RecentProjectEntry[];
   lastSavedAt?: string | null;
   onSaveSessionNow?: () => void;
+  onSaveAsE3Flux?: () => void;
   onCreateNewProject?: () => void;
   onOpenRecentProject?: (projectId: string) => void;
   onRemoveRecentProject?: (projectId: string) => void;
@@ -628,6 +630,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   recentProjects = [],
   lastSavedAt = null,
   onSaveSessionNow,
+  onSaveAsE3Flux,
   onCreateNewProject,
   onOpenRecentProject,
   onRemoveRecentProject,
@@ -812,7 +815,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".e3s,.e3d,.xml,.json"
+        accept=".e3flux,.e3s,.e3d,.xml,.json"
         data-testid="toolbar-e3s-input"
         className="sr-only"
         onChange={(e) => {
@@ -883,8 +886,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 type="button"
                 data-testid="toolbar-save-btn"
                 onClick={onSaveSessionNow}
-                title="Сохранить сессию (Ctrl+S)"
-                aria-label="Сохранить сессию"
+                title="Сохранить сессию в E3Flux (Ctrl+S · Ctrl+Shift+S — скачать файл .e3flux)"
+                aria-label="Сохранить сессию в E3Flux"
                 className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] shrink-0"
               >
                 <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
@@ -1564,14 +1567,23 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                     {onSaveSessionNow && (
                       <AppMenuActionRow
                         icon={<Save className="w-4 h-4" />}
-                        title="Сохранить сессию проекта"
+                        title="Сохранить сессию проекта (E3Flux)"
                         subtitle={
                           lastSavedAt
-                            ? `Автосохранение активно · ${new Date(lastSavedAt).toLocaleTimeString('ru-RU')}`
-                            : 'Зафиксировать проект в браузере и списке недавних'
+                            ? `Зашифрованное автосохранение · ${new Date(lastSavedAt).toLocaleTimeString('ru-RU')}`
+                            : 'Зафиксировать зашифрованную сессию E3Flux в браузере'
                         }
                         testId="menu-save-session"
                         onClick={() => runMenuAction(onSaveSessionNow)}
+                      />
+                    )}
+                    {onSaveAsE3Flux && (
+                      <AppMenuActionRow
+                        icon={<Lock className="w-4 h-4" />}
+                        title="Сохранить как E3Flux (.e3flux)"
+                        subtitle="Основной зашифрованный формат программы (Ctrl+Shift+S)"
+                        testId="menu-save-as-e3flux"
+                        onClick={() => runMenuAction(onSaveAsE3Flux)}
                       />
                     )}
                     {onCreateNewProject && (
@@ -1585,8 +1597,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                     )}
                     <AppMenuActionRow
                       icon={<Upload className="w-4 h-4" />}
-                      title="Открыть проект E3 (.e3s / .e3d / XML / JSON)"
-                      subtitle="Загрузка схемы из файла на компьютере"
+                      title="Открыть проект (.e3flux / .e3s / .e3d / XML / JSON)"
+                      subtitle="Загрузка зашифрованного проекта E3Flux или модели E3 с диска"
                       testId="menu-open-e3s"
                       onClick={() => runMenuAction(() => fileInputRef.current?.click())}
                     />
@@ -1728,6 +1740,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       onClick={() => runMenuAction(onDownloadCablesCsv)}
                     />
                     <div className="my-1.5 border-t border-[var(--flux-line)]" />
+                    {onSaveAsE3Flux && (
+                      <AppMenuActionRow
+                        icon={<Lock className="w-4 h-4" />}
+                        title="Сохранить как E3Flux (.e3flux — по умолчанию)"
+                        subtitle="Зашифрованный формат проекта с контролем целостности"
+                        testId="menu-export-e3flux"
+                        onClick={() => runMenuAction(onSaveAsE3Flux)}
+                      />
+                    )}
                     <AppMenuActionRow
                       icon={<Download className="w-4 h-4" />}
                       title="Сохранить контейнер E³.series (.e3s OLE2)"
@@ -1950,6 +1971,30 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             </div>
 
             <div className="py-1 space-y-0.5">
+              {onSaveAsE3Flux && (
+                <>
+                  <div className="px-3 py-0.5 text-[length:calc(10px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-accent)]">
+                    Формат программы (по умолчанию)
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="export-opt-e3flux"
+                    onClick={() => runMenuAction(onSaveAsE3Flux)}
+                    className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left bg-[var(--flux-accent-soft)]/50 hover:bg-[var(--flux-hover)] transition-colors"
+                  >
+                    <span className="inline-flex items-center gap-2 min-w-0">
+                      <Lock className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                      <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
+                        Сохранить как E3Flux
+                      </span>
+                    </span>
+                    <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-accent)] font-semibold shrink-0">
+                      .e3flux
+                    </span>
+                  </button>
+                  <div className="my-1 border-t border-[var(--flux-line)]" />
+                </>
+              )}
               <div className="px-3 py-0.5 text-[length:calc(10px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
                 E³.series
               </div>
@@ -2892,7 +2937,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             icon={<MapIcon className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
                             label="Мини-карта"
                             title="Показать/скрыть мини-карту листа"
-                            active={vs.showMinimap !== false}
+                            active={isMinimapEnabled(vs)}
                             testId="toolbar-minimap-btn"
                             onClick={onToggleMinimap}
                           />

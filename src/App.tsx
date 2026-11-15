@@ -78,13 +78,14 @@ import {
   type UiScalePercent,
 } from './core/uiScale';
 import {
+  DEFAULT_UI_MODE,
   applyUiModeToDocument,
   loadUiMode,
   saveUiMode,
   UI_MODE_OPTIONS,
   type UiWorkspaceMode,
 } from './core/uiMode';
-import { computeFocusLayoutMetrics } from './core/focusLayout';
+import { computeFocusLayoutMetrics, isMinimapEnabled } from './core/focusLayout';
 import {
   addQuickAccessAction,
   type FocusQuickActionId,
@@ -250,6 +251,10 @@ import {
   CABLE_TABLE_TOTAL_WIDTH,
   buildGostTableRenderModel,
 } from './core/gostTables';
+import {
+  buildE3FluxFilename,
+  serializeE3FluxProject,
+} from './core/e3FluxFormat';
 import {
   hydrateProjectDefaults,
   loadActiveSession,
@@ -550,7 +555,7 @@ export default function App() {
         explorerOpen: focusExplorerOpen,
         inspectorCollapsed: focusInspectorCollapsed,
         consoleOpen: focusConsoleOpen,
-        showMinimap: project.visualSettings.showMinimap !== false,
+        showMinimap: isMinimapEnabled(project.visualSettings),
         railItemCount: focusQuickAccessIds.length,
         explorerWidthOverride: focusPanelSizes.explorerWidth,
         inspectorWidthOverride: focusPanelSizes.inspectorWidth,
@@ -829,7 +834,7 @@ export default function App() {
     if (typeof document !== 'undefined' && document.fullscreenElement) {
       document.exitFullscreen?.().catch(() => {});
     }
-    const targetMode = prevSnap?.uiMode || 'classic';
+    const targetMode = prevSnap?.uiMode || DEFAULT_UI_MODE;
     applyUiModeToDocument(targetMode);
     saveUiMode(targetMode);
     setUiMode(targetMode);
@@ -4840,7 +4845,7 @@ export default function App() {
 
       appendLog(
         'SYNC',
-        sourceKind === 'e3s-com-native' ? 'E3-COM' : 'E3-XML',
+        sourceKind === 'e3flux' ? 'E3FLUX' : sourceKind === 'e3s-com-native' ? 'E3-COM' : 'E3-XML',
         `Импортирован файл ${filename} (${sourceKind}): листов=${importedProj.sheets.length}, изд.=${importedProj.devices.length}, цепей=${importedProj.wires.length}, потоки [${discoveredStreams.join(', ')}].`,
         durationMs,
         comLog || undefined
@@ -4848,6 +4853,63 @@ export default function App() {
     },
     [project.id, commitProject, fitSheetToViewport, appendLog]
   );
+
+  const handleSaveAsE3Flux = useCallback(async () => {
+    const t0 = performance.now();
+    const curProject = docStateRef.current.present;
+    const bytes = serializeE3FluxProject(curProject);
+    const filename = buildE3FluxFilename(curProject);
+
+    const pickerWindow = window as unknown as {
+      showSaveFilePicker?: (opts: {
+        suggestedName?: string;
+        types?: Array<{ description: string; accept: Record<string, string[]> }>;
+      }) => Promise<{
+        createWritable: () => Promise<{ write: (data: BlobPart) => Promise<void>; close: () => Promise<void> }>;
+      }>;
+    };
+
+    let savedViaPicker = false;
+    if (typeof pickerWindow.showSaveFilePicker === 'function') {
+      try {
+        const handle = await pickerWindow.showSaveFilePicker({
+          suggestedName: filename,
+          types: [
+            {
+              description: 'Зашифрованный проект E3Flux (.e3flux)',
+              accept: { 'application/x-e3flux': ['.e3flux'] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        const copy = new Uint8Array(bytes.length);
+        copy.set(bytes);
+        await writable.write(new Blob([copy.buffer], { type: 'application/x-e3flux' }));
+        await writable.close();
+        savedViaPicker = true;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return;
+        }
+        // Fallback to direct <a download> when showSaveFilePicker is restricted (e.g. iframe)
+      }
+    }
+
+    if (!savedViaPicker) {
+      downloadBytes(filename, bytes, 'application/x-e3flux');
+    }
+
+    const res = saveActiveSession(curProject, activeSheetIdRef.current);
+    setLastSavedAt(res.savedAt);
+    setRecentProjects(res.recent);
+    const durationMs = Math.round((performance.now() - t0) * 100) / 100;
+    appendLog(
+      'INFO',
+      'E3FLUX',
+      `Проект сохранён в зашифрованном формате E3Flux: ${filename} (${bytes.length} байт).`,
+      durationMs
+    );
+  }, [appendLog]);
 
   const handleExportFluxBridge = async () => {
     const res = await ecadAsync.exportFluxBundle(project);
@@ -5150,7 +5212,7 @@ export default function App() {
         smartGuides: project.visualSettings.smartGuides !== false,
         showGrid: project.visualSettings.showGrid,
         showCrosshair: project.visualSettings.showCrosshair !== false,
-        showMinimap: project.visualSettings.showMinimap !== false,
+        showMinimap: isMinimapEnabled(project.visualSettings),
       }),
     [
       selectedDeviceIds.length,
@@ -5247,7 +5309,7 @@ export default function App() {
           break;
         }
         case 'toggle-minimap': {
-          const nextMap = !(project.visualSettings.showMinimap !== false);
+          const nextMap = !isMinimapEnabled(project.visualSettings);
           handleApplyVisualSettings({
             ...project.visualSettings,
             showMinimap: nextMap,
@@ -5494,6 +5556,10 @@ export default function App() {
       );
       if ((e.ctrlKey || e.metaKey) && key === 's') {
         e.preventDefault();
+        if (e.shiftKey && !symbolDraft.open) {
+          void handleSaveAsE3Flux();
+          return;
+        }
         if (symbolDraft.open) {
           saveSymbolWorkspace();
         } else {
@@ -6637,7 +6703,7 @@ export default function App() {
 
   const handleToggleMinimap = useCallback(() => {
     const vs = docStateRef.current.present.visualSettings;
-    const next = !(vs.showMinimap !== false);
+    const next = !isMinimapEnabled(vs);
     handleApplyVisualSettings({ ...vs, showMinimap: next });
     appendLog('INFO', 'E3-CORE', `Мини-карта листа: ${next ? 'показана' : 'скрыта'}.`);
   }, [handleApplyVisualSettings, appendLog]);
@@ -7156,6 +7222,9 @@ export default function App() {
         recentProjects={recentProjects}
         lastSavedAt={lastSavedAt}
         onSaveSessionNow={handleSaveSessionNow}
+        onSaveAsE3Flux={() => {
+          void handleSaveAsE3Flux();
+        }}
         onCreateNewProject={handleCreateNewProject}
         onOpenRecentProject={handleOpenRecentProject}
         onRemoveRecentProject={handleRemoveRecentProject}

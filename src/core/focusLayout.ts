@@ -1,5 +1,13 @@
 import { getScaledChromeMetrics, normalizeUiScalePercent, type UiScalePercent } from './uiScale';
 
+export function isMinimapEnabled(
+  value: boolean | { showMinimap?: boolean } | null | undefined
+): boolean {
+  if (typeof value === 'boolean') return value === true;
+  if (value && typeof value === 'object') return value.showMinimap === true;
+  return false;
+}
+
 export interface FocusLayoutInput {
   viewportWidth: number;
   viewportHeight: number;
@@ -162,7 +170,7 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
   const inspectorBottom = input.consoleOpen ? aboveConsoleBottom : bottomDockClearance;
   const inspectorMaxHeight = Math.max(180, vh - inspectorTop - inspectorBottom);
 
-  const minimapEnabled = input.showMinimap !== false;
+  const minimapEnabled = isMinimapEnabled(input.showMinimap);
   const minimapBottom = input.consoleOpen ? aboveConsoleBottom : outerPad;
   const minimapLeft = input.consoleOpen
     ? input.explorerOpen

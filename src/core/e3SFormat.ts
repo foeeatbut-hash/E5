@@ -1,7 +1,14 @@
 import JSZip from 'jszip';
 import { E3_CATALOG } from './e3Catalog.ts';
 import { exportToFluxBridge, parseE3Xml, parseVisualSettings, serializeE3Xml } from './e3Engine.ts';
+import {
+  isE3FluxBytes,
+  isE3FluxEnvelope,
+  parseE3FluxEnvelope,
+  parseE3FluxProjectBytes,
+} from './e3FluxFormat.ts';
 import { createSeedProject } from './e3Seed.ts';
+import { hydrateProjectDefaults } from './sessionStorage.ts';
 import type { E3Device, E3Project } from './e3Types.ts';
 
 const OLE2_MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
@@ -18,7 +25,7 @@ export interface Ole2StreamInfo {
 
 export interface E3sParseResult {
   project: E3Project;
-  sourceKind: 'e3s-ole2-lossless' | 'e3s-ole2-native' | 'e3s-zip' | 'e3s-xml' | 'flux-json';
+  sourceKind: 'e3flux' | 'e3s-ole2-lossless' | 'e3s-ole2-native' | 'e3s-zip' | 'e3s-xml' | 'flux-json';
   discoveredStreams: string[];
 }
 
@@ -538,6 +545,14 @@ export async function parseE3sInput(
 ): Promise<E3sParseResult> {
   if (typeof input === 'string') {
     const trimmed = input.replace(/^\uFEFF/, '').trim();
+    if (isE3FluxEnvelope(trimmed)) {
+      const decoded = parseE3FluxEnvelope<E3Project>(trimmed);
+      return {
+        project: hydrateProjectDefaults(decoded.data),
+        sourceKind: 'e3flux',
+        discoveredStreams: ['E3FLUX:v1 (envelope)', decoded.metadata.cipher],
+      };
+    }
     if (trimmed.startsWith('<')) {
       return {
         project: parseE3Xml(trimmed),
@@ -555,10 +570,27 @@ export async function parseE3sInput(
         discoveredStreams: ['FluxBridge.json'],
       };
     }
-    throw new Error('Ожидается файл .e3s (OLE2 / ZIP / XML) или Flux Bridge JSON.');
+    if (parsed && typeof parsed === 'object' && typeof parsed.id === 'string' && Array.isArray(parsed.sheets)) {
+      return {
+        project: hydrateProjectDefaults(parsed as Partial<E3Project>),
+        sourceKind: 'flux-json',
+        discoveredStreams: ['E3Project.json'],
+      };
+    }
+    throw new Error('Ожидается файл .e3flux, .e3s (OLE2 / ZIP / XML) или Flux Bridge JSON.');
   }
 
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+
+  // 0. Native Encrypted E3Flux Container (.e3flux)
+  if (isE3FluxBytes(bytes)) {
+    const decoded = parseE3FluxProjectBytes(bytes);
+    return {
+      project: hydrateProjectDefaults(decoded.data),
+      sourceKind: 'e3flux',
+      discoveredStreams: ['E3FLUX:v1', decoded.metadata.cipher],
+    };
+  }
 
   // 1. OLE2 Compound File Binary (.e3s)
   if (isOle2Buffer(bytes)) {

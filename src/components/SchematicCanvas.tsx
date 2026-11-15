@@ -94,7 +94,7 @@ import type {
   PinDirection,
 } from '../core/e3Types';
 import type { ViewportLayoutMode } from '../core/dockLayout';
-import { computeFocusLayoutMetrics, type FocusLayoutMetrics } from '../core/focusLayout';
+import { computeFocusLayoutMetrics, isMinimapEnabled, type FocusLayoutMetrics } from '../core/focusLayout';
 import {
   DEFAULT_FOCUS_QUICK_ACCESS_IDS,
   type FocusQuickActionId,
@@ -337,7 +337,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         explorerOpen: focusExplorerOpen,
         inspectorCollapsed: false,
         consoleOpen: focusConsoleOpen,
-        showMinimap: project.visualSettings.showMinimap !== false,
+        showMinimap: isMinimapEnabled(project.visualSettings),
         railItemCount: (focusQuickAccessIds ?? DEFAULT_FOCUS_QUICK_ACCESS_IDS).length,
       }),
     [
@@ -4686,7 +4686,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
           !isMultiViewport &&
           sheet &&
           !inPlaceEdit &&
-          vs.showMinimap !== false &&
+          isMinimapEnabled(vs) &&
           (uiMode !== 'focus' || resolvedFocusLayout.showMinimap) && (
           <div
             data-testid="canvas-minimap"
@@ -4848,7 +4848,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               case 'toggle_crossrefs': return vs.showCrossRefs;
               case 'toggle_frame': return vs.showGostFrame;
               case 'toggle_bridges': return vs.wireCrossingBridge !== false;
-              case 'toggle_minimap': return vs.showMinimap !== false;
+              case 'toggle_minimap': return isMinimapEnabled(vs);
               case 'viewport_single': return viewportLayout === 'single';
               case 'viewport_two': return viewportLayout === 'two';
               case 'viewport_three': return viewportLayout === 'three';

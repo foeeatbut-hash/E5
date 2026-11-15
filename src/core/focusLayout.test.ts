@@ -1,6 +1,36 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { computeFocusLayoutMetrics } from './focusLayout.ts';
+import { computeFocusLayoutMetrics, isMinimapEnabled } from './focusLayout.ts';
+import { DEFAULT_VISUAL_SETTINGS, createSeedProject } from './e3Seed.ts';
+import { parseE3Xml, serializeE3Xml } from './e3Engine.ts';
+import { hydrateProjectDefaults } from './sessionStorage.ts';
+
+test('minimap is disabled by default in seed, legacy hydrated projects, and computeFocusLayoutMetrics', () => {
+  assert.equal(DEFAULT_VISUAL_SETTINGS.showMinimap, false);
+  assert.equal(createSeedProject().visualSettings.showMinimap, false);
+  assert.equal(isMinimapEnabled(undefined), false);
+  assert.equal(isMinimapEnabled(null), false);
+  assert.equal(isMinimapEnabled({}), false);
+  assert.equal(isMinimapEnabled({ showMinimap: false }), false);
+  assert.equal(isMinimapEnabled({ showMinimap: true }), true);
+
+  // Legacy project JSON lacking showMinimap must open with minimap disabled
+  const legacyHydrated = hydrateProjectDefaults({
+    id: 'legacy-proj',
+    name: 'Legacy',
+    visualSettings: { theme: 'light', gridSize: 20 } as unknown as typeof DEFAULT_VISUAL_SETTINGS,
+    sheets: [],
+  });
+  assert.equal(isMinimapEnabled(legacyHydrated.visualSettings), false);
+
+  // XML round-trip defaults to false when omitted and preserves explicit true
+  const seed = createSeedProject();
+  const xmlDefault = serializeE3Xml(seed);
+  assert.equal(isMinimapEnabled(parseE3Xml(xmlDefault).visualSettings), false);
+  seed.visualSettings.showMinimap = true;
+  const xmlWithMap = serializeE3Xml(seed);
+  assert.equal(isMinimapEnabled(parseE3Xml(xmlWithMap).visualSettings), true);
+});
 
 test('computeFocusLayoutMetrics maintains strict non-overlapping clearances in default Focus state', () => {
   const m = computeFocusLayoutMetrics({
@@ -23,9 +53,7 @@ test('computeFocusLayoutMetrics maintains strict non-overlapping clearances in d
   assert.equal(m.inspectorBottom, m.bottomDockClearance);
   assert.ok(m.inspectorWidth >= 300);
   assert.ok(m.sheetTabsMaxWidth >= 460);
-  assert.equal(m.minimapLeft, 12);
-  assert.equal(m.minimapBottom, 12);
-  assert.equal(m.showMinimap, true);
+  assert.equal(m.showMinimap, false);
 });
 
 test('expanding Ribbon shifts all top-anchored panels down cleanly without overlap', () => {
@@ -71,6 +99,7 @@ test('opening Console lifts Inspector, Explorer, and Minimap above Console witho
       explorerOpen: true,
       inspectorCollapsed: false,
       consoleOpen: true,
+      showMinimap: true,
     });
 
     const consoleTopFromBottom = m.consoleBottom + m.consoleHeight;

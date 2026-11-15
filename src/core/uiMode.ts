@@ -1,5 +1,7 @@
 export type UiWorkspaceMode = 'classic' | 'hybrid' | 'focus';
 
+export const DEFAULT_UI_MODE: UiWorkspaceMode = 'focus';
+
 export interface UiWorkspaceModeMeta {
   id: UiWorkspaceMode;
   label: string;
@@ -46,31 +48,52 @@ export function normalizeUiWorkspaceMode(raw: unknown): UiWorkspaceMode {
   if (raw === 'classic' || raw === 'hybrid' || raw === 'focus') {
     return raw;
   }
-  return 'classic';
+  return DEFAULT_UI_MODE;
 }
 
 export function getUiModeMeta(mode: UiWorkspaceMode): UiWorkspaceModeMeta {
-  return UI_MODE_OPTIONS.find((m) => m.id === mode) ?? UI_MODE_OPTIONS[0];
+  return (
+    UI_MODE_OPTIONS.find((m) => m.id === mode) ??
+    UI_MODE_OPTIONS.find((m) => m.id === DEFAULT_UI_MODE) ??
+    UI_MODE_OPTIONS[0]
+  );
 }
 
 export function defaultRibbonCollapsedForMode(mode: UiWorkspaceMode): boolean {
   return mode !== 'classic';
 }
 
-export function loadUiMode(): UiWorkspaceMode {
+export function loadUiMode(
+  storage?: Pick<Storage, 'getItem'> | null
+): UiWorkspaceMode {
   try {
-    if (typeof window === 'undefined' || !window.localStorage) return 'classic';
-    const raw = window.localStorage.getItem(UI_MODE_STORAGE_KEY);
+    const store =
+      storage !== undefined
+        ? storage
+        : typeof window !== 'undefined'
+          ? window.localStorage
+          : null;
+    if (!store) return DEFAULT_UI_MODE;
+    const raw = store.getItem(UI_MODE_STORAGE_KEY);
     return normalizeUiWorkspaceMode(raw);
   } catch {
-    return 'classic';
+    return DEFAULT_UI_MODE;
   }
 }
 
-export function saveUiMode(mode: UiWorkspaceMode): void {
+export function saveUiMode(
+  mode: UiWorkspaceMode,
+  storage?: Pick<Storage, 'setItem'> | null
+): void {
   try {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    window.localStorage.setItem(UI_MODE_STORAGE_KEY, normalizeUiWorkspaceMode(mode));
+    const store =
+      storage !== undefined
+        ? storage
+        : typeof window !== 'undefined'
+          ? window.localStorage
+          : null;
+    if (!store) return;
+    store.setItem(UI_MODE_STORAGE_KEY, normalizeUiWorkspaceMode(mode));
   } catch {
     // Ignore storage quota errors
   }

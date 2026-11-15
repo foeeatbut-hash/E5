@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
@@ -1524,28 +1525,34 @@ function resolveDistDir(): string {
   return cwdDist;
 }
 
-function listenWithFallback(preferredPort: number): Promise<number> {
+function listenWithFallback(httpServer: http.Server, preferredPort: number): Promise<number> {
   const maxOffset = process.env.FLUX_PORTABLE === '1' || process.env.FLUX_AUTO_PORT === '1' ? 20 : 0;
   return new Promise((resolve, reject) => {
     const tryListen = (offset: number) => {
       const candidate = preferredPort + offset;
-      const srv = app.listen(candidate, '0.0.0.0', () => {
-        resolve(candidate);
-      });
-      srv.on('error', (err: NodeJS.ErrnoException) => {
+      const onError = (err: NodeJS.ErrnoException) => {
+        httpServer.off('listening', onListening);
         if (err.code === 'EADDRINUSE' && offset < maxOffset) {
           diagLogger.log('WARN', 'PORTABLE', `Порт ${candidate} занят, пробуем ${candidate + 1}...`);
           tryListen(offset + 1);
         } else {
           reject(err);
         }
-      });
+      };
+      const onListening = () => {
+        httpServer.off('error', onError);
+        resolve(candidate);
+      };
+      httpServer.once('error', onError);
+      httpServer.once('listening', onListening);
+      httpServer.listen(candidate, '0.0.0.0');
     };
     tryListen(0);
   });
 }
 
 async function start() {
+  const httpServer = http.createServer(app);
   let distDir = '';
   if (process.env.NODE_ENV === 'production') {
     distDir = resolveDistDir();
@@ -1555,14 +1562,19 @@ async function start() {
     });
   } else {
     const { createServer: createViteServer } = await import('vite');
+    const disableHmr = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: !disableHmr,
+        ws: disableHmr ? false : { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  const actualPort = await listenWithFallback(PORT);
+  const actualPort = await listenWithFallback(httpServer, PORT);
   const localUrl = `http://127.0.0.1:${actualPort}`;
   diagLogger.log('INFO', 'SERVER', `Сервер E3ProMax запущен на ${localUrl}`, {
     details: [

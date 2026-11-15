@@ -21,6 +21,7 @@ import type {
 } from '../core/e3Types';
 import { UI_SCALE_OPTIONS, type UiScalePercent } from '../core/uiScale';
 import { UI_MODE_OPTIONS, type UiWorkspaceMode } from '../core/uiMode';
+import { isMinimapEnabled } from '../core/focusLayout';
 
 export interface E3BridgeStatusInfo {
   isWin32: boolean;
@@ -753,7 +754,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = React.mem
                         : key === 'wireCrossingBridge'
                           ? draft.wireCrossingBridge !== false
                           : key === 'showMinimap'
-                            ? draft.showMinimap !== false
+                            ? isMinimapEnabled(draft)
                             : Boolean(draft[key])
                   }
                   onChange={(e) => setDraft({ ...draft, [key]: e.target.checked })}

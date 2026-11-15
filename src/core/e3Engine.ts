@@ -1717,7 +1717,7 @@ export function serializeE3Xml(project: E3Project): string {
   // Visual Settings synchronization block
   const vs = project.visualSettings;
   lines.push(
-    `  <VisualSettings schemaVersion="${vs.schemaVersion}" presetName="${xmlEscape(vs.presetName)}" theme="${vs.theme}" gridSize="${vs.gridSize}" snapToGrid="${vs.snapToGrid}" smartGuides="${vs.smartGuides !== false}" showCrosshair="${vs.showCrosshair !== false}" showGrid="${vs.showGrid}" showGostFrame="${vs.showGostFrame}" showPinNumbers="${vs.showPinNumbers}" showWireNumbers="${vs.showWireNumbers}" showCrossRefs="${vs.showCrossRefs}" wireWidth="${vs.wireWidth}" symbolStrokeWidth="${vs.symbolStrokeWidth}" frameStrokeWidth="${vs.frameStrokeWidth ?? 1.6}" annotationStrokeWidth="${vs.annotationStrokeWidth ?? 1.4}" wireCrossingBridge="${vs.wireCrossingBridge !== false}" fontScale="${vs.fontScale}" fontFamily="${xmlEscape(vs.fontFamily || 'GOST')}">`
+    `  <VisualSettings schemaVersion="${vs.schemaVersion}" presetName="${xmlEscape(vs.presetName)}" theme="${vs.theme}" gridSize="${vs.gridSize}" snapToGrid="${vs.snapToGrid}" smartGuides="${vs.smartGuides !== false}" showCrosshair="${vs.showCrosshair !== false}" showMinimap="${vs.showMinimap === true}" showGrid="${vs.showGrid}" showGostFrame="${vs.showGostFrame}" showPinNumbers="${vs.showPinNumbers}" showWireNumbers="${vs.showWireNumbers}" showCrossRefs="${vs.showCrossRefs}" wireWidth="${vs.wireWidth}" symbolStrokeWidth="${vs.symbolStrokeWidth}" frameStrokeWidth="${vs.frameStrokeWidth ?? 1.6}" annotationStrokeWidth="${vs.annotationStrokeWidth ?? 1.4}" wireCrossingBridge="${vs.wireCrossingBridge !== false}" fontScale="${vs.fontScale}" fontFamily="${xmlEscape(vs.fontFamily || 'GOST')}">`
   );
   for (const [sig, color] of Object.entries(vs.netColors)) {
     lines.push(`    <NetColor signalType="${xmlEscape(sig)}" hex="${xmlEscape(color)}" />`);
@@ -1878,6 +1878,7 @@ export function parseE3Xml(xml: string): E3Project {
     visualSettings.snapToGrid = va.snapToGrid !== 'false';
     if (va.smartGuides !== undefined) visualSettings.smartGuides = va.smartGuides !== 'false';
     if (va.showCrosshair !== undefined) visualSettings.showCrosshair = va.showCrosshair !== 'false';
+    if (va.showMinimap !== undefined) visualSettings.showMinimap = va.showMinimap === 'true';
     visualSettings.showGrid = va.showGrid !== 'false';
     visualSettings.showGostFrame = va.showGostFrame !== 'false';
     visualSettings.showPinNumbers = va.showPinNumbers !== 'false';

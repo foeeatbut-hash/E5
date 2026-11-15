@@ -344,17 +344,17 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
           ? 'Нажмите вкладку для открытия/переключения, перетащите свободную область для перемещения панели'
           : undefined
       }
-      className={`group/tabstrip h-6 pr-1.5 flux-glass-bar flex items-center justify-between gap-2 shrink-0 min-w-0 select-none ${
+      className={`group/tabstrip min-h-[calc(26px*var(--flux-ui-scale))] h-auto pr-1.5 flux-glass-bar flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 shrink-0 min-w-0 select-none ${
         isBottomTabs
           ? `border-t border-[var(--flux-line)] ${onStartPanelDrag ? 'cursor-grab active:cursor-grabbing' : ''}`
           : 'border-b border-[var(--flux-line)]'
       }`}
     >
-      <div className="flex items-center overflow-x-auto no-scrollbar min-w-0 flex-1 h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+      <div className="flex flex-wrap items-center min-w-0 flex-1 border-r border-[var(--flux-line)] gap-px">
         {isBottomTabs && onStartPanelDrag && (
           <span
             aria-hidden="true"
-            className="hidden sm:inline-flex items-center justify-center px-1.5 h-full text-[var(--flux-text-muted)]/60 group-hover/tabstrip:text-[var(--flux-text-muted)] shrink-0"
+            className="hidden sm:inline-flex items-center justify-center px-1.5 min-h-[calc(24px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]/60 group-hover/tabstrip:text-[var(--flux-text-muted)] shrink-0"
           >
             <GripHorizontal className="w-3 h-3" />
           </span>
@@ -369,7 +369,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
               data-testid={`console-tab-${tab.id}`}
               aria-pressed={isActive}
               onClick={() => handleTabClick(tab.id)}
-              className={`relative h-full px-2 inline-flex items-center gap-1.5 text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors ${
+              className={`relative min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 inline-flex items-center gap-1.5 text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors border-r border-[var(--flux-line)]/70 ${
                 isBottomTabs ? 'border-t-2' : 'border-b-2'
               } ${
                 isActive
@@ -481,8 +481,8 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const bomPaneContent = (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-      <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] flux-glass-surface flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+      <div className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-1 px-2 border-b border-[var(--flux-line)] flux-glass-surface flex flex-wrap items-center justify-between gap-x-2 gap-y-1 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
           <input
             type="search"
             spellCheck={false}
@@ -490,21 +490,21 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
             onChange={(e) => setBomQuery(e.target.value)}
             placeholder="Поиск по ПЭ3 (позиция, артикул, завод)…"
             aria-label="Фильтр спецификации ПЭ3"
-            className="w-56 min-w-[calc(110px*var(--flux-ui-scale))] max-w-full h-[calc(19px*var(--flux-ui-scale))] px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+            className="w-56 min-w-[calc(110px*var(--flux-ui-scale))] max-w-full min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
           />
           <span className="hidden sm:inline text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
             {filteredBom.length} из {bom.length} поз. · {totalDevicesInBom} шт.
           </span>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex flex-wrap items-center gap-1 shrink-0">
           {onDownloadBomCsv && (
             <button
               type="button"
               onClick={onDownloadBomCsv}
               title="Скачать таблицу спецификации ПЭ3 для Excel (.csv)"
-              className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
+              className="inline-flex items-center gap-1 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
             >
-              <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
+              <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)] shrink-0" />
               <span>CSV ПЭ3</span>
             </button>
           )}
@@ -513,9 +513,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
               type="button"
               onClick={onOpenReportModal}
               title="Открыть печатную ведомость ГОСТ 2.701"
-              className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
+              className="inline-flex items-center gap-1 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
             >
-              <Printer className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
+              <Printer className="w-2.5 h-2.5 text-[var(--flux-text-muted)] shrink-0" />
               <span>Ведомость</span>
             </button>
           )}
@@ -597,16 +597,16 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const cablesPaneContent = (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-      <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
-                    <div className="inline-flex min-w-0 overflow-x-auto no-scrollbar divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-bg)] shrink-0">
+      <div className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-1 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex flex-wrap items-center justify-between gap-x-2 gap-y-1 shrink-0">
+                    <div className="inline-flex flex-wrap min-w-0 gap-px border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-line)] overflow-hidden">
                       <button
                         type="button"
                         data-testid="cable-subtab-cables"
                         onClick={() => setCableSubTab('cables')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors ${
+                        className={`min-h-[calc(20px*var(--flux-ui-scale))] h-auto py-0.5 px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap transition-colors ${
                           cableSubTab === 'cables'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
-                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                            : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
                         Кабельный журнал ({cables.length})
@@ -615,10 +615,10 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         type="button"
                         data-testid="cable-subtab-nets"
                         onClick={() => setCableSubTab('nets')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors ${
+                        className={`min-h-[calc(20px*var(--flux-ui-scale))] h-auto py-0.5 px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap transition-colors ${
                           cableSubTab === 'nets'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
-                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                            : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
                         Длины по цепям ({netLengths.length})
@@ -627,17 +627,17 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         type="button"
                         data-testid="cable-subtab-terminals"
                         onClick={() => setCableSubTab('terminals')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors ${
+                        className={`min-h-[calc(20px*var(--flux-ui-scale))] h-auto py-0.5 px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap transition-colors ${
                           cableSubTab === 'terminals'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
-                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                            : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
                         Клеммник XT ({terminals.length})
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                       <span className="hidden sm:inline text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)]">
                         {cableSubTab === 'cables'
                           ? `Трасс: ${cables.length} · Кабели: ${totalCableMeters} м · Цепи (${netLengths.length}): ${totalNetLengthMm} мм (${totalNetLengthMeters} м)`
@@ -650,9 +650,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           type="button"
                           data-testid="open-terminal-editor-btn"
                           onClick={onOpenTerminalEditor}
-                          className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-accent)] bg-[var(--flux-sel)] hover:bg-[var(--flux-accent-solid)] hover:text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] whitespace-nowrap transition-colors"
+                          className="inline-flex items-center gap-1 min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-accent)] bg-[var(--flux-sel)] hover:bg-[var(--flux-accent-solid)] hover:text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] whitespace-nowrap transition-colors"
                         >
-                          <Cable className="w-2.5 h-2.5" />
+                          <Cable className="w-2.5 h-2.5 shrink-0" />
                           <span>Редактор клеммника -XT</span>
                         </button>
                       )}
@@ -661,9 +661,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           type="button"
                           data-testid="download-net-lengths-csv-btn"
                           onClick={onDownloadNetLengthsCsv}
-                          className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                          className="inline-flex items-center gap-1 min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
                         >
-                          <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
+                          <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)] shrink-0" />
                           <span>CSV Цепи</span>
                         </button>
                       )}
@@ -671,9 +671,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         <button
                           type="button"
                           onClick={onDownloadCablesCsv}
-                          className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                          className="inline-flex items-center gap-1 min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
                         >
-                          <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
+                          <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)] shrink-0" />
                           <span>CSV Кабели</span>
                         </button>
                       )}
@@ -880,8 +880,8 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const ercPaneContent = (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-      <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
-                    <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-bg)] shrink-0">
+      <div className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-1 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex flex-wrap items-center justify-between gap-x-2 gap-y-1 shrink-0">
+                    <div className="inline-flex flex-wrap gap-px border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-line)] overflow-hidden">
                       {(
                         [
                           ['all', `Все (${erc.length})`],
@@ -895,10 +895,10 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                             key={fId}
                             type="button"
                             onClick={() => setErcFilter(fId)}
-                            className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors ${
+                            className={`min-h-[calc(20px*var(--flux-ui-scale))] h-auto py-0.5 px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap transition-colors ${
                               active
                                 ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
-                                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                                : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                             }`}
                           >
                             {label}
@@ -907,7 +907,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                       })}
                     </div>
                     <span
-                      className={`text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono whitespace-nowrap shrink-0 ${
+                      className={`text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono whitespace-nowrap ${
                         errorCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--flux-accent)]'
                       }`}
                     >
@@ -935,7 +935,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           <div
                             key={issue.id}
                             data-testid={`erc-issue-${issue.id}`}
-                            className="w-full px-2 py-1 flex items-center justify-between gap-2 hover:bg-[var(--flux-hover)] transition-colors"
+                            className="w-full px-2 py-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 hover:bg-[var(--flux-hover)] transition-colors"
                           >
                             <button
                               type="button"
@@ -994,9 +994,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const logsPaneContent = (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-      <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
-                    <div className="flex items-center gap-1 min-w-0 shrink-0">
-                      <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-bg)] shrink-0">
+      <div className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-1 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex flex-wrap items-center justify-between gap-x-2 gap-y-1 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                      <div className="inline-flex flex-wrap gap-px border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-line)] overflow-hidden">
                         {(['ALL', 'INFO', 'SYNC', 'WARN', 'ERROR'] as const).map((lvl) => {
                           const active = logLevelFilter === lvl;
                           return (
@@ -1004,10 +1004,10 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                               key={lvl}
                               type="button"
                               onClick={() => setLogLevelFilter(lvl)}
-                              className={`h-[calc(18px*var(--flux-ui-scale))] px-1.5 text-[length:calc(10px*var(--flux-ui-scale))] font-mono whitespace-nowrap shrink-0 transition-colors ${
+                              className={`min-h-[calc(20px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 text-[length:calc(10px*var(--flux-ui-scale))] font-mono whitespace-nowrap transition-colors ${
                                 active
                                   ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
-                                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                                  : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
                               }`}
                             >
                               {lvl}
@@ -1022,31 +1022,31 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         onChange={(e) => setLogQuery(e.target.value)}
                         placeholder="Поиск по логам…"
                         aria-label="Поиск по логам процессов"
-                        className="w-[calc(132px*var(--flux-ui-scale))] h-[calc(19px*var(--flux-ui-scale))] px-1.5 ml-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                        className="w-[calc(132px*var(--flux-ui-scale))] max-w-full min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                       />
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1 shrink-0">
                       {onOpenHealthDashboard && (
                         <button
                           type="button"
                           data-testid="logs-health-dashboard-btn"
                           onClick={onOpenHealthDashboard}
                           title="Открыть графики частоты логов и монитор здоровья системы"
-                          className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-accent)] bg-[var(--flux-sel)] hover:bg-[var(--flux-accent-solid)] hover:text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] transition-colors whitespace-nowrap"
+                          className="inline-flex items-center gap-1 min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-accent)] bg-[var(--flux-sel)] hover:bg-[var(--flux-accent-solid)] hover:text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] transition-colors whitespace-nowrap"
                         >
-                          <Activity className="w-2.5 h-2.5" />
+                          <Activity className="w-2.5 h-2.5 shrink-0" />
                           <span>Монитор здоровья</span>
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={handleCopyAllLogs}
-                        className="inline-flex items-center justify-center gap-1 min-w-[calc(96px*var(--flux-ui-scale))] h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                        className="inline-flex items-center justify-center gap-1 min-w-[calc(96px*var(--flux-ui-scale))] min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
                       >
                         {copiedLogs ? (
-                          <Check className="w-2.5 h-2.5 text-emerald-500" />
+                          <Check className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
                         ) : (
-                          <Copy className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
+                          <Copy className="w-2.5 h-2.5 text-[var(--flux-text-muted)] shrink-0" />
                         )}
                         <span>{copiedLogs ? 'Скопировано' : 'Копировать'}</span>
                       </button>
@@ -1055,9 +1055,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           type="button"
                           onClick={onClearLogs}
                           title="Очистить журнал сессии"
-                          className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400"
+                          className="inline-flex items-center gap-1 min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 whitespace-nowrap"
                         >
-                          <Trash2 className="w-2.5 h-2.5" />
+                          <Trash2 className="w-2.5 h-2.5 shrink-0" />
                           <span>Очистить</span>
                         </button>
                       )}
@@ -1171,16 +1171,16 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const apiPaneContent = (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))] bg-[var(--flux-surface)]">
-                  <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
-                    <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-bg)] shrink-0">
+                  <div className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-1 px-2 border-b border-[var(--flux-line)] flex flex-wrap items-center justify-between gap-x-2 gap-y-1 shrink-0">
+                    <div className="inline-flex flex-wrap gap-px border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-line)] overflow-hidden">
                       <button
                         type="button"
                         data-testid="api-subtab-own"
                         onClick={() => setApiSubTab('own')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors ${
+                        className={`min-h-[calc(20px*var(--flux-ui-scale))] h-auto py-0.5 px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 whitespace-nowrap transition-colors ${
                           apiSubTab === 'own'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
-                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                            : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
                         <Terminal className="w-2.5 h-2.5 shrink-0" />
@@ -1190,10 +1190,10 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         type="button"
                         data-testid="api-subtab-flux"
                         onClick={() => setApiSubTab('flux-internal')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors ${
+                        className={`min-h-[calc(20px*var(--flux-ui-scale))] h-auto py-0.5 px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 whitespace-nowrap transition-colors ${
                           apiSubTab === 'flux-internal'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
-                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                            : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
                         <Layers className="w-2.5 h-2.5 shrink-0" />
@@ -1203,10 +1203,10 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         type="button"
                         data-testid="api-subtab-external"
                         onClick={() => setApiSubTab('external')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors ${
+                        className={`min-h-[calc(20px*var(--flux-ui-scale))] h-auto py-0.5 px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 whitespace-nowrap transition-colors ${
                           apiSubTab === 'external'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
-                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                            : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
                         <Globe className="w-2.5 h-2.5 shrink-0" />
@@ -1214,12 +1214,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1 shrink-0">
                       {onOpenFluxPublishModal && (
                         <button
                           type="button"
                           onClick={onOpenFluxPublishModal}
-                          className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
+                          className="inline-flex items-center gap-1 min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
                         >
                           <span>Студия Flux</span>
                         </button>
@@ -1235,12 +1235,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                             setApiBusy(false);
                           }
                         }}
-                        className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-2 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium disabled:opacity-50 whitespace-nowrap"
+                        className="inline-flex items-center gap-1 min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium disabled:opacity-50 whitespace-nowrap"
                       >
                         {apiBusy ? (
-                          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
                         ) : (
-                          <Play className="w-2.5 h-2.5" />
+                          <Play className="w-2.5 h-2.5 shrink-0" />
                         )}
                         <span>Тест API Push</span>
                       </button>
@@ -1250,7 +1250,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                   {apiSubTab === 'own' && (
                     <div className="flex-1 overflow-auto p-2.5 grid grid-cols-1 lg:grid-cols-2 gap-3 min-w-0">
                       <div className="space-y-1.5 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="font-semibold text-[var(--flux-text)]">
                             Эндпоинты E3ProMax REST / SSE
                           </span>
@@ -1269,7 +1269,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                 setOpenApiPreview(String(err));
                               }
                             }}
-                            className="h-5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-accent)] font-medium shrink-0"
+                            className="min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-accent)] font-medium shrink-0"
                           >
                             OpenAPI 3.0
                           </button>
@@ -1320,12 +1320,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           </span>
                         </div>
                         <div className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-2">
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <select
                               value={fluxTargetApp}
                               onChange={(e) => setFluxTargetApp(e.target.value)}
                               aria-label="Целевой модуль Flux"
-                              className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                              className="min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] min-w-0"
                             >
                               <option value="flux-hvac-selector">Подбор ОВКВ (flux-hvac-selector)</option>
                               <option value="flux-panel-3d">Компоновка 3D (flux-panel-3d)</option>
@@ -1336,7 +1336,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                               value={fluxAction}
                               onChange={(e) => setFluxAction(e.target.value)}
                               aria-label="Команда RPC Flux"
-                              className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                              className="min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] min-w-0"
                             >
                               <option value="e3.getBom">e3.getBom</option>
                               <option value="e3.runErc">e3.runErc</option>
@@ -1363,9 +1363,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                 )
                               );
                             }}
-                            className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(11px*var(--flux-ui-scale))] font-medium"
+                            className="inline-flex items-center gap-1.5 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2.5 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(11px*var(--flux-ui-scale))] font-medium"
                           >
-                            <Send className="w-3 h-3" />
+                            <Send className="w-3 h-3 shrink-0" />
                             <span>Выполнить обмен по шине Flux</span>
                           </button>
                         </div>
@@ -1406,14 +1406,14 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                   {apiSubTab === 'external' && (
                     <div className="flex-1 overflow-auto p-2.5 grid grid-cols-1 lg:grid-cols-2 gap-3 min-w-0">
                       <div className="space-y-1.5 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="font-semibold text-[var(--flux-text)]">
                             Внешние Webhooks (1С, PDM, SCADA)
                           </span>
                           <button
                             type="button"
                             onClick={() => void loadWebhooks()}
-                            className="h-5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                            className="min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                           >
                             Обновить
                           </button>
@@ -1446,14 +1446,14 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                               setExtStatusMsg(`Ошибка сети: ${err instanceof Error ? err.message : String(err)}`);
                             }
                           }}
-                          className="flex items-center gap-1.5"
+                          className="flex flex-wrap items-center gap-1.5"
                         >
                           <input
                             type="text"
                             value={newWhName}
                             onChange={(e) => setNewWhName(e.target.value)}
                             aria-label="Название внешней системы"
-                            className="w-32 h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                            className="w-[calc(120px*var(--flux-ui-scale))] max-w-full min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                           />
                           <input
                             type="url"
@@ -1461,15 +1461,15 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                             value={newWhUrl}
                             onChange={(e) => setNewWhUrl(e.target.value)}
                             aria-label="URL внешнего Webhook"
-                            className="flex-1 min-w-[calc(120px*var(--flux-ui-scale))] h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                            className="flex-1 min-w-[calc(140px*var(--flux-ui-scale))] min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                           />
                           <button
                             type="submit"
                             disabled={!newWhName.trim() || !newWhUrl.trim()}
                             data-testid="add-webhook-btn"
-                            className="inline-flex items-center gap-1 h-6 px-2 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium shrink-0 disabled:opacity-40 transition-colors"
+                            className="inline-flex items-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium shrink-0 disabled:opacity-40 transition-colors"
                           >
-                            <Plus className="w-3 h-3" />
+                            <Plus className="w-3 h-3 shrink-0" />
                             <span>Добавить</span>
                           </button>
                         </form>
@@ -1502,7 +1502,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                         );
                                       }
                                     }}
-                                    className="h-5 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] transition-colors"
+                                    className="min-h-[calc(20px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] transition-colors"
                                   >
                                     Тест
                                   </button>
@@ -1524,7 +1524,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                       }
                                     }}
                                     aria-label={`Удалить ${wh.name}`}
-                                    className="w-5 h-5 inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 transition-colors"
+                                    className="w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] inline-flex items-center justify-center rounded text-[var(--flux-text-muted)] hover:text-rose-600 transition-colors"
                                   >
                                     <Trash2 className="w-3 h-3" />
                                   </button>
@@ -1539,12 +1539,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         <span className="font-semibold text-[var(--flux-text)] block">
                           Исходящий REST вызов и квитанции
                         </span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <select
                             aria-label="HTTP-метод внешнего вызова"
                             value={extCallMethod}
                             onChange={(e) => setExtCallMethod(e.target.value as 'POST' | 'GET')}
-                            className="h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                            className="min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                           >
                             <option value="POST">POST</option>
                             <option value="GET">GET</option>
@@ -1555,7 +1555,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                             aria-label="URL внешнего API для отправки ПЭ3"
                             value={extCallUrl}
                             onChange={(e) => setExtCallUrl(e.target.value)}
-                            className="flex-1 min-w-0 h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                            className="flex-1 min-w-[calc(140px*var(--flux-ui-scale))] min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                           />
                           <button
                             type="button"
@@ -1587,7 +1587,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                                 );
                               }
                             }}
-                            className="h-6 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium shrink-0 disabled:opacity-40 transition-colors"
+                            className="min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium shrink-0 disabled:opacity-40 transition-colors"
                           >
                             Отправить ПЭ3
                           </button>
@@ -1638,7 +1638,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
         data-testid={`console-tab-${id}`}
         aria-pressed={active && !collapsed}
         onClick={onClick}
-        className={`relative h-full px-2 inline-flex items-center gap-1.5 text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors border-t-2 ${
+        className={`relative min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 inline-flex items-center gap-1.5 text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors border-t-2 border-r border-r-[var(--flux-line)]/70 ${
           active && !collapsed
             ? 'bg-[var(--flux-surface)] border-t-[var(--flux-accent)] text-[var(--flux-text)] font-semibold'
             : 'border-t-transparent text-[var(--flux-text-muted)] font-medium hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -1670,9 +1670,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
         >
           <div
             data-testid="console-tab-strip"
-            className="h-6 pr-1.5 flux-glass-bar border-t border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 min-w-0 select-none"
+            className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto pr-1.5 flux-glass-bar border-t border-[var(--flux-line)] flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 shrink-0 min-w-0 select-none"
           >
-            <div className="flex items-center overflow-x-auto no-scrollbar min-w-0 flex-1 h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+            <div className="flex flex-wrap items-center min-w-0 flex-1 border-r border-[var(--flux-line)] gap-px">
               {hybridTabBtn('bom', 'Спецификация ПЭ3', hybridLeftTab === 'bom', () => {
                 setHybridLeftTab('bom');
                 onSetTab('bom');
@@ -1724,9 +1724,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
         <div className="flex flex-col min-h-0 min-w-0 overflow-hidden">
           <div
             data-testid="hybrid-console-left-tabs"
-            className="h-6 pr-2 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 min-w-0 overflow-hidden select-none"
+            className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto pr-2 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 shrink-0 min-w-0 overflow-hidden select-none"
           >
-            <div className="flex items-center min-w-0 flex-1 overflow-x-auto no-scrollbar h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+            <div className="flex flex-wrap items-center min-w-0 flex-1 border-r border-[var(--flux-line)] gap-px">
               {hybridTabBtn('bom', 'Спецификация ПЭ3', hybridLeftTab === 'bom', () => {
                 setHybridLeftTab('bom');
                 onSetTab('bom');
@@ -1747,9 +1747,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
         <div data-testid="hybrid-split-erc" className="flex flex-col min-h-0 min-w-0 overflow-hidden">
           <div
             data-testid="hybrid-console-right-tabs"
-            className="h-6 pr-1.5 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 min-w-0 overflow-hidden select-none"
+            className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto pr-1.5 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 shrink-0 min-w-0 overflow-hidden select-none"
           >
-            <div className="flex items-center min-w-0 flex-1 overflow-x-auto no-scrollbar h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+            <div className="flex flex-wrap items-center min-w-0 flex-1 border-r border-[var(--flux-line)] gap-px">
               {hybridTabBtn('erc', 'Проверка ERC', hybridRightTab === 'erc', () => {
                 setHybridRightTab('erc');
                 onSetTab('erc');

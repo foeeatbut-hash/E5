@@ -1,4 +1,5 @@
 import type { E3Project, SheetFormat } from './e3Types.ts';
+import { isMinimapEnabled } from './focusLayout.ts';
 import type { UiWorkspaceMode } from './uiMode.ts';
 
 export type CommandPaletteCategory =
@@ -268,7 +269,7 @@ export function buildBottomCommandItems(
     },
     {
       id: 'cmd-minimap',
-      title: `Мини-карта листа: ${opts.showMinimap !== false ? 'ПОКАЗАНА' : 'СКРЫТА'} (MINIMAP / МИНИКАРТА)`,
+      title: `Мини-карта листа: ${isMinimapEnabled(opts.showMinimap) ? 'ПОКАЗАНА' : 'СКРЫТА'} (MINIMAP / МИНИКАРТА)`,
       subtitle: 'Показать или скрыть компактную мини-карту навигации по листу',
       commandKeyword: 'МИНИКАРТА',
       commandHint: 'Мини-карта навигации · MINIMAP',

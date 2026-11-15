@@ -547,7 +547,8 @@ export interface ProcessLogEntry {
     | 'E3-COM'
     | 'UI-INTERACT'
     | 'PERF-DIAG'
-    | 'NET-API';
+    | 'NET-API'
+    | 'E3FLUX';
   message: string;
   durationMs?: number;
   details?: string;

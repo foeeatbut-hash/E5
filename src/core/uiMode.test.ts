@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_UI_MODE,
   UI_MODE_OPTIONS,
+  UI_MODE_STORAGE_KEY,
   defaultRibbonCollapsedForMode,
   getUiModeMeta,
   isNewUiMode,
+  loadUiMode,
   normalizeUiWorkspaceMode,
+  saveUiMode,
 } from './uiMode.ts';
 import { buildDefaultHvacStages, exportPlcIoCsv } from './hvacBuilder.ts';
 import { E3_CATALOG } from './e3Catalog.ts';
@@ -13,13 +17,37 @@ import { createSeedProject } from './e3Seed.ts';
 import { exportSheetsToDxf } from './dxfExporter.ts';
 import { buildOrthogonalWireWithWaypoints } from './wireEditing.ts';
 
-test('normalizeUiWorkspaceMode handles valid and invalid values', () => {
+test('normalizeUiWorkspaceMode defaults to focus on missing or unknown values', () => {
+  assert.equal(DEFAULT_UI_MODE, 'focus');
   assert.equal(normalizeUiWorkspaceMode('classic'), 'classic');
   assert.equal(normalizeUiWorkspaceMode('hybrid'), 'hybrid');
   assert.equal(normalizeUiWorkspaceMode('focus'), 'focus');
-  assert.equal(normalizeUiWorkspaceMode('unknown'), 'classic');
-  assert.equal(normalizeUiWorkspaceMode(null), 'classic');
-  assert.equal(normalizeUiWorkspaceMode(undefined), 'classic');
+  assert.equal(normalizeUiWorkspaceMode('unknown'), 'focus');
+  assert.equal(normalizeUiWorkspaceMode(null), 'focus');
+  assert.equal(normalizeUiWorkspaceMode(undefined), 'focus');
+});
+
+test('loadUiMode defaults to focus and preserves explicit classic/hybrid choice', () => {
+  const mem = new Map<string, string>();
+  const mockStorage = {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      mem.set(k, v);
+    },
+  };
+
+  assert.equal(loadUiMode(null), 'focus');
+  assert.equal(loadUiMode(mockStorage), 'focus');
+
+  saveUiMode('classic', mockStorage);
+  assert.equal(mem.get(UI_MODE_STORAGE_KEY), 'classic');
+  assert.equal(loadUiMode(mockStorage), 'classic');
+
+  saveUiMode('hybrid', mockStorage);
+  assert.equal(loadUiMode(mockStorage), 'hybrid');
+
+  mem.set(UI_MODE_STORAGE_KEY, 'corrupted-mode');
+  assert.equal(loadUiMode(mockStorage), 'focus');
 });
 
 test('isNewUiMode and defaultRibbonCollapsedForMode map classic vs new modes cleanly', () => {
@@ -34,6 +62,7 @@ test('isNewUiMode and defaultRibbonCollapsedForMode map classic vs new modes cle
   assert.equal(UI_MODE_OPTIONS.length, 3);
   assert.equal(getUiModeMeta('hybrid').groupLabel, 'Новый интерфейс');
   assert.equal(getUiModeMeta('classic').groupLabel, 'Этот интерфейс');
+  assert.equal(getUiModeMeta('focus').groupLabel, 'Новый интерфейс');
 });
 
 test('hvacBuilder supports supply_exhaust_recovery and PLC IO CSV export', () => {

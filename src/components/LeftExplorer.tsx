@@ -256,7 +256,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
             setDraggingSheetId(null);
             setDragOverFolder(null);
           }}
-          className={`group/sheet flex items-center justify-between gap-1 px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-left text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
+          className={`group/sheet flex items-center justify-between gap-1 px-1.5 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[2px] text-left text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
             active
               ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
               : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -313,7 +313,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                 onMoveSheetToFolder(s.id, e.target.value || null);
                 setMovingSheetId(null);
               }}
-              className="flex-1 min-w-0 h-5 px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)]"
+              className="flex-1 min-w-0 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)]"
             >
               <option value="">Без папки (корень)</option>
               {sheetTree.allFolderPaths.map((fp) => (
@@ -326,7 +326,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
               type="button"
               onClick={() => setMovingSheetId(null)}
               aria-label="Закрыть выбор папки"
-              className="inline-flex items-center justify-center w-5 h-5 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+              className="inline-flex items-center justify-center w-[calc(20px*var(--flux-ui-scale))] h-[calc(20px*var(--flux-ui-scale))] shrink-0 rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
             >
               <X className="w-3 h-3" />
             </button>
@@ -389,13 +389,13 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                 }
               }}
               aria-label="Новое имя папки"
-              className="flex-1 min-w-0 h-5 px-1.5 rounded-[2px] border border-[var(--flux-focus)] bg-[var(--flux-bg)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
+              className="flex-1 min-w-0 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-focus)] bg-[var(--flux-bg)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
             />
             <button
               type="button"
               onClick={submitRenameFolder}
               aria-label="Сохранить имя папки"
-              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]"
+              className="w-[calc(20px*var(--flux-ui-scale))] h-[calc(20px*var(--flux-ui-scale))] shrink-0 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]"
             >
               <Check className="w-3 h-3" />
             </button>
@@ -406,13 +406,13 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                 setRenameFolderValue('');
               }}
               aria-label="Отменить переименование"
-              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]"
+              className="w-[calc(20px*var(--flux-ui-scale))] h-[calc(20px*var(--flux-ui-scale))] shrink-0 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]"
             >
               <X className="w-3 h-3" />
             </button>
           </div>
         ) : (
-          <div className="group/folder flex items-center justify-between gap-1 px-1 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] hover:bg-[var(--flux-hover)]">
+          <div className="group/folder flex items-center justify-between gap-1 px-1 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] hover:bg-[var(--flux-hover)]">
             <button
               type="button"
               onClick={() => toggleFolderOpen(node.path)}
@@ -495,13 +495,13 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                   }}
                   placeholder="Имя подпапки…"
                   aria-label="Название подпапки"
-                  className="flex-1 min-w-0 h-5 px-1.5 rounded-[2px] border border-[var(--flux-focus)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
+                  className="flex-1 min-w-0 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-focus)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
                 />
                 <button
                   type="button"
                   onClick={submitCreateFolder}
                   aria-label="Создать подпапку"
-                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]"
+                  className="w-[calc(20px*var(--flux-ui-scale))] h-[calc(20px*var(--flux-ui-scale))] shrink-0 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]"
                 >
                   <Check className="w-3 h-3" />
                 </button>
@@ -512,7 +512,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                     setNewFolderName('');
                   }}
                   aria-label="Отменить создание подпапки"
-                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]"
+                  className="w-[calc(20px*var(--flux-ui-scale))] h-[calc(20px*var(--flux-ui-scale))] shrink-0 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -535,14 +535,14 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
     <div className="space-y-0.5">
       {/* Sheets with hierarchical folders */}
       <div>
-        <div className="flex items-center justify-between px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors">
+        <div className="flex flex-wrap items-center justify-between gap-1 px-1.5 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors">
           <button
             type="button"
             onClick={() => toggleSection('sheets')}
             className="flex items-center gap-1 flex-1 min-w-0 text-left"
           >
             <ChevronRight
-              className={`w-3 h-3 text-[var(--flux-text-muted)] transition-transform duration-150 ${
+              className={`w-3 h-3 text-[var(--flux-text-muted)] shrink-0 transition-transform duration-150 ${
                 openSections.sheets ? 'rotate-90' : ''
               }`}
             />
@@ -560,9 +560,9 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                 }}
                 title="Создать папку / раздел для группировки листов"
                 aria-label="Создать папку листов"
-                className="inline-flex items-center gap-0.5 px-1 h-4 rounded-[2px] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-bg)] transition-colors"
+                className="inline-flex items-center gap-0.5 px-1.5 min-h-[calc(18px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[2px] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-bg)] whitespace-nowrap transition-colors"
               >
-                <FolderPlus className="w-3 h-3" />
+                <FolderPlus className="w-3 h-3 shrink-0" />
                 <span>Папка</span>
               </button>
             )}
@@ -590,14 +590,14 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                   }}
                   placeholder="Название раздела / папки…"
                   aria-label="Название новой папки"
-                  className="flex-1 min-w-0 h-5 px-1.5 rounded-[2px] border border-[var(--flux-focus)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
+                  className="flex-1 min-w-0 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-focus)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none"
                 />
                 <button
                   type="button"
                   data-testid="explorer-confirm-folder-btn"
                   onClick={submitCreateFolder}
                   aria-label="Создать папку"
-                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]"
+                  className="w-[calc(20px*var(--flux-ui-scale))] h-[calc(20px*var(--flux-ui-scale))] shrink-0 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]"
                 >
                   <Check className="w-3 h-3" />
                 </button>
@@ -608,7 +608,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                     setNewFolderName('');
                   }}
                   aria-label="Отменить создание папки"
-                  className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]"
+                  className="w-[calc(20px*var(--flux-ui-scale))] h-[calc(20px*var(--flux-ui-scale))] shrink-0 inline-flex items-center justify-center rounded-[2px] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -657,17 +657,17 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
         <button
           type="button"
           onClick={() => toggleSection('devices')}
-          className="w-full flex items-center justify-between px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+          className="w-full flex items-center justify-between gap-1 px-1.5 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
         >
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 min-w-0">
             <ChevronRight
-              className={`w-3 h-3 text-[var(--flux-text-muted)] transition-transform duration-150 ${
+              className={`w-3 h-3 text-[var(--flux-text-muted)] shrink-0 transition-transform duration-150 ${
                 openSections.devices ? 'rotate-90' : ''
               }`}
             />
-            <span>Устройства (Изделия)</span>
+            <span className="truncate">Устройства (Изделия)</span>
           </span>
-          <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+          <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
             {project.devices.length}
           </span>
         </button>
@@ -685,7 +685,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                     key={dev.id}
                     type="button"
                     onClick={() => onSelectDevice(dev)}
-                    className={`w-full flex items-center justify-between gap-1.5 px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-left text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
+                    className={`w-full flex items-center justify-between gap-1.5 px-1.5 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[2px] text-left text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
                       active
                         ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
                         : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -725,17 +725,17 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
         <button
           type="button"
           onClick={() => toggleSection('cables')}
-          className="w-full flex items-center justify-between px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+          className="w-full flex items-center justify-between gap-1 px-1.5 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
         >
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 min-w-0">
             <ChevronRight
-              className={`w-3 h-3 text-[var(--flux-text-muted)] transition-transform duration-150 ${
+              className={`w-3 h-3 text-[var(--flux-text-muted)] shrink-0 transition-transform duration-150 ${
                 openSections.cables ? 'rotate-90' : ''
               }`}
             />
-            <span>Кабели</span>
+            <span className="truncate">Кабели</span>
           </span>
-          <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+          <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
             {project.cables.length}
           </span>
         </button>
@@ -744,7 +744,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
             {project.cables.map((cab) => (
               <div
                 key={cab.id}
-                className="flex items-center justify-between gap-1.5 px-1.5 h-[calc(21px*var(--flux-ui-scale))] rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                className="flex items-center justify-between gap-1.5 px-1.5 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
               >
                 <span className="flex items-center gap-1.5 min-w-0">
                   <Cable className="w-3 h-3 text-[var(--flux-text-muted)] shrink-0" />
@@ -766,11 +766,11 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
     <div className="space-y-1">
       {!compactGrid && (
         <div className="space-y-1 px-0.5 pb-0.5">
-          <div className="grid grid-cols-2 gap-1">
+          <div className="flex flex-wrap gap-1">
             <button
               type="button"
               onClick={onOpenAddCatalogItem}
-              className="min-w-0 inline-flex items-center justify-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap overflow-hidden transition-colors"
+              className="flex-1 min-w-[calc(108px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors"
             >
               <Plus className="w-3 h-3 text-[var(--flux-text-muted)] shrink-0" />
               <span className="truncate">Новое изделие</span>
@@ -778,7 +778,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
             <button
               type="button"
               onClick={onOpenHvacWizard}
-              className="min-w-0 inline-flex items-center justify-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap overflow-hidden transition-colors"
+              className="flex-1 min-w-[calc(96px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors"
             >
               <SlidersHorizontal className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
               <span className="truncate">Схема ПВ</span>
@@ -789,7 +789,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
               type="button"
               data-testid="explorer-symbol-designer-btn"
               onClick={onOpenSymbolDesigner}
-              className="w-full min-w-0 inline-flex items-center justify-center gap-1.5 h-[calc(22px*var(--flux-ui-scale))] px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap overflow-hidden transition-colors"
+              className="w-full min-w-0 inline-flex items-center justify-center gap-1.5 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors"
             >
               <PenTool className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
               <span className="truncate">Редактор графики УГО…</span>
@@ -800,7 +800,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
       <div
         role="group"
         aria-label="Фильтр категории базы"
-        className="grid grid-cols-4 rounded-[2px] border border-[var(--flux-line)] divide-x divide-[var(--flux-line)] bg-[var(--flux-bg)] mx-0.5 overflow-hidden"
+        className="flex flex-wrap rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-line)] mx-0.5 overflow-hidden gap-px"
       >
         {(
           [
@@ -817,10 +817,10 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
               type="button"
               data-testid={`catalog-filter-${catKey}`}
               onClick={() => setCatalogFilter(catKey)}
-              className={`min-w-0 px-0.5 truncate h-[calc(21px*var(--flux-ui-scale))] text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors whitespace-nowrap ${
+              className={`flex-1 min-w-[calc(52px*var(--flux-ui-scale))] px-1.5 truncate min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
                 active
                   ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-semibold'
-                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                  : 'bg-[var(--flux-bg)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
               }`}
             >
               {label}
@@ -929,7 +929,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                   </button>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 min-w-0">
                 {item.customSymbol && item.customSymbol.shapes.length > 0 && (
                   <svg
                     viewBox={`0 0 ${item.width} ${item.height}`}
@@ -981,13 +981,13 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                     })}
                   </svg>
                 )}
-                <div className="text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] leading-snug truncate">
+                <div className="min-w-0 flex-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] leading-snug truncate">
                   {item.componentName}
                 </div>
               </div>
               {!compactGrid && (
-                <div className="text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] flex items-center gap-1">
-                  <span className="truncate">{item.manufacturer}</span>
+                <div className="text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0">
+                  <span className="truncate max-w-full">{item.manufacturer}</span>
                   <span aria-hidden="true">·</span>
                   <span className="font-mono tabular-nums shrink-0">{item.defaultAttributes.length} атр.</span>
                   <span aria-hidden="true">·</span>
@@ -1027,7 +1027,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
             ? 'Вернуть панели и прежний вид интерфейса'
             : 'Развернуть чертёж на весь экран (максимум пространства холста)'
         }
-        className={`w-full inline-flex items-center justify-center gap-1.5 h-[calc(23px*var(--flux-ui-scale))] px-2 rounded-[4px] border text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors ${
+        className={`w-full inline-flex items-center justify-center gap-1.5 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[4px] border text-[length:calc(11px*var(--flux-ui-scale))] font-medium transition-colors ${
           canvasFocusActive
             ? 'border-[var(--flux-accent)] bg-[var(--flux-accent-solid)] text-white'
             : 'border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:border-[var(--flux-accent)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
@@ -1038,7 +1038,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
         ) : (
           <Maximize2 className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
         )}
-        <span>{canvasFocusActive ? 'Вернуть вид' : 'Фокус холст'}</span>
+        <span className="truncate">{canvasFocusActive ? 'Вернуть вид' : 'Фокус холст'}</span>
       </button>
     </div>
   );
@@ -1076,7 +1076,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
           style={{ flexBasis: `${splitPercent}%` }}
           className="min-h-0 flex-1 flex flex-col overflow-hidden"
         >
-          <div className="h-[calc(26px*var(--flux-ui-scale))] px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1.5 shrink-0 overflow-hidden">
+          <div className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex flex-wrap items-center justify-between gap-1.5 shrink-0 overflow-hidden">
             <span className="inline-flex items-center gap-1.5 min-w-0 text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
               <FolderTree className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
               <span className="truncate">Проект</span>
@@ -1095,7 +1095,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Поиск тега, артикула…"
                 aria-label="Поиск устройств по проекту"
-                className="w-full h-[calc(21px*var(--flux-ui-scale))] pl-6 pr-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
+                className="w-full min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 pl-6 pr-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
               />
             </div>
           </div>
@@ -1121,19 +1121,19 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
           style={{ flexBasis: `${100 - splitPercent}%` }}
           className="min-h-0 flex-1 flex flex-col overflow-hidden"
         >
-          <div className="h-[calc(26px*var(--flux-ui-scale))] px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1 shrink-0 overflow-hidden">
+          <div className="min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex flex-wrap items-center justify-between gap-1 shrink-0 overflow-hidden">
             <span className="inline-flex items-center gap-1 min-w-0 text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
               <Database className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
               <span className="truncate">База</span>
               <span className="font-mono tabular-nums text-[var(--flux-text-muted)] shrink-0">({catalog.length})</span>
             </span>
-            <div className="flex items-center gap-0.5 shrink-0">
+            <div className="flex flex-wrap items-center gap-0.5 shrink-0">
               <button
                 type="button"
                 onClick={onOpenAddCatalogItem}
                 title="Новое изделие в базу"
                 aria-label="Новое изделие в базу"
-                className="w-[calc(20px*var(--flux-ui-scale))] h-[calc(20px*var(--flux-ui-scale))] inline-flex items-center justify-center rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]"
+                className="w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] inline-flex items-center justify-center rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]"
               >
                 <Plus className="w-3 h-3 text-[var(--flux-accent)]" />
               </button>
@@ -1142,7 +1142,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                 onClick={onOpenHvacWizard}
                 title="Мастер схемы ПВ / ФСА"
                 aria-label="Мастер схемы ПВ"
-                className="h-[calc(20px*var(--flux-ui-scale))] px-1.5 inline-flex items-center justify-center rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]"
+                className="min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 inline-flex items-center justify-center rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]"
               >
                 ПВ
               </button>
@@ -1153,7 +1153,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                   onClick={onOpenSymbolDesigner}
                   title="Редактор графики УГО…"
                   aria-label="Редактор графики УГО"
-                  className="h-[calc(20px*var(--flux-ui-scale))] px-1.5 inline-flex items-center justify-center rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)]"
+                  className="min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 inline-flex items-center justify-center rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)]"
                 >
                   УГО
                 </button>
@@ -1192,11 +1192,11 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
       {/* CAD Navigator Tabs: Segmented in Focus drawer, Flush in Classic */}
       {isNewUi ? (
         <div className="p-1.5 pb-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] shrink-0">
-          <div className="grid grid-cols-2 p-0.5 rounded-[5px] bg-[var(--flux-bg)] border border-[var(--flux-line)]">
+          <div className="flex flex-wrap gap-0.5 p-0.5 rounded-[5px] bg-[var(--flux-bg)] border border-[var(--flux-line)]">
             <button
               type="button"
               onClick={() => setTab('project')}
-              className={`min-w-0 px-1 inline-flex items-center justify-center gap-1 h-[calc(22px*var(--flux-ui-scale))] rounded-[4px] text-[length:calc(11px*var(--flux-ui-scale))] transition-all whitespace-nowrap overflow-hidden ${
+              className={`flex-1 min-w-[calc(94px*var(--flux-ui-scale))] px-1.5 inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[4px] text-[length:calc(11px*var(--flux-ui-scale))] transition-all overflow-hidden ${
                 tab === 'project'
                   ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold shadow-xs border border-[var(--flux-line)]'
                   : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -1208,7 +1208,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
             <button
               type="button"
               onClick={() => setTab('library')}
-              className={`min-w-0 px-1 inline-flex items-center justify-center gap-1 h-[calc(22px*var(--flux-ui-scale))] rounded-[4px] text-[length:calc(11px*var(--flux-ui-scale))] transition-all whitespace-nowrap overflow-hidden ${
+              className={`flex-1 min-w-[calc(86px*var(--flux-ui-scale))] px-1.5 inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[4px] text-[length:calc(11px*var(--flux-ui-scale))] transition-all overflow-hidden ${
                 tab === 'library'
                   ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold shadow-xs border border-[var(--flux-line)]'
                   : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -1220,14 +1220,14 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 h-6 border-b border-[var(--flux-line)] flux-glass-bar shrink-0">
+        <div className="flex flex-wrap min-h-[calc(26px*var(--flux-ui-scale))] h-auto border-b border-[var(--flux-line)] flux-glass-bar shrink-0 gap-px bg-[var(--flux-line)]">
           <button
             type="button"
             onClick={() => setTab('project')}
-            className={`min-w-0 px-1 relative inline-flex items-center justify-center gap-1 h-full border-r border-[var(--flux-line)] text-[length:calc(11px*var(--flux-ui-scale))] transition-colors whitespace-nowrap overflow-hidden ${
+            className={`flex-1 min-w-[calc(94px*var(--flux-ui-scale))] px-1.5 relative inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 text-[length:calc(11px*var(--flux-ui-scale))] transition-colors overflow-hidden ${
               tab === 'project'
-                ? 'bg-[var(--flux-surface)]/80 text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
-                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                ? 'bg-[var(--flux-surface)]/90 text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
+                : 'bg-[var(--flux-surface-alt)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
             <FolderTree className={`w-3 h-3 shrink-0 ${tab === 'project' ? 'text-[var(--flux-accent)]' : ''}`} />
@@ -1236,10 +1236,10 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
           <button
             type="button"
             onClick={() => setTab('library')}
-            className={`min-w-0 px-1 relative inline-flex items-center justify-center gap-1 h-full text-[length:calc(11px*var(--flux-ui-scale))] transition-colors whitespace-nowrap overflow-hidden ${
+            className={`flex-1 min-w-[calc(86px*var(--flux-ui-scale))] px-1.5 relative inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 text-[length:calc(11px*var(--flux-ui-scale))] transition-colors overflow-hidden ${
               tab === 'library'
-                ? 'bg-[var(--flux-surface)]/80 text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
-                : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                ? 'bg-[var(--flux-surface)]/90 text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
+                : 'bg-[var(--flux-surface-alt)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
             <Database className={`w-3 h-3 shrink-0 ${tab === 'library' ? 'text-[var(--flux-accent)]' : ''}`} />
@@ -1259,7 +1259,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
             onChange={(e) => setQuery(e.target.value)}
             placeholder={tab === 'project' ? 'Поиск тега, артикула…' : 'Поиск символа или ГОСТ…'}
             aria-label={tab === 'project' ? 'Поиск по проекту' : 'Поиск в базе компонентов'}
-            className="w-full h-[calc(22px*var(--flux-ui-scale))] pl-6 pr-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
+            className="w-full min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 pl-6 pr-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
           />
         </div>
       </div>
