@@ -328,4 +328,19 @@ test('packToolRailColumns and computeFocusLayoutMetrics split overflow items int
   if (fullWithConsoleAndMap.showMinimap) {
     assert.ok(fullWithConsoleAndMap.minimapLeft >= fullWithConsoleAndMap.explorerLeft + fullWithConsoleAndMap.explorerWidth + fullWithConsoleAndMap.gutter);
   }
+
+  // Constrained narrow viewport (900x600) at 150% scale with all actions engages bounded overflow grid without pushing Explorer/Inspector off-screen
+  const constrained = computeFocusLayoutMetrics({
+    viewportWidth: 900,
+    viewportHeight: 600,
+    uiScale: 150,
+    ribbonOpen: true,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: false,
+    railItemIds: allActionIds,
+  });
+  assert.equal(constrained.toolRailOverflowGrid, true);
+  assert.ok(constrained.toolRailGridCols >= 1);
+  assert.ok(constrained.explorerLeft + constrained.explorerWidth + constrained.inspectorWidth < 900);
 });

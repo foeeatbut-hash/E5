@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   AlignStartHorizontal,
   AlignStartVertical,
@@ -228,6 +228,11 @@ interface SchematicCanvasProps {
   canvasViewMode?: CanvasViewMode;
   onToggleCanvasViewMode?: () => void;
   onActiveCoordsText?: (coordsText: string) => void;
+  onRegisterCameraSync?: (
+    vpIdx: number,
+    fn: ((zoom: number, pan: { x: number; y: number }) => void) | null
+  ) => void;
+  onCancelCameraAnim?: (vpIdx: number) => void;
 }
 
 export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
@@ -322,11 +327,17 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   canvasViewMode = 'single',
   onToggleCanvasViewMode,
   onActiveCoordsText,
+  onRegisterCameraSync,
+  onCancelCameraAnim,
 }) => {
   const isFocusedRef = useRef(isFocused);
   isFocusedRef.current = isFocused;
   const onActiveCoordsTextRef = useRef(onActiveCoordsText);
   onActiveCoordsTextRef.current = onActiveCoordsText;
+  const onCancelCameraAnimRef = useRef(onCancelCameraAnim);
+  onCancelCameraAnimRef.current = onCancelCameraAnim;
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
   const resolvedFocusLayout = useMemo(
     () =>
       focusLayout ??
@@ -351,16 +362,22 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     ]
   );
   const containerRef = useRef<HTMLDivElement>(null);
+  const containerRectRef = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
+  const minimapViewportRectRef = useRef<SVGRectElement | null>(null);
   const [canvasViewportSize, setCanvasViewportSize] = useState<{ width: number; height: number }>({
     width: 1280,
     height: 800,
   });
+  const canvasViewportSizeRef = useRef(canvasViewportSize);
+  canvasViewportSizeRef.current = canvasViewportSize;
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const updateSize = () => {
-      const w = Math.round(el.clientWidth || 0);
-      const h = Math.round(el.clientHeight || 0);
+      const r = el.getBoundingClientRect();
+      containerRectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height };
+      const w = Math.round(el.clientWidth || r.width || 0);
+      const h = Math.round(el.clientHeight || r.height || 0);
       if (w > 0 && h > 0) {
         setCanvasViewportSize((prev) =>
           prev.width === w && prev.height === h ? prev : { width: w, height: h }
@@ -368,10 +385,16 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       }
     };
     updateSize();
-    if (typeof ResizeObserver === 'undefined') return;
+    window.addEventListener('resize', updateSize);
+    if (typeof ResizeObserver === 'undefined') {
+      return () => window.removeEventListener('resize', updateSize);
+    }
     const ro = new ResizeObserver(updateSize);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
   }, []);
   const {
     cmdValue,
@@ -490,6 +513,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   const transformRafRef = useRef<number | null>(null);
   const pendingTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const wheelCommitTimerRef = useRef<number | null>(null);
+  const wheelAnimRef = useRef<{
+    rafId: number | null;
+    targetZoom: number;
+    sx: number;
+    sy: number;
+    lastTime: number;
+  }>({ rafId: null, targetZoom: zoom, sx: 0, sy: 0, lastTime: 0 });
   const onSetTransformRef = useRef(onSetTransform);
   onSetTransformRef.current = onSetTransform;
   const onSetZoomRef = useRef(onSetZoom);
@@ -789,11 +819,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
   const applyDomTransform = useCallback((nextZoom: number, nextPan: { x: number; y: number }) => {
     if (worldGroupRef.current) {
-      worldGroupRef.current.setAttribute('transform', `translate(${nextPan.x}, ${nextPan.y}) scale(${nextZoom})`);
+      worldGroupRef.current.style.transform = `translate3d(${nextPan.x}px, ${nextPan.y}px, 0) scale(${nextZoom})`;
     }
     const zoomLabel = `${Math.round(nextZoom * 100)}%`;
     if (zoomTextRef.current) zoomTextRef.current.textContent = zoomLabel;
     if (multiZoomTextRef.current) multiZoomTextRef.current.textContent = zoomLabel;
+    if (minimapViewportRectRef.current) {
+      const zSafe = Math.max(0.16, nextZoom);
+      const cr = containerRectRef.current;
+      const vw = (cr?.width || canvasViewportSizeRef.current.width || 900) / zSafe;
+      const vh = (cr?.height || canvasViewportSizeRef.current.height || 600) / zSafe;
+      minimapViewportRectRef.current.setAttribute('x', String(-nextPan.x / zSafe));
+      minimapViewportRectRef.current.setAttribute('y', String(-nextPan.y / zSafe));
+      minimapViewportRectRef.current.setAttribute('width', String(vw));
+      minimapViewportRectRef.current.setAttribute('height', String(vh));
+    }
   }, []);
 
   const scheduleTransformApply = useCallback(
@@ -815,16 +855,55 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     [applyDomTransform]
   );
 
+  useEffect(() => {
+    if (!onRegisterCameraSync) return;
+    const syncFn = (nextZoom: number, nextPan: { x: number; y: number }) => {
+      if (wheelAnimRef.current.rafId) {
+        window.cancelAnimationFrame(wheelAnimRef.current.rafId);
+        wheelAnimRef.current.rafId = null;
+      }
+      if (wheelCommitTimerRef.current) {
+        window.clearTimeout(wheelCommitTimerRef.current);
+        wheelCommitTimerRef.current = null;
+      }
+      liveZoomRef.current = nextZoom;
+      livePanRef.current = nextPan;
+      wheelAnimRef.current.targetZoom = nextZoom;
+      applyDomTransform(nextZoom, nextPan);
+    };
+    onRegisterCameraSync(viewportIndex, syncFn);
+    return () => onRegisterCameraSync(viewportIndex, null);
+  }, [onRegisterCameraSync, viewportIndex, applyDomTransform]);
+
   // Sync live transform refs with external React state changes (e.g. Fit View, camera jump, +/- buttons)
   useEffect(() => {
-    if (dragRef.current?.kind === 'pan' || wheelCommitTimerRef.current !== null) return;
+    if (
+      dragRef.current?.kind === 'pan' ||
+      wheelCommitTimerRef.current !== null ||
+      wheelAnimRef.current.rafId !== null
+    ) {
+      return;
+    }
     liveZoomRef.current = zoom;
     livePanRef.current = pan;
+    wheelAnimRef.current.targetZoom = zoom;
     applyDomTransform(zoom, pan);
   }, [zoom, pan, applyDomTransform]);
 
+  const getContainerRect = useCallback(() => {
+    if (containerRectRef.current) return containerRectRef.current;
+    const r = containerRef.current?.getBoundingClientRect();
+    if (!r) return null;
+    const cached = { left: r.left, top: r.top, width: r.width, height: r.height };
+    containerRectRef.current = cached;
+    return cached;
+  }, []);
+
   const toWorld = (clientX: number, clientY: number) => {
-    const rect = containerRef.current?.getBoundingClientRect();
+    const r = containerRef.current?.getBoundingClientRect();
+    const rect = r
+      ? (containerRectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height })
+      : getContainerRect();
     if (!rect) return { x: 0, y: 0 };
     const lp = livePanRef.current;
     const lz = liveZoomRef.current;
@@ -942,6 +1021,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
   const startPanDrag = useCallback(
     (clientX: number, clientY: number) => {
+      onCancelCameraAnimRef.current?.(viewportIndex);
+      if (wheelAnimRef.current.rafId) {
+        window.cancelAnimationFrame(wheelAnimRef.current.rafId);
+        wheelAnimRef.current.rafId = null;
+      }
       if (panWindowCleanupRef.current) {
         panWindowCleanupRef.current();
         panWindowCleanupRef.current = null;
@@ -949,6 +1033,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       if (wheelCommitTimerRef.current) {
         window.clearTimeout(wheelCommitTimerRef.current);
         wheelCommitTimerRef.current = null;
+      }
+      const el = containerRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        containerRectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height };
       }
       const origPan = livePanRef.current;
       dragRef.current = {
@@ -973,7 +1062,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       const onWinEnd = () => {
         finishDrag();
       };
-      window.addEventListener('mousemove', onWinMove);
+      window.addEventListener('mousemove', onWinMove, { passive: true });
       window.addEventListener('mouseup', onWinEnd);
       window.addEventListener('blur', onWinEnd);
       panWindowCleanupRef.current = () => {
@@ -982,7 +1071,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         window.removeEventListener('blur', onWinEnd);
       };
     },
-    [finishDrag, scheduleTransformApply]
+    [finishDrag, scheduleTransformApply, viewportIndex]
   );
 
   useEffect(() => {
@@ -1040,52 +1129,103 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [wireStart, measureState, contextMenu, tool, isFocused, onSetTool]);
 
-  // Cursor-centered non-passive wheel zoom (immediate GPU transform + debounced React state commit)
+  // Smooth cursor-anchored non-passive wheel zoom (RAF exponential damping + 0 React renders while zooming)
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const onWheelNative = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) === 0 && Math.abs(e.deltaX) === 0) return;
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const curZoom = liveZoomRef.current;
-      const curPan = livePanRef.current;
-      const step = e.deltaY < 0 ? 0.1 : -0.1;
-      const nextZoom = Math.min(2.5, Math.max(0.16, Math.round((curZoom + step) * 100) / 100));
-      if (nextZoom === curZoom) return;
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const worldX = (sx - curPan.x) / curZoom;
-      const worldY = (sy - curPan.y) / curZoom;
-      const nextPan = {
-        x: Math.round(sx - worldX * nextZoom),
-        y: Math.round(sy - worldY * nextZoom),
-      };
-      scheduleTransformApply(nextZoom, nextPan);
+    const scheduleReactCommit = () => {
       if (wheelCommitTimerRef.current) {
         window.clearTimeout(wheelCommitTimerRef.current);
       }
       wheelCommitTimerRef.current = window.setTimeout(() => {
         wheelCommitTimerRef.current = null;
-        const committedZoom = liveZoomRef.current;
-        const committedPan = livePanRef.current;
+        const committedZoom = Math.round(liveZoomRef.current * 1000) / 1000;
+        const committedPan = {
+          x: Math.round(livePanRef.current.x),
+          y: Math.round(livePanRef.current.y),
+        };
+        liveZoomRef.current = committedZoom;
+        livePanRef.current = committedPan;
+        applyDomTransform(committedZoom, committedPan);
         if (onSetTransformRef.current) {
           onSetTransformRef.current(committedZoom, committedPan);
         } else {
           onSetZoomRef.current(committedZoom);
           onSetPanRef.current(committedPan);
         }
-      }, 90);
+      }, 140);
+    };
+
+    const onWheelNative = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) === 0 && Math.abs(e.deltaX) === 0) return;
+      e.preventDefault();
+      onCancelCameraAnimRef.current?.(viewportIndex);
+      const r = el.getBoundingClientRect();
+      containerRectRef.current = { left: r.left, top: r.top, width: r.width, height: r.height };
+      const sx = e.clientX - r.left;
+      const sy = e.clientY - r.top;
+
+      const deltaScale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+      const normDy = e.deltaY * deltaScale;
+      const baseZoom =
+        wheelAnimRef.current.rafId !== null ? wheelAnimRef.current.targetZoom : liveZoomRef.current;
+      const factor = Math.exp(-normDy * 0.0018);
+      const nextTargetZoom = Math.min(2.5, Math.max(0.16, baseZoom * factor));
+
+      wheelAnimRef.current.targetZoom = nextTargetZoom;
+      wheelAnimRef.current.sx = sx;
+      wheelAnimRef.current.sy = sy;
+
+      if (wheelCommitTimerRef.current) {
+        window.clearTimeout(wheelCommitTimerRef.current);
+        wheelCommitTimerRef.current = null;
+      }
+
+      if (wheelAnimRef.current.rafId === null) {
+        wheelAnimRef.current.lastTime = performance.now();
+        const stepWheel = (now: number) => {
+          const dt = Math.min(0.05, Math.max(0.001, (now - wheelAnimRef.current.lastTime) / 1000));
+          wheelAnimRef.current.lastTime = now;
+          const curZ = liveZoomRef.current;
+          const curP = livePanRef.current;
+          const tgtZ = wheelAnimRef.current.targetZoom;
+          const alpha = 1 - Math.exp(-dt * 26);
+          const diff = tgtZ - curZ;
+          const nextZ = Math.abs(diff) < 0.0008 ? tgtZ : curZ + diff * alpha;
+
+          const worldX = (wheelAnimRef.current.sx - curP.x) / curZ;
+          const worldY = (wheelAnimRef.current.sy - curP.y) / curZ;
+          const nextPan = {
+            x: wheelAnimRef.current.sx - worldX * nextZ,
+            y: wheelAnimRef.current.sy - worldY * nextZ,
+          };
+          liveZoomRef.current = nextZ;
+          livePanRef.current = nextPan;
+          applyDomTransform(nextZ, nextPan);
+
+          if (Math.abs(tgtZ - nextZ) >= 0.0008) {
+            wheelAnimRef.current.rafId = window.requestAnimationFrame(stepWheel);
+          } else {
+            wheelAnimRef.current.rafId = null;
+            scheduleReactCommit();
+          }
+        };
+        wheelAnimRef.current.rafId = window.requestAnimationFrame(stepWheel);
+      }
     };
     el.addEventListener('wheel', onWheelNative, { passive: false });
     return () => {
       el.removeEventListener('wheel', onWheelNative);
+      if (wheelAnimRef.current.rafId) {
+        window.cancelAnimationFrame(wheelAnimRef.current.rafId);
+        wheelAnimRef.current.rafId = null;
+      }
       if (wheelCommitTimerRef.current) {
         window.clearTimeout(wheelCommitTimerRef.current);
         wheelCommitTimerRef.current = null;
       }
     };
-  }, [scheduleTransformApply]);
+  }, [applyDomTransform, viewportIndex]);
 
   const handleMouseDownBg = (e: React.MouseEvent<SVGSVGElement>) => {
     if (contextMenu) setContextMenu(null);
@@ -1528,7 +1668,11 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   }, []);
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    const rect = containerRef.current?.getBoundingClientRect();
+    const drag = dragRef.current;
+    if (drag?.kind === 'pan') {
+      return;
+    }
+    const rect = getContainerRect();
     const lp = livePanRef.current;
     const lz = liveZoomRef.current;
     const world = rect
@@ -1545,9 +1689,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       : { x: 0, y: 0 };
     cursorRef.current = { world, screen, inside: true };
 
-    if (!hoverRafRef.current) {
+    if (!drag && !hoverRafRef.current) {
       hoverRafRef.current = window.requestAnimationFrame(() => {
         hoverRafRef.current = null;
+        if (dragRef.current) return;
         const cur = cursorRef.current;
         const chEnabled = project.visualSettings.showCrosshair !== false;
         if (containerRef.current) {
@@ -1613,31 +1758,21 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             prev.x === localCursor.x && prev.y === localCursor.y ? prev : localCursor
           );
         }
-        setMeasureState((prev) => {
-          if (!prev || prev.locked) return prev;
-          const pt = {
-            x: snap(cur.world.x),
-            y: snap(cur.world.y),
-          };
-          if (prev.end.x === pt.x && prev.end.y === pt.y) return prev;
-          return { ...prev, end: pt };
-        });
+        if (toolRef.current === 'measure') {
+          setMeasureState((prev) => {
+            if (!prev || prev.locked) return prev;
+            const pt = {
+              x: snap(cur.world.x),
+              y: snap(cur.world.y),
+            };
+            if (prev.end.x === pt.x && prev.end.y === pt.y) return prev;
+            return { ...prev, end: pt };
+          });
+        }
       });
     }
 
-    const drag = dragRef.current;
     if (!drag) return;
-    if (drag.kind === 'pan') {
-      const dx = e.clientX - drag.startX;
-      const dy = e.clientY - drag.startY;
-      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) drag.moved = true;
-      scheduleTransformApply(liveZoomRef.current, {
-        x: drag.origPanX + dx,
-        y: drag.origPanY + dy,
-      });
-      return;
-    }
-
     pendingDragSampleRef.current = {
       clientX: e.clientX,
       clientY: e.clientY,
@@ -1911,27 +2046,9 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         connectedPinKeys: Set<string>;
       }
     >();
-    const vw = canvasViewportSize.width || 1280;
-    const vh = canvasViewportSize.height || 800;
-    const z = Math.max(0.16, zoom);
-    const pad = 320;
-    const viewMinX = -pan.x / z - pad;
-    const viewMinY = -pan.y / z - pad;
-    const viewMaxX = (vw - pan.x) / z + pad;
-    const viewMaxY = (vh - pan.y) / z + pad;
 
     for (const curSheet of renderedSheets) {
-      const origin = getSheetCanvasOrigin(allSheetsLayout, curSheet.id, canvasViewMode);
       const devices = project.devices.filter((d) => d.sheetId === curSheet.id);
-      const visibleDevices =
-        devices.length <= 40
-          ? devices
-          : devices.filter((d) => {
-              if (selectedDeviceIdSet.has(d.id)) return true;
-              const wx = origin.x + d.x;
-              const wy = origin.y + d.y;
-              return wx + d.width >= viewMinX && wx <= viewMaxX && wy + d.height >= viewMinY && wy <= viewMaxY;
-            });
       const wires = project.wires.filter((w) => w.sheetId === curSheet.id);
       const annotations = (project.annotations || []).filter((a) => a.sheetId === curSheet.id);
       const gostTableAnnotations = annotations.filter(
@@ -1966,7 +2083,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
       map.set(curSheet.id, {
         gostGeom: buildGostSheetGeometry(curSheet, project),
         devices,
-        visibleDevices,
+        visibleDevices: devices,
         wires,
         annotations,
         gostTableAnnotations,
@@ -1980,13 +2097,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     return map;
   }, [
     renderedSheets,
-    allSheetsLayout,
-    canvasViewMode,
     project,
-    canvasViewportSize,
-    zoom,
-    pan,
-    selectedDeviceIdSet,
     annotationsVisible,
     wiresVisible,
     vs.wireCrossingBridge,
@@ -2520,6 +2631,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
         onDrop={handleDrop}
         className={`flex-1 min-h-0 overflow-hidden relative ${isMultiViewport ? 'rounded-b-lg' : ''}`}
         style={{
+          contain: 'layout style paint',
           cursor:
             tool === 'pan'
               ? 'grab'
@@ -2574,16 +2686,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             </div>
           </div>
         ) : (
-        <AnimatePresence mode="sync" initial={false}>
-        <motion.svg
-          key={svgMountKey}
+        <svg
           data-sheet-svg={svgMountKey}
           data-canvas-view-mode={canvasViewMode}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0, pointerEvents: 'none' }}
-          transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-          style={{ willChange: 'opacity' }}
+          shapeRendering="geometricPrecision"
           width="100%"
           height="100%"
           onMouseDown={handleMouseDownBg}
@@ -2615,7 +2721,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               height={vs.gridSize}
               patternUnits="userSpaceOnUse"
             >
-              <circle cx={1} cy={1} r={0.9} fill="var(--flux-grid-dot)" />
+              <rect x={0.4} y={0.4} width={1.3} height={1.3} fill="var(--flux-grid-dot)" />
             </pattern>
           </defs>
 
@@ -2623,7 +2729,12 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             ref={(el) => {
               if (el) worldGroupRef.current = el;
             }}
-            transform={`translate(${livePanRef.current.x}, ${livePanRef.current.y}) scale(${liveZoomRef.current})`}
+            style={{
+              transform: `translate3d(${livePanRef.current.x}px, ${livePanRef.current.y}px, 0) scale(${liveZoomRef.current})`,
+              transformOrigin: '0 0',
+              transformBox: 'view-box',
+              willChange: 'transform',
+            }}
           >
             {/* Sheets Loop (Single active sheet or All sheets side-by-side) */}
             {renderedSheets.map((curSheet) => {
@@ -4290,8 +4401,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               />
             </g>
           )}
-        </motion.svg>
-        </AnimatePresence>
+        </svg>
         )}
 
         {/* Floating Potential Signal Trace HUD */}
@@ -4975,12 +5085,13 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 );
               })}
               {(() => {
-                const vw = (canvasViewportSize.width || 900) / Math.max(0.16, zoom);
-                const vh = (canvasViewportSize.height || 600) / Math.max(0.16, zoom);
-                const vx = -pan.x / Math.max(0.16, zoom);
-                const vy = -pan.y / Math.max(0.16, zoom);
+                const vw = (canvasViewportSize.width || 900) / Math.max(0.16, liveZoomRef.current);
+                const vh = (canvasViewportSize.height || 600) / Math.max(0.16, liveZoomRef.current);
+                const vx = -livePanRef.current.x / Math.max(0.16, liveZoomRef.current);
+                const vy = -livePanRef.current.y / Math.max(0.16, liveZoomRef.current);
                 return (
                   <rect
+                    ref={minimapViewportRectRef}
                     x={vx}
                     y={vy}
                     width={vw}

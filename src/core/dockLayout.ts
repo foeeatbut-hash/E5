@@ -612,6 +612,45 @@ export function deleteSheetFromProject(
   };
 }
 
+export function reorderSheetInProject(
+  project: E3Project,
+  sourceSheetId: string,
+  targetSheetId: string
+): { nextProject: E3Project; moved: boolean } {
+  const srcIdx = project.sheets.findIndex((s) => s.id === sourceSheetId);
+  const dstIdx = project.sheets.findIndex((s) => s.id === targetSheetId);
+  if (srcIdx < 0 || dstIdx < 0 || srcIdx === dstIdx) {
+    return { nextProject: project, moved: false };
+  }
+  const nextSheets = [...project.sheets];
+  const [movedSheet] = nextSheets.splice(srcIdx, 1);
+  nextSheets.splice(dstIdx, 0, movedSheet);
+  const reindexed = nextSheets.map((s, idx) => ({ ...s, number: idx + 1 }));
+  return {
+    moved: true,
+    nextProject: normalizeProjectSheetRevisions({
+      ...project,
+      revision: project.revision + 1,
+      updatedAt: new Date().toISOString(),
+      sheets: reindexed,
+    }),
+  };
+}
+
+export function moveSheetOrderInProject(
+  project: E3Project,
+  sheetId: string,
+  delta: -1 | 1
+): { nextProject: E3Project; moved: boolean } {
+  const srcIdx = project.sheets.findIndex((s) => s.id === sheetId);
+  if (srcIdx < 0) return { nextProject: project, moved: false };
+  const targetIdx = srcIdx + delta;
+  if (targetIdx < 0 || targetIdx >= project.sheets.length) {
+    return { nextProject: project, moved: false };
+  }
+  return reorderSheetInProject(project, sheetId, project.sheets[targetIdx].id);
+}
+
 export function syncOpenSheetIds(openSheetIds: string[], sheets: E3Sheet[]): string[] {
   const validIds = new Set(sheets.map((s) => s.id));
   const seen = new Set<string>();
@@ -623,6 +662,14 @@ export function syncOpenSheetIds(openSheetIds: string[], sheets: E3Sheet[]): str
     }
   }
   return result;
+}
+
+export function syncOpenSheetIdsToProjectOrder(
+  openSheetIds: string[],
+  sheets: E3Sheet[]
+): string[] {
+  const openSet = new Set(openSheetIds);
+  return sheets.filter((s) => openSet.has(s.id)).map((s) => s.id);
 }
 
 export function ensureSheetTabOpen(

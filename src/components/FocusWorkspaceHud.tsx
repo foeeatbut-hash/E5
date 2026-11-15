@@ -412,134 +412,243 @@ export const FocusToolRail: React.FC<FocusToolRailProps> = ({
     <>
       <div
         data-testid="canvas-tool-dock"
-        data-rail-columns={columns.length}
+        data-rail-columns={focusLayout.toolRailOverflowGrid ? focusLayout.toolRailGridCols : columns.length}
+        data-rail-overflow-grid={focusLayout.toolRailOverflowGrid ? 'true' : 'false'}
         onMouseDown={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
         style={{
           top: focusLayout.toolRailTop,
           left: focusLayout.toolRailLeft,
           minWidth: focusLayout.toolRailWidth,
+          maxWidth: focusLayout.toolRailOverflowGrid ? focusLayout.toolRailWidth : undefined,
           maxHeight: focusLayout.toolRailMaxHeight,
         }}
-        className="no-print absolute z-30 flex flex-row items-start gap-[4px] p-[4px] rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl transition-[top,max-height] duration-150 overflow-y-auto overflow-x-visible no-scrollbar"
+        className={`no-print absolute z-30 p-[4px] rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl transition-[top,max-height] duration-150 overflow-y-auto overflow-x-hidden no-scrollbar ${
+          focusLayout.toolRailOverflowGrid
+            ? 'grid gap-[2px] items-start justify-items-center'
+            : 'flex flex-row items-start gap-[4px]'
+        }`}
       >
-        {columns.map((colIds, colIdx) => (
-          <React.Fragment key={colIdx}>
-            {colIdx > 0 && (
-              <span
-                data-testid={`canvas-tool-dock-col-sep-${colIdx}`}
-                className="w-px self-stretch bg-[var(--flux-line)]/80 my-[2px] shrink-0"
-              />
+        {focusLayout.toolRailOverflowGrid ? (
+          <div
+            data-testid="canvas-tool-dock-grid"
+            style={{
+              gridTemplateColumns: `repeat(${Math.max(1, focusLayout.toolRailGridCols)}, minmax(0, 1fr))`,
+            }}
+            className="grid gap-[2px] w-full items-center justify-items-center"
+          >
+            {onToggleFocusExplorer && (
+              <button
+                type="button"
+                data-testid="focus-left-edge-tab"
+                aria-pressed={focusExplorerOpen}
+                title="Навигатор проекта и база компонентов (Ctrl+\)"
+                aria-label="Устройства и база компонентов"
+                onClick={onToggleFocusExplorer}
+                className={`inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors ${
+                  focusExplorerOpen
+                    ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
+                    : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                }`}
+              >
+                <PanelLeft className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
+              </button>
             )}
-            <div
-              data-testid={`canvas-tool-dock-col-${colIdx}`}
-              className="flex flex-col items-center gap-[2px] shrink-0"
-            >
-              {colIdx === 0 && onToggleFocusExplorer && (
-                <>
-                  <button
-                    type="button"
-                    data-testid="focus-left-edge-tab"
-                    aria-pressed={focusExplorerOpen}
-                    title="Навигатор проекта и база компонентов (Ctrl+\)"
-                    aria-label="Устройства и база компонентов"
-                    onClick={onToggleFocusExplorer}
-                    className={`inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors ${
-                      focusExplorerOpen
-                        ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
-                        : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-                    }`}
-                  >
-                    <PanelLeft className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
-                  </button>
-                  {onToggleCanvasFocus && (
-                    <button
-                      type="button"
-                      data-testid="left-focus-canvas-btn"
-                      aria-pressed={canvasFocusActive}
-                      onClick={onToggleCanvasFocus}
-                      title={
-                        canvasFocusActive
-                          ? 'Фокус холст (нажмите снова, чтобы вернуть панели и прежний вид)'
-                          : 'Фокус холст — полноэкранный чертёж'
-                      }
-                      aria-label={canvasFocusActive ? 'Вернуть прежний вид' : 'Фокус холст'}
-                      className={`inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors ${
-                        canvasFocusActive
-                          ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
-                          : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]'
-                      }`}
-                    >
-                      {canvasFocusActive ? (
-                        <Minimize2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
-                      ) : (
-                        <Maximize2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
-                      )}
-                    </button>
+            {onToggleCanvasFocus && (
+              <button
+                type="button"
+                data-testid="left-focus-canvas-btn"
+                aria-pressed={canvasFocusActive}
+                onClick={onToggleCanvasFocus}
+                title={
+                  canvasFocusActive
+                    ? 'Фокус холст (нажмите снова, чтобы вернуть панели и прежний вид)'
+                    : 'Фокус холст — полноэкранный чертёж'
+                }
+                aria-label={canvasFocusActive ? 'Вернуть прежний вид' : 'Фокус холст'}
+                className={`inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors ${
+                  canvasFocusActive
+                    ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
+                    : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]'
+                }`}
+              >
+                {canvasFocusActive ? (
+                  <Minimize2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
+                ) : (
+                  <Maximize2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
+                )}
+              </button>
+            )}
+            {quickIds.map((actionId) => {
+              const def = getFocusQuickActionDef(actionId);
+              const active = isQuickActive(actionId);
+              const disabled = isQuickDisabled(actionId);
+              const fullTitle = `${def.title}${def.shortcut ? ` (${def.shortcut})` : ''} · ПКМ — настроить`;
+              return (
+                <button
+                  key={actionId}
+                  type="button"
+                  data-testid={`focus-rail-item-${actionId}`}
+                  data-quick-access-id={actionId}
+                  disabled={disabled}
+                  title={fullTitle}
+                  aria-label={def.label}
+                  aria-pressed={active}
+                  onClick={() => handleQuickClick(actionId)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setRailQuickMenu({
+                      actionId,
+                      mode: 'rail',
+                      x: e.clientX,
+                      y: e.clientY,
+                    });
+                  }}
+                  className={`relative inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors disabled:opacity-35 ${
+                    active
+                      ? 'text-[var(--flux-accent)]'
+                      : def.danger
+                        ? 'text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--flux-hover)]/70'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId={`cad-dock-pill-${motionLayoutScopeId}`}
+                      transition={{ type: 'spring', stiffness: 520, damping: 36 }}
+                      className="absolute inset-0 rounded-[6px] bg-[var(--flux-accent-soft)] border border-[var(--flux-accent)]/35"
+                    />
                   )}
-                  <span className="w-[calc(20px*var(--flux-ui-scale))] h-px bg-[var(--flux-line)] my-[2px] shrink-0" />
-                </>
-              )}
-
-              {colIds.map((actionId, idx) => {
-                const def = getFocusQuickActionDef(actionId);
-                const active = isQuickActive(actionId);
-                const disabled = isQuickDisabled(actionId);
-                const prevGroup = idx > 0 ? getFocusQuickActionDef(colIds[idx - 1]).group : def.group;
-                const needsDivider = idx > 0 && prevGroup !== def.group;
-                const fullTitle = `${def.title}${def.shortcut ? ` (${def.shortcut})` : ''} · ПКМ — настроить`;
-                return (
-                  <React.Fragment key={actionId}>
-                    {needsDivider && (
-                      <span className="w-[calc(20px*var(--flux-ui-scale))] h-px bg-[var(--flux-line)] my-[2px] shrink-0" />
+                  <span className="relative z-10 inline-flex items-center justify-center">
+                    {renderFocusQuickAccessIcon(
+                      actionId,
+                      'w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]'
                     )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          columns.map((colIds, colIdx) => (
+            <React.Fragment key={colIdx}>
+              {colIdx > 0 && (
+                <span
+                  data-testid={`canvas-tool-dock-col-sep-${colIdx}`}
+                  className="w-px self-stretch bg-[var(--flux-line)]/80 my-[2px] shrink-0"
+                />
+              )}
+              <div
+                data-testid={`canvas-tool-dock-col-${colIdx}`}
+                className="flex flex-col items-center gap-[2px] shrink-0"
+              >
+                {colIdx === 0 && onToggleFocusExplorer && (
+                  <>
                     <button
                       type="button"
-                      data-testid={`focus-rail-item-${actionId}`}
-                      data-quick-access-id={actionId}
-                      disabled={disabled}
-                      title={fullTitle}
-                      aria-label={def.label}
-                      aria-pressed={active}
-                      onClick={() => handleQuickClick(actionId)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setRailQuickMenu({
-                          actionId,
-                          mode: 'rail',
-                          x: e.clientX,
-                          y: e.clientY,
-                        });
-                      }}
-                      className={`relative inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors disabled:opacity-35 ${
-                        active
-                          ? 'text-[var(--flux-accent)]'
-                          : def.danger
-                            ? 'text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--flux-hover)]/70'
-                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70'
+                      data-testid="focus-left-edge-tab"
+                      aria-pressed={focusExplorerOpen}
+                      title="Навигатор проекта и база компонентов (Ctrl+\)"
+                      aria-label="Устройства и база компонентов"
+                      onClick={onToggleFocusExplorer}
+                      className={`inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors ${
+                        focusExplorerOpen
+                          ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
+                          : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
                       }`}
                     >
-                      {active && (
-                        <motion.span
-                          layoutId={`cad-dock-pill-${motionLayoutScopeId}`}
-                          transition={{ type: 'spring', stiffness: 520, damping: 36 }}
-                          className="absolute inset-0 rounded-[6px] bg-[var(--flux-accent-soft)] border border-[var(--flux-accent)]/35"
-                        />
-                      )}
-                      <span className="relative z-10 inline-flex items-center justify-center">
-                        {renderFocusQuickAccessIcon(
-                          actionId,
-                          'w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]'
-                        )}
-                      </span>
+                      <PanelLeft className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
                     </button>
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          </React.Fragment>
-        ))}
+                    {onToggleCanvasFocus && (
+                      <button
+                        type="button"
+                        data-testid="left-focus-canvas-btn"
+                        aria-pressed={canvasFocusActive}
+                        onClick={onToggleCanvasFocus}
+                        title={
+                          canvasFocusActive
+                            ? 'Фокус холст (нажмите снова, чтобы вернуть панели и прежний вид)'
+                            : 'Фокус холст — полноэкранный чертёж'
+                        }
+                        aria-label={canvasFocusActive ? 'Вернуть прежний вид' : 'Фокус холст'}
+                        className={`inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors ${
+                          canvasFocusActive
+                            ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
+                            : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]'
+                        }`}
+                      >
+                        {canvasFocusActive ? (
+                          <Minimize2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
+                        ) : (
+                          <Maximize2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
+                        )}
+                      </button>
+                    )}
+                    <span className="w-[calc(20px*var(--flux-ui-scale))] h-px bg-[var(--flux-line)] my-[2px] shrink-0" />
+                  </>
+                )}
+
+                {colIds.map((actionId, idx) => {
+                  const def = getFocusQuickActionDef(actionId);
+                  const active = isQuickActive(actionId);
+                  const disabled = isQuickDisabled(actionId);
+                  const prevGroup = idx > 0 ? getFocusQuickActionDef(colIds[idx - 1]).group : def.group;
+                  const needsDivider = idx > 0 && prevGroup !== def.group;
+                  const fullTitle = `${def.title}${def.shortcut ? ` (${def.shortcut})` : ''} · ПКМ — настроить`;
+                  return (
+                    <React.Fragment key={actionId}>
+                      {needsDivider && (
+                        <span className="w-[calc(20px*var(--flux-ui-scale))] h-px bg-[var(--flux-line)] my-[2px] shrink-0" />
+                      )}
+                      <button
+                        type="button"
+                        data-testid={`focus-rail-item-${actionId}`}
+                        data-quick-access-id={actionId}
+                        disabled={disabled}
+                        title={fullTitle}
+                        aria-label={def.label}
+                        aria-pressed={active}
+                        onClick={() => handleQuickClick(actionId)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setRailQuickMenu({
+                            actionId,
+                            mode: 'rail',
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
+                        }}
+                        className={`relative inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors disabled:opacity-35 ${
+                          active
+                            ? 'text-[var(--flux-accent)]'
+                            : def.danger
+                              ? 'text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--flux-hover)]/70'
+                              : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70'
+                        }`}
+                      >
+                        {active && (
+                          <motion.span
+                            layoutId={`cad-dock-pill-${motionLayoutScopeId}`}
+                            transition={{ type: 'spring', stiffness: 520, damping: 36 }}
+                            className="absolute inset-0 rounded-[6px] bg-[var(--flux-accent-soft)] border border-[var(--flux-accent)]/35"
+                          />
+                        )}
+                        <span className="relative z-10 inline-flex items-center justify-center">
+                          {renderFocusQuickAccessIcon(
+                            actionId,
+                            'w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]'
+                          )}
+                        </span>
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </React.Fragment>
+          ))
+        )}
       </div>
 
       <FocusQuickAccessMenu

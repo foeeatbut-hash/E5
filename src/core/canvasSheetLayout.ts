@@ -6,11 +6,10 @@ export const DEFAULT_CANVAS_VIEW_MODE: CanvasViewMode = 'single';
 export const CANVAS_VIEW_MODE_STORAGE_KEY = 'e3promax.canvasViewMode.v1';
 
 /**
- * Compact horizontal gap between consecutive sheets in "all sheets" mode.
- * Divisible by standard grid steps (5, 10, 20, 40) so sheets sit side-by-side
- * without vast empty voids and naturally shift when inserting a sheet in between.
+ * Zero horizontal gap between consecutive sheets in "all sheets" mode so sheets
+ * sit edge-to-edge linearly and dynamically re-index on insert/reorder/resize.
  */
-export const ALL_SHEETS_MIN_GAP = 80;
+export const ALL_SHEETS_MIN_GAP = 0;
 export const ALL_SHEETS_SLOT_STEP_X = ALL_SHEETS_MIN_GAP;
 
 export interface SheetCanvasSlot {
@@ -69,11 +68,10 @@ export function saveCanvasViewMode(
 }
 
 /**
- * Places all sheets sequentially right after one another with a compact uniform gap.
- * Inserting a new sheet between existing sheets or resizing an earlier sheet
- * smoothly shifts subsequent sheets without overlapping.
+ * Re-indexes and places all sheets linearly edge-to-edge (zero gap) so inserting,
+ * reordering, or resizing any sheet dynamically shifts all subsequent sheets cleanly.
  */
-export function computeAllSheetsLayout(sheets: E3Sheet[]): AllSheetsCanvasLayout {
+export function reindexAllSheetsLayout(sheets: E3Sheet[]): AllSheetsCanvasLayout {
   const slots: SheetCanvasSlot[] = [];
   const bySheetId = new Map<string, SheetCanvasSlot>();
   let nextOriginX = 0;
@@ -111,6 +109,10 @@ export function computeAllSheetsLayout(sheets: E3Sheet[]): AllSheetsCanvasLayout
   };
 }
 
+export function computeAllSheetsLayout(sheets: E3Sheet[]): AllSheetsCanvasLayout {
+  return reindexAllSheetsLayout(sheets);
+}
+
 export function getSheetCanvasOrigin(
   layout: AllSheetsCanvasLayout,
   sheetId: string | null | undefined,
@@ -128,10 +130,15 @@ export function findSheetSlotAtCanvasPoint(
   worldY: number,
   topPadding = 0
 ): SheetCanvasSlot | null {
-  for (const slot of layout.slots) {
+  for (let i = 0; i < layout.slots.length; i++) {
+    const slot = layout.slots[i];
+    const isLast = i === layout.slots.length - 1;
+    const rightMatch = isLast
+      ? worldX <= slot.originX + slot.width
+      : worldX < slot.originX + slot.width;
     if (
       worldX >= slot.originX &&
-      worldX <= slot.originX + slot.width &&
+      rightMatch &&
       worldY >= slot.originY - topPadding &&
       worldY <= slot.originY + slot.height
     ) {

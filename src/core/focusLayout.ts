@@ -18,6 +18,7 @@ export interface PackToolRailColumnsInput {
   itemCount?: number;
   uiScale: UiScalePercent;
   maxHeight: number;
+  maxWidth?: number;
   hasExplorerButtons?: boolean;
 }
 
@@ -26,6 +27,8 @@ export interface PackedToolRailColumns {
   columnCount: number;
   width: number;
   btnSize: number;
+  overflowGrid: boolean;
+  gridCols: number;
 }
 
 export function packToolRailColumns(input: PackToolRailColumnsInput): PackedToolRailColumns {
@@ -85,13 +88,27 @@ export function packToolRailColumns(input: PackToolRailColumnsInput): PackedTool
     padX +
     columnCount * btnSize +
     Math.max(0, columnCount - 1) * colSeparatorAdvance;
-  const width = Math.max(Math.round(40 * f), rawWidth);
+
+  const maxAllowedCols =
+    input.maxWidth !== undefined
+      ? Math.max(1, Math.floor((input.maxWidth - padX + colSeparatorAdvance) / (btnSize + colSeparatorAdvance)))
+      : columnCount;
+  const overflowGrid = input.maxWidth !== undefined && columnCount > maxAllowedCols;
+  const gridCols = overflowGrid ? maxAllowedCols : columnCount;
+  const width = overflowGrid
+    ? Math.max(
+        Math.round(40 * f),
+        padX + gridCols * btnSize + Math.max(0, gridCols - 1) * 4
+      )
+    : Math.max(Math.round(40 * f), rawWidth);
 
   return {
     columns,
     columnCount,
     width,
     btnSize,
+    overflowGrid,
+    gridCols,
   };
 }
 
@@ -133,6 +150,8 @@ export interface FocusLayoutMetrics {
   toolRailMaxHeight: number;
   toolRailColumns: FocusQuickActionId[][];
   toolRailColumnCount: number;
+  toolRailOverflowGrid: boolean;
+  toolRailGridCols: number;
   explorerLeft: number;
   explorerTop: number;
   explorerBottom: number;
@@ -229,6 +248,18 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
   const minimapEnabled = isMinimapEnabled(input.showMinimap);
   const hasRailExplorer = input.hasRailExplorerButtons ?? true;
 
+  const explorerMinW = Math.round(210 * Math.min(f, 1.35));
+  const inspectorMinW = Math.round(210 * Math.min(f, 1.35));
+  const rightBudgetReserve = input.inspectorCollapsed
+    ? Math.round(110 * f) + gutter
+    : inspectorMinW + gutter;
+  const explorerBudgetReserve = input.explorerOpen ? explorerMinW + gutter : 0;
+  const minCenterReserve = input.explorerOpen ? 100 : 180;
+  const maxToolRailWidth = Math.max(
+    Math.round(40 * f),
+    vw - 2 * outerPad - explorerBudgetReserve - rightBudgetReserve - minCenterReserve
+  );
+
   const minimapLikelyNoConsole =
     minimapEnabled && vw >= 768 && vh - minimapHeight - outerPad > topClearance + 180;
   const preliminaryBottomClearance = input.consoleOpen
@@ -242,6 +273,7 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     itemCount: input.railItemCount,
     uiScale: safeScale,
     maxHeight: preliminaryMaxHeight,
+    maxWidth: maxToolRailWidth,
     hasExplorerButtons: hasRailExplorer,
   });
 
@@ -254,6 +286,7 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
       itemCount: input.railItemCount,
       uiScale: safeScale,
       maxHeight: fullHeightMax,
+      maxWidth: maxToolRailWidth,
       hasExplorerButtons: hasRailExplorer,
     });
     if (fullPacked.columnCount === 1) {
@@ -267,8 +300,6 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
 
   const explorerLeft = outerPad + toolRailWidth + gutter;
   const explorerTop = topClearance;
-  const explorerMinW = Math.round(210 * Math.min(f, 1.35));
-  const inspectorMinW = Math.round(210 * Math.min(f, 1.35));
   const sideClearanceGap = 140;
   const maxExplorerAbsolute = Math.max(explorerMinW + 30, Math.round(vw * 0.56));
   const maxInspectorAbsolute = Math.max(inspectorMinW + 30, Math.round(vw * 0.58));
@@ -353,6 +384,7 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     itemCount: input.railItemCount,
     uiScale: safeScale,
     maxHeight: toolRailMaxHeight,
+    maxWidth: maxToolRailWidth,
     hasExplorerButtons: hasRailExplorer,
   });
 
@@ -402,6 +434,8 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     toolRailMaxHeight,
     toolRailColumns: finalPackedRail.columns,
     toolRailColumnCount: finalPackedRail.columnCount,
+    toolRailOverflowGrid: finalPackedRail.overflowGrid,
+    toolRailGridCols: finalPackedRail.gridCols,
     explorerLeft,
     explorerTop,
     explorerBottom,

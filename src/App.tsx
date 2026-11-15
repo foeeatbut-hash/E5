@@ -67,10 +67,13 @@ import {
   insertSheetInProject,
   loadDockLayout,
   movePanelDock,
+  moveSheetOrderInProject,
+  reorderSheetInProject,
   rescaleDockLayoutForUiScale,
   resizeDockEdge,
   saveDockLayout,
   syncOpenSheetIds,
+  syncOpenSheetIdsToProjectOrder,
   togglePanelCollapse,
   updateFloatingRect,
   viewportCountForMode,
@@ -418,6 +421,17 @@ export default function App() {
   const viewportTransformsRef = useRef(viewportTransforms);
   viewportTransformsRef.current = viewportTransforms;
   const cameraAnimRef = useRef<Record<number, number>>({});
+  const cameraDomSyncRef = useRef<
+    Record<number, ((zoom: number, pan: { x: number; y: number }) => void) | null>
+  >({});
+  const liveCameraPosRef = useRef<Record<number, { zoom: number; pan: { x: number; y: number } }>>({});
+  const registerCameraDomSync = useCallback(
+    (vpIdx: number, fn: ((zoom: number, pan: { x: number; y: number }) => void) | null) => {
+      if (fn) cameraDomSyncRef.current[vpIdx] = fn;
+      else delete cameraDomSyncRef.current[vpIdx];
+    },
+    []
+  );
 
   // UI Mode ('classic' | 'hybrid' | 'focus') & UI Scale (100%..150%)
   const [uiMode, setUiMode] = useState<UiWorkspaceMode>(() => loadUiMode());
@@ -3495,13 +3509,17 @@ export default function App() {
   const animateCameraTo = useCallback(
     (vpIdx: number, targetZoom: number, targetPan: { x: number; y: number }, animate = true) => {
       cancelCameraAnim(vpIdx);
-      const cur = viewportTransformsRef.current[vpIdx] || { zoom: 0.56, pan: { x: 24, y: 12 } };
+      const cur =
+        liveCameraPosRef.current[vpIdx] ||
+        viewportTransformsRef.current[vpIdx] || { zoom: 0.56, pan: { x: 24, y: 12 } };
       if (
         !animate ||
         (Math.abs(cur.zoom - targetZoom) < 0.002 &&
           Math.abs(cur.pan.x - targetPan.x) < 1 &&
           Math.abs(cur.pan.y - targetPan.y) < 1)
       ) {
+        liveCameraPosRef.current[vpIdx] = { zoom: targetZoom, pan: targetPan };
+        cameraDomSyncRef.current[vpIdx]?.(targetZoom, targetPan);
         setViewportTransforms((prev) => ({
           ...prev,
           [vpIdx]: { zoom: targetZoom, pan: targetPan },
@@ -3512,24 +3530,33 @@ export default function App() {
       const startPanX = cur.pan.x;
       const startPanY = cur.pan.y;
       const startTime = performance.now();
-      const durationMs = 175;
+      const durationMs = 190;
       const step = (now: number) => {
         const t = Math.min(1, (now - startTime) / durationMs);
-        const eased = 1 - Math.pow(1 - t, 3);
-        const z = startZoom + (targetZoom - startZoom) * eased;
-        const px = startPanX + (targetPan.x - startPanX) * eased;
-        const py = startPanY + (targetPan.y - startPanY) * eased;
-        setViewportTransforms((prev) => ({
-          ...prev,
-          [vpIdx]: {
-            zoom: t >= 1 ? targetZoom : z,
-            pan: t >= 1 ? targetPan : { x: px, y: py },
-          },
-        }));
+        const eased = 1 - Math.pow(1 - t, 4);
+        const z = t >= 1 ? targetZoom : startZoom + (targetZoom - startZoom) * eased;
+        const px = t >= 1 ? targetPan.x : startPanX + (targetPan.x - startPanX) * eased;
+        const py = t >= 1 ? targetPan.y : startPanY + (targetPan.y - startPanY) * eased;
+        const nextPan = { x: px, y: py };
+        liveCameraPosRef.current[vpIdx] = { zoom: z, pan: nextPan };
+        const domSync = cameraDomSyncRef.current[vpIdx];
         if (t < 1) {
+          if (domSync) {
+            domSync(z, nextPan);
+          } else {
+            setViewportTransforms((prev) => ({
+              ...prev,
+              [vpIdx]: { zoom: z, pan: nextPan },
+            }));
+          }
           cameraAnimRef.current[vpIdx] = window.requestAnimationFrame(step);
         } else {
           delete cameraAnimRef.current[vpIdx];
+          domSync?.(targetZoom, targetPan);
+          setViewportTransforms((prev) => ({
+            ...prev,
+            [vpIdx]: { zoom: targetZoom, pan: targetPan },
+          }));
         }
       };
       cameraAnimRef.current[vpIdx] = window.requestAnimationFrame(step);
@@ -3934,6 +3961,46 @@ export default function App() {
       appendLog('WARN', 'E3-CORE', 'Лист удалён из проекта.');
     },
     [project, commitProject, appendLog]
+  );
+
+  const handleMoveSheetOrder = useCallback(
+    (sheetId: string, delta: -1 | 1) => {
+      const curProject = docStateRef.current.present;
+      const { nextProject, moved } = moveSheetOrderInProject(curProject, sheetId, delta);
+      if (!moved) return;
+      commitProject(() => nextProject);
+      setOpenSheetIds((prev) => syncOpenSheetIdsToProjectOrder(prev, nextProject.sheets));
+      const focusSheet =
+        nextProject.sheets.find((s) => s.id === activeSheetIdRef.current) ||
+        nextProject.sheets.find((s) => s.id === sheetId);
+      if (canvasViewModeRef.current === 'all' && focusSheet) {
+        window.requestAnimationFrame(() => {
+          fitSheetToViewportRef.current?.(focusSheet, activeViewportIdxRef.current, true);
+        });
+      }
+      appendLog('INFO', 'E3-CORE', 'Порядок листов и сквозная нумерация переиндексированы.');
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleReorderSheet = useCallback(
+    (sourceSheetId: string, targetSheetId: string) => {
+      const curProject = docStateRef.current.present;
+      const { nextProject, moved } = reorderSheetInProject(curProject, sourceSheetId, targetSheetId);
+      if (!moved) return;
+      commitProject(() => nextProject);
+      setOpenSheetIds((prev) => syncOpenSheetIdsToProjectOrder(prev, nextProject.sheets));
+      const focusSheet =
+        nextProject.sheets.find((s) => s.id === activeSheetIdRef.current) ||
+        nextProject.sheets.find((s) => s.id === sourceSheetId);
+      if (canvasViewModeRef.current === 'all' && focusSheet) {
+        window.requestAnimationFrame(() => {
+          fitSheetToViewportRef.current?.(focusSheet, activeViewportIdxRef.current, true);
+        });
+      }
+      appendLog('INFO', 'E3-CORE', 'Порядок листов обновлён — позиции на холсте переиндексированы.');
+    },
+    [commitProject, appendLog]
   );
 
   const handleCreateSheetFolder = useCallback(
@@ -6224,6 +6291,8 @@ export default function App() {
           onDeleteSheetFolder={handleDeleteSheetFolder}
           onMoveSheetToFolder={handleMoveSheetToFolder}
           onInsertSheetAfter={handleAddSheet}
+          onMoveSheetOrder={handleMoveSheetOrder}
+          onReorderSheet={handleReorderSheet}
         />
       );
     }
@@ -7002,20 +7071,29 @@ export default function App() {
         },
         onSetZoom: (nextZ: number) => {
           cancelCameraAnimRef.current(idx);
-          setViewportTransforms((prev) => ({
-            ...prev,
-            [idx]: { zoom: nextZ, pan: prev[idx]?.pan || { x: 20, y: 12 } },
-          }));
+          setViewportTransforms((prev) => {
+            const nextPan = prev[idx]?.pan || { x: 20, y: 12 };
+            liveCameraPosRef.current[idx] = { zoom: nextZ, pan: nextPan };
+            return {
+              ...prev,
+              [idx]: { zoom: nextZ, pan: nextPan },
+            };
+          });
         },
         onSetPan: (nextPan: { x: number; y: number }) => {
           cancelCameraAnimRef.current(idx);
-          setViewportTransforms((prev) => ({
-            ...prev,
-            [idx]: { zoom: prev[idx]?.zoom ?? 0.45, pan: nextPan },
-          }));
+          setViewportTransforms((prev) => {
+            const nextZ = prev[idx]?.zoom ?? 0.45;
+            liveCameraPosRef.current[idx] = { zoom: nextZ, pan: nextPan };
+            return {
+              ...prev,
+              [idx]: { zoom: nextZ, pan: nextPan },
+            };
+          });
         },
         onSetTransform: (nextZ: number, nextPan: { x: number; y: number }) => {
           cancelCameraAnimRef.current(idx);
+          liveCameraPosRef.current[idx] = { zoom: nextZ, pan: nextPan };
           setViewportTransforms((prev) => ({
             ...prev,
             [idx]: { zoom: nextZ, pan: nextPan },
@@ -7547,6 +7625,8 @@ export default function App() {
                         ? handleActiveViewportCoordsText
                         : undefined
                     }
+                    onRegisterCameraSync={registerCameraDomSync}
+                    onCancelCameraAnim={cancelCameraAnim}
                   />
                 </div>
               );

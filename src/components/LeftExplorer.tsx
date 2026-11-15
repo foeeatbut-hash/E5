@@ -2,7 +2,9 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   Cable,
   Check,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Cpu,
   Database,
   FileText,
@@ -54,6 +56,8 @@ interface LeftExplorerProps {
   onDeleteSheetFolder?: (folderPath: string) => void;
   onMoveSheetToFolder?: (sheetId: string, folderPath: string | null) => void;
   onInsertSheetAfter?: (afterSheetId: string) => void;
+  onMoveSheetOrder?: (sheetId: string, delta: -1 | 1) => void;
+  onReorderSheet?: (sourceSheetId: string, targetSheetId: string) => void;
 }
 
 function renderCatalogMiniSymbol(category: CatalogItem['category']) {
@@ -135,6 +139,8 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   onDeleteSheetFolder,
   onMoveSheetToFolder,
   onInsertSheetAfter,
+  onMoveSheetOrder,
+  onReorderSheet,
   symbolWorkspace,
 }) => {
   const isNewUi = isNewUiMode(uiMode);
@@ -158,6 +164,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   const [renameFolderValue, setRenameFolderValue] = useState('');
   const [movingSheetId, setMovingSheetId] = useState<string | null>(null);
   const [dragOverFolder, setDragOverFolder] = useState<string | '__root__' | null>(null);
+  const [dragOverSheetId, setDragOverSheetId] = useState<string | null>(null);
   const [draggingSheetId, setDraggingSheetId] = useState<string | null>(null);
   const [splitPercent, setSplitPercent] = useState(50);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
@@ -244,24 +251,54 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
   const renderSheetRow = (s: E3Sheet) => {
     const active = s.id === activeSheetId;
     const isMoving = movingSheetId === s.id;
+    const sheetIdx = project.sheets.findIndex((item) => item.id === s.id);
+    const canMoveUp = sheetIdx > 0;
+    const canMoveDown = sheetIdx >= 0 && sheetIdx < project.sheets.length - 1;
+    const isDropTarget = dragOverSheetId === s.id && draggingSheetId !== s.id;
     return (
       <div key={s.id} className="space-y-0.5">
         <div
           data-testid={`explorer-sheet-item-${s.id}`}
-          draggable={Boolean(onMoveSheetToFolder)}
+          draggable={Boolean(onMoveSheetToFolder || onReorderSheet)}
           onDragStart={(e) => {
             e.dataTransfer.setData('application/x-flux-sheet-id', s.id);
             e.dataTransfer.effectAllowed = 'move';
             setDraggingSheetId(s.id);
           }}
+          onDragOver={(e) => {
+            if (!onReorderSheet || !draggingSheetId || draggingSheetId === s.id) return;
+            if (e.dataTransfer.types.includes('application/x-flux-sheet-id')) {
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = 'move';
+              if (dragOverSheetId !== s.id) setDragOverSheetId(s.id);
+            }
+          }}
+          onDragLeave={() => {
+            if (dragOverSheetId === s.id) setDragOverSheetId(null);
+          }}
+          onDrop={(e) => {
+            if (!onReorderSheet) return;
+            const sourceId = e.dataTransfer.getData('application/x-flux-sheet-id');
+            if (sourceId && sourceId !== s.id) {
+              e.preventDefault();
+              e.stopPropagation();
+              onReorderSheet(sourceId, s.id);
+            }
+            setDragOverSheetId(null);
+            setDraggingSheetId(null);
+          }}
           onDragEnd={() => {
             setDraggingSheetId(null);
             setDragOverFolder(null);
+            setDragOverSheetId(null);
           }}
           className={`group/sheet flex items-center justify-between gap-1 px-1.5 min-h-[calc(22px*var(--flux-ui-scale))] h-auto py-0.5 rounded-[2px] text-left text-[length:calc(11px*var(--flux-ui-scale))] transition-colors ${
-            active
-              ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
-              : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+            isDropTarget
+              ? 'ring-1 ring-[var(--flux-accent)] bg-[var(--flux-accent-soft)]'
+              : active
+                ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] font-medium'
+                : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
           }`}
         >
           <button
@@ -278,7 +315,39 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
               {s.number}. {s.name}
             </span>
           </button>
-          <span className="flex items-center gap-1 shrink-0 font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+          <span className="flex items-center gap-0.5 shrink-0 font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+            {onMoveSheetOrder && project.sheets.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  data-testid={`explorer-move-sheet-up-${s.id}`}
+                  disabled={!canMoveUp}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveSheetOrder(s.id, -1);
+                  }}
+                  title={`Переместить лист Л.${s.number} выше`}
+                  aria-label={`Переместить лист ${s.name} выше`}
+                  className="inline-flex items-center justify-center w-4 h-4 rounded-[2px] opacity-0 group-hover/sheet:opacity-100 focus:opacity-100 disabled:opacity-20 hover:text-[var(--flux-accent)] hover:bg-[var(--flux-bg)] transition-opacity"
+                >
+                  <ChevronUp className="w-2.5 h-2.5" />
+                </button>
+                <button
+                  type="button"
+                  data-testid={`explorer-move-sheet-down-${s.id}`}
+                  disabled={!canMoveDown}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveSheetOrder(s.id, 1);
+                  }}
+                  title={`Переместить лист Л.${s.number} ниже`}
+                  aria-label={`Переместить лист ${s.name} ниже`}
+                  className="inline-flex items-center justify-center w-4 h-4 rounded-[2px] opacity-0 group-hover/sheet:opacity-100 focus:opacity-100 disabled:opacity-20 hover:text-[var(--flux-accent)] hover:bg-[var(--flux-bg)] transition-opacity"
+                >
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </button>
+              </>
+            )}
             {onInsertSheetAfter && (
               <button
                 type="button"
@@ -313,7 +382,7 @@ export const LeftExplorer: React.FC<LeftExplorerProps> = React.memo(({
                 <FolderInput className="w-2.5 h-2.5" />
               </button>
             )}
-            <span data-testid={`explorer-sheet-rev-${s.id}`}>
+            <span data-testid={`explorer-sheet-rev-${s.id}`} className="pl-0.5">
               {getSheetRevisionLabel(s)}
               {hasSheetUncommittedChanges(project, s) ? '*' : ''}
             </span>

@@ -209,3 +209,22 @@ test('closeSheetTab, ensureSheetTabOpen, and syncOpenSheetIds manage open canvas
   assert.deepEqual(syncOpenSheetIds(['sheet-1', 'deleted-99', 'sheet-1'], proj.sheets), ['sheet-1']);
 });
 
+test('moveSheetOrderInProject and reorderSheetInProject re-index sheet numbers and open tab order', async () => {
+  const { moveSheetOrderInProject, reorderSheetInProject, syncOpenSheetIdsToProjectOrder } = await import('./dockLayout.ts');
+  const proj = createSeedProject();
+  assert.deepEqual(proj.sheets.map((s) => s.id), ['sheet-1', 'sheet-2', 'sheet-3']);
+
+  const movedDown = moveSheetOrderInProject(proj, 'sheet-1', 1);
+  assert.equal(movedDown.moved, true);
+  assert.deepEqual(movedDown.nextProject.sheets.map((s) => s.id), ['sheet-2', 'sheet-1', 'sheet-3']);
+  assert.deepEqual(movedDown.nextProject.sheets.map((s) => s.number), [1, 2, 3]);
+
+  const movedTop = reorderSheetInProject(movedDown.nextProject, 'sheet-3', 'sheet-2');
+  assert.equal(movedTop.moved, true);
+  assert.deepEqual(movedTop.nextProject.sheets.map((s) => s.id), ['sheet-3', 'sheet-2', 'sheet-1']);
+  assert.deepEqual(movedTop.nextProject.sheets.map((s) => s.number), [1, 2, 3]);
+
+  const syncedTabs = syncOpenSheetIdsToProjectOrder(['sheet-1', 'sheet-3'], movedTop.nextProject.sheets);
+  assert.deepEqual(syncedTabs, ['sheet-3', 'sheet-1']);
+});
+

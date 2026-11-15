@@ -216,6 +216,7 @@ pre,
   backdrop-filter: blur(12px) saturate(180%);
   -webkit-backdrop-filter: blur(12px) saturate(180%);
   box-shadow: var(--flux-glass-specular);
+  transform: translateZ(0);
 }
 
 .flux-glass-bar {
@@ -238,6 +239,7 @@ pre,
   -webkit-backdrop-filter: blur(12px) saturate(180%);
   box-shadow: var(--flux-popover-shadow), var(--flux-glass-specular);
   contain: layout style;
+  transform: translateZ(0);
 }
 
 /* Avoid redundant nested GPU blur readbacks inside already-frosted top-level glass shells */
