@@ -31,6 +31,15 @@ import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { SystemHealthDashboard } from './components/SystemHealthDashboard';
 import { SymbolWorkspaceCanvas } from './components/SymbolWorkspaceCanvas';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
+import { ModeRail, type QaChecklistItem, type WorkspaceMode } from './components/ModeRail';
+import {
+  canNavBack,
+  canNavForward,
+  createNavHistory,
+  pushNavLocation,
+  stepNavHistory,
+  type NavHistoryState,
+} from './core/navHistory';
 import {
   clampDockLayoutToViewport,
   closeSheetTab,
@@ -375,6 +384,8 @@ export default function App() {
     }
     return loaded;
   });
+  const dockLayoutRef = useRef(dockLayout);
+  dockLayoutRef.current = dockLayout;
   const [panelDrag, setPanelDrag] = useState<ActivePanelDrag | null>(null);
   const [resizingDockEdge, setResizingDockEdge] = useState<DockEdge | 'floating' | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
@@ -430,6 +441,13 @@ export default function App() {
   );
 
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>('bom');
+  const [consoleSplit, setConsoleSplit] = useState(false);
+  const [soloLayer, setSoloLayer] = useState<CadLayerId | null>(null);
+  const [navHistory, setNavHistory] = useState<NavHistoryState>(() =>
+    createNavHistory({ sheetId: activeSheetId, deviceId: null })
+  );
+  const navHistoryRef = useRef(navHistory);
+  navHistoryRef.current = navHistory;
   const [requestedApiSubTab, setRequestedApiSubTab] = useState<ApiSubTab | null>(null);
   const consoleCollapsed = dockLayout.panels.console.collapsed;
   const setConsoleCollapsed = useCallback((nextVal: boolean | ((prev: boolean) => boolean)) => {
@@ -4906,6 +4924,34 @@ export default function App() {
     [commandPaletteItems, handleExecuteCommandPaletteItem, appendLog]
   );
 
+  // Navigation history (Alt+Left / Alt+Right)
+  useEffect(() => {
+    setNavHistory((prev) => pushNavLocation(prev, { sheetId: activeSheetId, deviceId: selectedDeviceId }));
+  }, [activeSheetId, selectedDeviceId]);
+
+  const handleNavStep = useCallback(
+    (direction: -1 | 1) => {
+      const sheets = docStateRef.current.present.sheets;
+      const res = stepNavHistory(navHistoryRef.current, direction, (id) => sheets.some((sh) => sh.id === id));
+      if (!res.location) return;
+      setNavHistory(res.state);
+      const loc = res.location;
+      const dev = loc.deviceId
+        ? docStateRef.current.present.devices.find((d) => d.id === loc.deviceId)
+        : undefined;
+      if (dev && dev.sheetId === loc.sheetId) {
+        applySelection({ deviceIds: [dev.id] });
+        centerCameraOnCoords(loc.sheetId, dev.x + dev.width / 2, dev.y + dev.height / 2);
+      } else {
+        openSheetTab(loc.sheetId);
+        applySelection({});
+      }
+    },
+    [applySelection, centerCameraOnCoords, openSheetTab]
+  );
+  const handleNavBack = useCallback(() => handleNavStep(-1), [handleNavStep]);
+  const handleNavForward = useCallback(() => handleNavStep(1), [handleNavStep]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -4948,6 +4994,14 @@ export default function App() {
       }
       if (anyModalOpen || commandPaletteOpen) return;
       if (inEditableText) {
+        return;
+      }
+      if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault();
+        if (!symbolDraft.open) {
+          if (e.key === 'ArrowLeft') handleNavBack();
+          else handleNavForward();
+        }
         return;
       }
       if (symbolDraft.open) {
@@ -5049,6 +5103,8 @@ export default function App() {
     handleSelectAllOnSheet,
     handleDeleteSelected,
     handleRotateSelected,
+    handleNavBack,
+    handleNavForward,
   ]);
 
   const handlePatchVisualSettings = useCallback(
@@ -5343,6 +5399,131 @@ export default function App() {
 
   const ercErrorCount = erc.filter((i) => i.severity === 'error').length;
 
+  // Workspace mode rail
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() => {
+    try {
+      const v = window.localStorage.getItem('e3promax_workspace_mode_v1');
+      if (v === 'draft' || v === 'wiring' || v === 'layers' || v === 'qa') return v;
+    } catch {
+      /* ignore */
+    }
+    return 'draft';
+  });
+  const workspaceModeRef = useRef<WorkspaceMode>(workspaceMode);
+  workspaceModeRef.current = workspaceMode;
+  const dockByModeRef = useRef<Partial<Record<WorkspaceMode, DockLayoutState>>>({});
+  const enteredModesRef = useRef<Set<WorkspaceMode>>(new Set([workspaceMode]));
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('e3promax_workspace_mode_v1', workspaceMode);
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceMode]);
+
+  const handleChangeWorkspaceMode = useCallback(
+    (next: WorkspaceMode) => {
+      const prev = workspaceModeRef.current;
+      if (prev === next) return;
+      dockByModeRef.current[prev] = dockLayoutRef.current;
+      setWorkspaceMode(next);
+      const saved = dockByModeRef.current[next];
+      if (saved) {
+        setDockLayout(saved);
+        return;
+      }
+      if (enteredModesRef.current.has(next)) return;
+      enteredModesRef.current.add(next);
+      if (next === 'draft') {
+        setConsoleCollapsed(true);
+      } else if (next === 'wiring') {
+        setConsoleTab('cables');
+        setConsoleCollapsed(false);
+      } else if (next === 'qa') {
+        setConsoleTab('bom');
+        setConsoleCollapsed(false);
+        setConsoleSplit(true);
+      }
+    },
+    [setConsoleCollapsed]
+  );
+
+  const qaItems = useMemo<QaChecklistItem[]>(() => {
+    const items: QaChecklistItem[] = [];
+    const errors = erc.filter((i) => i.severity === 'error');
+    const warnings = erc.filter((i) => i.severity !== 'error');
+    const openErc = () => {
+      setConsoleTab('erc');
+      setConsoleCollapsed(false);
+    };
+    items.push({
+      id: 'erc-errors',
+      label: 'Ошибки проверки ERC',
+      count: errors.length,
+      status: errors.length ? 'error' : 'ok',
+      onClick: openErc,
+    });
+    items.push({
+      id: 'erc-warnings',
+      label: 'Предупреждения ERC',
+      count: warnings.length,
+      status: warnings.length ? 'warn' : 'ok',
+      onClick: openErc,
+    });
+    const noArticle = project.devices.filter((d) => d.category !== 'offpage_ref' && !(d.article || '').trim());
+    items.push({
+      id: 'no-article',
+      label: 'Изделия без артикула',
+      count: noArticle.length,
+      status: noArticle.length ? 'warn' : 'ok',
+      onClick: () => {
+        const dev = noArticle[0];
+        if (!dev) return;
+        applySelection({ deviceIds: [dev.id] });
+        centerCameraOnCoords(dev.sheetId, dev.x + dev.width / 2, dev.y + dev.height / 2);
+      },
+    });
+    const dups = erc.filter((i) => i.code === 'E3-DUP-DES');
+    items.push({
+      id: 'dup-des',
+      label: 'Дубли обозначений',
+      count: dups.length,
+      status: dups.length ? 'error' : 'ok',
+      onClick: () => {
+        if (dups[0]) handleJumpToIssue(dups[0]);
+      },
+    });
+    const tb = activeSheet?.titleBlock;
+    const missing = tb
+      ? [tb.documentCode, tb.organization, tb.designer, tb.checker, tb.sheetTitle].filter(
+          (v) => !String(v ?? '').trim()
+        ).length
+      : 5;
+    items.push({
+      id: 'title-block',
+      label: 'Штамп активного листа',
+      count: missing,
+      status: missing ? 'warn' : 'ok',
+      onClick: () =>
+        setStampModalState({
+          open: true,
+          sheetId: activeSheet?.id || project.sheets[0]?.id || 'sheet-1',
+          mode: 'values',
+          field: null,
+        }),
+    });
+    return items;
+  }, [
+    erc,
+    project.devices,
+    project.sheets,
+    activeSheet,
+    applySelection,
+    centerCameraOnCoords,
+    handleJumpToIssue,
+    setConsoleCollapsed,
+  ]);
+
   const isConsoleBottomSingle =
     dockLayout.panels.console.dock === 'bottom' &&
     getPanelsByDock(dockLayout, 'bottom').length === 1;
@@ -5600,6 +5781,13 @@ export default function App() {
         onSetTab={setConsoleTab}
         onExpandPanel={() => setConsoleCollapsed(false)}
         onToggleCollapse={() => setConsoleCollapsed((c) => !c)}
+        split={consoleSplit}
+        onToggleSplit={() => setConsoleSplit((v) => !v)}
+        selectedDesignations={project.devices
+          .filter((d) => selectedDeviceIds.includes(d.id))
+          .map((d) => d.designation)}
+        selectedDeviceIds={selectedDeviceIds}
+        selectedWireIds={selectedWireIds}
         onJumpToIssue={handleJumpToIssue}
         onQuickFixIssue={handleQuickFixErc}
         onSelectDeviceByDesignation={(designation) => {
@@ -6058,6 +6246,25 @@ export default function App() {
         isBusy={isBusy}
         e3BridgeHost={bridgeStatus.isWin32 ? 'Windows' : bridgeStatus.bridgeConnected ? bridgeStatus.bridgeHost : null}
         fluxHosted={fluxHostStatus.hostedInFlux}
+        canNavBack={canNavBack(navHistory)}
+        canNavForward={canNavForward(navHistory)}
+        onNavBack={handleNavBack}
+        onNavForward={handleNavForward}
+        selectedDeviceIds={selectedDeviceIds}
+        selectedWireIds={selectedWireIds}
+        onCenterSelection={() => {
+          const dev = project.devices.find((d) => d.id === selectedDeviceIds[0]);
+          if (dev) {
+            centerCameraOnCoords(dev.sheetId, dev.x + dev.width / 2, dev.y + dev.height / 2);
+            return;
+          }
+          const w = project.wires.find((x) => x.id === selectedWireIds[0]);
+          if (w) {
+            const pt = w.waypoints[Math.floor(w.waypoints.length / 2)];
+            const a = project.devices.find((d) => d.id === w.fromDeviceId);
+            centerCameraOnCoords(w.sheetId, pt ? pt.x : a ? a.x : 0, pt ? pt.y : a ? a.y : 0);
+          }
+        }}
         onSetTool={setTool}
         onChangeUiScale={handleChangeUiScale}
         onSetViewportLayout={handleSetViewportLayout}
@@ -6274,6 +6481,30 @@ export default function App() {
         {renderDockBand(topPanels, 'top')}
 
         <main className="flex-1 min-h-0 flex overflow-hidden">
+          {!symbolDraft.open && (
+            <ModeRail
+              mode={workspaceMode}
+              onChangeMode={handleChangeWorkspaceMode}
+              ercErrorCount={ercErrorCount}
+              layers={resolveCadLayers(project.layers, project.visualSettings.showGostFrame)}
+              soloLayer={soloLayer}
+              onToggleSolo={(id) => setSoloLayer((cur) => (cur === id ? null : id))}
+              onToggleLayerVisibility={handleToggleLayerVisibility}
+              onToggleLayerLock={handleToggleLayerLock}
+              onShowAllLayers={handleShowAllLayers}
+              onUnlockAllLayers={handleUnlockAllLayers}
+              showGrid={project.visualSettings.showGrid}
+              snapToGrid={project.visualSettings.snapToGrid}
+              onToggleGrid={() =>
+                handleApplyVisualSettings({ ...project.visualSettings, showGrid: !project.visualSettings.showGrid })
+              }
+              onToggleSnap={() =>
+                handleApplyVisualSettings({ ...project.visualSettings, snapToGrid: !project.visualSettings.snapToGrid })
+              }
+              qaItems={qaItems}
+              onPublish={() => setPublishModalOpen(true)}
+            />
+          )}
           {renderDockBand(leftPanels, 'left')}
 
           {/* Center Area: Sheetless Block Editor (BEDIT) OR Multi-Viewport Schematics */}
@@ -6319,6 +6550,10 @@ export default function App() {
               return (
                 <div key={idx} className={spanClass}>
                   <SchematicCanvas
+                    ercIssues={erc}
+                    onQuickFixIssue={handleQuickFixErc}
+                    onJumpToIssue={handleJumpToIssue}
+                    soloLayer={soloLayer}
                     project={project}
                     catalog={mergedCatalog}
                     activeSheetId={vpSheetId}

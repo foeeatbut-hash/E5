@@ -64,9 +64,11 @@ import type {
   E3Device,
   E3Project,
   E3Wire,
+  ErcIssue,
   PinDirection,
 } from '../core/e3Types';
 import { LayerManagerPopover } from './LayerManagerPopover';
+import { CanvasMinimap } from './CanvasMinimap';
 import { SchematicSymbol } from './SchematicSymbol';
 
 interface InPlaceEditState {
@@ -83,6 +85,24 @@ interface InPlaceEditState {
   initialValue: string;
   value: string;
 }
+
+function polylineMidpoint(pts: { x: number; y: number }[]): { x: number; y: number } {
+  if (pts.length === 1) return pts[0];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  let half = total / 2;
+  for (let i = 1; i < pts.length; i++) {
+    const seg = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    if (seg >= half && seg > 0) {
+      const t = half / seg;
+      return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t };
+    }
+    half -= seg;
+  }
+  return pts[pts.length - 1];
+}
+
+const ERC_FIXABLE_CODES = new Set(['E3-DUP-DES', 'E3-POTENTIAL-CONFLICT', 'E3-FLUX-REMOVED']);
 
 interface SchematicCanvasProps {
   project: E3Project;
@@ -136,6 +156,10 @@ interface SchematicCanvasProps {
     additive?: boolean
   ) => void;
   highlightedTrace?: PotentialTraceResult | null;
+  ercIssues?: ErcIssue[];
+  onQuickFixIssue?: (issue: ErcIssue) => void;
+  onJumpToIssue?: (issue: ErcIssue) => void;
+  soloLayer?: CadLayerId | null;
   onHighlightPotential?: (seed: { wireId?: string; netName?: string; deviceId?: string; pinId?: string }) => void;
   onClearPotentialHighlight?: () => void;
   onNavigateOffPage?: (device: E3Device) => void;
@@ -224,6 +248,10 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   onSelectAnnotation,
   onSetSelection,
   highlightedTrace = null,
+  ercIssues,
+  onQuickFixIssue,
+  onJumpToIssue,
+  soloLayer = null,
   onHighlightPotential,
   onClearPotentialHighlight,
   onNavigateOffPage,
@@ -243,6 +271,19 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   onExecuteCommandLine,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const minimapLiveRef = useRef<((zoom: number, pan: { x: number; y: number }) => void) | null>(null);
+  const [ercPopover, setErcPopover] = useState<{ key: string; x: number; y: number; issues: ErcIssue[] } | null>(null);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setViewportSize({ width: el.clientWidth, height: el.clientHeight });
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [cmdValue, setCmdValue] = useState('');
   const [cmdHistory, setCmdHistory] = useState<string[]>(() => loadSavedCommandHistory());
   const [cmdHistIdx, setCmdHistIdx] = useState<number>(-1);
@@ -671,6 +712,34 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     [project.wires, sheet?.id]
   );
 
+  const visibleSheetWires = useMemo(() => {
+    if (sheetWires.length <= 60) return sheetWires;
+    const z = Math.max(0.16, zoom);
+    const vw = viewportSize.width || 1280;
+    const vh = viewportSize.height || 800;
+    const pad = 300 / z;
+    const minX = -pan.x / z - pad;
+    const minY = -pan.y / z - pad;
+    const maxX = (vw - pan.x) / z + pad;
+    const maxY = (vh - pan.y) / z + pad;
+    return sheetWires.filter((w) => {
+      if (selectedWireIdSet.has(w.id)) return true;
+      if (highlightedTrace?.wireIds.includes(w.id)) return true;
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const p of w.waypoints) {
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      }
+      if (x0 === Infinity) return true;
+      return x1 >= minX && x0 <= maxX && y1 >= minY && y0 <= maxY;
+    });
+  }, [sheetWires, zoom, pan, viewportSize, selectedWireIdSet, highlightedTrace]);
+
   const sheetAnnotations = useMemo(
     () => (project.annotations || []).filter((a) => a.sheetId === sheet?.id),
     [project.annotations, sheet?.id]
@@ -686,10 +755,66 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
     return set;
   }, [sheetWires, wiresVisible]);
 
+  const layerStyle = (id: CadLayerId): React.CSSProperties | undefined =>
+    soloLayer
+      ? { opacity: soloLayer === id ? 1 : 0.2, transition: 'opacity 140ms ease' }
+      : { transition: 'opacity 140ms ease' };
+
+  const ercMarkers = useMemo(() => {
+    if (!ercIssues || ercIssues.length === 0 || !sheet) return [];
+    const groups = new Map<string, { key: string; x: number; y: number; issues: ErcIssue[] }>();
+    for (const issue of ercIssues) {
+      if (issue.sheetId && issue.sheetId !== sheet.id) continue;
+      let key = '';
+      let pos: { x: number; y: number } | null = null;
+      if (issue.deviceId) {
+        const d = sheetDevices.find((x) => x.id === issue.deviceId);
+        if (d) {
+          key = `d:${d.id}`;
+          pos = { x: d.x + d.width, y: d.y };
+        }
+      }
+      if (!pos && issue.wireId) {
+        const w = sheetWires.find((x) => x.id === issue.wireId);
+        if (w && w.waypoints.length > 0) {
+          key = `w:${w.id}`;
+          pos = polylineMidpoint(w.waypoints);
+        }
+      }
+      if (!pos) continue;
+      const g = groups.get(key);
+      if (g) g.issues.push(issue);
+      else groups.set(key, { key, x: pos.x, y: pos.y, issues: [issue] });
+    }
+    return [...groups.values()];
+  }, [ercIssues, sheet, sheetDevices, sheetWires]);
+
+  useEffect(() => {
+    setErcPopover(null);
+  }, [zoom, pan, activeSheetId]);
+
+  useEffect(() => {
+    if (!ercPopover) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setErcPopover(null);
+    };
+    const onDown = (e: MouseEvent) => {
+      if ((e.target as HTMLElement | null)?.closest('[data-testid="erc-popover"], [data-erc-marker]')) return;
+      setErcPopover(null);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown, true);
+    };
+  }, [ercPopover]);
+
   const applyDomTransform = useCallback((nextZoom: number, nextPan: { x: number; y: number }) => {
     if (worldGroupRef.current) {
       worldGroupRef.current.setAttribute('transform', `translate(${nextPan.x}, ${nextPan.y}) scale(${nextZoom})`);
     }
+    minimapLiveRef.current?.(nextZoom, nextPan);
     const zoomLabel = `${Math.round(nextZoom * 100)}%`;
     if (zoomTextRef.current) zoomTextRef.current.textContent = zoomLabel;
     if (multiZoomTextRef.current) multiZoomTextRef.current.textContent = zoomLabel;
@@ -2242,7 +2367,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
                 {/* GOST 2.104-2006 Frame, Zones, Left Archival Strip & Editable Form 1/2a Title Block */}
                 {frameVisible && gostGeom && (
-                  <g data-testid="layer-group-frame">
+                  <g data-testid="layer-group-frame" style={layerStyle('frame')}>
                     {/* Outer paper border & inner main GOST frame */}
                     <rect
                       data-testid="gost-main-frame"
@@ -2556,7 +2681,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
             {/* Drafting Zones / Annotations (under wires/devices for rect zones) */}
             {annotationsVisible && (
-              <g data-testid="layer-group-annotations">
+              <g data-testid="layer-group-annotations" style={layerStyle('annotations')}>
                 {sheetAnnotations.map((ann) => {
                   const selected = selectedAnnotationIdSet.has(ann.id);
                   const strokeColor = selected
@@ -2759,8 +2884,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
             {/* Wires */}
             {wiresVisible && (
-              <g data-testid="layer-group-wires">
-                {sheetWires.map((wire: E3Wire) => {
+              <g data-testid="layer-group-wires" style={layerStyle('wires')}>
+                {visibleSheetWires.map((wire: E3Wire) => {
                   const selected = selectedWireIdSet.has(wire.id);
                   const isTraced = tracedWireIdSet.has(wire.id);
                   const isDimmed = Boolean(activeTrace) && !isTraced && !selected;
@@ -2990,8 +3115,8 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
                 {/* Wire Core Labels rendered above grips so double-click is never occluded */}
                 {vs.showWireNumbers && (
-                  <g data-testid="layer-group-wire-labels">
-                    {sheetWires.map((wire: E3Wire) => {
+                  <g data-testid="layer-group-wire-labels" style={layerStyle('wires')}>
+                    {visibleSheetWires.map((wire: E3Wire) => {
                       const midPt =
                         wireLabelMap.get(wire.id) ||
                         (wire.waypoints.length >= 2
@@ -3175,7 +3300,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
 
             {/* Devices */}
             {devicesVisible && (
-              <g data-testid="layer-group-devices">
+              <g data-testid="layer-group-devices" style={layerStyle('devices')}>
                 {visibleSheetDevices.map((device) => {
                   const link = device.category === 'offpage_ref' ? offPageLinks.get(device.id) : undefined;
                   return (
@@ -3206,9 +3331,71 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               </g>
             )}
 
+            {/* Inline ERC markers */}
+            {ercMarkers.length > 0 && (
+              <g data-testid="layer-erc-markers">
+                {ercMarkers.map((m) => {
+                  const inv = 1 / Math.max(0.05, zoom);
+                  const hasError = m.issues.some((i) => i.severity === 'error');
+                  const color = hasError ? '#EF4444' : '#F59E0B';
+                  const first = m.issues[0];
+                  return (
+                    <g
+                      key={m.key}
+                      data-testid={`erc-marker-${first.id}`}
+                      data-erc-marker=""
+                      transform={`translate(${m.x}, ${m.y}) scale(${inv})`}
+                      style={{ cursor: 'pointer' }}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const rect = containerRef.current?.getBoundingClientRect();
+                        if (!rect) return;
+                        const lz = liveZoomRef.current;
+                        const lp = livePanRef.current;
+                        setErcPopover((cur) =>
+                          cur?.key === m.key
+                            ? null
+                            : { key: m.key, x: lp.x + m.x * lz, y: lp.y + m.y * lz, issues: m.issues }
+                        );
+                      }}
+                    >
+                      <circle className="erc-marker-ring" r={7} fill="none" stroke={color} strokeWidth={1.5} />
+                      <circle r={7} fill={color} stroke="#fff" strokeWidth={1} />
+                      <text
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fontSize={m.issues.length > 1 ? 7.5 : 9}
+                        fontWeight={700}
+                        fill="#fff"
+                        pointerEvents="none"
+                        style={{ userSelect: 'none' }}
+                      >
+                        {m.issues.length > 1 ? m.issues.length : '!'}
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+
+            {/* Magnetic pin snap ring */}
+            {wireStart && hoveredPin && !(hoveredPin.deviceId === wireStart.deviceId && hoveredPin.pinId === wireStart.pinId) && (
+              <g transform={`translate(${hoveredPin.x}, ${hoveredPin.y})`} pointerEvents="none">
+                <circle
+                  key={`${hoveredPin.deviceId}:${hoveredPin.pinId}`}
+                  className="pin-snap-ring"
+                  r={7 / Math.max(0.05, zoom)}
+                  fill="none"
+                  stroke="var(--flux-accent)"
+                  strokeWidth={1.5 / Math.max(0.05, zoom)}
+                />
+              </g>
+            )}
+
             {/* Live GOST Tables (BOM / Cable Journal) rendered over wires & devices with opaque backing */}
             {annotationsVisible && (
-              <g data-testid="layer-group-gost-tables">
+              <g data-testid="layer-group-gost-tables" style={layerStyle('annotations')}>
                 {sheetGostTableAnnotations.map((ann) => {
                     const selected = selectedAnnotationIdSet.has(ann.id);
                     const borderColor = selected
@@ -4131,6 +4318,81 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               </>
             )}
           </div>
+        )}
+        {ercPopover && (
+          <motion.div
+            key={ercPopover.key}
+            data-testid="erc-popover"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
+            className="no-print absolute z-30 flux-glass-popover rounded-md border border-[var(--flux-line-strong)] shadow-lg p-2 text-[var(--flux-text)]"
+            style={{
+              left: Math.max(8, Math.min(ercPopover.x + 10, Math.max(8, viewportSize.width - 300))),
+              top: Math.max(8, Math.min(ercPopover.y + 10, Math.max(8, viewportSize.height - 60))),
+              width: 'calc(280px*var(--flux-ui-scale))',
+              maxHeight: '60%',
+              overflowY: 'auto',
+              transformOrigin: 'top left',
+            }}
+          >
+            <div className="flex flex-col gap-2">
+              {ercPopover.issues.map((issue) => (
+                <div key={issue.id} className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="inline-block w-2 h-2 rounded-full shrink-0"
+                      style={{ background: issue.severity === 'error' ? '#EF4444' : '#F59E0B' }}
+                    />
+                    <span className="font-mono text-[calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">{issue.code}</span>
+                  </div>
+                  <div className="text-[calc(12px*var(--flux-ui-scale))] leading-snug">{issue.message}</div>
+                  <div className="flex items-center gap-1.5">
+                    {onQuickFixIssue && ERC_FIXABLE_CODES.has(issue.code) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onQuickFixIssue(issue);
+                          setErcPopover(null);
+                        }}
+                        className="px-2 py-0.5 rounded-md text-[calc(11px*var(--flux-ui-scale))] bg-[var(--flux-accent)] text-white hover:opacity-90 transition-opacity"
+                      >
+                        Исправить
+                      </button>
+                    )}
+                    {onJumpToIssue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onJumpToIssue(issue);
+                          setErcPopover(null);
+                        }}
+                        className="px-2 py-0.5 rounded-md text-[calc(11px*var(--flux-ui-scale))] border border-[var(--flux-line-strong)] hover:bg-[var(--flux-hover)] transition-colors"
+                      >
+                        Перейти →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+        {sheet && (!isMultiViewport || isFocused) && viewportSize.width >= 560 && viewportSize.height >= 260 && (
+          <CanvasMinimap
+            sheetWidth={sheet.width}
+            sheetHeight={sheet.height}
+            devices={sheetDevices}
+            wires={sheetWires}
+            selectedDeviceIds={selectedDeviceIdSet}
+            zoom={zoom}
+            pan={pan}
+            viewportSize={viewportSize}
+            onSetPan={onSetPan}
+            liveUpdateRef={minimapLiveRef}
+          />
         )}
         {/* Floating Bottom-Center Precision CAD Tool Dock */}
         {sheet && !inPlaceEdit && onSetTool && (

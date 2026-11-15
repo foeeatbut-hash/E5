@@ -3,7 +3,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Activity,
   Archive,
+  ArrowLeft,
   ArrowLeftRight,
+  ArrowRight,
   ArrowUpRight,
   Check,
   CheckCircle2,
@@ -211,6 +213,13 @@ interface TopToolbarProps {
   recentProjects?: RecentProjectEntry[];
   lastSavedAt?: string | null;
   onSaveSessionNow?: () => void;
+  canNavBack?: boolean;
+  canNavForward?: boolean;
+  onNavBack?: () => void;
+  onNavForward?: () => void;
+  selectedDeviceIds?: string[];
+  selectedWireIds?: string[];
+  onCenterSelection?: () => void;
   onCreateNewProject?: () => void;
   onOpenRecentProject?: (projectId: string) => void;
   onRemoveRecentProject?: (projectId: string) => void;
@@ -520,6 +529,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   recentProjects = [],
   lastSavedAt = null,
   onSaveSessionNow,
+  canNavBack = false,
+  canNavForward = false,
+  onNavBack,
+  onNavForward,
+  selectedDeviceIds = [],
+  selectedWireIds = [],
+  onCenterSelection,
   onCreateNewProject,
   onOpenRecentProject,
   onRemoveRecentProject,
@@ -694,19 +710,114 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             </button>
           )}
 
+          {(onNavBack || onNavForward) && (
+            <>
+              <button
+                type="button"
+                onClick={onNavBack}
+                disabled={!canNavBack}
+                title="Назад (Alt+←)"
+                aria-label="Назад"
+                className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.6} />
+              </button>
+              <button
+                type="button"
+                onClick={onNavForward}
+                disabled={!canNavForward}
+                title="Вперёд (Alt+→)"
+                aria-label="Вперёд"
+                className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+              >
+                <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.6} />
+              </button>
+            </>
+          )}
+
           <span className="hidden md:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
-          <div className="hidden md:flex items-center gap-1.5 min-w-0">
-            <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate max-w-[calc(180px*var(--flux-ui-scale))] lg:max-w-[calc(280px*var(--flux-ui-scale))]">
-              {isSymbolEditorOpen && symbolWorkspace
-                ? `УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
-                : project.name}
-            </span>
-            <span className="px-1.5 py-0.5 rounded-[4px] bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[length:calc(10px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
-              {isSymbolEditorOpen && symbolWorkspace
-                ? `${symbolWorkspace.draft.width}×${symbolWorkspace.draft.height}`
-                : `${project.projectCode} · r${project.revision}`}
-            </span>
-          </div>
+          {isSymbolEditorOpen && symbolWorkspace ? (
+            <div className="hidden md:flex items-center gap-1.5 min-w-0">
+              <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate max-w-[calc(180px*var(--flux-ui-scale))] lg:max-w-[calc(280px*var(--flux-ui-scale))]">
+                {`УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`}
+              </span>
+              <span className="px-1.5 py-0.5 rounded-[4px] bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[length:calc(10px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
+                {`${symbolWorkspace.draft.width}×${symbolWorkspace.draft.height}`}
+              </span>
+            </div>
+          ) : (
+            (() => {
+              const crumbBase =
+                'truncate rounded-[3px] px-1 py-0.5 text-[length:calc(11.5px*var(--flux-ui-scale))] transition-colors';
+              const selCount = selectedDeviceIds.length + selectedWireIds.length;
+              let selLabel: string | null = null;
+              let selMono = false;
+              if (selCount >= 2) {
+                selLabel = `${selCount} объектов`;
+              } else if (selectedDeviceIds.length === 1) {
+                selLabel = project.devices.find((d) => d.id === selectedDeviceIds[0])?.designation || null;
+                selMono = true;
+              } else if (selectedWireIds.length === 1) {
+                const w = project.wires.find((x) => x.id === selectedWireIds[0]);
+                selLabel = w ? w.wireNumber || w.netName || null : null;
+                selMono = true;
+              }
+              const sheetLabel = activeSheet
+                ? `Лист ${activeSheet.number} · ${activeSheet.name}`
+                : null;
+              const Sep = () => (
+                <ChevronRight className="w-3 h-3 text-[var(--flux-text-muted)] opacity-60 shrink-0" strokeWidth={1.6} />
+              );
+              return (
+                <nav
+                  aria-label="Навигация по проекту"
+                  data-testid="toolbar-breadcrumbs"
+                  className="hidden md:flex items-center gap-0.5 min-w-0"
+                >
+                  <button
+                    type="button"
+                    onClick={onFitView}
+                    title={`${project.name} · ${project.projectCode} · r${project.revision}`}
+                    className={`${crumbBase} max-w-[calc(150px*var(--flux-ui-scale))] lg:max-w-[calc(220px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]`}
+                  >
+                    {project.name}
+                  </button>
+                  {sheetLabel && (
+                    <>
+                      <Sep />
+                      <button
+                        type="button"
+                        onClick={onFitView}
+                        title={sheetLabel}
+                        className={`${crumbBase} max-w-[calc(150px*var(--flux-ui-scale))] lg:max-w-[calc(240px*var(--flux-ui-scale))] ${
+                          selLabel
+                            ? 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                            : 'text-[var(--flux-accent)] font-medium'
+                        }`}
+                      >
+                        {sheetLabel}
+                      </button>
+                    </>
+                  )}
+                  {selLabel && (
+                    <>
+                      <Sep />
+                      <button
+                        type="button"
+                        onClick={onCenterSelection}
+                        title="Показать выбранное на схеме"
+                        className={`${crumbBase} max-w-[calc(140px*var(--flux-ui-scale))] text-[var(--flux-accent)] font-medium hover:bg-[var(--flux-accent-soft)] ${
+                          selMono ? 'font-mono tabular-nums' : ''
+                        }`}
+                      >
+                        {selLabel}
+                      </button>
+                    </>
+                  )}
+                </nav>
+              );
+            })()
+          )}
         </div>
 
         {/* Centered Modern CAD Command Pill */}

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -58,6 +59,8 @@ import type {
 import type { StampFieldKey } from '../core/gostFrame';
 import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
 import { SymbolEditorInspector } from './SymbolEditorInspector';
+import { PinDot } from './PinDot';
+import { findPinWire, getPinPotentialColor } from './pinPotential';
 
 interface RightInspectorProps {
   project: E3Project;
@@ -150,6 +153,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   symbolWorkspace,
   onEditDeviceSymbol,
 }) => {
+  const [devTab, setDevTab] = useState<'main' | 'pins' | 'attrs'>('main');
   const [batchMfr, setBatchMfr] = useState('');
   const [batchArticle, setBatchArticle] = useState('');
   const [newAttrName, setNewAttrName] = useState('');
@@ -565,9 +569,46 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               </div>
             </div>
 
+            <div className="px-2 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] shrink-0" data-testid="inspector-device-tabs">
+              <div role="tablist" aria-label="Разделы свойств изделия" className="relative grid grid-cols-3 p-0.5 rounded-[4px] bg-[var(--flux-bg)] border border-[var(--flux-line)]">
+                {([
+                  ['main', 'Основное'],
+                  ['pins', 'Выводы'],
+                  ['attrs', 'Атрибуты и геом.'],
+                ] as const).map(([key, label]) => {
+                  const active = devTab === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      data-testid={`inspector-tab-${key}`}
+                      title={key === 'attrs' ? 'Атрибуты и геометрия' : label}
+                      onClick={() => setDevTab(key)}
+                      className={`relative h-[calc(22px*var(--flux-ui-scale))] rounded-[4px] text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap truncate px-1 transition-colors ${
+                        active ? 'text-[var(--flux-text)] font-semibold' : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="inspector-tab"
+                          transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                          className="absolute inset-0 rounded-[4px] bg-[var(--flux-surface)] border border-[var(--flux-line-strong)]"
+                        />
+                      )}
+                      <span className="relative">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <fieldset disabled={activeLayerLocked} className="min-w-0 disabled:opacity-65">
+            {devTab === 'main' && (
+            <div>
               <div className="cad-prop-section">
-                <span>Идентификация и позиция</span>
+                <span>Основное</span>
               </div>
               <div className="cad-prop-grid">
                 <label htmlFor="insp-designation" className="cad-prop-label" title="Позиционное обозначение (Device Designation)">
@@ -622,54 +663,6 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     onChange={(e) => onUpdateDevice(selectedDevice.id, { manufacturer: e.target.value })}
                     className="cad-prop-input"
                   />
-                </div>
-
-                <label htmlFor="insp-x" className="cad-prop-label">
-                  Координата X (мм)
-                </label>
-                <div className="cad-prop-cell">
-                  <input
-                    id="insp-x"
-                    type="number"
-                    value={selectedDevice.x}
-                    onChange={(e) => {
-                      const n = parseFiniteNum(e.target.value);
-                      if (n !== null) onUpdateDevice(selectedDevice.id, { x: n });
-                    }}
-                    className="cad-prop-input font-mono tabular-nums"
-                  />
-                </div>
-
-                <label htmlFor="insp-y" className="cad-prop-label">
-                  Координата Y (мм)
-                </label>
-                <div className="cad-prop-cell">
-                  <input
-                    id="insp-y"
-                    type="number"
-                    value={selectedDevice.y}
-                    onChange={(e) => {
-                      const n = parseFiniteNum(e.target.value);
-                      if (n !== null) onUpdateDevice(selectedDevice.id, { y: n });
-                    }}
-                    className="cad-prop-input font-mono tabular-nums"
-                  />
-                </div>
-
-                <span className="cad-prop-label">Поворот УГО</span>
-                <div className="cad-prop-cell px-1">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onUpdateDevice(selectedDevice.id, {
-                        rotation: ((selectedDevice.rotation + 90) % 360) as 0 | 90 | 180 | 270,
-                      })
-                    }
-                    className="w-full h-[calc(20px*var(--flux-ui-scale))] px-1.5 rounded-[4px] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] inline-flex items-center justify-between gap-1"
-                  >
-                    <span>{selectedDevice.rotation}°</span>
-                    <RotateCw className="w-3 h-3 text-[var(--flux-text-muted)]" />
-                  </button>
                 </div>
 
                 <label htmlFor="insp-e3block" className="cad-prop-label">
@@ -879,6 +872,160 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               );
             })()}
 
+            </div>
+            )}
+            {devTab === 'pins' && (
+            <div data-testid="inspector-pins-tab">
+              <div className="cad-prop-section">
+                <span>Выводы и связи</span>
+                <span className="font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] tabular-nums text-[var(--flux-text-muted)]">
+                  {selectedDevice.pins.length}
+                </span>
+              </div>
+              <div>
+                {selectedDevice.pins.length === 0 && (
+                  <div className="px-2.5 py-3 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                    У изделия нет выводов.
+                  </div>
+                )}
+                {selectedDevice.pins.map((pin) => {
+                  const wire = findPinWire(project, selectedDevice.id, pin.id);
+                  const color = getPinPotentialColor(project, selectedDevice, pin);
+                  return (
+                    <div
+                      key={pin.id}
+                      className="flex items-center gap-1.5 px-2 min-h-[calc(24px*var(--flux-ui-scale))] border-b border-[var(--flux-line)] text-[length:calc(11px*var(--flux-ui-scale))]"
+                    >
+                      <PinDot color={color} />
+                      <span className="font-mono font-medium text-[var(--flux-text)] w-[calc(34px*var(--flux-ui-scale))] shrink-0 truncate" title={pin.name}>
+                        {pin.name}
+                      </span>
+                      {wire ? (
+                        <>
+                          <span className="flex-1 min-w-0 truncate font-mono tabular-nums text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]" title={`${wire.netName} (${wire.wireNumber})`}>
+                            {wire.netName}
+                            <span className="text-[var(--flux-text-muted)]"> · {wire.wireNumber}</span>
+                          </span>
+                          {onHighlightPotential && (
+                            <button
+                              type="button"
+                              onClick={() => onHighlightPotential({ wireId: wire.id })}
+                              aria-label={`Подсветить цепь вывода ${pin.name}`}
+                              title="Подсветить цепь"
+                              className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] inline-flex items-center justify-center rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] shrink-0 transition-colors"
+                            >
+                              <Zap className="w-3 h-3" strokeWidth={1.6} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={activeLayerLocked || wiresLocked}
+                            onClick={() => onDeleteWire(wire.id)}
+                            aria-label={`Отключить цепь от вывода ${pin.name}`}
+                            title="Отключить цепь"
+                            className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] inline-flex items-center justify-center rounded-[4px] text-[var(--flux-text-muted)] hover:text-rose-600 hover:bg-[var(--flux-hover)] disabled:opacity-35 shrink-0 transition-colors"
+                          >
+                            <Unlink className="w-3 h-3" strokeWidth={1.6} />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">Свободен</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            )}
+            {devTab === 'attrs' && (
+            <div>
+              <div className="cad-prop-section">
+                <span>Положение и геометрия</span>
+              </div>
+              <div className="cad-prop-grid">
+                <label htmlFor="insp-x" className="cad-prop-label">
+                  Координата X (мм)
+                </label>
+                <div className="cad-prop-cell">
+                  <input
+                    id="insp-x"
+                    type="number"
+                    value={selectedDevice.x}
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null) onUpdateDevice(selectedDevice.id, { x: n });
+                    }}
+                    className="cad-prop-input font-mono tabular-nums"
+                  />
+                </div>
+
+                <label htmlFor="insp-y" className="cad-prop-label">
+                  Координата Y (мм)
+                </label>
+                <div className="cad-prop-cell">
+                  <input
+                    id="insp-y"
+                    type="number"
+                    value={selectedDevice.y}
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null) onUpdateDevice(selectedDevice.id, { y: n });
+                    }}
+                    className="cad-prop-input font-mono tabular-nums"
+                  />
+                </div>
+
+                <span className="cad-prop-label">Поворот УГО</span>
+                <div className="cad-prop-cell px-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateDevice(selectedDevice.id, {
+                        rotation: ((selectedDevice.rotation + 90) % 360) as 0 | 90 | 180 | 270,
+                      })
+                    }
+                    className="w-full h-[calc(20px*var(--flux-ui-scale))] px-1.5 rounded-[4px] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] inline-flex items-center justify-between gap-1"
+                  >
+                    <span>{selectedDevice.rotation}°</span>
+                    <RotateCw className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                  </button>
+                </div>
+
+                <label htmlFor="insp-w" className="cad-prop-label">
+                  Ширина (мм)
+                </label>
+                <div className="cad-prop-cell">
+                  <input
+                    id="insp-w"
+                    type="number"
+                    min={1}
+                    value={selectedDevice.width}
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null && n > 0) onUpdateDevice(selectedDevice.id, { width: n });
+                    }}
+                    className="cad-prop-input font-mono tabular-nums"
+                  />
+                </div>
+
+                <label htmlFor="insp-h" className="cad-prop-label">
+                  Высота (мм)
+                </label>
+                <div className="cad-prop-cell">
+                  <input
+                    id="insp-h"
+                    type="number"
+                    min={1}
+                    value={selectedDevice.height}
+                    onChange={(e) => {
+                      const n = parseFiniteNum(e.target.value);
+                      if (n !== null && n > 0) onUpdateDevice(selectedDevice.id, { height: n });
+                    }}
+                    className="cad-prop-input font-mono tabular-nums"
+                  />
+                </div>
+
+              </div>
             {/* E3 Attributes 2-Column Table */}
             <div>
               <div className="cad-prop-section">
@@ -961,51 +1108,8 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               </form>
             </div>
 
-            {/* Pin Connections Matrix */}
-            <div>
-              <div className="cad-prop-section">
-                <span>Выводы и связи</span>
-                <span className="font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] tabular-nums text-[var(--flux-text-muted)]">
-                  {selectedDevice.pins.length}
-                </span>
-              </div>
-              <div className="cad-prop-grid">
-                {selectedDevice.pins.map((pin) => {
-                  const wire = project.wires.find(
-                    (w) =>
-                      (w.fromDeviceId === selectedDevice.id && w.fromPinId === pin.id) ||
-                      (w.toDeviceId === selectedDevice.id && w.toPinId === pin.id)
-                  );
-                  return (
-                    <React.Fragment key={pin.id}>
-                      <span className="cad-prop-label font-mono font-medium text-[var(--flux-text)]">
-                        {pin.name}
-                      </span>
-                      <div className="cad-prop-cell px-1.5 justify-between gap-1 text-[length:calc(11px*var(--flux-ui-scale))]">
-                        {wire ? (
-                          <>
-                            <span className="font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-accent)] truncate">
-                              {wire.netName} ({wire.wireNumber})
-                            </span>
-                            <button
-                              type="button"
-                              disabled={activeLayerLocked || wiresLocked}
-                              onClick={() => onDeleteWire(wire.id)}
-                              aria-label={`Отключить цепь от вывода ${pin.name}`}
-                              className="text-[var(--flux-text-muted)] hover:text-rose-600 disabled:opacity-35 shrink-0"
-                            >
-                              <Unlink className="w-3 h-3" />
-                            </button>
-                          </>
-                        ) : (
-                          <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">Свободен</span>
-                        )}
-                      </div>
-                    </React.Fragment>
-                  );
-                })}
-              </div>
             </div>
+            )}
             </fieldset>
           </>
         ) : selectedWire ? (
