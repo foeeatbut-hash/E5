@@ -32,6 +32,8 @@ import { TerminalStripModal } from './components/TerminalStripModal';
 import { AutoNumberingModal } from './components/AutoNumberingModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { StartMenuHub } from './components/StartMenuHub';
+import { SymbolEditorInspector } from './components/SymbolEditorInspector';
+import { SymbolLibraryBrowser } from './components/SymbolLibraryBrowser';
 import { SystemHealthDashboard } from './components/SystemHealthDashboard';
 import { SymbolWorkspaceCanvas } from './components/SymbolWorkspaceCanvas';
 import {
@@ -234,10 +236,26 @@ import {
   rotateSymbolGeometryCW,
   saveCustomSymbols,
 } from './core/symbolLibrary';
+import {
+  addBlankSymbolTab,
+  closeAllSymbolWorkspace,
+  closeSymbolTab,
+  commitActiveTabGeometry,
+  createInitialSymbolTabsState,
+  getEffectiveSymbolDraft,
+  openOrFocusSymbolTab,
+  redoActiveSymbolTab,
+  selectSymbolTab,
+  summarizeSymbolTabs,
+  type SymbolTabsState,
+  undoActiveSymbolTab,
+  updateActiveSymbolTabDraft,
+} from './core/symbolTabs';
 import type {
   SymbolActiveDrawStyle,
   SymbolWorkspaceActions,
   SymbolWorkspaceDraft,
+  SymbolWorkspaceOrigin,
 } from './core/symbolWorkspaceTypes';
 import {
   createFluxBusLogEntry,
@@ -750,53 +768,24 @@ export default function App() {
     [mergedCatalog, project.symbolLibrary, customSymbols]
   );
 
-  type SymbolGeoSnapshot = {
-    width: number;
-    height: number;
-    shapes: CustomSymbolShape[];
-    pins: Omit<E3Pin, 'id'>[];
-  };
-  const [symbolUndoStack, setSymbolUndoStack] = useState<SymbolGeoSnapshot[]>([]);
-  const [symbolRedoStack, setSymbolRedoStack] = useState<SymbolGeoSnapshot[]>([]);
-  const [symbolDraft, setSymbolDraft] = useState<SymbolWorkspaceDraft>(() => ({
-    open: false,
-    targetMode: 'component',
-    symbolId: 'sym-new',
-    name: 'Новый блок УГО',
-    e3BlockName: 'E3_NEW_BLK',
-    category: 'relay',
-    width: 120,
-    height: 100,
-    shapes: [],
-    pins: [],
-    componentName: 'Новое изделие',
-    article: 'E3-NEW-01',
-    manufacturer: 'Собств. база',
-    defaultPrefix: 'K',
-    defaultCable: 'ВВГнг(А)-LS 3х1,5',
-    attributes: [],
-    tool: 'select',
-    activeStyle: {
-      strokeColor: '#111827',
-      strokeWidth: 1.8,
-      strokeStyle: 'solid',
-      filled: true,
-      fillColor: '',
-    },
-    activeAttrTagKey: 'designation',
-    activePinSignal: 'signal',
-    gridStep: 10,
-    snapToGrid: true,
-    selectedShapeId: null,
-    selectedPinIndex: null,
-    dirty: false,
-  }));
-  const symbolDraftRef = useRef(symbolDraft);
+  const [symbolTabsState, setSymbolTabsState] = useState<SymbolTabsState>(() =>
+    createInitialSymbolTabsState()
+  );
+  const symbolTabsStateRef = useRef<SymbolTabsState>(symbolTabsState);
+  symbolTabsStateRef.current = symbolTabsState;
+  const symbolDraft = useMemo(
+    () => getEffectiveSymbolDraft(symbolTabsState),
+    [symbolTabsState]
+  );
+  const symbolDraftRef = useRef<SymbolWorkspaceDraft>(symbolDraft);
   symbolDraftRef.current = symbolDraft;
-  const symbolUndoRef = useRef(symbolUndoStack);
-  symbolUndoRef.current = symbolUndoStack;
-  const symbolRedoRef = useRef(symbolRedoStack);
-  symbolRedoRef.current = symbolRedoStack;
+  const activeSymbolTab = useMemo(
+    () =>
+      symbolTabsState.tabs.find((t) => t.tabId === symbolTabsState.activeTabId) ||
+      symbolTabsState.tabs[0] ||
+      null,
+    [symbolTabsState]
+  );
 
   const [logs, setLogs] = useState<ProcessLogEntry[]>(() => [
     {
@@ -2784,6 +2773,10 @@ export default function App() {
   );
 
   const ensureSymbolEditorDocksVisible = useCallback(() => {
+    if (uiModeRef.current === 'focus') {
+      setFocusInspectorCollapsed(false);
+      return;
+    }
     setDockLayout((prev) => {
       let next = prev;
       if (next.panels.explorer.collapsed) next = togglePanelCollapse(next, 'explorer');
@@ -2793,7 +2786,7 @@ export default function App() {
   }, []);
 
   const openSymbolInWorkspace = useCallback(
-    (sym: E3SymbolDef) => {
+    (sym: E3SymbolDef, originOverride?: SymbolWorkspaceOrigin) => {
       const linkedCat =
         mergedCatalog.find((c) => c.symbolId === sym.id || c.e3BlockName === sym.e3BlockName) ||
         null;
@@ -2807,37 +2800,46 @@ export default function App() {
               sym.e3BlockName,
               sym.defaultPins
             );
-      symbolUndoRef.current = [];
-      symbolRedoRef.current = [];
-      setSymbolUndoStack([]);
-      setSymbolRedoStack([]);
-      setSymbolDraft((prev) => ({
-        ...prev,
-        open: true,
-        targetMode: linkedCat ? 'component' : 'symbol',
-        symbolId: sym.id,
-        catalogItemId: linkedCat?.id,
-        deviceId: undefined,
-        name: sym.name,
-        e3BlockName: sym.e3BlockName,
-        category: sym.category,
-        width: sym.width,
-        height: sym.height,
-        shapes,
-        pins: structuredClone(sym.defaultPins),
-        componentName: linkedCat?.componentName || sym.description || sym.name,
-        article: linkedCat?.article || sym.e3BlockName,
-        manufacturer: linkedCat?.manufacturer || 'Собств. база',
-        defaultPrefix: linkedCat?.defaultPrefix || 'K',
-        defaultCable: linkedCat?.defaultCable || 'ВВГнг(А)-LS 3х1,5',
-        attributes: linkedCat
-          ? structuredClone(linkedCat.defaultAttributes)
-          : applyAttributeTemplate([], 'gost_base'),
-        tool: 'select',
-        selectedShapeId: null,
-        selectedPinIndex: null,
-        dirty: false,
-      }));
+      setSymbolTabsState((prev) => {
+        const targetOrigin = originOverride ?? (prev.open ? prev.origin : 'project');
+        const baseState = prev.origin !== targetOrigin ? createInitialSymbolTabsState() : prev;
+        const currStyle = symbolDraftRef.current.activeStyle;
+        return openOrFocusSymbolTab(
+          baseState,
+          {
+            open: true,
+            targetMode: linkedCat ? 'component' : 'symbol',
+            symbolId: sym.id,
+            catalogItemId: linkedCat?.id,
+            deviceId: undefined,
+            name: sym.name,
+            e3BlockName: sym.e3BlockName,
+            category: sym.category,
+            width: sym.width,
+            height: sym.height,
+            shapes,
+            pins: structuredClone(sym.defaultPins),
+            componentName: linkedCat?.componentName || sym.description || sym.name,
+            article: linkedCat?.article || sym.e3BlockName,
+            manufacturer: linkedCat?.manufacturer || 'Собств. база',
+            defaultPrefix: linkedCat?.defaultPrefix || 'K',
+            defaultCable: linkedCat?.defaultCable || 'ВВГнг(А)-LS 3х1,5',
+            attributes: linkedCat
+              ? structuredClone(linkedCat.defaultAttributes)
+              : applyAttributeTemplate([], 'gost_base'),
+            tool: 'select',
+            activeStyle: currStyle,
+            activeAttrTagKey: 'designation',
+            activePinSignal: 'signal',
+            gridStep: symbolDraftRef.current.gridStep || 10,
+            snapToGrid: symbolDraftRef.current.snapToGrid,
+            selectedShapeId: null,
+            selectedPinIndex: null,
+            dirty: false,
+          },
+          targetOrigin
+        );
+      });
       ensureSymbolEditorDocksVisible();
       appendLog('INFO', 'E3-CORE', `Открыт блок УГО «${sym.name}» (${sym.e3BlockName}) в редакторе.`);
     },
@@ -2845,40 +2847,48 @@ export default function App() {
   );
 
   const openCatalogItemInWorkspace = useCallback(
-    (item: CatalogItem) => {
+    (item: CatalogItem, originOverride?: SymbolWorkspaceOrigin) => {
       const linkedSym = item.symbolId
         ? mergedSymbolLibrary.find((s) => s.id === item.symbolId)
         : mergedSymbolLibrary.find((s) => s.e3BlockName === item.e3BlockName);
       const sym = linkedSym && !item.customSymbol?.shapes.length ? linkedSym : buildSymbolDefFromCatalogItem(item);
-      symbolUndoRef.current = [];
-      symbolRedoRef.current = [];
-      setSymbolUndoStack([]);
-      setSymbolRedoStack([]);
-      setSymbolDraft((prev) => ({
-        ...prev,
-        open: true,
-        targetMode: 'component',
-        symbolId: sym.id,
-        catalogItemId: item.id,
-        deviceId: undefined,
-        name: sym.name,
-        e3BlockName: item.e3BlockName,
-        category: item.category,
-        width: item.width,
-        height: item.height,
-        shapes: structuredClone(sym.shapes),
-        pins: structuredClone(item.pins),
-        componentName: item.componentName,
-        article: item.article,
-        manufacturer: item.manufacturer,
-        defaultPrefix: item.defaultPrefix,
-        defaultCable: item.defaultCable || '',
-        attributes: structuredClone(item.defaultAttributes),
-        tool: 'select',
-        selectedShapeId: null,
-        selectedPinIndex: null,
-        dirty: false,
-      }));
+      setSymbolTabsState((prev) => {
+        const targetOrigin = originOverride ?? (prev.open ? prev.origin : 'project');
+        const baseState = prev.origin !== targetOrigin ? createInitialSymbolTabsState() : prev;
+        return openOrFocusSymbolTab(
+          baseState,
+          {
+            open: true,
+            targetMode: 'component',
+            symbolId: sym.id,
+            catalogItemId: item.id,
+            deviceId: undefined,
+            name: sym.name,
+            e3BlockName: item.e3BlockName,
+            category: item.category,
+            width: item.width,
+            height: item.height,
+            shapes: structuredClone(sym.shapes),
+            pins: structuredClone(item.pins),
+            componentName: item.componentName,
+            article: item.article,
+            manufacturer: item.manufacturer,
+            defaultPrefix: item.defaultPrefix,
+            defaultCable: item.defaultCable || '',
+            attributes: structuredClone(item.defaultAttributes),
+            tool: 'select',
+            activeStyle: symbolDraftRef.current.activeStyle,
+            activeAttrTagKey: 'designation',
+            activePinSignal: 'signal',
+            gridStep: symbolDraftRef.current.gridStep || 10,
+            snapToGrid: symbolDraftRef.current.snapToGrid,
+            selectedShapeId: null,
+            selectedPinIndex: null,
+            dirty: false,
+          },
+          targetOrigin
+        );
+      });
       ensureSymbolEditorDocksVisible();
       appendLog(
         'INFO',
@@ -2905,35 +2915,42 @@ export default function App() {
       const matchingCat = mergedCatalog.find(
         (c) => (dev.symbolId && c.symbolId === dev.symbolId) || c.e3BlockName === dev.e3BlockName
       );
-      symbolUndoRef.current = [];
-      symbolRedoRef.current = [];
-      setSymbolUndoStack([]);
-      setSymbolRedoStack([]);
-      setSymbolDraft((prev) => ({
-        ...prev,
-        open: true,
-        targetMode: 'device',
-        symbolId: dev.symbolId || `sym-${dev.e3BlockName || dev.id}`,
-        catalogItemId: matchingCat?.id,
-        deviceId: dev.id,
-        name: `${dev.designation} (${dev.e3BlockName})`,
-        e3BlockName: dev.e3BlockName,
-        category: dev.category,
-        width: dev.width,
-        height: dev.height,
-        shapes,
-        pins,
-        componentName: dev.componentName,
-        article: dev.article,
-        manufacturer: dev.manufacturer,
-        defaultPrefix: dev.designation.replace(/\d+.*$/, '') || 'K',
-        defaultCable: matchingCat?.defaultCable || '',
-        attributes: structuredClone(dev.attributes),
-        tool: 'select',
-        selectedShapeId: null,
-        selectedPinIndex: null,
-        dirty: false,
-      }));
+      setSymbolTabsState((prev) => {
+        const baseState = prev.origin !== 'project' ? createInitialSymbolTabsState() : prev;
+        return openOrFocusSymbolTab(
+          baseState,
+          {
+            open: true,
+            targetMode: 'device',
+            symbolId: dev.symbolId || `sym-${dev.e3BlockName || dev.id}`,
+            catalogItemId: matchingCat?.id,
+            deviceId: dev.id,
+            name: `${dev.designation} (${dev.e3BlockName})`,
+            e3BlockName: dev.e3BlockName,
+            category: dev.category,
+            width: dev.width,
+            height: dev.height,
+            shapes,
+            pins,
+            componentName: dev.componentName,
+            article: dev.article,
+            manufacturer: dev.manufacturer,
+            defaultPrefix: dev.designation.replace(/\d+.*$/, '') || 'K',
+            defaultCable: matchingCat?.defaultCable || '',
+            attributes: structuredClone(dev.attributes),
+            tool: 'select',
+            activeStyle: symbolDraftRef.current.activeStyle,
+            activeAttrTagKey: 'designation',
+            activePinSignal: 'signal',
+            gridStep: symbolDraftRef.current.gridStep || 10,
+            snapToGrid: symbolDraftRef.current.snapToGrid,
+            selectedShapeId: null,
+            selectedPinIndex: null,
+            dirty: false,
+          },
+          'project'
+        );
+      });
       ensureSymbolEditorDocksVisible();
       appendLog(
         'INFO',
@@ -2971,74 +2988,59 @@ export default function App() {
               seed.e3BlockName,
               seed.pins
             );
-      symbolUndoRef.current = [];
-      symbolRedoRef.current = [];
-      setSymbolUndoStack([]);
-      setSymbolRedoStack([]);
-      setSymbolDraft((prev) => ({
-        ...prev,
-        open: true,
-        targetMode: 'component',
-        symbolId: `sym-${seed.e3BlockName || Date.now().toString(36)}`,
-        catalogItemId: seed.catalogItemId,
-        deviceId: undefined,
-        name: seed.name,
-        e3BlockName: seed.e3BlockName,
-        category: seed.category,
-        width: seed.width,
-        height: seed.height,
-        shapes,
-        pins: structuredClone(seed.pins),
-        componentName: seed.componentName || seed.name,
-        article: seed.article || 'E3-NEW-01',
-        manufacturer: seed.manufacturer || 'Собств. база',
-        defaultPrefix: seed.defaultPrefix || 'K',
-        defaultCable: seed.defaultCable || '',
-        attributes: structuredClone(seed.attributes),
-        tool: 'select',
-        selectedShapeId: null,
-        selectedPinIndex: null,
-        dirty: true,
-      }));
+      setSymbolTabsState((prev) => {
+        const targetOrigin = prev.open ? prev.origin : 'project';
+        const baseState = prev.origin !== targetOrigin ? createInitialSymbolTabsState() : prev;
+        return openOrFocusSymbolTab(
+          baseState,
+          {
+            open: true,
+            targetMode: 'component',
+            symbolId: `sym-${seed.e3BlockName || Date.now().toString(36)}`,
+            catalogItemId: seed.catalogItemId,
+            deviceId: undefined,
+            name: seed.name,
+            e3BlockName: seed.e3BlockName,
+            category: seed.category,
+            width: seed.width,
+            height: seed.height,
+            shapes,
+            pins: structuredClone(seed.pins),
+            componentName: seed.componentName || seed.name,
+            article: seed.article || 'E3-NEW-01',
+            manufacturer: seed.manufacturer || 'Собств. база',
+            defaultPrefix: seed.defaultPrefix || 'K',
+            defaultCable: seed.defaultCable || '',
+            attributes: structuredClone(seed.attributes),
+            tool: 'select',
+            activeStyle: symbolDraftRef.current.activeStyle,
+            activeAttrTagKey: 'designation',
+            activePinSignal: 'signal',
+            gridStep: symbolDraftRef.current.gridStep || 10,
+            snapToGrid: symbolDraftRef.current.snapToGrid,
+            selectedShapeId: null,
+            selectedPinIndex: null,
+            dirty: true,
+          },
+          targetOrigin
+        );
+      });
       ensureSymbolEditorDocksVisible();
     },
     [ensureSymbolEditorDocksVisible]
   );
 
-  const createNewBlankSymbolInWorkspace = useCallback(() => {
-    const preset = buildSymbolDesignerPreset('blank_box');
-    const suffix = Date.now().toString(36).slice(-4).toUpperCase();
-    symbolUndoRef.current = [];
-    symbolRedoRef.current = [];
-    setSymbolUndoStack([]);
-    setSymbolRedoStack([]);
-    setSymbolDraft((prev) => ({
-      ...prev,
-      open: true,
-      targetMode: 'symbol',
-      symbolId: `sym-custom-${Date.now().toString(36)}`,
-      catalogItemId: undefined,
-      deviceId: undefined,
-      name: `Новое УГО ${suffix}`,
-      e3BlockName: `E3_BLK_${suffix}`,
-      category: 'relay',
-      width: preset.width,
-      height: preset.height,
-      shapes: structuredClone(preset.shapes),
-      pins: structuredClone(preset.pins),
-      componentName: `Новое изделие ${suffix}`,
-      article: `ART-${suffix}`,
-      manufacturer: 'Собств. база',
-      defaultPrefix: 'K',
-      defaultCable: 'ВВГнг(А)-LS 3х1,5',
-      attributes: applyAttributeTemplate([], 'gost_base'),
-      tool: 'select',
-      selectedShapeId: null,
-      selectedPinIndex: null,
-      dirty: true,
-    }));
-    ensureSymbolEditorDocksVisible();
-  }, [ensureSymbolEditorDocksVisible]);
+  const createNewBlankSymbolInWorkspace = useCallback(
+    (originOverride?: SymbolWorkspaceOrigin) => {
+      setSymbolTabsState((prev) => {
+        const targetOrigin = originOverride ?? (prev.open ? prev.origin : 'project');
+        const baseState = prev.origin !== targetOrigin ? createInitialSymbolTabsState() : prev;
+        return addBlankSymbolTab(baseState, targetOrigin);
+      });
+      ensureSymbolEditorDocksVisible();
+    },
+    [ensureSymbolEditorDocksVisible]
+  );
 
   const openBlockEditorWorkspace = useCallback(() => {
     if (selectedDevice) {
@@ -3046,10 +3048,10 @@ export default function App() {
       return;
     }
     if (mergedSymbolLibrary.length > 0) {
-      openSymbolInWorkspace(mergedSymbolLibrary[0]);
+      openSymbolInWorkspace(mergedSymbolLibrary[0], 'project');
       return;
     }
-    createNewBlankSymbolInWorkspace();
+    createNewBlankSymbolInWorkspace('project');
   }, [
     selectedDevice,
     mergedSymbolLibrary,
@@ -3058,103 +3060,56 @@ export default function App() {
     createNewBlankSymbolInWorkspace,
   ]);
 
+  const openGlobalUgoWorkspace = useCallback(() => {
+    setStartHubOpen(false);
+    setFocusInspectorCollapsed(false);
+    const curTabs = symbolTabsStateRef.current;
+    if (curTabs.origin === 'hub' && curTabs.tabs.length > 0) {
+      setSymbolTabsState((prev) => ({ ...prev, open: true }));
+      ensureSymbolEditorDocksVisible();
+      appendLog('INFO', 'E3-CORE', 'Открыт глобальный редактор УГО и базы изделий.');
+      return;
+    }
+    const targetSym = customSymbols[0] || mergedSymbolLibrary[0];
+    if (targetSym) {
+      openSymbolInWorkspace(targetSym, 'hub');
+    } else {
+      createNewBlankSymbolInWorkspace('hub');
+    }
+  }, [
+    customSymbols,
+    mergedSymbolLibrary,
+    openSymbolInWorkspace,
+    createNewBlankSymbolInWorkspace,
+    ensureSymbolEditorDocksVisible,
+    appendLog,
+  ]);
+
   const commitSymbolGeometry = useCallback(
     (
       nextShapes: CustomSymbolShape[],
       nextPins: Omit<E3Pin, 'id'>[],
       bounds?: { width?: number; height?: number }
     ) => {
-      const prev = symbolDraftRef.current;
-      const snap: SymbolGeoSnapshot = {
-        width: prev.width,
-        height: prev.height,
-        shapes: structuredClone(prev.shapes),
-        pins: structuredClone(prev.pins),
-      };
-      const nextUndo = [...symbolUndoRef.current.slice(-29), snap];
-      const nextDraft: SymbolWorkspaceDraft = {
-        ...prev,
-        width: bounds?.width ?? prev.width,
-        height: bounds?.height ?? prev.height,
-        shapes: nextShapes,
-        pins: nextPins,
-        dirty: true,
-      };
-      symbolUndoRef.current = nextUndo;
-      symbolRedoRef.current = [];
-      symbolDraftRef.current = nextDraft;
-      setSymbolUndoStack(nextUndo);
-      setSymbolRedoStack([]);
-      setSymbolDraft(nextDraft);
+      setSymbolTabsState((prev) =>
+        commitActiveTabGeometry(prev, nextShapes, nextPins, bounds)
+      );
     },
     []
   );
 
   const undoSymbolEditor = useCallback(() => {
-    const past = symbolUndoRef.current;
-    if (past.length === 0) return;
-    const prevSnap = past[past.length - 1];
-    const curr = symbolDraftRef.current;
-    const redoEntry: SymbolGeoSnapshot = {
-      width: curr.width,
-      height: curr.height,
-      shapes: structuredClone(curr.shapes),
-      pins: structuredClone(curr.pins),
-    };
-    const nextPast = past.slice(0, -1);
-    const nextRedo = [redoEntry, ...symbolRedoRef.current.slice(0, 29)];
-    const nextDraft: SymbolWorkspaceDraft = {
-      ...curr,
-      width: prevSnap.width,
-      height: prevSnap.height,
-      shapes: prevSnap.shapes,
-      pins: prevSnap.pins,
-      selectedShapeId: null,
-      selectedPinIndex: null,
-      dirty: true,
-    };
-    symbolUndoRef.current = nextPast;
-    symbolRedoRef.current = nextRedo;
-    symbolDraftRef.current = nextDraft;
-    setSymbolUndoStack(nextPast);
-    setSymbolRedoStack(nextRedo);
-    setSymbolDraft(nextDraft);
+    setSymbolTabsState((prev) => undoActiveSymbolTab(prev));
   }, []);
 
   const redoSymbolEditor = useCallback(() => {
-    const fut = symbolRedoRef.current;
-    if (fut.length === 0) return;
-    const nextSnap = fut[0];
-    const curr = symbolDraftRef.current;
-    const undoEntry: SymbolGeoSnapshot = {
-      width: curr.width,
-      height: curr.height,
-      shapes: structuredClone(curr.shapes),
-      pins: structuredClone(curr.pins),
-    };
-    const nextUndo = [...symbolUndoRef.current.slice(-29), undoEntry];
-    const nextFut = fut.slice(1);
-    const nextDraft: SymbolWorkspaceDraft = {
-      ...curr,
-      width: nextSnap.width,
-      height: nextSnap.height,
-      shapes: nextSnap.shapes,
-      pins: nextSnap.pins,
-      selectedShapeId: null,
-      selectedPinIndex: null,
-      dirty: true,
-    };
-    symbolUndoRef.current = nextUndo;
-    symbolRedoRef.current = nextFut;
-    symbolDraftRef.current = nextDraft;
-    setSymbolUndoStack(nextUndo);
-    setSymbolRedoStack(nextFut);
-    setSymbolDraft(nextDraft);
+    setSymbolTabsState((prev) => redoActiveSymbolTab(prev));
   }, []);
 
   const saveSymbolWorkspace = useCallback(
     (draftOverride?: SymbolWorkspaceDraft): { sym: E3SymbolDef; catalogItem: CatalogItem } => {
-      const d = draftOverride || symbolDraft;
+      const curState = symbolTabsStateRef.current;
+      const d = draftOverride || getEffectiveSymbolDraft(curState);
       const norm = normalizeCustomSymbolSpec(d.width, d.height, d.shapes, d.pins);
       const cleanBlock = d.e3BlockName.trim() || 'E3_CUSTOM_BLK';
       const cleanSymId = d.symbolId || `sym-${cleanBlock}`;
@@ -3208,95 +3163,101 @@ export default function App() {
         handleSaveCustomCatalogItem(savedCat);
       }
 
-      commitProject((prev) => {
-        const prevLib = prev.symbolLibrary || [];
-        const symIdx = prevLib.findIndex((s) => s.id === savedSym.id);
-        const nextLib =
-          symIdx >= 0 ? prevLib.map((s) => (s.id === savedSym.id ? savedSym : s)) : [...prevLib, savedSym];
+      if (curState.origin === 'project') {
+        commitProject((prev) => {
+          const prevLib = prev.symbolLibrary || [];
+          const symIdx = prevLib.findIndex((s) => s.id === savedSym.id);
+          const nextLib =
+            symIdx >= 0 ? prevLib.map((s) => (s.id === savedSym.id ? savedSym : s)) : [...prevLib, savedSym];
 
-        const nextDevices = prev.devices.map((dev) => {
-          const isTargetDev = d.targetMode === 'device' && d.deviceId === dev.id;
-          const isSharedSym = dev.symbolId === savedSym.id || (!d.deviceId && dev.e3BlockName === cleanBlock);
-          if (!isTargetDev && !isSharedSym) return dev;
+          const nextDevices = prev.devices.map((dev) => {
+            const isTargetDev = d.targetMode === 'device' && d.deviceId === dev.id;
+            const isSharedSym = dev.symbolId === savedSym.id || (!d.deviceId && dev.e3BlockName === cleanBlock);
+            if (!isTargetDev && !isSharedSym) return dev;
 
-          const updatedPins: E3Pin[] = norm.pins.map((p, idx) => ({
-            ...p,
-            id: dev.pins[idx]?.id || `${dev.id}-p${idx + 1}`,
-          }));
+            const updatedPins: E3Pin[] = norm.pins.map((p, idx) => ({
+              ...p,
+              id: dev.pins[idx]?.id || `${dev.id}-p${idx + 1}`,
+            }));
+            return {
+              ...dev,
+              symbolId: savedSym.id,
+              e3BlockName: cleanBlock,
+              category: d.category,
+              width: norm.width,
+              height: norm.height,
+              customSymbol: structuredClone(norm.customSymbol),
+              pins: updatedPins,
+              ...(isTargetDev
+                ? {
+                    componentName: d.componentName.trim() || dev.componentName,
+                    article: d.article.trim() || dev.article,
+                    manufacturer: d.manufacturer.trim() || dev.manufacturer,
+                    attributes: structuredClone(d.attributes),
+                  }
+                : {}),
+            };
+          });
+
+          let nextWires = prev.wires;
+          for (const dev of nextDevices) {
+            if (
+              (d.targetMode === 'device' && d.deviceId === dev.id) ||
+              dev.symbolId === savedSym.id
+            ) {
+              nextWires = rerouteDeviceWires(dev, nextDevices, nextWires, prev.sheets);
+            }
+          }
+
           return {
-            ...dev,
-            symbolId: savedSym.id,
-            e3BlockName: cleanBlock,
-            category: d.category,
-            width: norm.width,
-            height: norm.height,
-            customSymbol: structuredClone(norm.customSymbol),
-            pins: updatedPins,
-            ...(isTargetDev
-              ? {
-                  componentName: d.componentName.trim() || dev.componentName,
-                  article: d.article.trim() || dev.article,
-                  manufacturer: d.manufacturer.trim() || dev.manufacturer,
-                  attributes: structuredClone(d.attributes),
-                }
-              : {}),
+            ...prev,
+            revision: prev.revision + 1,
+            updatedAt: new Date().toISOString(),
+            symbolLibrary: nextLib,
+            devices: nextDevices,
+            wires: nextWires,
           };
         });
+      }
 
-        let nextWires = prev.wires;
-        for (const dev of nextDevices) {
-          if (
-            (d.targetMode === 'device' && d.deviceId === dev.id) ||
-            dev.symbolId === savedSym.id
-          ) {
-            nextWires = rerouteDeviceWires(dev, nextDevices, nextWires, prev.sheets);
-          }
-        }
-
-        return {
-          ...prev,
-          revision: prev.revision + 1,
-          updatedAt: new Date().toISOString(),
-          symbolLibrary: nextLib,
-          devices: nextDevices,
-          wires: nextWires,
-        };
-      });
-
-      setSymbolDraft((curr) => ({
-        ...curr,
-        symbolId: savedSym.id,
-        catalogItemId: savedCat.id,
-        width: norm.width,
-        height: norm.height,
-        shapes: norm.customSymbol.shapes,
-        pins: norm.pins,
-        dirty: false,
-      }));
+      setSymbolTabsState((prev) =>
+        updateActiveSymbolTabDraft(prev, (curr) => ({
+          ...curr,
+          symbolId: savedSym.id,
+          catalogItemId: savedCat.id,
+          width: norm.width,
+          height: norm.height,
+          shapes: norm.customSymbol.shapes,
+          pins: norm.pins,
+          dirty: false,
+        }))
+      );
       appendLog(
         'SYNC',
         'E3-CORE',
-        `Сохранён блок УГО «${savedSym.name}» (${cleanBlock}, ${norm.customSymbol.shapes.length} прим., ${norm.pins.length} выв.) и синхронизирован с БД E3.`
+        `Сохранён блок УГО «${savedSym.name}» (${cleanBlock}, ${norm.customSymbol.shapes.length} прим., ${norm.pins.length} выв.) в библиотеку${curState.origin === 'project' ? ' и проект' : ''}.`
       );
       return { sym: savedSym, catalogItem: savedCat };
     },
-    [symbolDraft, mergedCatalog, handleSaveCustomCatalogItem, commitProject, appendLog]
+    [mergedCatalog, handleSaveCustomCatalogItem, commitProject, appendLog]
   );
 
   const saveSymbolAsCopyWorkspace = useCallback(
     (copyName: string, copyBlockName?: string, copyArticle?: string) => {
+      const curState = symbolTabsStateRef.current;
+      const curDraft = getEffectiveSymbolDraft(curState);
       const norm = normalizeCustomSymbolSpec(
-        symbolDraft.width,
-        symbolDraft.height,
-        symbolDraft.shapes,
-        symbolDraft.pins
+        curDraft.width,
+        curDraft.height,
+        curDraft.shapes,
+        curDraft.pins
       );
       const baseSym: E3SymbolDef = {
-        id: symbolDraft.symbolId,
-        name: symbolDraft.name,
-        e3BlockName: symbolDraft.e3BlockName,
-        category: symbolDraft.category,
-        description: symbolDraft.componentName,
+        id: curDraft.symbolId,
+        name: curDraft.name,
+        e3BlockName: curDraft.e3BlockName,
+        category: curDraft.category,
+        description: curDraft.componentName,
         width: norm.width,
         height: norm.height,
         shapes: norm.customSymbol.shapes,
@@ -3305,23 +3266,23 @@ export default function App() {
       };
       const newSym = duplicateSymbolDefAsCopy(baseSym, copyName, copyBlockName);
       const sourceCat =
-        (symbolDraft.catalogItemId && mergedCatalog.find((c) => c.id === symbolDraft.catalogItemId)) ||
+        (curDraft.catalogItemId && mergedCatalog.find((c) => c.id === curDraft.catalogItemId)) ||
         mergedCatalog[0];
       const newCat = duplicateCatalogItemAsCopy(sourceCat, {
-        componentName: copyName.trim() || `${symbolDraft.componentName} (копия)`,
-        article: copyArticle?.trim() || `${symbolDraft.article || newSym.e3BlockName}-COPY`,
+        componentName: copyName.trim() || `${curDraft.componentName} (копия)`,
+        article: copyArticle?.trim() || `${curDraft.article || newSym.e3BlockName}-COPY`,
         e3BlockName: newSym.e3BlockName,
         symbolId: newSym.id,
         shapes: newSym.shapes,
         pins: newSym.defaultPins,
         width: newSym.width,
         height: newSym.height,
-        attributes: symbolDraft.attributes,
+        attributes: curDraft.attributes,
       });
-      newCat.category = symbolDraft.category;
-      newCat.manufacturer = symbolDraft.manufacturer || newCat.manufacturer;
-      newCat.defaultPrefix = symbolDraft.defaultPrefix || newCat.defaultPrefix;
-      newCat.defaultCable = symbolDraft.defaultCable || newCat.defaultCable;
+      newCat.category = curDraft.category;
+      newCat.manufacturer = curDraft.manufacturer || newCat.manufacturer;
+      newCat.defaultPrefix = curDraft.defaultPrefix || newCat.defaultPrefix;
+      newCat.defaultCable = curDraft.defaultCable || newCat.defaultCable;
 
       setCustomSymbols((prev) => {
         const next = [...prev, newSym];
@@ -3329,81 +3290,140 @@ export default function App() {
         return next;
       });
       handleSaveCustomCatalogItem(newCat);
-      commitProject((prev) => ({
-        ...prev,
-        revision: prev.revision + 1,
-        updatedAt: new Date().toISOString(),
-        symbolLibrary: [...(prev.symbolLibrary || []), newSym],
-      }));
+      if (curState.origin === 'project') {
+        commitProject((prev) => ({
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          symbolLibrary: [...(prev.symbolLibrary || []), newSym],
+        }));
+      }
 
-      symbolUndoRef.current = [];
-      symbolRedoRef.current = [];
-      setSymbolUndoStack([]);
-      setSymbolRedoStack([]);
-      setSymbolDraft((prev) => ({
-        ...prev,
-        targetMode: 'component',
-        symbolId: newSym.id,
-        catalogItemId: newCat.id,
-        deviceId: undefined,
-        name: newSym.name,
-        e3BlockName: newSym.e3BlockName,
-        componentName: newCat.componentName,
-        article: newCat.article,
-        width: newSym.width,
-        height: newSym.height,
-        shapes: structuredClone(newSym.shapes),
-        pins: structuredClone(newSym.defaultPins),
-        dirty: false,
-      }));
+      setSymbolTabsState((prev) =>
+        openOrFocusSymbolTab(
+          prev,
+          {
+            ...curDraft,
+            open: true,
+            targetMode: 'component',
+            symbolId: newSym.id,
+            catalogItemId: newCat.id,
+            deviceId: undefined,
+            name: newSym.name,
+            e3BlockName: newSym.e3BlockName,
+            componentName: newCat.componentName,
+            article: newCat.article,
+            width: newSym.width,
+            height: newSym.height,
+            shapes: structuredClone(newSym.shapes),
+            pins: structuredClone(newSym.defaultPins),
+            dirty: false,
+          },
+          curState.origin,
+          { forceNewTab: true }
+        )
+      );
       appendLog(
         'INFO',
         'E3-CORE',
         `Создана независимая копия блока и изделия: «${newSym.name}» (${newSym.e3BlockName} / ${newCat.article}).`
       );
     },
-    [symbolDraft, mergedCatalog, handleSaveCustomCatalogItem, commitProject, appendLog]
+    [mergedCatalog, handleSaveCustomCatalogItem, commitProject, appendLog]
+  );
+
+  const symbolTabSummaries = useMemo(
+    () => summarizeSymbolTabs(symbolTabsState),
+    [symbolTabsState]
   );
 
   const symbolWorkspaceActions = useMemo<SymbolWorkspaceActions>(
     () => ({
       draft: symbolDraft,
-      canUndo: symbolUndoStack.length > 0,
-      canRedo: symbolRedoStack.length > 0,
+      origin: symbolTabsState.origin,
+      tabs: symbolTabSummaries,
+      activeTabId: activeSymbolTab?.tabId || symbolTabsState.activeTabId,
+      canUndo: (activeSymbolTab?.undoStack.length ?? 0) > 0,
+      canRedo: (activeSymbolTab?.redoStack.length ?? 0) > 0,
       symbolLibrary: mergedSymbolLibrary,
       catalog: mergedCatalog,
+      onSelectTab: (tabId: string) =>
+        setSymbolTabsState((prev) => selectSymbolTab(prev, tabId)),
+      onCloseTab: (tabId: string) => {
+        const curState = symbolTabsStateRef.current;
+        const wasHub = curState.origin === 'hub';
+        const willBeEmpty =
+          curState.tabs.length <= 1 && curState.tabs.some((t) => t.tabId === tabId);
+        setSymbolTabsState((prev) => closeSymbolTab(prev, tabId));
+        if (wasHub && willBeEmpty) {
+          setStartHubOpen(true);
+        }
+      },
+      onAddNewTab: () =>
+        setSymbolTabsState((prev) => addBlankSymbolTab(prev)),
       onUndo: undoSymbolEditor,
       onRedo: redoSymbolEditor,
       onSetTool: (nextTool: SymbolEditorTool) =>
-        setSymbolDraft((prev) => ({ ...prev, tool: nextTool })),
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({ ...curr, tool: nextTool }))
+        ),
       onUpdateStyle: (patch: Partial<SymbolActiveDrawStyle>) =>
-        setSymbolDraft((prev) => ({
-          ...prev,
-          activeStyle: { ...prev.activeStyle, ...patch },
-        })),
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({
+            ...curr,
+            activeStyle: { ...curr.activeStyle, ...patch },
+          }))
+        ),
       onSetGridStep: (step: number) =>
-        setSymbolDraft((prev) => ({ ...prev, gridStep: step })),
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({ ...curr, gridStep: step }))
+        ),
       onToggleSnap: () =>
-        setSymbolDraft((prev) => ({ ...prev, snapToGrid: !prev.snapToGrid })),
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({
+            ...curr,
+            snapToGrid: !curr.snapToGrid,
+          }))
+        ),
       onSetAttrTagKey: (key: string) =>
-        setSymbolDraft((prev) => ({ ...prev, activeAttrTagKey: key })),
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({
+            ...curr,
+            activeAttrTagKey: key,
+          }))
+        ),
       onSetPinSignal: (sig) =>
-        setSymbolDraft((prev) => ({ ...prev, activePinSignal: sig })),
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({
+            ...curr,
+            activePinSignal: sig,
+          }))
+        ),
       onUpdateDraftMeta: (patch) =>
-        setSymbolDraft((prev) => ({ ...prev, ...patch, dirty: true })),
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({
+            ...curr,
+            ...patch,
+            dirty: true,
+          }))
+        ),
       onCommitGeometry: commitSymbolGeometry,
       onSelectShape: (shapeId) =>
-        setSymbolDraft((prev) => ({
-          ...prev,
-          selectedShapeId: shapeId,
-          selectedPinIndex: shapeId ? null : prev.selectedPinIndex,
-        })),
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({
+            ...curr,
+            selectedShapeId: shapeId,
+            selectedPinIndex: shapeId ? null : curr.selectedPinIndex,
+          }))
+        ),
       onSelectPin: (pinIndex) =>
-        setSymbolDraft((prev) => ({
-          ...prev,
-          selectedPinIndex: pinIndex,
-          selectedShapeId: pinIndex !== null ? null : prev.selectedShapeId,
-        })),
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({
+            ...curr,
+            selectedPinIndex: pinIndex,
+            selectedShapeId: pinIndex !== null ? null : curr.selectedShapeId,
+          }))
+        ),
       onDeleteSelection: () => {
         const cur = symbolDraftRef.current;
         if (cur.selectedShapeId) {
@@ -3412,14 +3432,18 @@ export default function App() {
             cur.shapes.filter((s) => s.id !== id),
             cur.pins
           );
-          setSymbolDraft((prev) => ({ ...prev, selectedShapeId: null }));
+          setSymbolTabsState((prev) =>
+            updateActiveSymbolTabDraft(prev, (d) => ({ ...d, selectedShapeId: null }))
+          );
         } else if (cur.selectedPinIndex !== null) {
           const pIdx = cur.selectedPinIndex;
           commitSymbolGeometry(
             cur.shapes,
             cur.pins.filter((_, idx) => idx !== pIdx)
           );
-          setSymbolDraft((prev) => ({ ...prev, selectedPinIndex: null }));
+          setSymbolTabsState((prev) =>
+            updateActiveSymbolTabDraft(prev, (d) => ({ ...d, selectedPinIndex: null }))
+          );
         }
       },
       onDuplicateSelectedShape: () => {
@@ -3438,7 +3462,9 @@ export default function App() {
           cloned = { ...cloned, x: cloned.x + 10, y: cloned.y + 10 };
         }
         commitSymbolGeometry([...cur.shapes, cloned], cur.pins);
-        setSymbolDraft((prev) => ({ ...prev, selectedShapeId: copyId }));
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (d) => ({ ...d, selectedShapeId: copyId }))
+        );
       },
       onMoveShapeOrder: (dir) => {
         const cur = symbolDraftRef.current;
@@ -3467,11 +3493,13 @@ export default function App() {
         commitSymbolGeometry(mir.shapes, mir.pins);
       },
       onApplyAttributeTemplate: (presetId) => {
-        setSymbolDraft((prev) => ({
-          ...prev,
-          attributes: applyAttributeTemplate(prev.attributes, presetId, false),
-          dirty: true,
-        }));
+        setSymbolTabsState((prev) =>
+          updateActiveSymbolTabDraft(prev, (curr) => ({
+            ...curr,
+            attributes: applyAttributeTemplate(curr.attributes, presetId, false),
+            dirty: true,
+          }))
+        );
       },
       onApplyPresetShapes: (presetId: SymbolPresetId) => {
         const preset = buildSymbolDesignerPreset(presetId);
@@ -3480,9 +3508,9 @@ export default function App() {
           height: preset.height,
         });
       },
-      onOpenSymbolInEditor: openSymbolInWorkspace,
-      onOpenCatalogItemInEditor: openCatalogItemInWorkspace,
-      onCreateNewBlankSymbol: createNewBlankSymbolInWorkspace,
+      onOpenSymbolInEditor: (sym) => openSymbolInWorkspace(sym),
+      onOpenCatalogItemInEditor: (item) => openCatalogItemInWorkspace(item),
+      onCreateNewBlankSymbol: () => createNewBlankSymbolInWorkspace(),
       onCreateNewComponentFromSymbol: () => {
         const cur = symbolDraftRef.current;
         const suffix = Date.now().toString(36).slice(-4).toUpperCase();
@@ -3497,8 +3525,9 @@ export default function App() {
       },
       onSaveAsCopy: saveSymbolAsCopyWorkspace,
       onPlaceOnActiveSheet: () => {
+        if (symbolTabsStateRef.current.origin !== 'project') return;
         const { catalogItem } = saveSymbolWorkspace();
-        setSymbolDraft((prev) => ({ ...prev, open: false }));
+        setSymbolTabsState((prev) => closeAllSymbolWorkspace(prev));
         handlePlaceCatalogItem(catalogItem);
       },
       onDeleteCustomSymbol: (symId: string) => {
@@ -3507,18 +3536,28 @@ export default function App() {
           saveCustomSymbols(next);
           return next;
         });
-        commitProject((prev) => ({
-          ...prev,
-          symbolLibrary: (prev.symbolLibrary || []).filter((s) => s.id !== symId),
-        }));
+        if (symbolTabsStateRef.current.origin === 'project') {
+          commitProject((prev) => ({
+            ...prev,
+            symbolLibrary: (prev.symbolLibrary || []).filter((s) => s.id !== symId),
+          }));
+        }
         appendLog('WARN', 'E3-CORE', 'Пользовательское УГО удалено из библиотеки.');
       },
-      onCloseWorkspace: () => setSymbolDraft((prev) => ({ ...prev, open: false })),
+      onCloseWorkspace: () => {
+        const wasHub = symbolTabsStateRef.current.origin === 'hub';
+        setSymbolTabsState((prev) => closeAllSymbolWorkspace(prev));
+        if (wasHub) {
+          setStartHubOpen(true);
+        }
+      },
     }),
     [
       symbolDraft,
-      symbolUndoStack.length,
-      symbolRedoStack.length,
+      symbolTabsState.origin,
+      symbolTabsState.activeTabId,
+      symbolTabSummaries,
+      activeSymbolTab,
       mergedSymbolLibrary,
       mergedCatalog,
       undoSymbolEditor,
@@ -5408,32 +5447,6 @@ export default function App() {
     [mergedCatalog, applySelection, pushSync, fitSheetToViewport, activeViewportIdx, appendLog]
   );
 
-  const handleSaveGlobalCatalogAndSymbol = useCallback(
-    (item: CatalogItem, sym: E3SymbolDef) => {
-      setCustomSymbols((prev) => {
-        const idx = prev.findIndex((s) => s.id === sym.id);
-        const next = idx >= 0 ? prev.map((s) => (s.id === sym.id ? sym : s)) : [...prev, sym];
-        saveCustomSymbols(next);
-        return next;
-      });
-      handleSaveCustomCatalogItem(item);
-    },
-    [handleSaveCustomCatalogItem]
-  );
-
-  const handleDeleteGlobalCatalogItem = useCallback(
-    (itemId: string, symbolId?: string) => {
-      handleDeleteCustomCatalogItem(itemId);
-      if (symbolId) {
-        setCustomSymbols((prev) => {
-          const next = prev.filter((s) => s.id !== symbolId);
-          saveCustomSymbols(next);
-          return next;
-        });
-      }
-    },
-    [handleDeleteCustomCatalogItem]
-  );
 
   const handleOpenRecentProject = useCallback(
     (projectId: string) => {
@@ -7584,7 +7597,7 @@ export default function App() {
 
       {/* Dockable Workspace Shell (Full-Bleed in Focus Mode, Docked 4-Zone Grid in Classic & Hybrid) */}
       <div ref={workspaceRef} className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
-        {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(topPanels, 'top')}
+        {uiMode !== 'focus' && renderDockBand(topPanels, 'top')}
 
         <main className="flex-1 min-h-0 flex overflow-hidden">
           {uiMode === 'hybrid' && (
@@ -7688,7 +7701,7 @@ export default function App() {
               </button>
             </nav>
           )}
-          {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(leftPanels, 'left')}
+          {uiMode !== 'focus' && renderDockBand(leftPanels, 'left')}
 
           {/* Center Area: Sheetless Block Editor (BEDIT) OR Multi-Viewport Schematics */}
           <AnimatePresence mode="wait" initial={false}>
@@ -7704,6 +7717,13 @@ export default function App() {
               <SymbolWorkspaceCanvas
                 workspace={symbolWorkspaceActions}
                 isDark={project.visualSettings.theme === 'dark'}
+                uiMode={uiMode}
+                focusLayout={focusLayout}
+                focusLibraryOpen={focusExplorerOpen}
+                focusInspectorOpen={!focusInspectorCollapsed}
+                onToggleFocusLibrary={handleToggleFocusExplorer}
+                canvasFocusClean={canvasFocusActive}
+                onToggleCanvasFocusClean={handleToggleCanvasFocus}
               />
             </motion.div>
           ) : (
@@ -7850,10 +7870,113 @@ export default function App() {
           )}
           </AnimatePresence>
 
-          {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(rightPanels, 'right')}
+          {uiMode !== 'focus' && renderDockBand(rightPanels, 'right')}
         </main>
 
-        {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(bottomPanels, 'bottom')}
+        {uiMode !== 'focus' && renderDockBand(bottomPanels, 'bottom')}
+
+        {/* Focus Mode (Variant B) Glass Overlays: UGO Floating Library & Inspector */}
+        {uiMode === 'focus' && symbolDraft.open && (
+          <>
+            <AnimatePresence initial={false}>
+              {focusExplorerOpen && (
+                <motion.div
+                  data-testid="focus-ugo-library-drawer"
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12 }}
+                  transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                  style={{
+                    left: focusLayout.explorerLeft,
+                    top: focusLayout.explorerTop,
+                    bottom: focusLayout.explorerBottom,
+                    width: focusLayout.explorerWidth,
+                  }}
+                  className={`no-print absolute max-w-[calc(100vw-80px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col ${
+                    resizingFocusPanel === 'explorer' ? '' : 'transition-[top,bottom] duration-150'
+                  }`}
+                >
+                  <div className="min-h-7 h-auto py-0.5 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 shrink-0 overflow-hidden">
+                    <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] truncate">
+                      Библиотека УГО и изделий E3
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="focus-ugo-library-close-btn"
+                      onClick={() => setFocusExplorerOpen(false)}
+                      title="Свернуть библиотеку УГО (Ctrl+\)"
+                      aria-label="Свернуть библиотеку УГО"
+                      className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <SymbolLibraryBrowser workspace={symbolWorkspaceActions} />
+                  </div>
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Изменить ширину библиотеки УГО"
+                    data-testid="focus-ugo-library-resizer"
+                    onPointerDown={(e) => handleResizeFocusPanelStart('explorer', e)}
+                    className={`no-print absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize z-20 transition-colors ${
+                      resizingFocusPanel === 'explorer'
+                        ? 'bg-[var(--flux-accent)]'
+                        : 'hover:bg-[var(--flux-accent)]/40'
+                    }`}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {focusInspectorCollapsed ? (
+              <button
+                type="button"
+                data-testid="focus-ugo-inspector"
+                onClick={() => setFocusInspectorCollapsed(false)}
+                title="Развернуть инспектор УГО"
+                style={{ top: focusLayout.inspectorTop, right: focusLayout.inspectorRight }}
+                className="no-print absolute z-30 inline-flex items-center gap-1.5 h-[calc(34px*var(--flux-ui-scale))] px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface hover:border-[var(--flux-accent)] shadow-lg text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-[top] duration-150"
+              >
+                <ChevronLeft className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                <span>Свойства УГО</span>
+              </button>
+            ) : (
+              <div
+                data-testid="focus-ugo-inspector"
+                style={{
+                  top: focusLayout.inspectorTop,
+                  right: focusLayout.inspectorRight,
+                  width: focusLayout.inspectorWidth,
+                  maxHeight: focusLayout.inspectorMaxHeight,
+                }}
+                className={`no-print absolute max-w-[calc(100vw-24px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col ${
+                  resizingFocusPanel === 'inspector' ? '' : 'transition-[top,max-height] duration-150'
+                }`}
+              >
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Изменить ширину инспектора УГО"
+                  data-testid="focus-ugo-inspector-resizer"
+                  onPointerDown={(e) => handleResizeFocusPanelStart('inspector', e)}
+                  className={`no-print absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize z-20 transition-colors ${
+                    resizingFocusPanel === 'inspector'
+                      ? 'bg-[var(--flux-accent)]'
+                      : 'hover:bg-[var(--flux-accent)]/40'
+                  }`}
+                />
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  <SymbolEditorInspector
+                    workspace={symbolWorkspaceActions}
+                    onCollapseFocusPanel={() => setFocusInspectorCollapsed(true)}
+                  />
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
         {/* Focus Mode (Variant B) Glass Overlays: Shared Multi-Viewport HUD, Coordinated Explorer Drawer, Floating Inspector, Slide-Up Console */}
         {uiMode === 'focus' && !symbolDraft.open && (
@@ -8131,7 +8254,7 @@ export default function App() {
         )}
 
         {/* Floating Undocked Panels (Classic & Hybrid only) */}
-        {(uiMode !== 'focus' || symbolDraft.open) && (
+        {uiMode !== 'focus' && (
           <AnimatePresence initial={false}>
             {floatingPanels.map((fp) => (
               <FloatingPanelWindow
@@ -8350,17 +8473,15 @@ export default function App() {
         activeFilename={openedFileName || buildE3FluxFilename(project)}
         recentProjects={recentProjects}
         catalog={mergedCatalog}
-        customSymbols={customSymbols}
         bridgeStatus={bridgeStatus}
         isDark={project.visualSettings.theme === 'dark'}
         uiMode={uiMode}
         uiScale={uiScale}
         onCloseToCanvas={() => setStartHubOpen(false)}
+        onOpenGlobalUgoWorkspace={openGlobalUgoWorkspace}
         onCreateProjectFromTemplate={handleCreateProjectFromTemplate}
         onCreateProjectFromCustomTemplate={handleCreateProjectFromCustomTemplate}
         onCreateStandaloneHvacProject={handleCreateStandaloneHvacProject}
-        onSaveGlobalCatalogAndSymbol={handleSaveGlobalCatalogAndSymbol}
-        onDeleteGlobalCatalogItem={handleDeleteGlobalCatalogItem}
         onDownloadConnector={() => {
           window.location.assign('/api/v1/e3-bridge/connector.cmd');
           appendLog('INFO', 'E3-XML', 'Скачан фоновый коннектор E3ProMax_Connector.cmd для Windows.');

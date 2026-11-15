@@ -11,6 +11,7 @@ import type {
 import type { SymbolEditorTool } from './symbolDesigner';
 
 export type SymbolWorkspaceTargetMode = 'symbol' | 'component' | 'device';
+export type SymbolWorkspaceOrigin = 'project' | 'hub';
 
 export interface SymbolActiveDrawStyle {
   strokeColor: string;
@@ -18,6 +19,13 @@ export interface SymbolActiveDrawStyle {
   strokeStyle: CustomSymbolStrokeStyle;
   filled: boolean;
   fillColor: string;
+}
+
+export interface SymbolGeoSnapshot {
+  width: number;
+  height: number;
+  shapes: CustomSymbolShape[];
+  pins: Omit<E3Pin, 'id'>[];
 }
 
 export interface SymbolWorkspaceDraft {
@@ -52,12 +60,27 @@ export interface SymbolWorkspaceDraft {
   dirty: boolean;
 }
 
+export interface SymbolTabSummary {
+  tabId: string;
+  title: string;
+  blockName: string;
+  dirty: boolean;
+  targetMode: SymbolWorkspaceTargetMode;
+  symbolId: string;
+}
+
 export interface SymbolWorkspaceActions {
   draft: SymbolWorkspaceDraft;
+  origin: SymbolWorkspaceOrigin;
+  tabs: SymbolTabSummary[];
+  activeTabId: string | null;
   canUndo: boolean;
   canRedo: boolean;
   symbolLibrary: E3SymbolDef[];
   catalog: CatalogItem[];
+  onSelectTab: (tabId: string) => void;
+  onCloseTab: (tabId: string) => void;
+  onAddNewTab: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onSetTool: (tool: SymbolEditorTool) => void;

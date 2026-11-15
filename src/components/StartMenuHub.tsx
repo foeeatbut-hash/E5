@@ -23,7 +23,6 @@ import {
 import type {
   CatalogItem,
   E3Project,
-  E3SymbolDef,
   SheetFormat,
   StandardType,
 } from '../core/e3Types';
@@ -56,7 +55,6 @@ import { ProjectMiniPreview } from './ProjectMiniPreview';
 import {
   StartHubExchangeLayer,
   StartHubHvacLayer,
-  StartHubUgoLayer,
 } from './StartHubStandaloneLayers';
 import { StartHubTemplatesLayer } from './StartHubTemplatesLayer';
 
@@ -67,20 +65,18 @@ interface StartMenuHubProps {
   activeFilename: string;
   recentProjects: RecentProjectEntry[];
   catalog: CatalogItem[];
-  customSymbols: E3SymbolDef[];
   bridgeStatus: E3BridgeStatusInfo;
   isDark: boolean;
   uiMode: string;
   uiScale: UiScalePercent;
   onCloseToCanvas: () => void;
+  onOpenGlobalUgoWorkspace: () => void;
   onCreateProjectFromTemplate: (
     templateId: StartTemplateId,
     options: { standard: StandardType; format: SheetFormat; gridSize: number }
   ) => void;
   onCreateProjectFromCustomTemplate: (tpl: CustomProjectTemplate) => void;
   onCreateStandaloneHvacProject: (options: HvacBuildOptions) => void;
-  onSaveGlobalCatalogAndSymbol: (item: CatalogItem, sym: E3SymbolDef) => void;
-  onDeleteGlobalCatalogItem: (itemId: string, symbolId?: string) => void;
   onDownloadConnector: () => void;
   onOpenRecentProject: (projectId: string) => void;
   onRemoveRecentProject: (projectId: string) => void;
@@ -99,17 +95,15 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
   activeFilename,
   recentProjects,
   catalog,
-  customSymbols,
   bridgeStatus,
   isDark,
   uiMode,
   uiScale,
   onCloseToCanvas,
+  onOpenGlobalUgoWorkspace,
   onCreateProjectFromTemplate,
   onCreateProjectFromCustomTemplate,
   onCreateStandaloneHvacProject,
-  onSaveGlobalCatalogAndSymbol,
-  onDeleteGlobalCatalogItem,
   onDownloadConnector,
   onOpenRecentProject,
   onRemoveRecentProject,
@@ -621,22 +615,19 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                   type="button"
                   data-testid="start-hub-symbol-editor-btn"
                   onPointerMove={trackWaveCursor}
-                  onClick={() => setActiveLayer('ugo')}
-                  aria-pressed={activeLayer === 'ugo'}
-                  className={`antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] text-left flex items-center justify-between gap-2 transition-colors ${
-                    activeLayer === 'ugo'
-                      ? 'bg-[var(--flux-accent-soft)]/55 text-[var(--flux-text)]'
-                      : 'hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
-                  }`}
+                  onMouseEnter={(e) => bindHoverTarget(e.currentTarget, 0.72)}
+                  onMouseLeave={() => bindHoverTarget(null)}
+                  onClick={() => triggerGridLockTransition(onOpenGlobalUgoWorkspace)}
+                  className="antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] hover:bg-[var(--flux-hover)] text-left flex items-center justify-between gap-2 transition-colors"
                 >
                   <span className="inline-flex items-center gap-2 min-w-0">
                     <PenTool className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium truncate">
+                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
                       Редактор УГО и база
                     </span>
                   </span>
                   <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                    база блоков
+                    холст УГО
                   </span>
                 </button>
 
@@ -749,16 +740,6 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                 onCreateStandaloneHvacProject={(opts) =>
                   triggerGridLockTransition(() => onCreateStandaloneHvacProject(opts))
                 }
-                trackWaveCursor={trackWaveCursor}
-              />
-            )}
-
-            {activeLayer === 'ugo' && (
-              <StartHubUgoLayer
-                catalog={catalog}
-                customSymbols={customSymbols}
-                onSaveGlobalCatalogAndSymbol={onSaveGlobalCatalogAndSymbol}
-                onDeleteGlobalCatalogItem={onDeleteGlobalCatalogItem}
                 trackWaveCursor={trackWaveCursor}
               />
             )}

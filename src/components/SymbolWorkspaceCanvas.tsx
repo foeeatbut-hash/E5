@@ -1,32 +1,60 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Check,
+  Circle,
+  Copy,
   CopyPlus,
   Crosshair,
+  Download,
+  FlipHorizontal2,
+  FlipVertical2,
+  Magnet,
   Maximize2,
+  Minimize2,
+  Minus,
+  MousePointer2,
+  PanelLeft,
   Plus,
+  RotateCw,
   Save,
+  Scan,
+  Spline,
+  Square,
+  Tag,
+  Trash2,
+  Type,
   X,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react';
-import type { CustomSymbolShape, E3Pin } from '../core/e3Types';
+import type { CustomSymbolShape, CustomSymbolStrokeStyle, E3Pin, SignalType } from '../core/e3Types';
+import type { FocusLayoutMetrics } from '../core/focusLayout';
+import type { UiWorkspaceMode } from '../core/uiMode';
 import {
   inferPinDirection,
   nextPinName,
   snapSymbolCoord,
+  type SymbolEditorTool,
 } from '../core/symbolDesigner';
 import {
   describeSvgArcPath,
   moveSymbolShape,
   resolveDynamicSymbolText,
   resolveShapeStrokeDasharray,
+  STROKE_STYLE_OPTIONS,
+  SYMBOL_COLOR_PALETTE,
 } from '../core/symbolLibrary';
 import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
 
 interface SymbolWorkspaceCanvasProps {
   workspace: SymbolWorkspaceActions;
   isDark?: boolean;
+  uiMode?: UiWorkspaceMode;
+  focusLayout?: FocusLayoutMetrics;
+  focusLibraryOpen?: boolean;
+  focusInspectorOpen?: boolean;
+  onToggleFocusLibrary?: () => void;
+  canvasFocusClean?: boolean;
+  onToggleCanvasFocusClean?: () => void;
 }
 
 type DragInteraction =
@@ -79,24 +107,116 @@ type DragInteraction =
       curH: number;
     };
 
+const ArcGlyphIcon: React.FC<{ className?: string }> = ({ className = 'w-3.5 h-3.5' }) => (
+  <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+    <path
+      d="M3 12.5A6.5 6.5 0 0 1 13.5 5"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    />
+    <circle cx="3" cy="12.5" r="1.2" fill="currentColor" />
+    <circle cx="13.5" cy="5" r="1.2" fill="currentColor" />
+  </svg>
+);
+
+const PinGlyphIcon: React.FC<{ className?: string }> = ({ className = 'w-3.5 h-3.5' }) => (
+  <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+    <line x1="2" y1="8" x2="8.5" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <circle cx="11" cy="8" r="2.6" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
+
+const UGO_TOOLS: Array<{
+  id: SymbolEditorTool;
+  label: string;
+  shortcut?: string;
+  renderIcon: (cls: string) => React.ReactNode;
+}> = [
+  {
+    id: 'select',
+    label: 'Выбор и перенос',
+    shortcut: 'V',
+    renderIcon: (cls) => <MousePointer2 className={cls} strokeWidth={1.65} />,
+  },
+  {
+    id: 'line',
+    label: 'Отрезок',
+    shortcut: 'L',
+    renderIcon: (cls) => <Minus className={cls} strokeWidth={1.7} />,
+  },
+  {
+    id: 'polyline',
+    label: 'Полилиния / Контур',
+    shortcut: 'P',
+    renderIcon: (cls) => <Spline className={cls} strokeWidth={1.65} />,
+  },
+  {
+    id: 'rect',
+    label: 'Прямоугольник',
+    shortcut: 'R',
+    renderIcon: (cls) => <Square className={cls} strokeWidth={1.65} />,
+  },
+  {
+    id: 'circle',
+    label: 'Окружность',
+    shortcut: 'C',
+    renderIcon: (cls) => <Circle className={cls} strokeWidth={1.65} />,
+  },
+  {
+    id: 'arc',
+    label: 'Дуга',
+    renderIcon: (cls) => <ArcGlyphIcon className={cls} />,
+  },
+  {
+    id: 'text',
+    label: 'Текст на УГО',
+    shortcut: 'T',
+    renderIcon: (cls) => <Type className={cls} strokeWidth={1.65} />,
+  },
+  {
+    id: 'attr_tag',
+    label: 'Динамический тег ({ОУО}, {Артикул})',
+    renderIcon: (cls) => <Tag className={cls} strokeWidth={1.65} />,
+  },
+  {
+    id: 'pin',
+    label: 'Вывод E3 (Pin)',
+    shortcut: 'N',
+    renderIcon: (cls) => <PinGlyphIcon className={cls} />,
+  },
+];
+
 export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React.memo(({
   workspace,
   isDark = false,
+  uiMode = 'focus',
+  focusLayout,
+  focusLibraryOpen = false,
+  focusInspectorOpen = true,
+  onToggleFocusLibrary,
+  canvasFocusClean = false,
+  onToggleCanvasFocusClean,
 }) => {
-  const { draft } = workspace;
+  const { draft, tabs, activeTabId, origin } = workspace;
+  const isFocusMode = uiMode === 'focus';
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const coordsHudRef = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
-    if (coordsHudRef.current) coordsHudRef.current.textContent = 'X:0 Y:0';
+    if (coordsHudRef.current) coordsHudRef.current.textContent = 'X:0 Y:0 мм';
   }, []);
   const polyPreviewRef = useRef<SVGPolylineElement | null>(null);
   const cursorLocalRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const moveRafRef = useRef<number | null>(null);
   const copyNameInputRef = useRef<HTMLInputElement | null>(null);
+  const tabsScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [zoom, setZoom] = useState(2.2);
   const [pan, setPan] = useState({ x: 260, y: 140 });
+  const viewportByTabRef = useRef<Record<string, { zoom: number; pan: { x: number; y: number } }>>({});
+  const activeTabKey = activeTabId || draft.symbolId;
+
   const [polyDraftPoints, setPolyDraftPoints] = useState<Array<{ x: number; y: number }>>([]);
   const [dragState, setDragState] = useState<DragInteraction | null>(null);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
@@ -113,28 +233,112 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
     savedFlashTimerRef.current = window.setTimeout(() => setSavedFlash(false), 1300);
   }, [workspace]);
 
+  const exportBlockJson = useCallback(() => {
+    const payload = {
+      schema: 'e3promax-ugo-block/v1',
+      name: draft.name,
+      componentName: draft.componentName,
+      article: draft.article,
+      manufacturer: draft.manufacturer,
+      e3BlockName: draft.e3BlockName,
+      defaultPrefix: draft.defaultPrefix,
+      category: draft.category,
+      width: draft.width,
+      height: draft.height,
+      shapes: draft.shapes,
+      pins: draft.pins,
+      attributes: draft.attributes,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(draft.e3BlockName || draft.name || 'ugo_block').replace(/[^a-zA-Z0-9_-]+/g, '_')}.e3blk.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [draft]);
+
   const fitSymbolView = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const padW = Math.max(220, rect.width - 140);
-    const padH = Math.max(180, rect.height - 140);
-    const nextZoom = Math.max(0.8, Math.min(3.5, Math.min(padW / draft.width, padH / draft.height)));
-    setZoom(Number(nextZoom.toFixed(2)));
-    setPan({
-      x: Math.round((rect.width - draft.width * nextZoom) / 2),
-      y: Math.round((rect.height - draft.height * nextZoom) / 2),
-    });
-  }, [draft.width, draft.height]);
+    const reserveLeft =
+      isFocusMode && focusLayout
+        ? focusLibraryOpen
+          ? focusLayout.explorerLeft + focusLayout.explorerWidth + 24
+          : focusLayout.toolRailLeft + focusLayout.toolRailWidth + 24
+        : 48;
+    const reserveRight =
+      isFocusMode && focusLayout
+        ? focusInspectorOpen
+          ? focusLayout.inspectorRight + focusLayout.inspectorWidth + 24
+          : 132
+        : 48;
+    const reserveTop = isFocusMode && focusLayout ? focusLayout.topClearance + 52 : 72;
+    const reserveBottom = isFocusMode && focusLayout ? focusLayout.bottomDockClearance + 18 : 56;
+    const availW = Math.max(180, rect.width - reserveLeft - reserveRight);
+    const availH = Math.max(140, rect.height - reserveTop - reserveBottom);
+    const nextZoom = Number(
+      Math.max(0.8, Math.min(2.6, Math.min((availW * 0.72) / draft.width, (availH * 0.72) / draft.height))).toFixed(2)
+    );
+    const centerLeft = reserveLeft + (availW - draft.width * nextZoom) / 2;
+    const centerTop = reserveTop + (availH - draft.height * nextZoom) / 2;
+    const nextPan = {
+      x: Math.round(centerLeft),
+      y: Math.round(centerTop),
+    };
+    setZoom(nextZoom);
+    setPan(nextPan);
+    if (activeTabKey) {
+      viewportByTabRef.current[activeTabKey] = { zoom: nextZoom, pan: nextPan };
+    }
+  }, [
+    draft.width,
+    draft.height,
+    isFocusMode,
+    focusLibraryOpen,
+    focusInspectorOpen,
+    focusLayout,
+    activeTabKey,
+  ]);
 
   const fitSymbolViewRef = useRef(fitSymbolView);
   fitSymbolViewRef.current = fitSymbolView;
+  const restoredTabKeyRef = useRef<string | null>(null);
 
-  // Fit ONLY on opening or switching target symbol/catalog item (never on bounds resize)
+  // Restore saved viewport on tab switch, or fit cleanly on first open of each tab
   useEffect(() => {
+    setPolyDraftPoints([]);
+    setDragState(null);
+    restoredTabKeyRef.current = activeTabKey;
+    const saved = activeTabKey ? viewportByTabRef.current[activeTabKey] : undefined;
+    if (saved) {
+      setZoom(saved.zoom);
+      setPan(saved.pan);
+      return;
+    }
     const raf = requestAnimationFrame(() => fitSymbolViewRef.current());
     return () => cancelAnimationFrame(raf);
-  }, [draft.open, draft.symbolId, draft.catalogItemId]);
+  }, [draft.open, activeTabKey]);
+
+  // Persist viewport transform after initial restore/fit for the active tab
+  useEffect(() => {
+    if (activeTabKey && restoredTabKeyRef.current === activeTabKey) {
+      if (viewportByTabRef.current[activeTabKey]) {
+        viewportByTabRef.current[activeTabKey] = { zoom, pan };
+      }
+    }
+  }, [activeTabKey, zoom, pan]);
+
+  const prevDrawerFlagsRef = useRef({ lib: focusLibraryOpen, insp: focusInspectorOpen });
+  useEffect(() => {
+    const prev = prevDrawerFlagsRef.current;
+    if (prev.lib === focusLibraryOpen && prev.insp === focusInspectorOpen) return;
+    prevDrawerFlagsRef.current = { lib: focusLibraryOpen, insp: focusInspectorOpen };
+    if (!isFocusMode || !draft.open) return;
+    const raf = requestAnimationFrame(() => fitSymbolViewRef.current());
+    return () => cancelAnimationFrame(raf);
+  }, [isFocusMode, draft.open, focusLibraryOpen, focusInspectorOpen]);
 
   useEffect(() => {
     return () => {
@@ -143,7 +347,6 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
     };
   }, []);
 
-  // Clear polyline draft if tool changes
   useEffect(() => {
     if (draft.tool !== 'polyline') {
       setPolyDraftPoints([]);
@@ -221,6 +424,11 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
         triggerSaveCurrent();
         return;
       }
+      if (e.key === 'F3') {
+        e.preventDefault();
+        workspace.onToggleSnap();
+        return;
+      }
       if (e.key === 'Enter' && draft.tool === 'polyline' && polyDraftPoints.length >= 2) {
         e.preventDefault();
         finalizePolyline(polyDraftPoints, false);
@@ -242,11 +450,31 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
           e.preventDefault();
           workspace.onDeleteSelection();
         }
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'v') workspace.onSetTool('select');
+        else if (k === 'l') workspace.onSetTool('line');
+        else if (k === 'p') workspace.onSetTool('polyline');
+        else if (k === 'r') workspace.onSetTool('rect');
+        else if (k === 'c') workspace.onSetTool('circle');
+        else if (k === 't') workspace.onSetTool('text');
+        else if (k === 'n') workspace.onSetTool('pin');
+        else if (k === 'z') fitSymbolViewRef.current();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [draft.tool, draft.selectedShapeId, draft.selectedPinIndex, polyDraftPoints, finalizePolyline, triggerSaveCurrent, workspace]);
+  }, [
+    draft.tool,
+    draft.selectedShapeId,
+    draft.selectedPinIndex,
+    polyDraftPoints,
+    finalizePolyline,
+    triggerSaveCurrent,
+    workspace,
+  ]);
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -374,7 +602,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
     moveRafRef.current = requestAnimationFrame(() => {
       moveRafRef.current = null;
       if (coordsHudRef.current) {
-        coordsHudRef.current.textContent = `X:${pt.x} Y:${pt.y}`;
+        coordsHudRef.current.textContent = `X:${pt.x} Y:${pt.y} мм`;
       }
       if (polyPreviewRef.current && polyDraftPoints.length > 0) {
         const ptsStr = [...polyDraftPoints, pt].map((p) => `${p.x},${p.y}`).join(' ');
@@ -575,12 +803,12 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
   const toolHint = useMemo(() => {
     switch (draft.tool) {
       case 'select':
-        return 'Клик — выбор примитива/вывода · Перетаскивание — сдвиг · Del — удалить';
+        return 'Клик — выбор · СКМ/Alt — панорама · Del — удалить';
       case 'line':
         return 'Укажите начало и потяните к концу отрезка';
       case 'polyline':
         return polyDraftPoints.length > 0
-          ? `Точек: ${polyDraftPoints.length} · Двойной клик / Enter / ПКМ — завершить · Esc — сброс`
+          ? `Точек: ${polyDraftPoints.length} · Двойной клик / Enter / ПКМ — завершить`
           : 'Кликайте вершины полилинии на холсте';
       case 'rect':
         return 'Протяните диагональ прямоугольника';
@@ -591,9 +819,9 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
       case 'text':
         return 'Кликните на холсте для размещения текста';
       case 'attr_tag':
-        return `Кликните для вставки динамического тега (${draft.activeAttrTagKey})`;
+        return `Кликните для вставки динамического тега ({${draft.activeAttrTagKey}})`;
       case 'pin':
-        return 'Кликните на границе или внутри блока для добавления вывода E3';
+        return 'Кликните по контуру или внутри блока для установки вывода E3';
     }
   }, [draft.tool, draft.activeAttrTagKey, polyDraftPoints.length]);
 
@@ -611,78 +839,511 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
     setSaveAsOpen(false);
   };
 
+  const hasSelection = Boolean(draft.selectedShapeId) || draft.selectedPinIndex !== null;
+
+  const renderUgoTabStrip = () => (
+    <>
+      <span
+        data-testid="ugo-bar-label"
+        className="inline-flex items-center h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] bg-[var(--flux-accent-soft)] border border-[var(--flux-accent)]/35 font-mono font-bold tracking-wider text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-accent)] whitespace-nowrap shrink-0"
+      >
+        УГО
+      </span>
+      <div
+        ref={tabsScrollRef}
+        data-testid="ugo-tabs-bar"
+        onWheel={(e) => {
+          if (Math.abs(e.deltaY) > 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+            e.currentTarget.scrollLeft += e.deltaY;
+          }
+        }}
+        className="flex flex-1 items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0"
+      >
+        {tabs.map((tab) => {
+          const isActive = tab.tabId === activeTabId;
+          return (
+            <div
+              key={tab.tabId}
+              className={`group inline-flex items-center h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] border transition-colors shrink-0 max-w-[calc(176px*var(--flux-ui-scale))] ${
+                isActive
+                  ? 'bg-[var(--flux-surface)] border-[var(--flux-accent)]/45 text-[var(--flux-text)] shadow-xs'
+                  : 'border-transparent text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+              }`}
+            >
+              <button
+                type="button"
+                data-testid={`ugo-tab-${tab.tabId}`}
+                onClick={() => workspace.onSelectTab(tab.tabId)}
+                title={`${tab.title} (${tab.blockName})`}
+                className="h-full pl-2 pr-1 inline-flex items-center gap-1 min-w-0 text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap"
+              >
+                <span className={`truncate max-w-[calc(132px*var(--flux-ui-scale))] ${isActive ? 'font-semibold' : 'font-medium'}`}>
+                  {tab.title}
+                </span>
+                {tab.dirty && (
+                  <span
+                    title="Есть несохранённые изменения"
+                    className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"
+                  />
+                )}
+              </button>
+              <button
+                type="button"
+                data-testid={`ugo-tab-close-${tab.tabId}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  workspace.onCloseTab(tab.tabId);
+                }}
+                title="Закрыть вкладку УГО"
+                aria-label={`Закрыть вкладку ${tab.title}`}
+                className="inline-flex items-center justify-center w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] mr-0.5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--flux-hover)] shrink-0 transition-colors"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        data-testid="ugo-tab-add-btn"
+        onClick={workspace.onAddNewTab}
+        title="Создать новую вкладку УГО"
+        aria-label="Создать новую вкладку УГО"
+        className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] shrink-0 transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" />
+      </button>
+    </>
+  );
+
   return (
     <div
       ref={containerRef}
       data-testid="symbol-workspace-canvas"
       className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--flux-canvas-bg)] select-none"
     >
-      {/* Top Block Editor Context Bar (AutoCAD BEDIT header strip) */}
-      <div className="shrink-0 h-8 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 z-10">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="px-1.5 py-0.5 rounded-[2px] border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] font-mono text-[length:calc(10px*var(--flux-ui-scale))] font-semibold tracking-wider text-[var(--flux-accent)] whitespace-nowrap shrink-0">
-            {draft.targetMode === 'device'
-              ? 'УГО ОБЪЕКТА'
-              : draft.targetMode === 'component'
-                ? 'УГО + ИЗДЕЛИЕ'
-                : 'БЛОК УГО'}
-          </span>
-          <span className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] truncate min-w-0">
-            {draft.name || draft.e3BlockName}
-            {draft.dirty ? ' *' : ''}
-          </span>
-          <span className="hidden xl:inline font-mono text-[length:calc(11px*var(--flux-ui-scale))] tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
-            {renderedWidth}×{renderedHeight} мм
-          </span>
+      {/* Focus Mode: Centered Floating UGO Multi-Tabs Pill (Replaces Schematic Sheet Tabs) */}
+      {isFocusMode && focusLayout && (
+        <div
+          data-testid="focus-ugo-tabs-pill"
+          onMouseDown={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          style={{
+            left: focusLayout.sheetTabsCenterX,
+            transform: 'translateX(-50%)',
+            maxWidth: focusLayout.sheetTabsMaxWidth,
+          }}
+          className="no-print absolute top-3 z-40 inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-hidden"
+        >
+          {renderUgoTabStrip()}
         </div>
+      )}
 
-        <div className="flex items-center gap-1 shrink-0">
+      {/* Classic / Hybrid Mode Header Strip (UGO Tabs + Save/Exit, zero schematic sheets) */}
+      {!isFocusMode && (
+        <div className="shrink-0 h-9 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 z-20 min-w-0">
+          <div className="flex items-center gap-1 min-w-0 flex-1">
+            {renderUgoTabStrip()}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              data-testid="symbol-ws-save-btn"
+              onClick={triggerSaveCurrent}
+              className="inline-flex items-center justify-center gap-1.5 h-6 px-2.5 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+            >
+              {savedFlash ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+              <span>{savedFlash ? 'Сохранено' : 'Сохранить'}</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="symbol-ws-save-copy-btn"
+              onClick={openSaveAsDialog}
+              className="inline-flex items-center gap-1.5 h-6 px-2 rounded-[5px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+            >
+              <CopyPlus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+              <span>Копировать как…</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="symbol-ws-export-json-btn"
+              onClick={exportBlockJson}
+              title="Экспорт блока .e3blk.json"
+              className="hidden md:inline-flex items-center gap-1 h-6 px-2 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-mono whitespace-nowrap transition-colors"
+            >
+              <Download className="w-3 h-3 text-[var(--flux-accent)]" />
+              <span>.e3blk</span>
+            </button>
+
+            {origin === 'project' && (
+              <button
+                type="button"
+                data-testid="symbol-ws-place-btn"
+                onClick={workspace.onPlaceOnActiveSheet}
+                className="hidden sm:inline-flex items-center gap-1.5 h-6 px-2 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                <span>На схему</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              data-testid="symbol-ws-close-btn"
+              onClick={workspace.onCloseWorkspace}
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-[5px] border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>{origin === 'hub' ? 'В меню' : 'Закрыть УГО'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Focus Mode: Left Floating Vertical Tool Rail (identical language to FocusToolRail) */}
+      {isFocusMode && focusLayout && (
+        <div
+          data-testid="ugo-tool-dock"
+          onMouseDown={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          style={{
+            top: focusLayout.toolRailTop,
+            left: focusLayout.toolRailLeft,
+            maxHeight: focusLayout.toolRailMaxHeight,
+          }}
+          className="no-print absolute z-30 p-[4px] rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl flex flex-col items-center gap-[2px] overflow-y-auto overflow-x-hidden no-scrollbar transition-[top,max-height] duration-150"
+        >
+          {onToggleFocusLibrary && (
+            <button
+              type="button"
+              data-testid="ugo-left-library-toggle"
+              aria-pressed={focusLibraryOpen}
+              onClick={onToggleFocusLibrary}
+              title="Библиотека УГО и изделий E3"
+              aria-label="Переключить библиотеку УГО"
+              className={`inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors ${
+                focusLibraryOpen
+                  ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
+                  : 'text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+              }`}
+            >
+              <PanelLeft className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
+            </button>
+          )}
+          {onToggleCanvasFocusClean && (
+            <button
+              type="button"
+              data-testid="ugo-canvas-focus-btn"
+              aria-pressed={canvasFocusClean}
+              onClick={onToggleCanvasFocusClean}
+              title={canvasFocusClean ? 'Показать боковые панели УГО' : 'Чистый холст УГО'}
+              aria-label={canvasFocusClean ? 'Показать панели' : 'Чистый холст'}
+              className={`inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors ${
+                canvasFocusClean
+                  ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
+                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]'
+              }`}
+            >
+              {canvasFocusClean ? (
+                <Minimize2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
+              ) : (
+                <Maximize2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.7} />
+              )}
+            </button>
+          )}
+
+          <span className="w-[calc(20px*var(--flux-ui-scale))] h-px bg-[var(--flux-line)] my-[2px] shrink-0" />
+
+          {UGO_TOOLS.map((t) => {
+            const active = draft.tool === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                data-testid={`ugo-tool-${t.id}`}
+                aria-pressed={active}
+                aria-label={t.label}
+                title={`${t.label}${t.shortcut ? ` (${t.shortcut})` : ''}`}
+                onClick={() => workspace.onSetTool(t.id)}
+                className={`relative inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 transition-colors ${
+                  active
+                    ? 'text-[var(--flux-accent)]'
+                    : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70'
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="ugo-dock-pill"
+                    transition={{ type: 'spring', stiffness: 520, damping: 36 }}
+                    className="absolute inset-0 rounded-[6px] bg-[var(--flux-accent-soft)] border border-[var(--flux-accent)]/35"
+                  />
+                )}
+                <span className="relative z-10 inline-flex items-center justify-center">
+                  {t.renderIcon('w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]')}
+                </span>
+              </button>
+            );
+          })}
+
+          <span className="w-[calc(20px*var(--flux-ui-scale))] h-px bg-[var(--flux-line)] my-[2px] shrink-0" />
+
           <button
             type="button"
-            data-testid="symbol-ws-save-btn"
-            onClick={triggerSaveCurrent}
-            className="inline-flex items-center justify-center gap-1.5 min-w-[calc(94px*var(--flux-ui-scale))] h-6 px-2 rounded-[2px] border border-[var(--flux-accent)]/60 bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+            data-testid="ugo-action-rotate"
+            onClick={workspace.onRotateBlockCW}
+            title="Повернуть блок УГО на 90°"
+            aria-label="Повернуть блок на 90°"
+            className="inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70 transition-colors"
           >
-            {savedFlash ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-            <span>{savedFlash ? 'Сохранено' : 'Сохранить'}</span>
+            <RotateCw className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.65} />
           </button>
+          <button
+            type="button"
+            data-testid="ugo-action-mirror-x"
+            onClick={workspace.onMirrorBlockX}
+            title="Отразить блок по горизонтали"
+            aria-label="Отразить по X"
+            className="inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70 transition-colors"
+          >
+            <FlipHorizontal2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.65} />
+          </button>
+          <button
+            type="button"
+            data-testid="ugo-action-mirror-y"
+            onClick={workspace.onMirrorBlockY}
+            title="Отразить блок по вертикали"
+            aria-label="Отразить по Y"
+            className="inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70 transition-colors"
+          >
+            <FlipVertical2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.65} />
+          </button>
+          <button
+            type="button"
+            data-testid="ugo-action-duplicate"
+            disabled={!draft.selectedShapeId}
+            onClick={workspace.onDuplicateSelectedShape}
+            title="Дублировать выбранный примитив"
+            aria-label="Дублировать примитив"
+            className="inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]/70 disabled:opacity-30 transition-colors"
+          >
+            <Copy className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.65} />
+          </button>
+          <button
+            type="button"
+            data-testid="ugo-action-delete"
+            disabled={!hasSelection}
+            onClick={workspace.onDeleteSelection}
+            title="Удалить выбранный примитив или вывод (Del)"
+            aria-label="Удалить выбранное"
+            className="inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 text-[var(--flux-text-muted)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--flux-hover)]/70 disabled:opacity-30 transition-colors"
+          >
+            <Trash2 className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.65} />
+          </button>
+          <button
+            type="button"
+            data-testid="ugo-action-fit"
+            onClick={fitSymbolView}
+            title="Вписать УГО по центру (Z)"
+            aria-label="Вписать УГО"
+            className="inline-flex items-center justify-center w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] rounded-[6px] shrink-0 text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)]/70 transition-colors"
+          >
+            <Scan className="w-[calc(14px*var(--flux-ui-scale))] h-[calc(14px*var(--flux-ui-scale))]" strokeWidth={1.65} />
+          </button>
+        </div>
+      )}
+
+      {/* Focus Mode: Contextual Floating Style, Presets & Quick Save Bar */}
+      {isFocusMode && focusLayout && (
+        <div
+          data-testid="ugo-context-bar"
+          onMouseDown={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          style={{
+            top: focusLayout.selectionBarTop,
+            left: focusLayout.selectionBarCenterX,
+            transform: 'translateX(-50%)',
+            maxWidth: focusLayout.selectionBarMaxWidth,
+          }}
+          className="no-print absolute z-20 inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg overflow-x-auto no-scrollbar transition-[top,left] duration-150"
+        >
+          {/* Color Swatches */}
+          <div className="flex items-center gap-0.5 shrink-0">
+            {SYMBOL_COLOR_PALETTE.slice(0, 5).map((c) => {
+              const activeCol = draft.activeStyle.strokeColor.toLowerCase() === c.hex.toLowerCase();
+              return (
+                <button
+                  key={c.hex}
+                  type="button"
+                  title={`Цвет ${c.label}`}
+                  aria-label={`Цвет линии ${c.label}`}
+                  onClick={() => workspace.onUpdateStyle({ strokeColor: c.hex })}
+                  className={`w-3 h-3 rounded-[3px] border transition-transform shrink-0 ${
+                    activeCol
+                      ? 'border-[var(--flux-accent)] scale-110 ring-1 ring-[var(--flux-accent)]'
+                      : 'border-[var(--flux-line-strong)] hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: c.hex }}
+                />
+              );
+            })}
+            <input
+              type="color"
+              aria-label="Произвольный цвет линии"
+              value={draft.activeStyle.strokeColor}
+              onChange={(e) => workspace.onUpdateStyle({ strokeColor: e.target.value })}
+              className="w-3.5 h-3.5 p-0 border border-[var(--flux-line)] rounded-[3px] bg-transparent cursor-pointer shrink-0"
+            />
+          </div>
+
+          <span className="h-4 w-px bg-[var(--flux-line)] shrink-0" />
+
+          <button
+            type="button"
+            onClick={() => workspace.onUpdateStyle({ filled: !draft.activeStyle.filled })}
+            title="Включить/выключить заливку фигур"
+            className={`h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 transition-colors ${
+              draft.activeStyle.filled
+                ? 'bg-[var(--flux-accent-soft)] border-[var(--flux-accent)]/45 text-[var(--flux-text)]'
+                : 'border-[var(--flux-line)] text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)]'
+            }`}
+          >
+            Заливка
+          </button>
+
+          <select
+            aria-label="Толщина линии примитива"
+            value={draft.activeStyle.strokeWidth}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (Number.isFinite(v)) workspace.onUpdateStyle({ strokeWidth: v });
+            }}
+            className="h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] shrink-0"
+          >
+            <option value={1}>1.0</option>
+            <option value={1.4}>1.4</option>
+            <option value={1.8}>1.8</option>
+            <option value={2.2}>2.2</option>
+            <option value={3}>3.0</option>
+          </select>
+
+          <select
+            aria-label="Тип линии примитива"
+            value={draft.activeStyle.strokeStyle}
+            onChange={(e) =>
+              workspace.onUpdateStyle({ strokeStyle: e.target.value as CustomSymbolStrokeStyle })
+            }
+            className="hidden sm:inline-block h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(86px*var(--flux-ui-scale))] shrink-0"
+          >
+            {STROKE_STYLE_OPTIONS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {draft.tool === 'attr_tag' && (
+            <>
+              <span className="h-4 w-px bg-[var(--flux-line)] shrink-0" />
+              <select
+                aria-label="Ключ динамического тега"
+                value={draft.activeAttrTagKey}
+                onChange={(e) => workspace.onSetAttrTagKey(e.target.value)}
+                className="h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-accent)]/40 bg-[var(--flux-accent-soft)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(94px*var(--flux-ui-scale))] shrink-0"
+              >
+                <option value="designation">{'{designation}'}</option>
+                <option value="article">{'{article}'}</option>
+                <option value="componentName">{'{componentName}'}</option>
+                <option value="manufacturer">{'{manufacturer}'}</option>
+              </select>
+            </>
+          )}
+
+          {draft.tool === 'pin' && (
+            <>
+              <span className="h-4 w-px bg-[var(--flux-line)] shrink-0" />
+              <select
+                aria-label="Тип сигнала нового вывода"
+                value={draft.activePinSignal}
+                onChange={(e) => workspace.onSetPinSignal(e.target.value as SignalType)}
+                className="h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-accent)]/40 bg-[var(--flux-accent-soft)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(88px*var(--flux-ui-scale))] shrink-0"
+              >
+                <option value="signal">Сигнал</option>
+                <option value="power">Силовая L</option>
+                <option value="neutral">Нейтраль N</option>
+                <option value="pe">PE</option>
+                <option value="dc24">+24V</option>
+                <option value="dc0">0V</option>
+                <option value="bus">Шина</option>
+              </select>
+            </>
+          )}
+
+          <span className="h-4 w-px bg-[var(--flux-line)] shrink-0" />
+
+          <select
+            aria-label="Применить заготовку графики УГО"
+            value=""
+            onChange={(e) => {
+              const v = e.target.value as
+                | 'blank_box'
+                | 'sensor_circle'
+                | 'breaker_1p'
+                | 'coil_relay'
+                | '';
+              if (v) workspace.onApplyPresetShapes(v);
+            }}
+            className="h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(88px*var(--flux-ui-scale))] shrink-0"
+          >
+            <option value="">Заготовка…</option>
+            <option value="blank_box">Корпус ГОСТ</option>
+            <option value="sensor_circle">Круг КИП</option>
+            <option value="breaker_1p">Автомат QF</option>
+            <option value="coil_relay">Катушка KA</option>
+          </select>
 
           <button
             type="button"
             data-testid="symbol-ws-save-copy-btn"
             onClick={openSaveAsDialog}
-            className="inline-flex items-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+            title="Сохранить копию УГО и изделия как новый элемент базы"
+            className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 transition-colors"
           >
-            <CopyPlus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-            <span>Копировать как…</span>
+            <CopyPlus className="w-3 h-3 text-[var(--flux-accent)]" />
+            <span>Копия…</span>
           </button>
 
           <button
             type="button"
-            data-testid="symbol-ws-place-btn"
-            onClick={workspace.onPlaceOnActiveSheet}
-            className="hidden sm:inline-flex items-center gap-1.5 h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+            data-testid="symbol-ws-export-json-btn"
+            onClick={exportBlockJson}
+            aria-label="Скачать блок УГО .e3blk.json"
+            title="Скачать блок УГО (.e3blk.json)"
+            className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] shrink-0 transition-colors"
           >
-            <Plus className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
-            <span>На схему</span>
+            <Download className="w-3 h-3 text-[var(--flux-accent)]" />
           </button>
 
           <button
             type="button"
-            data-testid="symbol-ws-close-btn"
-            onClick={workspace.onCloseWorkspace}
-            className="inline-flex items-center gap-1 h-6 px-2 rounded-[2px] border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+            data-testid="symbol-ws-save-btn"
+            onClick={triggerSaveCurrent}
+            className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold whitespace-nowrap shrink-0 transition-colors"
           >
-            <X className="w-3.5 h-3.5" />
-            <span>Закрыть УГО</span>
+            {savedFlash ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
+            <span>{savedFlash ? 'Сохранено' : 'Сохранить'}</span>
           </button>
         </div>
-      </div>
+      )}
 
-      {/* Inline "Save As Copy" Popover Bar */}
+      {/* Floating Save-As Copy Popover */}
       {saveAsOpen && (
         <div
           data-testid="symbol-ws-copy-bar"
+          onMouseDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               e.stopPropagation();
@@ -692,7 +1353,21 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               confirmCopySave();
             }
           }}
-          className="shrink-0 px-2.5 py-1.5 border-b border-[var(--flux-accent)]/40 bg-[var(--flux-sel)] flex flex-wrap items-center gap-2 z-10"
+          style={
+            isFocusMode && focusLayout
+              ? {
+                  top: focusLayout.selectionBarTop + 42,
+                  left: focusLayout.selectionBarCenterX,
+                  transform: 'translateX(-50%)',
+                  maxWidth: Math.max(360, focusLayout.selectionBarMaxWidth),
+                }
+              : undefined
+          }
+          className={
+            isFocusMode
+              ? 'no-print absolute z-40 px-3 py-2 rounded-[10px] border border-[var(--flux-accent)]/50 flux-glass-popover shadow-2xl flex flex-wrap items-center gap-2'
+              : 'shrink-0 px-2.5 py-1.5 border-b border-[var(--flux-accent)]/40 bg-[var(--flux-sel)] flex flex-wrap items-center gap-2 z-10'
+          }
         >
           <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] whitespace-nowrap">
             Копия в базу:
@@ -705,7 +1380,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             value={copyName}
             onChange={(e) => setCopyName(e.target.value)}
             placeholder="Название УГО / изделия"
-            className="h-6 px-2 min-w-[calc(160px*var(--flux-ui-scale))] flex-1 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+            className="h-7 px-2 min-w-[calc(150px*var(--flux-ui-scale))] flex-1 rounded-[5px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
           />
           <input
             type="text"
@@ -715,7 +1390,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             value={copyBlockName}
             onChange={(e) => setCopyBlockName(e.target.value)}
             placeholder="Блок E3 (GOST_...)"
-            className="h-6 px-2 min-w-[calc(140px*var(--flux-ui-scale))] flex-1 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+            className="h-7 px-2 min-w-[calc(130px*var(--flux-ui-scale))] flex-1 rounded-[5px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
           />
           <input
             type="text"
@@ -725,7 +1400,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             value={copyArticle}
             onChange={(e) => setCopyArticle(e.target.value)}
             placeholder="Артикул"
-            className="h-6 px-2 w-32 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+            className="h-7 px-2 w-28 rounded-[5px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] font-mono text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]"
           />
           <div className="flex items-center gap-1 shrink-0">
             <button
@@ -733,7 +1408,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               data-testid="symbol-ws-copy-confirm"
               disabled={!copyName.trim()}
               onClick={confirmCopySave}
-              className="inline-flex items-center gap-1 h-6 px-2.5 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] disabled:opacity-45 text-white text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+              className="inline-flex items-center gap-1 h-7 px-2.5 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] disabled:opacity-45 text-white text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Создать копию</span>
@@ -741,7 +1416,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             <button
               type="button"
               onClick={() => setSaveAsOpen(false)}
-              className="h-6 px-2 rounded-[2px] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap transition-colors"
+              className="h-7 px-2 rounded-[5px] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] whitespace-nowrap transition-colors"
             >
               Отмена
             </button>
@@ -753,6 +1428,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
       <div className="relative flex-1 min-h-0" onWheel={handleWheel}>
         <svg
           ref={svgRef}
+          data-testid="symbol-workspace-svg"
           className={`w-full h-full block ${
             draft.tool === 'select' ? 'cursor-default' : 'cursor-crosshair'
           }`}
@@ -805,7 +1481,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
 
           {/* World Transform */}
           <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-            {/* Infinite CAD background grid (covers large drafting expanse without sheet boundary) */}
+            {/* Infinite CAD background grid (pure drafting expanse, zero schematic sheet frames) */}
             <rect
               x={-2000}
               y={-2000}
@@ -814,7 +1490,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               fill="url(#sym-major-grid)"
             />
 
-            {/* Infinite Origin Axes (0,0) like AutoCAD Block Editor */}
+            {/* Infinite Origin Axes (0,0) */}
             <line
               x1={-1800}
               y1={0}
@@ -844,15 +1520,15 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               0,0
             </text>
 
-            {/* Symbol Bounding Region (no sheet frame — pure block extents) */}
+            {/* Symbol Bounding Region */}
             <rect
               x={0}
               y={0}
               width={renderedWidth}
               height={renderedHeight}
-              fill={isDark ? 'rgba(15, 23, 42, 0.36)' : 'rgba(255, 255, 255, 0.58)'}
+              fill={isDark ? 'rgba(20, 24, 30, 0.54)' : 'rgba(255, 255, 255, 0.78)'}
               stroke="var(--flux-accent)"
-              strokeOpacity={0.55}
+              strokeOpacity={0.6}
               strokeWidth={1.1 / zoom}
               strokeDasharray={`${5 / zoom} ${3 / zoom}`}
             />
@@ -1109,9 +1785,11 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               </g>
             )}
 
-            {/* Pins (E3 Terminal Connection Points) */}
+            {/* Pins (E3 Terminal Connection Points with Direction Stub) */}
             {renderedPins.map((pin, idx) => {
               const isPinSel = draft.selectedPinIndex === idx;
+              const stubDx = pin.direction === 'left' ? -8 : pin.direction === 'right' ? 8 : 0;
+              const stubDy = pin.direction === 'top' ? -8 : pin.direction === 'bottom' ? 8 : 0;
               return (
                 <g
                   key={`pin-${idx}`}
@@ -1125,6 +1803,14 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
                   }}
                 >
                   <circle cx={pin.dx} cy={pin.dy} r={7 / zoom} fill="transparent" />
+                  <line
+                    x1={pin.dx}
+                    y1={pin.dy}
+                    x2={pin.dx + stubDx}
+                    y2={pin.dy + stubDy}
+                    stroke={isPinSel ? '#dc2626' : '#f59e0b'}
+                    strokeWidth={1.6 / zoom}
+                  />
                   <circle
                     cx={pin.dx}
                     cy={pin.dy}
@@ -1175,50 +1861,93 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
           </g>
         </svg>
 
-        {/* Bottom Floating CAD Workspace HUD */}
+        {/* Bottom Floating Focus Hint Pill */}
         <div
-          data-testid="symbol-workspace-hud"
-          className="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none flex items-center justify-between gap-2"
+          data-testid="ugo-command-hint-pill"
+          onMouseDown={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          style={
+            isFocusMode && focusLayout
+              ? { left: focusLayout.commandPillCenterX, maxWidth: focusLayout.commandPillMaxWidth }
+              : undefined
+          }
+          className={`no-print absolute bottom-3 ${
+            isFocusMode && focusLayout ? '-translate-x-1/2' : 'left-3 max-w-[calc(100vw-340px)]'
+          } z-30 h-[calc(36px*var(--flux-ui-scale))] px-3 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl inline-flex items-center gap-2 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] min-w-0`}
         >
-          <div className="pointer-events-auto inline-flex items-center gap-2 px-2.5 h-7 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-            <Crosshair className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-            <span className="truncate">{toolHint}</span>
-          </div>
+          <Crosshair className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+          <span className="truncate">{toolHint}</span>
+          <span className="hidden xl:inline-block h-3.5 w-px bg-[var(--flux-line)] shrink-0" />
+          <span className="hidden xl:inline-block font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap shrink-0">
+            {renderedWidth}×{renderedHeight} мм
+          </span>
+        </div>
 
-          <div className="pointer-events-auto inline-flex items-center gap-1.5 px-2.5 h-7 rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover text-[length:calc(11px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text)] shrink-0">
-            <span className="text-[var(--flux-text-muted)] inline-block w-[calc(112px*var(--flux-ui-scale))] whitespace-nowrap tabular-nums">
-              <span ref={coordsHudRef} />
-            </span>
-            <span className="h-3.5 w-px bg-[var(--flux-line)]" />
-            <button
-              type="button"
-              onClick={() => setZoom((z) => Math.max(0.4, Number((z * 0.85).toFixed(2))))}
-              title="Отдалить"
-              aria-label="Отдалить"
-              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-[var(--flux-hover)] transition-colors"
-            >
-              <ZoomOut className="w-3 h-3" />
-            </button>
-            <span className="inline-block w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => Math.min(5, Number((z * 1.18).toFixed(2))))}
-              title="Приблизить"
-              aria-label="Приблизить"
-              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-[var(--flux-hover)] transition-colors"
-            >
-              <ZoomIn className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              onClick={fitSymbolView}
-              title="По центру УГО"
-              aria-label="Центрировать УГО"
-              className="w-5 h-5 inline-flex items-center justify-center rounded-[2px] hover:bg-[var(--flux-hover)] transition-colors"
-            >
-              <Maximize2 className="w-3 h-3" />
-            </button>
-          </div>
+        {/* Bottom-Right Floating Status Pill (matching FocusStatusPill) */}
+        <div
+          data-testid="ugo-status-pill"
+          onMouseDown={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          className="no-print absolute bottom-3 right-3 z-30 inline-flex items-center gap-1 h-[calc(36px*var(--flux-ui-scale))] px-2 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)]"
+        >
+          <span className="hidden lg:inline-block min-w-[calc(86px*var(--flux-ui-scale))] tabular-nums whitespace-nowrap">
+            <span ref={coordsHudRef} />
+          </span>
+          <span className="hidden lg:inline-block h-3.5 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" />
+          <select
+            aria-label="Шаг сетки УГО"
+            title="Шаг сетки УГО (мм)"
+            value={draft.gridStep}
+            onChange={(e) => workspace.onSetGridStep(Number(e.target.value))}
+            className="h-6 px-1 rounded-[4px] bg-transparent hover:bg-[var(--flux-hover)] font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none cursor-pointer"
+          >
+            <option value={5}>5 мм</option>
+            <option value={10}>10 мм</option>
+            <option value={20}>20 мм</option>
+          </select>
+          <button
+            type="button"
+            data-testid="ugo-toggle-snap-btn"
+            onClick={workspace.onToggleSnap}
+            title="Привязка к сетке (F3)"
+            aria-label="Переключить привязку"
+            className={`inline-flex items-center justify-center w-6 h-6 rounded-[4px] shrink-0 transition-colors ${
+              draft.snapToGrid ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]' : 'hover:bg-[var(--flux-hover)]'
+            }`}
+          >
+            <Magnet className="w-3 h-3" />
+          </button>
+          <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" />
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.max(0.4, Number((z * 0.85).toFixed(2))))}
+            title="Отдалить"
+            aria-label="Отдалить"
+            className="inline-flex items-center justify-center w-5 h-6 rounded-[4px] shrink-0 hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <span className="min-w-[calc(34px*var(--flux-ui-scale))] px-0.5 text-center tabular-nums text-[var(--flux-text)] shrink-0">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.min(5, Number((z * 1.18).toFixed(2))))}
+            title="Приблизить"
+            aria-label="Приблизить"
+            className="inline-flex items-center justify-center w-5 h-6 rounded-[4px] shrink-0 hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={fitSymbolView}
+            title="Вписать УГО по центру (Z)"
+            aria-label="Вписать УГО"
+            className="inline-flex items-center justify-center w-6 h-6 rounded-[4px] shrink-0 hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)]"
+          >
+            <Maximize2 className="w-3 h-3" />
+          </button>
         </div>
       </div>
     </div>

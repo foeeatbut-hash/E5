@@ -717,7 +717,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   useEffect(() => {
     if (isSymbolEditorOpen && !prevSymbolOpenRef.current) {
       setActiveTab('ugo_editor');
-      setRibbonCollapsed(false);
+      if (uiMode !== 'focus') {
+        setRibbonCollapsed(false);
+      }
       setLayersPopoverOpen(false);
       setRibbonQuickMenu(null);
     } else if (!isSymbolEditorOpen && prevSymbolOpenRef.current) {
@@ -1045,7 +1047,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             style={focusLayout ? { maxWidth: focusLayout.rightPillMaxWidth } : undefined}
             className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg shrink-0 overflow-hidden"
           >
-            {onOpenCommandPalette && (
+            {onOpenCommandPalette && !isSymbolEditorOpen && (
               <button
                 type="button"
                 data-testid="toolbar-command-palette-btn"
@@ -1065,57 +1067,90 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 </kbd>
               </button>
             )}
-            <button
-              type="button"
-              onClick={onRunErc}
-              title="Открыть проверку электрических правил (ERC)"
-              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono font-medium transition-colors whitespace-nowrap shrink-0 ${
-                ercErrorCount > 0
-                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 hover:bg-rose-500/25'
-                  : 'hover:bg-[var(--flux-hover)] text-[var(--flux-accent)]'
-              }`}
-            >
-              <CheckCircle2 className="w-3 h-3 shrink-0" strokeWidth={1.8} />
-              <span>ERC {ercErrorCount}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onOpenHvacWizard}
-              title="Конструктор ФСА / ОВиК"
-              className="hidden 2xl:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors whitespace-nowrap shrink-0"
-            >
-              <Cpu className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.6} />
-              <span>ФСА</span>
-            </button>
-            <button
-              type="button"
-              onClick={onOpenPublishModal}
-              title="Пакетный выпуск PDF / DXF"
-              className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors whitespace-nowrap shrink-0"
-            >
-              <Printer className="w-3 h-3" strokeWidth={1.6} />
-              <span>Выпуск</span>
-            </button>
-            {onOpenHealthDashboard && (
-              <button
-                type="button"
-                data-testid="toolbar-health-btn"
-                onClick={onOpenHealthDashboard}
-                aria-label="Монитор здоровья и телеметрия процессов"
-                title="Монитор здоровья и диагностика процессов"
-                className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
-                  errorLogCount > 0
-                    ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20'
-                    : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
-                }`}
-              >
-                <Activity className={`w-3 h-3 ${errorLogCount > 0 ? 'text-rose-500' : 'text-[var(--flux-text-muted)]'}`} />
-                {errorLogCount > 0 && (
-                  <span className="font-mono tabular-nums text-[length:calc(9.5px*var(--flux-ui-scale))] font-semibold">
-                    {errorLogCount}
-                  </span>
+            {isSymbolEditorOpen && symbolWorkspace ? (
+              <>
+                {symbolWorkspace.origin === 'project' && (
+                  <button
+                    type="button"
+                    data-testid="ugo-top-place-btn"
+                    onClick={symbolWorkspace.onPlaceOnActiveSheet}
+                    title="Сохранить блок и разместить изделие на активном листе схемы"
+                    className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                  >
+                    <Send className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.6} />
+                    <span>На схему</span>
+                  </button>
                 )}
-              </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-close-btn"
+                  onClick={symbolWorkspace.onCloseWorkspace}
+                  title={
+                    symbolWorkspace.origin === 'hub'
+                      ? 'Вернуться в главное меню'
+                      : 'Закрыть редактор УГО и вернуться к схеме'
+                  }
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <X className="w-3 h-3" strokeWidth={1.8} />
+                  <span>{symbolWorkspace.origin === 'hub' ? 'В меню' : 'Закрыть УГО'}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onRunErc}
+                  title="Открыть проверку электрических правил (ERC)"
+                  className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono font-medium transition-colors whitespace-nowrap shrink-0 ${
+                    ercErrorCount > 0
+                      ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 hover:bg-rose-500/25'
+                      : 'hover:bg-[var(--flux-hover)] text-[var(--flux-accent)]'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3 h-3 shrink-0" strokeWidth={1.8} />
+                  <span>ERC {ercErrorCount}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenHvacWizard}
+                  title="Конструктор ФСА / ОВиК"
+                  className="hidden 2xl:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Cpu className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.6} />
+                  <span>ФСА</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenPublishModal}
+                  title="Пакетный выпуск PDF / DXF"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Printer className="w-3 h-3" strokeWidth={1.6} />
+                  <span>Выпуск</span>
+                </button>
+                {onOpenHealthDashboard && (
+                  <button
+                    type="button"
+                    data-testid="toolbar-health-btn"
+                    onClick={onOpenHealthDashboard}
+                    aria-label="Монитор здоровья и телеметрия процессов"
+                    title="Монитор здоровья и диагностика процессов"
+                    className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                      errorLogCount > 0
+                        ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20'
+                        : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                    }`}
+                  >
+                    <Activity className={`w-3 h-3 ${errorLogCount > 0 ? 'text-rose-500' : 'text-[var(--flux-text-muted)]'}`} />
+                    {errorLogCount > 0 && (
+                      <span className="font-mono tabular-nums text-[length:calc(9.5px*var(--flux-ui-scale))] font-semibold">
+                        {errorLogCount}
+                      </span>
+                    )}
+                  </button>
+                )}
+              </>
             )}
             <button
               type="button"
@@ -1778,26 +1813,55 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       onClick={() => runMenuAction(onOpenExchangeModal)}
                     />
                     <div className="my-1.5 border-t border-[var(--flux-line)]" />
-                    <AppMenuActionRow
-                      icon={<FilePlus2 className="w-4 h-4" />}
-                      title="Добавить новый лист в проект"
-                      subtitle="Создать дополнительный лист с основной надписью Форма 2а"
-                      onClick={() => runMenuAction(onAddSheet)}
-                    />
-                    <AppMenuActionRow
-                      icon={<CopyPlus className="w-4 h-4" />}
-                      title="Дублировать текущий лист"
-                      subtitle={activeSheet ? `Лист ${activeSheet.number}: ${activeSheet.name}` : undefined}
-                      disabled={!activeSheet}
-                      onClick={() => activeSheet && runMenuAction(() => onDuplicateSheet(activeSheet.id))}
-                    />
-                    <AppMenuActionRow
-                      icon={<FileX2 className="w-4 h-4" />}
-                      title="Удалить активный лист"
-                      danger
-                      disabled={!activeSheet || project.sheets.length <= 1}
-                      onClick={() => activeSheet && runMenuAction(() => onDeleteSheet(activeSheet.id))}
-                    />
+                    {isSymbolEditorOpen && symbolWorkspace ? (
+                      <>
+                        <AppMenuActionRow
+                          icon={<FilePlus2 className="w-4 h-4" />}
+                          title="Новая вкладка УГО"
+                          subtitle="Создать чистый блок УГО в отдельной вкладке"
+                          onClick={() => runMenuAction(symbolWorkspace.onAddNewTab)}
+                        />
+                        <AppMenuActionRow
+                          icon={<Check className="w-4 h-4" />}
+                          title="Сохранить текущее УГО в базу"
+                          subtitle={`${symbolWorkspace.draft.name} (${symbolWorkspace.draft.e3BlockName})`}
+                          onClick={() => runMenuAction(symbolWorkspace.onSaveCurrent)}
+                        />
+                        <AppMenuActionRow
+                          icon={<X className="w-4 h-4" />}
+                          title={
+                            symbolWorkspace.origin === 'hub'
+                              ? 'Вернуться в главное меню'
+                              : 'Закрыть редактор УГО'
+                          }
+                          danger
+                          onClick={() => runMenuAction(symbolWorkspace.onCloseWorkspace)}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <AppMenuActionRow
+                          icon={<FilePlus2 className="w-4 h-4" />}
+                          title="Добавить новый лист в проект"
+                          subtitle="Создать дополнительный лист с основной надписью Форма 2а"
+                          onClick={() => runMenuAction(onAddSheet)}
+                        />
+                        <AppMenuActionRow
+                          icon={<CopyPlus className="w-4 h-4" />}
+                          title="Дублировать текущий лист"
+                          subtitle={activeSheet ? `Лист ${activeSheet.number}: ${activeSheet.name}` : undefined}
+                          disabled={!activeSheet}
+                          onClick={() => activeSheet && runMenuAction(() => onDuplicateSheet(activeSheet.id))}
+                        />
+                        <AppMenuActionRow
+                          icon={<FileX2 className="w-4 h-4" />}
+                          title="Удалить активный лист"
+                          danger
+                          disabled={!activeSheet || project.sheets.length <= 1}
+                          onClick={() => activeSheet && runMenuAction(() => onDeleteSheet(activeSheet.id))}
+                        />
+                      </>
+                    )}
 
                     {recentProjects.length > 0 && (
                       <>
@@ -2329,7 +2393,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               className="flex items-end gap-0.5 h-full overflow-x-auto no-scrollbar"
             >
               {(isSymbolEditorOpen
-                ? [...RIBBON_TABS, { id: 'ugo_editor' as const, label: 'Редактор УГО', contextual: true }]
+                ? [
+                    { id: 'ugo_editor' as const, label: 'Редактор УГО', contextual: true },
+                    ...RIBBON_TABS.filter((t) => t.id !== 'sheet'),
+                  ]
                 : RIBBON_TABS
               ).map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -3500,24 +3567,30 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           testId="ugo-ribbon-save-btn"
                           onClick={symbolWorkspace.onSaveCurrent}
                         />
-                        <LargeRibbonBtn
-                          icon={<Send className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
-                          label="На схему"
-                          title="Сохранить блок и разместить изделие на активном листе схемы"
-                          testId="ugo-ribbon-place-btn"
-                          onClick={symbolWorkspace.onPlaceOnActiveSheet}
-                        />
+                        {symbolWorkspace.origin === 'project' && (
+                          <LargeRibbonBtn
+                            icon={<Send className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
+                            label="На схему"
+                            title="Сохранить блок и разместить изделие на активном листе схемы"
+                            testId="ugo-ribbon-place-btn"
+                            onClick={symbolWorkspace.onPlaceOnActiveSheet}
+                          />
+                        )}
                         <RibbonStack>
                           <SmallRibbonBtn
                             icon={<FilePlus2 className="w-3.5 h-3.5" />}
-                            label="+ Новое УГО"
-                            title="Создать пустое УГО с нуля"
-                            onClick={symbolWorkspace.onCreateNewBlankSymbol}
+                            label="+ Вкладка УГО"
+                            title="Создать новую вкладку УГО с нуля"
+                            onClick={symbolWorkspace.onAddNewTab}
                           />
                           <SmallRibbonBtn
                             icon={<X className="w-3.5 h-3.5" />}
-                            label="Закрыть УГО"
-                            title="Выйти из редактора блока и вернуться на лист схемы"
+                            label={symbolWorkspace.origin === 'hub' ? 'В меню' : 'Закрыть УГО'}
+                            title={
+                              symbolWorkspace.origin === 'hub'
+                                ? 'Выйти из редактора УГО в главное меню'
+                                : 'Выйти из редактора блока и вернуться на лист схемы'
+                            }
                             testId="ugo-ribbon-close-btn"
                             onClick={symbolWorkspace.onCloseWorkspace}
                           />

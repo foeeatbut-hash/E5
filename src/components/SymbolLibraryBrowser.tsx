@@ -149,19 +149,19 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
     <aside
       aria-label="Библиотека УГО и изделий E3"
       data-testid="symbol-library-browser"
-      className="w-full h-full flex-1 min-w-0 flux-glass-panel flex flex-col min-h-0 select-none"
+      className="w-full h-full flex-1 min-w-0 bg-transparent flex flex-col min-h-0 select-none"
     >
-      {/* Flush CAD Switcher: УГО (Графика) vs Изделия (БД) */}
-      <div className="border-b border-[var(--flux-line)] flux-glass-surface">
-        <div className="flex flex-wrap min-h-[calc(26px*var(--flux-ui-scale))] h-auto border-b border-[var(--flux-line)] flux-glass-bar gap-px bg-[var(--flux-line)]">
+      {/* Switcher: УГО (Графика) vs Изделия (БД) */}
+      <div className="border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)]/55">
+        <div className="flex flex-wrap min-h-[calc(28px*var(--flux-ui-scale))] h-auto border-b border-[var(--flux-line)] gap-px bg-[var(--flux-line)]">
           <button
             type="button"
             data-testid="sym-lib-tab-symbols"
             onClick={() => setSubTab('symbols')}
-            className={`flex-1 min-w-[calc(92px*var(--flux-ui-scale))] px-1.5 inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 text-[length:calc(11px*var(--flux-ui-scale))] overflow-hidden transition-colors ${
+            className={`flex-1 min-w-[calc(92px*var(--flux-ui-scale))] px-2 inline-flex items-center justify-center gap-1 min-h-[calc(28px*var(--flux-ui-scale))] h-auto py-0.5 text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap overflow-hidden transition-colors ${
               subTab === 'symbols'
                 ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
-                : 'bg-[var(--flux-surface-alt)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                : 'bg-[var(--flux-surface-alt)]/80 text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
             <Layers className={`w-3 h-3 shrink-0 ${subTab === 'symbols' ? 'text-[var(--flux-accent)]' : ''}`} />
@@ -171,10 +171,10 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             type="button"
             data-testid="sym-lib-tab-components"
             onClick={() => setSubTab('components')}
-            className={`flex-1 min-w-[calc(92px*var(--flux-ui-scale))] px-1.5 inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 text-[length:calc(11px*var(--flux-ui-scale))] overflow-hidden transition-colors ${
+            className={`flex-1 min-w-[calc(92px*var(--flux-ui-scale))] px-2 inline-flex items-center justify-center gap-1 min-h-[calc(28px*var(--flux-ui-scale))] h-auto py-0.5 text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap overflow-hidden transition-colors ${
               subTab === 'components'
                 ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
-                : 'bg-[var(--flux-surface-alt)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                : 'bg-[var(--flux-surface-alt)]/80 text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
             }`}
           >
             <Database className={`w-3 h-3 shrink-0 ${subTab === 'components' ? 'text-[var(--flux-accent)]' : ''}`} />
@@ -182,21 +182,21 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
           </button>
         </div>
 
-        <div className="px-2 py-1 text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] leading-snug">
+        <div className="px-2.5 py-1.5 text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] leading-snug">
           {subTab === 'symbols'
-            ? 'Графические блоки УГО. Выберите блок для правки или клонируйте.'
+            ? 'Графические блоки УГО. Клик открывает вкладку УГО для правки.'
             : 'Изделия БД E3: привязывают графику УГО к артикулу и атрибутам.'}
         </div>
       </div>
 
       {/* Actions + Search + Filter */}
-      <div className="p-1.5 border-b border-[var(--flux-line)] space-y-1">
-        <div className="flex flex-wrap gap-1">
+      <div className="p-2 border-b border-[var(--flux-line)] space-y-1.5">
+        <div className="flex flex-wrap gap-1.5">
           <button
             type="button"
             data-testid="sym-lib-new-symbol-btn"
             onClick={workspace.onCreateNewBlankSymbol}
-            className="flex-1 min-w-[calc(94px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors"
+            className="flex-1 min-w-[calc(94px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[6px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
             <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
             <span className="truncate">Новое УГО</span>
@@ -205,7 +205,7 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             type="button"
             data-testid="sym-lib-new-component-btn"
             onClick={workspace.onCreateNewComponentFromSymbol}
-            className="flex-1 min-w-[calc(88px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors"
+            className="flex-1 min-w-[calc(88px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[6px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
             <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
             <span className="truncate">Изделие</span>
@@ -221,14 +221,14 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             spellCheck={false}
             aria-label={subTab === 'symbols' ? 'Поиск блока УГО' : 'Поиск изделия или артикула'}
             placeholder={subTab === 'symbols' ? 'Поиск блока УГО…' : 'Поиск изделия или артикула…'}
-            className="w-full min-h-[calc(24px*var(--flux-ui-scale))] h-auto py-0.5 pl-6 pr-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
+            className="w-full min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 pl-6 pr-2 rounded-[6px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] placeholder:text-[var(--flux-text-muted)] focus:outline-none focus:border-[var(--flux-focus)]"
           />
         </div>
 
         <div
           role="group"
           aria-label="Фильтр библиотеки УГО"
-          className="flex flex-wrap rounded-[2px] border border-[var(--flux-line)] gap-px bg-[var(--flux-line)] overflow-hidden"
+          className="flex flex-wrap rounded-[6px] border border-[var(--flux-line)] gap-px bg-[var(--flux-line)] overflow-hidden"
         >
           {(
             [

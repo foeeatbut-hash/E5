@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
+  ChevronRight,
   CopyPlus,
   Plus,
   Sparkles,
@@ -26,6 +27,7 @@ import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
 
 interface SymbolEditorInspectorProps {
   workspace: SymbolWorkspaceActions;
+  onCollapseFocusPanel?: () => void;
 }
 
 const CATEGORIES: Array<[DeviceCategory, string]> = [
@@ -57,7 +59,10 @@ const parseFiniteNum = (raw: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React.memo(({ workspace }) => {
+export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React.memo(({
+  workspace,
+  onCollapseFocusPanel,
+}) => {
   const { draft } = workspace;
   const [selectedTemplateId, setSelectedTemplateId] = useState(ATTRIBUTE_TEMPLATE_PRESETS[0].id);
   const [newAttrName, setNewAttrName] = useState('');
@@ -103,15 +108,29 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
     <aside
       aria-label="Свойства блока УГО и изделия E3"
       data-testid="symbol-editor-inspector"
-      className="w-full h-full flex-1 min-w-0 bg-[var(--flux-bg)] flex flex-col min-h-0"
+      className="w-full h-full flex-1 min-w-0 bg-transparent flex flex-col min-h-0"
     >
-      <div className="h-6 px-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2 shrink-0">
-        <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)] truncate">
-          Инспектор УГО и Изделия
+      <div className="min-h-7 py-0.5 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 shrink-0">
+        <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] truncate">
+          Свойства УГО и Изделия
         </span>
-        <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-          {draft.shapes.length}ф · {draft.pins.length}в · {draft.attributes.length}а
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+            {draft.shapes.length}ф · {draft.pins.length}в · {draft.attributes.length}а
+          </span>
+          {onCollapseFocusPanel && (
+            <button
+              type="button"
+              data-testid="ugo-inspector-collapse-btn"
+              onClick={onCollapseFocusPanel}
+              title="Свернуть свойства УГО"
+              aria-label="Свернуть свойства УГО"
+              className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
