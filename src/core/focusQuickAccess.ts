@@ -53,8 +53,6 @@ export type FocusQuickActionId =
   | 'reset_dock'
   | 'flux_push'
   | 'flux_bus'
-  | 'flux_publish'
-  | 'flux_zip'
   | 'export_bridge_json'
   | 'e3_open_file'
   | 'e3_direct'
@@ -62,9 +60,7 @@ export type FocusQuickActionId =
   | 'open_publish'
   | 'export_dxf'
   | 'export_bom_csv'
-  | 'export_cables_csv'
-  | 'open_portable'
-  | 'download_codebase';
+  | 'export_cables_csv';
 
 export interface FocusQuickActionDef {
   id: FocusQuickActionId;
@@ -130,8 +126,6 @@ export const FOCUS_QUICK_ACTIONS: Record<FocusQuickActionId, FocusQuickActionDef
   reset_dock: { id: 'reset_dock', label: 'Сброс окон', title: 'Вернуть панели в стандартное положение', group: 'view' },
   flux_push: { id: 'flux_push', label: 'Во Flux Host', title: 'Синхронизировать проект по шине Flux Studio', group: 'flux' },
   flux_bus: { id: 'flux_bus', label: 'Шина Flux Bus', title: 'Открыть консоль обмена Flux Bus', group: 'flux' },
-  flux_publish: { id: 'flux_publish', label: 'Регистрация модуля', title: 'Регистрация подпрограммы во Flux Studio', group: 'flux' },
-  flux_zip: { id: 'flux_zip', label: 'Пакет Flux (.zip)', title: 'Скачать архив модуля Flux Studio (.zip)', group: 'flux' },
   export_bridge_json: { id: 'export_bridge_json', label: 'Мост (.json)', title: 'Экспортировать пакет обмена flux-e3-bridge/v1 JSON', group: 'flux' },
   e3_open_file: { id: 'e3_open_file', label: 'Открыть .e3s', title: 'Открыть файл .e3s / .e3d / XML / JSON', group: 'flux' },
   e3_direct: { id: 'e3_direct', label: 'В E³.series', title: 'Открыть проект напрямую в E³.series', group: 'flux' },
@@ -140,8 +134,6 @@ export const FOCUS_QUICK_ACTIONS: Record<FocusQuickActionId, FocusQuickActionDef
   export_dxf: { id: 'export_dxf', label: 'Лист DXF', title: 'Экспорт активного листа в AutoCAD (.dxf)', group: 'flux' },
   export_bom_csv: { id: 'export_bom_csv', label: 'Список ПЭ3 (CSV)', title: 'Выгрузить спецификацию ПЭ3 в CSV', group: 'flux' },
   export_cables_csv: { id: 'export_cables_csv', label: 'Каб. журнал (CSV)', title: 'Выгрузить кабельный журнал в CSV', group: 'flux' },
-  open_portable: { id: 'open_portable', label: 'Portable (.zip)', title: 'Сборка автономной Windows Portable (.zip)', group: 'flux' },
-  download_codebase: { id: 'download_codebase', label: 'Исходники (.zip)', title: 'Скачать архив исходного кода', group: 'flux' },
 };
 
 export const FOCUS_QUICK_ACCESS_STORAGE_KEY = 'e3promax.focusQuickAccess.v1';

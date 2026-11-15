@@ -11,7 +11,6 @@ import {
   FloatingPanelWindow,
   resolveDropTarget,
 } from './components/DockablePanel';
-import { FluxStudioPublishModal } from './components/FluxStudioPublishModal';
 import {
   FocusCommandPill,
   FocusStatusPill,
@@ -25,7 +24,6 @@ import {
   ReportModal,
   VisualSettingsModal,
 } from './components/Modals';
-import { PortableBuildModal } from './components/PortableBuildModal';
 import { PublishModal } from './components/PublishModal';
 import { RightInspector } from './components/RightInspector';
 import { SchematicCanvas } from './components/SchematicCanvas';
@@ -94,6 +92,13 @@ import {
   UI_MODE_OPTIONS,
   type UiWorkspaceMode,
 } from './core/uiMode';
+import {
+  clampCameraZoom,
+  computeAdaptiveCameraDuration,
+  computeAnchoredZoomPan,
+  interpolateCameraFrame,
+  normalizeCommittedCameraTransform,
+} from './core/cameraAnimation';
 import {
   type AllSheetsCanvasLayout,
   type CanvasViewMode,
@@ -422,11 +427,17 @@ export default function App() {
   viewportTransformsRef.current = viewportTransforms;
   const cameraAnimRef = useRef<Record<number, number>>({});
   const cameraDomSyncRef = useRef<
-    Record<number, ((zoom: number, pan: { x: number; y: number }) => void) | null>
+    Record<
+      number,
+      ((zoom: number, pan: { x: number; y: number }, opts?: { animating?: boolean }) => void) | null
+    >
   >({});
   const liveCameraPosRef = useRef<Record<number, { zoom: number; pan: { x: number; y: number } }>>({});
   const registerCameraDomSync = useCallback(
-    (vpIdx: number, fn: ((zoom: number, pan: { x: number; y: number }) => void) | null) => {
+    (
+      vpIdx: number,
+      fn: ((zoom: number, pan: { x: number; y: number }, opts?: { animating?: boolean }) => void) | null
+    ) => {
       if (fn) cameraDomSyncRef.current[vpIdx] = fn;
       else delete cameraDomSyncRef.current[vpIdx];
     },
@@ -660,14 +671,13 @@ export default function App() {
     focusInspectorCollapsed: boolean;
     focusRibbonOpen: boolean;
   } | null>(null);
+  const [openedFileName, setOpenedFileName] = useState<string | null>(null);
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [visualOpen, setVisualOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const [portableOpen, setPortableOpen] = useState(false);
   const [hvacWizardOpen, setHvacWizardOpen] = useState(false);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
-  const [fluxPublishOpen, setFluxPublishOpen] = useState(false);
   const [terminalEditorOpen, setTerminalEditorOpen] = useState(false);
   const [autoNumberModalOpen, setAutoNumberModalOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -3503,59 +3513,69 @@ export default function App() {
     if (raf) {
       window.cancelAnimationFrame(raf);
       delete cameraAnimRef.current[vpIdx];
+      const pos = liveCameraPosRef.current[vpIdx];
+      if (pos) {
+        cameraDomSyncRef.current[vpIdx]?.(pos.zoom, pos.pan, { animating: false });
+      }
     }
   }, []);
 
   const animateCameraTo = useCallback(
     (vpIdx: number, targetZoom: number, targetPan: { x: number; y: number }, animate = true) => {
       cancelCameraAnim(vpIdx);
+      const normTarget = normalizeCommittedCameraTransform({ zoom: targetZoom, pan: targetPan });
       const cur =
         liveCameraPosRef.current[vpIdx] ||
         viewportTransformsRef.current[vpIdx] || { zoom: 0.56, pan: { x: 24, y: 12 } };
       if (
         !animate ||
-        (Math.abs(cur.zoom - targetZoom) < 0.002 &&
-          Math.abs(cur.pan.x - targetPan.x) < 1 &&
-          Math.abs(cur.pan.y - targetPan.y) < 1)
+        (Math.abs(cur.zoom - normTarget.zoom) < 0.0015 &&
+          Math.abs(cur.pan.x - normTarget.pan.x) < 0.5 &&
+          Math.abs(cur.pan.y - normTarget.pan.y) < 0.5)
       ) {
-        liveCameraPosRef.current[vpIdx] = { zoom: targetZoom, pan: targetPan };
-        cameraDomSyncRef.current[vpIdx]?.(targetZoom, targetPan);
+        liveCameraPosRef.current[vpIdx] = normTarget;
+        cameraDomSyncRef.current[vpIdx]?.(normTarget.zoom, normTarget.pan, { animating: false });
         setViewportTransforms((prev) => ({
           ...prev,
-          [vpIdx]: { zoom: targetZoom, pan: targetPan },
+          [vpIdx]: normTarget,
         }));
         return;
       }
-      const startZoom = cur.zoom;
-      const startPanX = cur.pan.x;
-      const startPanY = cur.pan.y;
-      const startTime = performance.now();
-      const durationMs = 190;
-      const step = (now: number) => {
-        const t = Math.min(1, (now - startTime) / durationMs);
-        const eased = 1 - Math.pow(1 - t, 4);
-        const z = t >= 1 ? targetZoom : startZoom + (targetZoom - startZoom) * eased;
-        const px = t >= 1 ? targetPan.x : startPanX + (targetPan.x - startPanX) * eased;
-        const py = t >= 1 ? targetPan.y : startPanY + (targetPan.y - startPanY) * eased;
-        const nextPan = { x: px, y: py };
-        liveCameraPosRef.current[vpIdx] = { zoom: z, pan: nextPan };
+
+      const startTransform = { zoom: cur.zoom, pan: { x: cur.pan.x, y: cur.pan.y } };
+      const durationMs = computeAdaptiveCameraDuration(startTransform, normTarget);
+      let startTime: number | null = null;
+
+      cameraDomSyncRef.current[vpIdx]?.(startTransform.zoom, startTransform.pan, { animating: true });
+
+      const step = () => {
+        const frameNow = performance.now();
+        if (startTime === null) startTime = frameNow;
+        const frame = interpolateCameraFrame(
+          startTransform,
+          normTarget,
+          frameNow - startTime,
+          durationMs
+        );
         const domSync = cameraDomSyncRef.current[vpIdx];
-        if (t < 1) {
+        if (!frame.done) {
+          liveCameraPosRef.current[vpIdx] = { zoom: frame.zoom, pan: frame.pan };
           if (domSync) {
-            domSync(z, nextPan);
+            domSync(frame.zoom, frame.pan, { animating: true });
           } else {
             setViewportTransforms((prev) => ({
               ...prev,
-              [vpIdx]: { zoom: z, pan: nextPan },
+              [vpIdx]: { zoom: frame.zoom, pan: frame.pan },
             }));
           }
           cameraAnimRef.current[vpIdx] = window.requestAnimationFrame(step);
         } else {
           delete cameraAnimRef.current[vpIdx];
-          domSync?.(targetZoom, targetPan);
+          liveCameraPosRef.current[vpIdx] = normTarget;
+          domSync?.(normTarget.zoom, normTarget.pan, { animating: false });
           setViewportTransforms((prev) => ({
             ...prev,
-            [vpIdx]: { zoom: targetZoom, pan: targetPan },
+            [vpIdx]: normTarget,
           }));
         }
       };
@@ -3563,6 +3583,8 @@ export default function App() {
     },
     [cancelCameraAnim]
   );
+  const animateCameraToRef = useRef(animateCameraTo);
+  animateCameraToRef.current = animateCameraTo;
 
   const fitSheetToViewport = useCallback(
     (sheetObj?: E3Sheet, vpIdx = activeViewportIdxRef.current, animate = false) => {
@@ -3577,7 +3599,9 @@ export default function App() {
       const vh = rect?.height && rect.height > 100 ? rect.height : 500;
       const layout = computeAllSheetsLayout(sheets);
       const origin = getSheetCanvasOrigin(layout, target.id, canvasViewModeRef.current);
-      const fitted = computeSheetViewportFitTransform(target, origin, vw, vh);
+      const fitted = computeSheetViewportFitTransform(target, origin, vw, vh, {
+        mode: canvasViewModeRef.current,
+      });
       animateCameraTo(vpIdx, fitted.zoom, fitted.pan, animate);
     },
     [animateCameraTo]
@@ -3601,17 +3625,19 @@ export default function App() {
           sheetId,
           canvasViewModeRef.current
         );
-        const curZoom = viewportTransformsRef.current[vpIdx]?.zoom ?? 0.56;
+        const curZoom =
+          liveCameraPosRef.current[vpIdx]?.zoom ??
+          viewportTransformsRef.current[vpIdx]?.zoom ??
+          0.56;
         const nextZ = Math.min(1.35, Math.max(0.68, curZoom));
-        animateCameraTo(
-          vpIdx,
-          nextZ,
-          {
-            x: Math.round(vw / 2 - (origin.x + worldX) * nextZ),
-            y: Math.round(vh / 2 - (origin.y + worldY) * nextZ),
+        const target = normalizeCommittedCameraTransform({
+          zoom: nextZ,
+          pan: {
+            x: vw / 2 - (origin.x + worldX) * nextZ,
+            y: vh / 2 - (origin.y + worldY) * nextZ,
           },
-          animate
-        );
+        });
+        animateCameraTo(vpIdx, target.zoom, target.pan, animate);
       });
     },
     [activeViewportIdx, animateCameraTo, openSheetTab]
@@ -4887,13 +4913,11 @@ export default function App() {
     exchangeOpen ||
     visualOpen ||
     reportOpen ||
-    portableOpen ||
     hvacWizardOpen ||
     catalogModalOpen ||
     publishModalOpen ||
     terminalEditorOpen ||
     autoNumberModalOpen ||
-    fluxPublishOpen ||
     healthOpen ||
     shortcutsOpen ||
     stampModalState.open;
@@ -4970,6 +4994,7 @@ export default function App() {
       }
 
       commitProject(() => importedProj as E3Project, true, { skipSheetTracking: true });
+      setOpenedFileName(filename);
       const sheetIds = importedProj.sheets.map((s) => s.id);
       setOpenSheetIds(sheetIds);
       if (sheetIds[0]) {
@@ -5000,6 +5025,7 @@ export default function App() {
     const bytes = serializeE3FluxProject(curProject);
     const filename = buildE3FluxFilename(curProject);
     downloadBytes(filename, bytes, 'application/x-e3flux');
+    setOpenedFileName(filename);
 
     const res = saveActiveSession(curProject, activeSheetIdRef.current);
     setLastSavedAt(res.savedAt);
@@ -5242,6 +5268,7 @@ export default function App() {
       updatedAt: new Date().toISOString(),
     };
     const nextSheetId = fresh.sheets[0]?.id || 'sheet-1';
+    setOpenedFileName(null);
     setDocState({ past: [], present: fresh, future: [] });
     setOpenSheetIds(fresh.sheets.map((s) => s.id));
     setActiveSheetId(nextSheetId);
@@ -5269,6 +5296,7 @@ export default function App() {
       const nextSheetId = restoredProj.sheets.some((s) => s.id === target.activeSheetId)
         ? target.activeSheetId
         : restoredProj.sheets[0]?.id || 'sheet-1';
+      setOpenedFileName(null);
       setDocState({ past: [], present: restoredProj, future: [] });
       setOpenSheetIds(restoredProj.sheets.map((s) => s.id));
       setActiveSheetId(nextSheetId);
@@ -5365,14 +5393,29 @@ export default function App() {
           handleAlignSelectedDevices(act.align);
           break;
         case 'zoom-fit':
-          fitSheetToViewport(undefined, activeViewportIdx);
+          fitSheetToViewport(undefined, activeViewportIdx, true);
           break;
         case 'zoom-delta':
-          setZoom(Math.min(2.5, Math.max(0.18, Math.round((zoom + act.delta) * 100) / 100)));
+        case 'zoom-percent': {
+          const vpIdx = activeViewportIdxRef.current;
+          const cur =
+            liveCameraPosRef.current[vpIdx] ||
+            viewportTransformsRef.current[vpIdx] || { zoom: 0.56, pan: { x: 24, y: 12 } };
+          const nextZ =
+            act.type === 'zoom-delta'
+              ? clampCameraZoom(Math.round((cur.zoom + act.delta) * 100) / 100)
+              : clampCameraZoom(Math.round(act.percent) / 100);
+          const sel =
+            vpIdx === 0 ? '[data-testid="schematic-canvas"]' : `[data-testid="schematic-canvas-${vpIdx}"]`;
+          const el =
+            document.querySelector(sel) || document.querySelector('[data-testid="schematic-canvas"]');
+          const rect = el?.getBoundingClientRect();
+          const cx = rect?.width ? rect.width / 2 : 410;
+          const cy = rect?.height ? rect.height / 2 : 250;
+          const nextPan = computeAnchoredZoomPan(cx, cy, cur.pan, cur.zoom, nextZ);
+          animateCameraTo(vpIdx, nextZ, nextPan, true);
           break;
-        case 'zoom-percent':
-          setZoom(Math.min(2.5, Math.max(0.16, Math.round(act.percent) / 100)));
-          break;
+        }
         case 'toggle-snap':
           handleApplyVisualSettings({
             ...project.visualSettings,
@@ -6464,7 +6507,6 @@ export default function App() {
           appendLog('INFO', 'E3-CORE', `Выгружена ведомость длин проводов по цепям ${project.projectCode}-net-lengths.csv.`);
         }}
         onOpenReportModal={() => setReportOpen(true)}
-        onOpenFluxPublishModal={() => setFluxPublishOpen(true)}
         onOpenTerminalEditor={() => setTerminalEditorOpen(true)}
         onClearLogs={() => setLogs([])}
         onOpenHealthDashboard={() => setHealthOpen(true)}
@@ -6611,25 +6653,21 @@ export default function App() {
             ? 'VisualSettingsModal'
             : reportOpen
               ? 'ReportModal'
-              : portableOpen
-                ? 'PortableBuildModal'
-                : hvacWizardOpen
-                  ? 'HvacWizardModal'
-                  : catalogModalOpen
-                    ? 'CatalogItemModal'
-                    : publishModalOpen
-                      ? 'PublishModal'
-                      : fluxPublishOpen
-                        ? 'FluxStudioPublishModal'
-                        : terminalEditorOpen
-                          ? 'TerminalStripModal'
-                          : autoNumberModalOpen
-                            ? 'AutoNumberingModal'
-                            : commandPaletteOpen
-                              ? 'CommandPaletteModal'
-                              : stampModalState.open
-                                ? 'StampEditorModal'
-                                : null,
+              : hvacWizardOpen
+                ? 'HvacWizardModal'
+                : catalogModalOpen
+                  ? 'CatalogItemModal'
+                  : publishModalOpen
+                    ? 'PublishModal'
+                    : terminalEditorOpen
+                      ? 'TerminalStripModal'
+                      : autoNumberModalOpen
+                        ? 'AutoNumberingModal'
+                        : commandPaletteOpen
+                          ? 'CommandPaletteModal'
+                          : stampModalState.open
+                            ? 'StampEditorModal'
+                            : null,
       theme: curProj.visualSettings.theme,
       symbolEditorOpen: symbolDraft.open,
     });
@@ -6643,11 +6681,9 @@ export default function App() {
     exchangeOpen,
     visualOpen,
     reportOpen,
-    portableOpen,
     hvacWizardOpen,
     catalogModalOpen,
     publishModalOpen,
-    fluxPublishOpen,
     terminalEditorOpen,
     autoNumberModalOpen,
     commandPaletteOpen,
@@ -6965,10 +7001,6 @@ export default function App() {
           setConsoleCollapsed(false);
           if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
           break;
-        case 'flux_publish': setFluxPublishOpen(true); break;
-        case 'flux_zip':
-          window.location.assign(`/api/export/flux-studio?projectId=${encodeURIComponent(curProj.id)}`);
-          break;
         case 'export_bridge_json': handleExportFluxBridge(); break;
         case 'e3_open_file':
           document.querySelector<HTMLInputElement>('[data-testid="toolbar-e3s-input"]')?.click();
@@ -6990,10 +7022,6 @@ export default function App() {
             exportCableJournalCsv(buildCableJournal(curProj), buildNetWireLengths(curProj)),
             'text/csv;charset=utf-8'
           );
-          break;
-        case 'open_portable': setPortableOpen(true); break;
-        case 'download_codebase':
-          window.location.assign('/api/export/codebase');
           break;
       }
     },
@@ -7093,11 +7121,15 @@ export default function App() {
         },
         onSetTransform: (nextZ: number, nextPan: { x: number; y: number }) => {
           cancelCameraAnimRef.current(idx);
-          liveCameraPosRef.current[idx] = { zoom: nextZ, pan: nextPan };
+          const committed = normalizeCommittedCameraTransform({ zoom: nextZ, pan: nextPan });
+          liveCameraPosRef.current[idx] = committed;
           setViewportTransforms((prev) => ({
             ...prev,
-            [idx]: { zoom: nextZ, pan: nextPan },
+            [idx]: committed,
           }));
+        },
+        onAnimateTransform: (nextZ: number, nextPan: { x: number; y: number }, animate = true) => {
+          animateCameraToRef.current(idx, nextZ, nextPan, animate);
         },
       })),
     []
@@ -7114,6 +7146,7 @@ export default function App() {
       <TopToolbar
         project={project}
         activeSheet={activeSheet}
+        displayFilename={openedFileName || buildE3FluxFilename(project)}
         tool={tool}
         zoom={zoom}
         uiScale={uiScale}
@@ -7158,7 +7191,22 @@ export default function App() {
         onAlignSelected={handleAlignSelected}
         selectedDeviceCount={selectedDeviceIds.length > 0 ? selectedDeviceIds.length : selectedDeviceId ? 1 : 0}
         onDeleteSelected={handleDeleteSelected}
-        onZoomChange={setZoom}
+        onZoomChange={(nextZ) => {
+          const vpIdx = activeViewportIdxRef.current;
+          const cur =
+            liveCameraPosRef.current[vpIdx] ||
+            viewportTransformsRef.current[vpIdx] || { zoom: 0.56, pan: { x: 24, y: 12 } };
+          const clampedZ = clampCameraZoom(nextZ);
+          const sel =
+            vpIdx === 0 ? '[data-testid="schematic-canvas"]' : `[data-testid="schematic-canvas-${vpIdx}"]`;
+          const el =
+            document.querySelector(sel) || document.querySelector('[data-testid="schematic-canvas"]');
+          const rect = el?.getBoundingClientRect();
+          const cx = rect?.width ? rect.width / 2 : 410;
+          const cy = rect?.height ? rect.height / 2 : 250;
+          const nextPan = computeAnchoredZoomPan(cx, cy, cur.pan, cur.zoom, clampedZ);
+          animateCameraTo(vpIdx, clampedZ, nextPan, true);
+        }}
         onFitView={() => fitSheetToViewport(undefined, activeViewportIdx, true)}
         onToggleGrid={() =>
           handleApplyVisualSettings({
@@ -7246,7 +7294,6 @@ export default function App() {
         onOpenExchangeModal={() => setExchangeOpen(true)}
         onOpenVisualModal={() => setVisualOpen(true)}
         onOpenReportModal={() => setReportOpen(true)}
-        onOpenPortableBuild={() => setPortableOpen(true)}
         onOpenHvacWizard={() => setHvacWizardOpen(true)}
         onAutoRouteWires={handleAutoRouteActiveSheetWires}
         onToggleTheme={() =>
@@ -7255,14 +7302,6 @@ export default function App() {
             theme: project.visualSettings.theme === 'dark' ? 'light' : 'dark',
           })
         }
-        onDownloadCodebase={() => {
-          window.location.assign('/api/export/codebase');
-        }}
-        onDownloadFluxStudioZip={() => {
-          window.location.assign(`/api/export/flux-studio?projectId=${encodeURIComponent(project.id)}`);
-          appendLog('INFO', 'FLUX-BRIDGE', 'Сформирован архив подпрограммы Flux Studio (.zip).');
-        }}
-        onOpenFluxPublishModal={() => setFluxPublishOpen(true)}
         onPushToFluxHost={() => {
           void handlePushToFluxHost();
         }}
@@ -7580,6 +7619,7 @@ export default function App() {
                     onSetZoom={vpH.onSetZoom}
                     onSetPan={vpH.onSetPan}
                     onSetTransform={vpH.onSetTransform}
+                    onAnimateTransform={vpH.onAnimateTransform}
                     onToggleGrid={handleCanvasToggleGrid}
                     onToggleSnapToGrid={handleCanvasToggleSnap}
                     onToggleSmartGuides={handleCanvasToggleSmartGuides}
@@ -7692,15 +7732,25 @@ export default function App() {
                     activeViewportBadge={activeBadge}
                     coordsSpanRef={focusMultiCoordsRef}
                     onZoomStep={(delta) => {
-                      const cur = viewportTransformsRef.current[activeViewportIdx] || {
-                        zoom: 0.42,
-                        pan: { x: 20, y: 12 },
-                      };
-                      const nextZ =
-                        delta < 0
-                          ? Math.max(0.16, Math.round((cur.zoom + delta) * 100) / 100)
-                          : Math.min(2.5, Math.round((cur.zoom + delta) * 100) / 100);
-                      activeVpH.onSetTransform(nextZ, cur.pan);
+                      const cur =
+                        liveCameraPosRef.current[activeViewportIdx] ||
+                        viewportTransformsRef.current[activeViewportIdx] || {
+                          zoom: 0.42,
+                          pan: { x: 20, y: 12 },
+                        };
+                      const nextZ = clampCameraZoom(Math.round((cur.zoom + delta) * 100) / 100);
+                      const sel =
+                        activeViewportIdx === 0
+                          ? '[data-testid="schematic-canvas"]'
+                          : `[data-testid="schematic-canvas-${activeViewportIdx}"]`;
+                      const el =
+                        document.querySelector(sel) ||
+                        document.querySelector('[data-testid="schematic-canvas"]');
+                      const rect = el?.getBoundingClientRect();
+                      const cx = rect?.width ? rect.width / 2 : 410;
+                      const cy = rect?.height ? rect.height / 2 : 250;
+                      const nextPan = computeAnchoredZoomPan(cx, cy, cur.pan, cur.zoom, nextZ);
+                      activeVpH.onAnimateTransform(nextZ, nextPan, true);
                     }}
                     onToggleGrid={handleCanvasToggleGrid}
                     onToggleSnapToGrid={handleCanvasToggleSnap}
@@ -7893,7 +7943,6 @@ export default function App() {
                       );
                     }}
                     onOpenReportModal={() => setReportOpen(true)}
-                    onOpenFluxPublishModal={() => setFluxPublishOpen(true)}
                     onOpenTerminalEditor={() => setTerminalEditorOpen(true)}
                     onClearLogs={() => setLogs([])}
                     onOpenHealthDashboard={() => setHealthOpen(true)}
@@ -7958,15 +8007,6 @@ export default function App() {
         onExportE3sXml={handleExportE3sXml}
         onExportFluxBridge={handleExportFluxBridge}
         onExportDxf={handleExportDxf}
-        onDownloadFluxStudioZip={() => {
-          window.location.assign(`/api/export/flux-studio?projectId=${encodeURIComponent(project.id)}`);
-          appendLog('INFO', 'FLUX-BRIDGE', 'Сформирован архив подпрограммы Flux Studio (.zip).');
-        }}
-        onDownloadCodebaseZip={() => {
-          window.location.assign('/api/export/codebase');
-          appendLog('INFO', 'E3-CORE', 'Запущена загрузка полного архива исходного кода (.zip).');
-        }}
-        onOpenPortableBuild={() => setPortableOpen(true)}
         onImportBytes={handleImportE3sBytes}
         onImportPayload={handleImportPayload}
       />
@@ -7990,21 +8030,6 @@ export default function App() {
         netLengths={netLengths}
         erc={erc}
         onClose={() => setReportOpen(false)}
-      />
-
-      <PortableBuildModal
-        open={portableOpen}
-        project={project}
-        onClose={() => setPortableOpen(false)}
-        onBuildFinished={(summary) => {
-          appendLog(
-            'INFO',
-            'PORTABLE',
-            `Собрана Portable-версия ${summary.filename} (${Math.round(summary.zipBytes / 1024)} КБ).`,
-            summary.durationMs,
-            summary.buildLogs?.join('\n')
-          );
-        }}
       />
 
       <CatalogItemModal
@@ -8042,21 +8067,6 @@ export default function App() {
         activeSheetId={activeSheetId}
         onClose={() => setPublishModalOpen(false)}
         onPublish={handleBatchPublish}
-      />
-
-      <FluxStudioPublishModal
-        open={fluxPublishOpen}
-        project={project}
-        onClose={() => setFluxPublishOpen(false)}
-        onUpdateFluxProjectKey={handleUpdateFluxProjectKey}
-        onPushToFluxHost={handlePushToFluxHost}
-        onDownloadFluxPackageSuccess={(filename, manifestId, version) => {
-          appendLog(
-            'SYNC',
-            'FLUX-BRIDGE',
-            `Опубликован пакет Flux Studio: ${filename} (${manifestId} v${version}).`
-          );
-        }}
       />
 
       <TerminalStripModal

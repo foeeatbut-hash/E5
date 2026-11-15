@@ -47,7 +47,6 @@ import {
   Moon,
   Monitor,
   MousePointer2,
-  Package,
   Palette,
   PanelLeft,
   PanelsTopLeft,
@@ -87,6 +86,7 @@ import {
   summarizeCadLayers,
 } from '../core/cadLayers';
 import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
+import { buildE3FluxFilename } from '../core/e3FluxFormat';
 import type { ViewportLayoutMode } from '../core/dockLayout';
 import { isMinimapEnabled, type FocusLayoutMetrics } from '../core/focusLayout';
 import type { RecentProjectEntry } from '../core/sessionStorage';
@@ -143,6 +143,7 @@ type AppMenuCategory = 'file' | 'export' | 'stamps' | 'system';
 interface TopToolbarProps {
   project: E3Project;
   activeSheet: E3Sheet | undefined;
+  displayFilename?: string;
   tool: CadTool;
   zoom: number;
   uiScale?: UiScalePercent;
@@ -198,13 +199,9 @@ interface TopToolbarProps {
   onOpenExchangeModal: () => void;
   onOpenVisualModal: () => void;
   onOpenReportModal: () => void;
-  onOpenPortableBuild: () => void;
   onOpenHvacWizard: () => void;
   onAutoRouteWires: () => void;
   onToggleTheme: () => void;
-  onDownloadCodebase: () => void;
-  onDownloadFluxStudioZip: () => void;
-  onOpenFluxPublishModal: () => void;
   onPushToFluxHost: () => void;
   onOpenFluxBusConsole: () => void;
   onExportE3sOle2: () => void;
@@ -535,6 +532,7 @@ const parseFiniteNum = (raw: string): number | null => {
 
 export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   project,
+  displayFilename,
   activeSheet,
   tool,
   zoom,
@@ -590,13 +588,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   onOpenExchangeModal,
   onOpenVisualModal,
   onOpenReportModal,
-  onOpenPortableBuild,
   onOpenHvacWizard,
   onAutoRouteWires,
   onToggleTheme,
-  onDownloadCodebase,
-  onDownloadFluxStudioZip,
-  onOpenFluxPublishModal,
   onPushToFluxHost,
   onOpenFluxBusConsole,
   onExportE3sOle2,
@@ -682,6 +676,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   }, [uiMode, setRibbonCollapsed]);
 
   const isSymbolEditorOpen = Boolean(symbolWorkspace?.draft.open);
+  const resolvedFilename = React.useMemo(() => {
+    if (isSymbolEditorOpen && symbolWorkspace) {
+      const rawName = String(symbolWorkspace.draft.name || 'block').trim();
+      const safeName = rawName.replace(/[<>:"/\\|?*\x00-\x1f]+/g, '-') || 'block';
+      return `${safeName}.e3blk`;
+    }
+    return (displayFilename && displayFilename.trim()) || buildE3FluxFilename(project);
+  }, [isSymbolEditorOpen, symbolWorkspace, displayFilename, project]);
   const prevSymbolOpenRef = useRef(false);
   useEffect(() => {
     if (isSymbolEditorOpen && !prevSymbolOpenRef.current) {
@@ -837,7 +839,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           <div
             data-testid="focus-top-left"
             style={focusLayout ? { maxWidth: focusLayout.leftPillMaxWidth } : undefined}
-            className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-hidden"
+            className="pointer-events-auto inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] pl-1.5 pr-2 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-hidden"
           >
             <button
               ref={menuBtnRef}
@@ -912,17 +914,17 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
             </button>
             <span
-              className="hidden 2xl:inline-block h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0"
+              className="hidden lg:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0"
               aria-hidden="true"
             />
-            <div className="hidden 2xl:flex items-center gap-1 min-w-0 pr-1 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-              <span className="truncate max-w-[calc(92px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]">{project.projectCode}</span>
-              {selectedDesignation && (
-                <>
-                  <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
-                  <span className="font-mono font-semibold text-[var(--flux-accent)] shrink-0">{selectedDesignation}</span>
-                </>
-              )}
+            <div
+              data-testid="toolbar-active-filename"
+              title={resolvedFilename}
+              className="hidden lg:flex items-center w-[calc(140px*var(--flux-ui-scale))] shrink-0 overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))]"
+            >
+              <span className="truncate w-full font-mono font-medium text-[var(--flux-text)]">
+                {resolvedFilename}
+              </span>
             </div>
           </div>
 
@@ -1150,25 +1152,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            <span className="hidden md:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
-            <div className="hidden md:flex items-center gap-1 min-w-0 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-              <span className="font-medium text-[var(--flux-text)] truncate max-w-[calc(140px*var(--flux-ui-scale))]">
-                {isSymbolEditorOpen && symbolWorkspace
-                  ? `УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
-                  : project.projectCode}
+            <span className="hidden sm:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
+            <div
+              data-testid="toolbar-active-filename"
+              title={resolvedFilename}
+              className="hidden sm:flex items-center w-[calc(140px*var(--flux-ui-scale))] shrink-0 overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))]"
+            >
+              <span className="font-mono font-medium text-[var(--flux-text)] truncate w-full">
+                {resolvedFilename}
               </span>
-              {!isSymbolEditorOpen && activeSheet && (
-                <>
-                  <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
-                  <span className="truncate max-w-[calc(130px*var(--flux-ui-scale))]">Л.{activeSheet.number} {activeSheet.name}</span>
-                </>
-              )}
-              {!isSymbolEditorOpen && selectedDesignation && (
-                <>
-                  <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
-                  <span className="font-mono font-semibold text-[var(--flux-accent)] shrink-0">{selectedDesignation}</span>
-                </>
-              )}
             </div>
           </div>
 
@@ -1390,20 +1382,20 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               <Download className="w-3.5 h-3.5" />
               <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
             </button>
+
+            <span className="hidden sm:inline-block h-3.5 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
+            <div
+              data-testid="toolbar-active-filename"
+              title={resolvedFilename}
+              className="hidden sm:flex items-center w-[calc(140px*var(--flux-ui-scale))] shrink-0 overflow-hidden text-[length:calc(10.5px*var(--flux-ui-scale))]"
+            >
+              <span className="font-mono font-medium text-[var(--flux-text)] truncate w-full">
+                {resolvedFilename}
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
-            <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate max-w-[calc(200px*var(--flux-ui-scale))] md:max-w-[calc(320px*var(--flux-ui-scale))] lg:max-w-[calc(460px*var(--flux-ui-scale))]">
-              {isSymbolEditorOpen && symbolWorkspace
-                ? `Редактор блока УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
-                : project.name}
-            </span>
-            <span className="hidden xl:inline text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
-              {isSymbolEditorOpen && symbolWorkspace
-                ? `${symbolWorkspace.draft.e3BlockName || 'BLOCK'} · ${symbolWorkspace.draft.width}×${symbolWorkspace.draft.height}`
-                : `${project.projectCode} · Rev ${project.revision}`}
-            </span>
-          </div>
+          <div className="flex-1 min-w-0" />
 
           <div className="flex items-center gap-0.5 shrink-0">
             {onOpenCommandPalette && (
@@ -1764,11 +1756,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       title="Экспорт пакета Flux Bridge (.json)"
                       onClick={() => runMenuAction(onExportFluxBridge)}
                     />
-                    <AppMenuActionRow
-                      icon={<Archive className="w-4 h-4" />}
-                      title="Пакет подпрограммы Flux Studio (.zip)"
-                      onClick={() => runMenuAction(onDownloadFluxStudioZip)}
-                    />
                   </div>
                 )}
 
@@ -1923,17 +1910,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       testId="menu-stress-test"
                       onClick={() => runMenuAction(() => onRunStressBatch(500))}
                     />
-                    <div className="my-1.5 border-t border-[var(--flux-line)]" />
-                    <AppMenuActionRow
-                      icon={<Package className="w-4 h-4" />}
-                      title="Сборка автономной Windows Portable (.zip)"
-                      onClick={() => runMenuAction(onOpenPortableBuild)}
-                    />
-                    <AppMenuActionRow
-                      icon={<Archive className="w-4 h-4" />}
-                      title="Скачать полный исходный код проекта (.zip)"
-                      onClick={() => runMenuAction(onDownloadCodebase)}
-                    />
                   </div>
                 )}
               </div>
@@ -1962,11 +1938,11 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             className="absolute z-50 w-[min(calc(308px*var(--flux-ui-scale)),calc(100vw-20px))] rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover shadow-2xl overflow-hidden py-1.5"
           >
             <div className="px-3 py-1 flex items-center justify-between border-b border-[var(--flux-line)]">
-              <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
+              <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] shrink-0">
                 Экспорт и публикация
               </span>
-              <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-                {project.projectCode}
+              <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate max-w-[calc(140px*var(--flux-ui-scale))]">
+                {resolvedFilename}
               </span>
             </div>
 
@@ -2159,22 +2135,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 </span>
                 <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
                   .json
-                </span>
-              </button>
-              <button
-                type="button"
-                data-testid="export-opt-flux-zip"
-                onClick={() => runMenuAction(onDownloadFluxStudioZip)}
-                className="w-full px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
-              >
-                <span className="inline-flex items-center gap-2 min-w-0">
-                  <Archive className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
-                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
-                    Подпрограмма Flux Studio
-                  </span>
-                </span>
-                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                  .zip
                 </span>
               </button>
             </div>
@@ -2994,30 +2954,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         />
                       </RibbonPanel>
 
-                      <RibbonPanel title="Мост и Студия Flux" isLast>
+                      <RibbonPanel title="Мост Flux" isLast>
                         <LargeRibbonBtn
                           quickAccessId="export_bridge_json"
                           icon={<Share2 className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
                           label="Мост (.json)"
                           title="Экспортировать пакет обмена flux-e3-bridge/v1 JSON"
                           onClick={onExportFluxBridge}
-                        />
-                        <LargeRibbonBtn
-                          quickAccessId="flux_publish"
-                          icon={<Layers className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
-                          label="Студия Flux"
-                          title={`Настроить привязку ключа (${project.fluxProjectKey}), manifest.json и опубликовать подпрограмму`}
-                          accent
-                          testId="ribbon-flux-publish-btn"
-                          onClick={onOpenFluxPublishModal}
-                        />
-                        <LargeRibbonBtn
-                          quickAccessId="flux_zip"
-                          icon={<Archive className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
-                          label="Пакет (.zip)"
-                          title="Быстро скачать архив модуля Flux Studio (.zip)"
-                          testId="ribbon-flux-zip-btn"
-                          onClick={onDownloadFluxStudioZip}
                         />
                       </RibbonPanel>
                     </>
@@ -3053,7 +2996,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         />
                       </RibbonPanel>
 
-                      <RibbonPanel title="Документация и Таблицы">
+                      <RibbonPanel title="Документация и Таблицы" isLast>
                         <LargeRibbonBtn
                           quickAccessId="open_publish"
                           icon={<FileCode2 className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
@@ -3086,23 +3029,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             onClick={onDownloadCablesCsv}
                           />
                         </RibbonStack>
-                      </RibbonPanel>
-
-                      <RibbonPanel title="Дистрибутив" isLast>
-                        <LargeRibbonBtn
-                          quickAccessId="open_portable"
-                          icon={<Package className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
-                          label="Portable (.zip)"
-                          title="Сборка автономной Windows Portable (.zip)"
-                          onClick={onOpenPortableBuild}
-                        />
-                        <LargeRibbonBtn
-                          quickAccessId="download_codebase"
-                          icon={<Archive className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
-                          label="Исходники (.zip)"
-                          title="Скачать полный архив исходного кода проекта (.zip)"
-                          onClick={onDownloadCodebase}
-                        />
                       </RibbonPanel>
                     </>
                   )}

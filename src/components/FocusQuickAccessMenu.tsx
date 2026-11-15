@@ -4,7 +4,6 @@ import {
   AlignCenterVertical,
   AlignStartHorizontal,
   AlignStartVertical,
-  Archive,
   ArrowDown,
   ArrowLeftRight,
   ArrowUp,
@@ -37,7 +36,6 @@ import {
   Map as MapIcon,
   Maximize2,
   MousePointer2,
-  Package,
   Palette,
   PanelLeft,
   PanelsTopLeft,
@@ -179,10 +177,6 @@ export function renderFocusQuickAccessIcon(
       return <Send className={className} strokeWidth={1.6} />;
     case 'flux_bus':
       return <RefreshCw className={className} strokeWidth={1.6} />;
-    case 'flux_publish':
-      return <Layers className={className} strokeWidth={1.6} />;
-    case 'flux_zip':
-      return <Archive className={className} strokeWidth={1.6} />;
     case 'export_bridge_json':
       return <Share2 className={className} strokeWidth={1.6} />;
     case 'e3_open_file':
@@ -199,10 +193,6 @@ export function renderFocusQuickAccessIcon(
       return <FileSpreadsheet className={className} strokeWidth={1.6} />;
     case 'export_cables_csv':
       return <Download className={className} strokeWidth={1.6} />;
-    case 'open_portable':
-      return <Package className={className} strokeWidth={1.6} />;
-    case 'download_codebase':
-      return <Archive className={className} strokeWidth={1.6} />;
   }
 }
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Archive, Check, Copy, Download, ExternalLink, FileCode2, Layers, Package, Printer, SlidersHorizontal, Terminal, Upload } from 'lucide-react';
+import { Check, Copy, Download, ExternalLink, FileCode2, Layers, Printer, SlidersHorizontal, Terminal, Upload } from 'lucide-react';
 import { StudioWindow } from './StudioWindow';
 import { SCHEMATIC_FONT_OPTIONS } from '../core/e3Catalog';
 import {
@@ -46,9 +46,6 @@ interface ExchangeModalProps {
   onExportE3sXml: () => void;
   onExportFluxBridge: () => void;
   onExportDxf: () => void;
-  onDownloadFluxStudioZip: () => void;
-  onDownloadCodebaseZip: () => void;
-  onOpenPortableBuild: () => void;
   onImportBytes: (bytes: ArrayBuffer, filename: string) => Promise<void>;
   onImportPayload: (rawText: string) => Promise<void>;
 }
@@ -64,9 +61,6 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
   onExportE3sXml,
   onExportFluxBridge,
   onExportDxf,
-  onDownloadFluxStudioZip,
-  onDownloadCodebaseZip,
-  onOpenPortableBuild,
   onImportBytes,
   onImportPayload,
 }) => {
@@ -310,45 +304,6 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
               >
                 <span className="font-medium text-[var(--flux-text)]">Чертёж AutoCAD / E3 Импорт (.dxf)</span>
                 <Download className="w-4 h-4 text-[var(--flux-text-muted)]" />
-              </button>
-            </div>
-          </div>
-
-          {/* Flux Studio & Full Codebase */}
-          <div className="pt-4 border-t border-[var(--flux-line)] space-y-2">
-            <h3 className="text-[length:calc(13px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
-              Выпуск подпрограммы через Flux Studio и база кода
-            </h3>
-            <p className="text-[var(--flux-text-muted)]">
-              Экспортируйте готовый пакет подпрограммы с <span className="font-mono">manifest.json</span> (договор v2, <span className="font-mono">ui: page</span>) для импорта в Flux Studio или скачайте полный исходный код проекта.
-            </p>
-            <div className="flex flex-wrap gap-2 pt-1">
-              <button
-                type="button"
-                onClick={onDownloadFluxStudioZip}
-                className="inline-flex items-center gap-2 h-8 px-3 rounded bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white font-medium"
-              >
-                <Archive className="w-4 h-4" />
-                <span>Пакет Flux Studio (.zip)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenPortableBuild();
-                }}
-                className="inline-flex items-center gap-2 h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium"
-              >
-                <Package className="w-4 h-4 text-[var(--flux-accent)]" />
-                <span>Собрать Portable (.zip)</span>
-              </button>
-              <button
-                type="button"
-                onClick={onDownloadCodebaseZip}
-                className="inline-flex items-center gap-2 h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-bg)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] font-medium"
-              >
-                <Download className="w-4 h-4" />
-                <span>Скачать всю базу кода (.zip)</span>
               </button>
             </div>
           </div>

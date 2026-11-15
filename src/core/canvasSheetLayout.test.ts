@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ALL_SHEETS_MARGIN,
   ALL_SHEETS_MIN_GAP,
   CANVAS_VIEW_MODE_STORAGE_KEY,
+  clampAllSheetsStripPan,
   computeAllSheetsLayout,
+  computeAllSheetsStripMetrics,
+  computePanForStripProgress,
   computeSheetViewportFitTransform,
   DEFAULT_CANVAS_VIEW_MODE,
   findSheetSlotAtCanvasPoint,
@@ -47,6 +51,7 @@ function makeSheet(id: string, number: number, width: number, height: number): E
 test('canvas view mode normalization and storage persistence', () => {
   assert.equal(DEFAULT_CANVAS_VIEW_MODE, 'single');
   assert.equal(ALL_SHEETS_MIN_GAP, 0);
+  assert.equal(ALL_SHEETS_MARGIN, 0);
   assert.equal(normalizeCanvasViewMode('all'), 'all');
   assert.equal(normalizeCanvasViewMode('single'), 'single');
   assert.equal(normalizeCanvasViewMode('invalid'), 'single');
@@ -77,6 +82,7 @@ test('computeAllSheetsLayout places heterogeneous sheets linearly edge-to-edge w
   assert.equal(layoutA4.bySheetId.get('s1')?.originX, 0);
   assert.equal(layoutA4.bySheetId.get('s2')?.originX, 1200);
   assert.equal(layoutA4.bySheetId.get('s3')?.originX, 1200 + 1680);
+  assert.equal(layoutA4.totalWidth, 1200 + 1680 + 2380);
 
   // Resize Sheet 1 to A1 (3360x2376) -> subsequent sheets shift sequentially with zero gap and zero overlap
   const s1Large = makeSheet('s1', 1, 3360, 2376);
@@ -114,10 +120,11 @@ test('inserting or reordering sheets dynamically re-indexes all subsequent canva
   assert.equal(afterReorder.bySheetId.get('s2')?.originX, 1680 + 1200);
 });
 
-test('getSheetCanvasOrigin, hit-testing, and camera fit transform target the clicked sheet in all mode', () => {
+test('getSheetCanvasOrigin, hit-testing, zero-margin fit, and infinite-strip scroll calculations work seamlessly', () => {
   const s1 = makeSheet('s1', 1, 1680, 1188);
   const s2 = makeSheet('s2', 2, 1200, 848);
-  const layout = computeAllSheetsLayout([s1, s2]);
+  const s3 = makeSheet('s3', 3, 1200, 848);
+  const layout = computeAllSheetsLayout([s1, s2, s3]);
   const expectedS2OriginX = 1680;
 
   assert.deepEqual(getSheetCanvasOrigin(layout, 's2', 'single'), { x: 0, y: 0 });
@@ -128,11 +135,36 @@ test('getSheetCanvasOrigin, hit-testing, and camera fit transform target the cli
   assert.equal(findSheetSlotAtCanvasPoint(layout, expectedS2OriginX - 1, 200)?.sheet.id, 's1');
   assert.equal(findSheetSlotAtCanvasPoint(layout, expectedS2OriginX, 200)?.sheet.id, 's2');
   assert.equal(findSheetSlotAtCanvasPoint(layout, expectedS2OriginX + 300, 200)?.sheet.id, 's2');
-  assert.equal(findSheetSlotAtCanvasPoint(layout, expectedS2OriginX + 1200 + 10, 200), null);
+  assert.equal(findSheetSlotAtCanvasPoint(layout, layout.totalWidth + 10, 200), null);
 
-  const fit2 = computeSheetViewportFitTransform(s2, origin2, 1280, 760);
+  const fit1Exact = computeSheetViewportFitTransform(s1, { x: 0, y: 0 }, 1680, 1188, { mode: 'all' });
+  assert.equal(fit1Exact.zoom, 1);
+  assert.deepEqual(fit1Exact.pan, { x: 0, y: 0 });
+  const fit1All = computeSheetViewportFitTransform(s1, { x: 0, y: 0 }, 1200, 848, { mode: 'all' });
+  // Zero-margin fit centers cleanly without artificial 8px/6px clamping
+  assert.ok(Math.abs(fit1All.pan.x) < 2 && Math.abs(fit1All.pan.y) < 2);
+
+  const fit2 = computeSheetViewportFitTransform(s2, origin2, 1280, 760, { mode: 'all' });
   const centeredSheetLeft = origin2.x * fit2.zoom + fit2.pan.x;
   const centeredSheetRight = (origin2.x + s2.width) * fit2.zoom + fit2.pan.x;
   const midX = (centeredSheetLeft + centeredSheetRight) / 2;
   assert.ok(Math.abs(midX - 1280 / 2) <= 2, `Expected sheet 2 centered around 640, got ${midX}`);
+
+  // Strip scroll metrics & progress mapping (viewportWidth=1000 at zoom=1.0)
+  const startMetrics = computeAllSheetsStripMetrics(layout, { x: 0, y: 0 }, 1000, 760, 1.0);
+  assert.equal(startMetrics.scrollProgress, 0);
+  assert.equal(startMetrics.centeredSheetId, 's1');
+
+  const midPan = computePanForStripProgress(layout, 0.5, 0, 1000, 1.0);
+  const midMetrics = computeAllSheetsStripMetrics(layout, midPan, 1000, 760, 1.0);
+  assert.ok(Math.abs(midMetrics.scrollProgress - 0.5) < 0.01);
+  assert.equal(midMetrics.centeredSheetId, 's2');
+
+  const endPan = computePanForStripProgress(layout, 1, 0, 1000, 1.0);
+  const endMetrics = computeAllSheetsStripMetrics(layout, endPan, 1000, 760, 1.0);
+  assert.ok(Math.abs(endMetrics.scrollProgress - 1) < 0.01);
+  assert.equal(endMetrics.centeredSheetId, 's3');
+
+  const clamped = clampAllSheetsStripPan(layout, { x: 9999, y: 9999 }, 1000, 760, 1.0);
+  assert.equal(clamped.x, 0);
 });

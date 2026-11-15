@@ -200,7 +200,7 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
 
   // Proportionally guard left/right/center top pills using effective (scale-normalized) width so 100%..150% never overlap
   const effW = vw / f;
-  const rawLeftPill = Math.round((effW >= 1536 ? 408 : effW >= 1100 ? 304 : 230) * f);
+  const rawLeftPill = Math.round((effW >= 1400 ? 418 : effW >= 1200 ? 394 : effW >= 1024 ? 330 : 230) * f);
   const rawRightPill = Math.round((effW >= 1536 ? 500 : effW >= 1100 ? 484 : 372) * f);
   const minCenterGap = Math.max(220, Math.round(Math.min(360, vw * 0.28)));
   const topHorizontalBudget = Math.max(240, vw - 2 * outerPad - 2 * gutter - minCenterGap);

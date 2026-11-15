@@ -633,10 +633,10 @@ export function buildTopSearchItems(project: E3Project): CommandPaletteItem[] {
     {
       id: 'feat-exchange',
       title: 'Обмен и экспорт E³.series / Flux',
-      subtitle: 'Выгрузка и импорт .e3s, XML, Flux-архивов и сборка Portable',
+      subtitle: 'Выгрузка и импорт .e3flux, .e3s, XML и Flux Bridge JSON',
       category: 'feature',
       scope: 'top',
-      keywords: ['e3', 'e3s', 'e3series', 'xml', 'импорт', 'экспорт', 'portable', 'обмен'],
+      keywords: ['e3', 'e3s', 'e3flux', 'e3series', 'xml', 'импорт', 'экспорт', 'обмен'],
       action: { type: 'open-exchange' },
     },
     {

@@ -74,7 +74,6 @@ interface BottomConsoleProps {
   onDownloadCablesCsv?: () => void;
   onDownloadNetLengthsCsv?: () => void;
   onOpenReportModal?: () => void;
-  onOpenFluxPublishModal?: () => void;
   onOpenTerminalEditor?: () => void;
   onClearLogs?: () => void;
   onOpenHealthDashboard?: () => void;
@@ -110,7 +109,6 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
   onDownloadCablesCsv,
   onDownloadNetLengthsCsv,
   onOpenReportModal,
-  onOpenFluxPublishModal,
   onOpenTerminalEditor,
   onClearLogs,
   onOpenHealthDashboard,
@@ -1215,15 +1213,6 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-1 shrink-0">
-                      {onOpenFluxPublishModal && (
-                        <button
-                          type="button"
-                          onClick={onOpenFluxPublishModal}
-                          className="inline-flex items-center gap-1 min-h-[calc(21px*var(--flux-ui-scale))] h-auto py-0.5 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
-                        >
-                          <span>Студия Flux</span>
-                        </button>
-                      )}
                       <button
                         type="button"
                         disabled={apiBusy}
