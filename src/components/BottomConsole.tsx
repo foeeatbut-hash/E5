@@ -40,11 +40,13 @@ import type {
   TerminalPlanRow,
 } from '../core/e3Types';
 import { createFluxBusLogEntry, detectFluxHost, invokeFluxModule } from '../core/fluxHostBridge';
+import type { UiWorkspaceMode } from '../core/uiMode';
 
 export type ConsoleTab = 'bom' | 'cables' | 'erc' | 'logs' | 'api';
 export type ApiSubTab = 'own' | 'flux-internal' | 'external';
 
 interface BottomConsoleProps {
+  uiMode?: UiWorkspaceMode;
   project: E3Project;
   activeTab: ConsoleTab;
   collapsed: boolean;
@@ -65,6 +67,7 @@ interface BottomConsoleProps {
   onExpandPanel: () => void;
   onToggleCollapse: () => void;
   onJumpToIssue: (issue: ErcIssue) => void;
+  onQuickFixIssue?: (issue: ErcIssue) => void;
   onSelectDeviceByDesignation?: (designation: string) => void;
   onHighlightNet?: (netName: string) => void;
   onDownloadBomCsv?: () => void;
@@ -79,6 +82,7 @@ interface BottomConsoleProps {
 }
 
 export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
+  uiMode = 'classic',
   project,
   activeTab,
   collapsed,
@@ -99,6 +103,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
   onExpandPanel,
   onToggleCollapse,
   onJumpToIssue,
+  onQuickFixIssue,
   onSelectDeviceByDesignation,
   onHighlightNet,
   onDownloadBomCsv,
@@ -144,6 +149,22 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
   );
   const [extStatusMsg, setExtStatusMsg] = useState<string | null>(null);
 
+  // Hybrid 50/50 split active tab state per half
+  const [hybridLeftTab, setHybridLeftTab] = useState<'bom' | 'cables'>(
+    activeTab === 'cables' ? 'cables' : 'bom'
+  );
+  const [hybridRightTab, setHybridRightTab] = useState<'erc' | 'logs' | 'api'>(
+    activeTab === 'logs' || activeTab === 'api' ? activeTab : 'erc'
+  );
+
+  useEffect(() => {
+    if (activeTab === 'bom' || activeTab === 'cables') {
+      setHybridLeftTab(activeTab);
+    } else if (activeTab === 'erc' || activeTab === 'logs' || activeTab === 'api') {
+      setHybridRightTab(activeTab);
+    }
+  }, [activeTab]);
+
   useEffect(() => {
     if (requestedApiSubTab) {
       setApiSubTab(requestedApiSubTab);
@@ -162,11 +183,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
     }
   }, []);
 
+  const isApiVisible = uiMode === 'hybrid' ? hybridRightTab === 'api' : activeTab === 'api';
   useEffect(() => {
-    if (activeTab === 'api' && apiSubTab === 'external') {
+    if (isApiVisible && apiSubTab === 'external') {
       void loadWebhooks();
     }
-  }, [activeTab, apiSubTab, loadWebhooks]);
+  }, [isApiVisible, apiSubTab, loadWebhooks]);
 
   const fluxHostStatus = useMemo(() => detectFluxHost(), []);
 
@@ -457,129 +479,125 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
     </div>
   );
 
-  const bodyElement = !collapsed ? (
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden flux-glass-panel">
-      {/* TAB 1: BOM (Спецификация ПЭ3) */}
-      {activeTab === 'bom' && (
-        <>
-          <div className="h-6 px-2 border-b border-[var(--flux-line)] flux-glass-surface flex items-center justify-between gap-2 shrink-0">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <input
-                        type="search"
-                        spellCheck={false}
-                        value={bomQuery}
-                        onChange={(e) => setBomQuery(e.target.value)}
-                        placeholder="Поиск по ПЭ3 (позиция, артикул, завод)…"
-                        aria-label="Фильтр спецификации ПЭ3"
-                        className="w-64 max-w-full h-[calc(19px*var(--flux-ui-scale))] px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
-                      />
-                      <span className="hidden sm:inline text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
-                        {filteredBom.length} из {bom.length} поз. · {totalDevicesInBom} шт.
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {onDownloadBomCsv && (
-                        <button
-                          type="button"
-                          onClick={onDownloadBomCsv}
-                          title="Скачать таблицу спецификации ПЭ3 для Excel (.csv)"
-                          className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
-                        >
-                          <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
-                          <span>CSV ПЭ3</span>
-                        </button>
-                      )}
-                      {onOpenReportModal && (
-                        <button
-                          type="button"
-                          onClick={onOpenReportModal}
-                          title="Открыть печатную ведомость ГОСТ 2.701"
-                          className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
-                        >
-                          <Printer className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
-                          <span>Ведомость</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex-1 overflow-auto bg-[var(--flux-surface)]">
-                    <table className="w-full border-collapse text-[length:calc(11px*var(--flux-ui-scale))] leading-[calc(15px*var(--flux-ui-scale))]">
-                      <thead className="sticky top-0 z-10 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-                        <tr className="divide-x divide-[var(--flux-line)]/60">
-                          <th className="text-left font-medium px-2 py-[3px] w-10 whitespace-nowrap">Поз.</th>
-                          <th className="text-left font-medium px-2 py-[3px] w-32 whitespace-nowrap">Обозначение</th>
-                          <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Наименование</th>
-                          <th className="text-left font-medium px-2 py-[3px] w-40 whitespace-nowrap">Артикул</th>
-                          <th className="text-left font-medium px-2 py-[3px] w-44 whitespace-nowrap">Производитель</th>
-                          <th className="text-right font-medium px-2 py-[3px] w-16 whitespace-nowrap">Кол-во</th>
-                          <th className="text-left font-medium px-2 py-[3px] w-12 whitespace-nowrap">Ед.</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--flux-line)]">
-                        {filteredBom.length === 0 ? (
-                          <tr>
-                            <td colSpan={7} className="px-3 py-4 text-center text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-                              <span>Позиции по фильтру не найдены. </span>
-                              {bomQuery && (
-                                <button
-                                  type="button"
-                                  onClick={() => setBomQuery('')}
-                                  className="text-[var(--flux-accent)] hover:underline ml-1"
-                                >
-                                  Сбросить
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredBom.map((row) => {
-                            const firstDes = row.designations[0];
-                            return (
-                              <tr
-                                key={`${row.pos}-${row.article}`}
-                                onClick={() => firstDes && onSelectDeviceByDesignation?.(firstDes)}
-                                title={
-                                  firstDes && onSelectDeviceByDesignation
-                                    ? `Показать ${firstDes} на схеме`
-                                    : undefined
-                                }
-                                className={`divide-x divide-[var(--flux-line)]/50 hover:bg-[var(--flux-hover)] transition-colors ${
-                                  firstDes && onSelectDeviceByDesignation ? 'cursor-pointer' : ''
-                                }`}
-                              >
-                                <td className="px-2 py-[3px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
-                                  {row.pos}
-                                </td>
-                                <td className="px-2 py-[3px] font-mono font-medium text-[var(--flux-text)] truncate max-w-[calc(140px*var(--flux-ui-scale))] whitespace-nowrap">
-                                  {row.designationText}
-                                </td>
-                                <td className="px-2 py-[3px] text-[var(--flux-text)]">{row.componentName}</td>
-                                <td className="px-2 py-[3px] font-mono text-[var(--flux-text)] whitespace-nowrap">
-                                  {row.article}
-                                </td>
-                                <td className="px-2 py-[3px] text-[var(--flux-text-muted)] whitespace-nowrap">
-                                  {row.manufacturer}
-                                </td>
-                                <td className="px-2 py-[3px] text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
-                                  {row.quantity}
-                                </td>
-                                <td className="px-2 py-[3px] text-[var(--flux-text-muted)] whitespace-nowrap">
-                                  {row.unit}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
+  const bomPaneContent = (
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
+      <div className="h-6 px-2 border-b border-[var(--flux-line)] flux-glass-surface flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <input
+            type="search"
+            spellCheck={false}
+            value={bomQuery}
+            onChange={(e) => setBomQuery(e.target.value)}
+            placeholder="Поиск по ПЭ3 (позиция, артикул, завод)…"
+            aria-label="Фильтр спецификации ПЭ3"
+            className="w-56 max-w-full h-[calc(19px*var(--flux-ui-scale))] px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+          />
+          <span className="hidden sm:inline text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
+            {filteredBom.length} из {bom.length} поз. · {totalDevicesInBom} шт.
+          </span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {onDownloadBomCsv && (
+            <button
+              type="button"
+              onClick={onDownloadBomCsv}
+              title="Скачать таблицу спецификации ПЭ3 для Excel (.csv)"
+              className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
+            >
+              <Download className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
+              <span>CSV ПЭ3</span>
+            </button>
+          )}
+          {onOpenReportModal && (
+            <button
+              type="button"
+              onClick={onOpenReportModal}
+              title="Открыть печатную ведомость ГОСТ 2.701"
+              className="inline-flex items-center gap-1 h-[calc(19px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
+            >
+              <Printer className="w-2.5 h-2.5 text-[var(--flux-text-muted)]" />
+              <span>Ведомость</span>
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto bg-[var(--flux-surface)]">
+        <table className="w-full border-collapse text-[length:calc(11px*var(--flux-ui-scale))] leading-[calc(15px*var(--flux-ui-scale))]">
+          <thead className="sticky top-0 z-10 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+            <tr className="divide-x divide-[var(--flux-line)]/60">
+              <th className="text-left font-medium px-2 py-[3px] w-10 whitespace-nowrap">Поз.</th>
+              <th className="text-left font-medium px-2 py-[3px] w-28 whitespace-nowrap">Обозначение</th>
+              <th className="text-left font-medium px-2 py-[3px] whitespace-nowrap">Наименование</th>
+              <th className="text-left font-medium px-2 py-[3px] w-36 whitespace-nowrap">Артикул</th>
+              <th className="text-left font-medium px-2 py-[3px] w-36 whitespace-nowrap">Производитель</th>
+              <th className="text-right font-medium px-2 py-[3px] w-14 whitespace-nowrap">Кол-во</th>
+              <th className="text-left font-medium px-2 py-[3px] w-10 whitespace-nowrap">Ед.</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--flux-line)]">
+            {filteredBom.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-4 text-center text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                  <span>Позиции по фильтру не найдены. </span>
+                  {bomQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setBomQuery('')}
+                      className="text-[var(--flux-accent)] hover:underline ml-1"
+                    >
+                      Сбросить
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ) : (
+              filteredBom.map((row) => {
+                const firstDes = row.designations[0];
+                return (
+                  <tr
+                    key={`${row.pos}-${row.article}`}
+                    onClick={() => firstDes && onSelectDeviceByDesignation?.(firstDes)}
+                    title={
+                      firstDes && onSelectDeviceByDesignation
+                        ? `Показать ${firstDes} на схеме`
+                        : undefined
+                    }
+                    className={`divide-x divide-[var(--flux-line)]/50 hover:bg-[var(--flux-hover)] transition-colors ${
+                      firstDes && onSelectDeviceByDesignation ? 'cursor-pointer' : ''
+                    }`}
+                  >
+                    <td className="px-2 py-[3px] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
+                      {row.pos}
+                    </td>
+                    <td className="px-2 py-[3px] font-mono font-medium text-[var(--flux-text)] truncate max-w-[calc(140px*var(--flux-ui-scale))] whitespace-nowrap">
+                      {row.designationText}
+                    </td>
+                    <td className="px-2 py-[3px] text-[var(--flux-text)]">{row.componentName}</td>
+                    <td className="px-2 py-[3px] font-mono text-[var(--flux-text)] whitespace-nowrap">
+                      {row.article}
+                    </td>
+                    <td className="px-2 py-[3px] text-[var(--flux-text-muted)] whitespace-nowrap">
+                      {row.manufacturer}
+                    </td>
+                    <td className="px-2 py-[3px] text-right font-mono tabular-nums font-medium text-[var(--flux-text)] whitespace-nowrap">
+                      {row.quantity}
+                    </td>
+                    <td className="px-2 py-[3px] text-[var(--flux-text-muted)] whitespace-nowrap">
+                      {row.unit}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
-              {/* TAB 2: Cables & Terminals */}
-              {activeTab === 'cables' && (
-                <>
-                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
+  const cablesPaneContent = (
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
+      <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
                     <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
                       <button
                         type="button"
@@ -856,14 +874,13 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         </tbody>
                       </table>
                     )}
-                  </div>
-                </>
-              )}
+      </div>
+    </div>
+  );
 
-              {/* TAB 3: ERC Diagnostics */}
-              {activeTab === 'erc' && (
-                <>
-                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
+  const ercPaneContent = (
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
+      <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
                     <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
                       {(
                         [
@@ -915,14 +932,16 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                           ? project.sheets.find((s) => s.id === issue.sheetId)
                           : undefined;
                         return (
-                          <button
+                          <div
                             key={issue.id}
-                            type="button"
                             data-testid={`erc-issue-${issue.id}`}
-                            onClick={() => onJumpToIssue(issue)}
-                            className="w-full px-2 py-1 flex items-center justify-between gap-2 text-left hover:bg-[var(--flux-hover)] transition-colors"
+                            className="w-full px-2 py-1 flex items-center justify-between gap-2 hover:bg-[var(--flux-hover)] transition-colors"
                           >
-                            <div className="flex items-center gap-2 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => onJumpToIssue(issue)}
+                              className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                            >
                               <span
                                 className={`w-2 h-2 rounded-[1px] shrink-0 ${
                                   issue.severity === 'error'
@@ -943,22 +962,39 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                               <span className="text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)] truncate">
                                 {issue.message}
                               </span>
+                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {onQuickFixIssue &&
+                                (issue.code === 'E3-DUP-DES' ||
+                                  issue.code === 'E3-POTENTIAL-CONFLICT' ||
+                                  issue.code === 'E3-FLUX-REMOVED') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onQuickFixIssue(issue)}
+                                    className="px-1.5 py-0.5 rounded-[4px] border border-[var(--flux-accent)]/50 bg-[var(--flux-accent-soft)] hover:bg-[var(--flux-accent)] hover:text-white text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] transition-colors"
+                                  >
+                                    Исправить
+                                  </button>
+                                )}
+                              <button
+                                type="button"
+                                onClick={() => onJumpToIssue(issue)}
+                                className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] shrink-0"
+                              >
+                                Перейти →
+                              </button>
                             </div>
-                            <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] shrink-0">
-                              Перейти →
-                            </span>
-                          </button>
+                          </div>
                         );
                       })
                     )}
-                  </div>
-                </>
-              )}
+      </div>
+    </div>
+  );
 
-              {/* TAB 4: Process Logs */}
-              {activeTab === 'logs' && (
-                <>
-                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
+  const logsPaneContent = (
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
+      <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
                     <div className="flex items-center gap-1 min-w-0">
                       <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
                         {(['ALL', 'INFO', 'SYNC', 'WARN', 'ERROR'] as const).map((lvl) => {
@@ -1129,13 +1165,12 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         );
                       })
                     )}
-                  </div>
-                </>
-              )}
+      </div>
+    </div>
+  );
 
-              {/* TAB 5: 3-Tier API & Flux Synchronization */}
-              {activeTab === 'api' && (
-                <div className="flex-1 min-h-0 flex flex-col overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))] bg-[var(--flux-surface)]">
+  const apiPaneContent = (
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))] bg-[var(--flux-surface)]">
                   <div className="h-6 px-2 border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0">
                     <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
                       <button
@@ -1584,8 +1619,183 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                       </div>
                     </div>
                   )}
-                </div>
-              )}
+    </div>
+  );
+
+  /* HYBRID MODE (Variant A): 50/50 Simultaneous Split with TOP .ct Tabs */
+  if (uiMode === 'hybrid') {
+    const hybridTabBtn = (
+      id: ConsoleTab,
+      label: string,
+      active: boolean,
+      onClick: () => void,
+      count?: number,
+      alert?: boolean
+    ) => (
+      <button
+        key={id}
+        type="button"
+        data-testid={`console-tab-${id}`}
+        aria-pressed={active && !collapsed}
+        onClick={onClick}
+        className={`relative h-full px-2 inline-flex items-center gap-1.5 text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors border-t-2 ${
+          active && !collapsed
+            ? 'bg-[var(--flux-surface)] border-t-[var(--flux-accent)] text-[var(--flux-text)] font-semibold'
+            : 'border-t-transparent text-[var(--flux-text-muted)] font-medium hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+        }`}
+      >
+        <span>{label}</span>
+        {count !== undefined && (
+          <span
+            className={`font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] ${
+              alert
+                ? 'text-rose-600 dark:text-rose-400 font-semibold'
+                : active && !collapsed
+                  ? 'text-[var(--flux-accent)]'
+                  : 'text-[var(--flux-text-muted)]'
+            }`}
+          >
+            {count}
+          </span>
+        )}
+      </button>
+    );
+
+    if (collapsed) {
+      return (
+        <section
+          aria-label="Спецификации, отчёты, диагностика и API"
+          data-testid="bottom-console"
+          className="no-print w-full max-w-full h-full flex-1 min-w-0 min-h-0 bg-[var(--flux-surface-alt)] flex flex-col overflow-hidden"
+        >
+          <div
+            data-testid="console-tab-strip"
+            className="h-6 pr-1.5 flux-glass-bar border-t border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 min-w-0 select-none"
+          >
+            <div className="flex items-center overflow-x-auto no-scrollbar min-w-0 flex-1 h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+              {hybridTabBtn('bom', 'Спецификация ПЭ3', hybridLeftTab === 'bom', () => {
+                setHybridLeftTab('bom');
+                onSetTab('bom');
+                onExpandPanel();
+              }, bom.length)}
+              {hybridTabBtn('cables', 'Кабели и клеммы', hybridLeftTab === 'cables', () => {
+                setHybridLeftTab('cables');
+                onSetTab('cables');
+                onExpandPanel();
+              }, cables.length)}
+              {hybridTabBtn('erc', 'Проверка ERC', hybridRightTab === 'erc', () => {
+                setHybridRightTab('erc');
+                onSetTab('erc');
+                onExpandPanel();
+              }, erc.length, errorCount > 0)}
+              {hybridTabBtn('logs', 'Логи', hybridRightTab === 'logs', () => {
+                setHybridRightTab('logs');
+                onSetTab('logs');
+                onExpandPanel();
+              }, logs.length)}
+              {hybridTabBtn('api', 'API', hybridRightTab === 'api', () => {
+                setHybridRightTab('api');
+                onSetTab('api');
+                onExpandPanel();
+              })}
+            </div>
+            <button
+              type="button"
+              data-testid="console-collapse-btn"
+              onClick={onToggleCollapse}
+              title="Развернуть нижнюю панель"
+              aria-label="Развернуть нижнюю панель"
+              className="inline-flex items-center justify-center w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+            >
+              <ChevronUp className="w-3 h-3" />
+            </button>
+          </div>
+        </section>
+      );
+    }
+
+    return (
+      <section
+        aria-label="Спецификации ПЭ3, кабели, ERC и API (50/50)"
+        data-testid="bottom-console"
+        className="no-print w-full max-w-full h-full flex-1 min-w-0 min-h-0 bg-[var(--flux-surface)] grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-[var(--flux-line)] overflow-hidden"
+      >
+        {/* Left Half: ПЭ3 | Кабели with TOP tabs */}
+        <div className="flex flex-col min-h-0 min-w-0 overflow-hidden">
+          <div
+            data-testid="hybrid-console-left-tabs"
+            className="h-6 pr-2 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 select-none"
+          >
+            <div className="flex items-center h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+              {hybridTabBtn('bom', 'Спецификация ПЭ3', hybridLeftTab === 'bom', () => {
+                setHybridLeftTab('bom');
+                onSetTab('bom');
+              }, bom.length)}
+              {hybridTabBtn('cables', 'Кабели и клеммы', hybridLeftTab === 'cables', () => {
+                setHybridLeftTab('cables');
+                onSetTab('cables');
+              }, cables.length)}
+            </div>
+            <span className="hidden xl:inline font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate">
+              Изд.: {totalDevicesInBom} · Цепей: {project.wires.length}
+            </span>
+          </div>
+          {hybridLeftTab === 'bom' ? bomPaneContent : cablesPaneContent}
+        </div>
+
+        {/* Right Half: ERC | Логи | API with TOP tabs */}
+        <div data-testid="hybrid-split-erc" className="flex flex-col min-h-0 min-w-0 overflow-hidden">
+          <div
+            data-testid="hybrid-console-right-tabs"
+            className="h-6 pr-1.5 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 select-none"
+          >
+            <div className="flex items-center h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+              {hybridTabBtn('erc', 'Проверка ERC', hybridRightTab === 'erc', () => {
+                setHybridRightTab('erc');
+                onSetTab('erc');
+              }, erc.length, errorCount > 0)}
+              {hybridTabBtn('logs', 'Логи', hybridRightTab === 'logs', () => {
+                setHybridRightTab('logs');
+                onSetTab('logs');
+              }, logs.length)}
+              {hybridTabBtn('api', 'API', hybridRightTab === 'api', () => {
+                setHybridRightTab('api');
+                onSetTab('api');
+              })}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className={`hidden sm:inline font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] ${errorCount > 0 ? 'text-rose-500' : 'text-[var(--flux-text-muted)]'}`}>
+                Ош:{errorCount} · Пр:{warningCount}
+              </span>
+              <button
+                type="button"
+                data-testid="console-collapse-btn"
+                onClick={onToggleCollapse}
+                title="Свернуть нижнюю панель"
+                aria-label="Свернуть нижнюю панель"
+                className="inline-flex items-center justify-center w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors"
+              >
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+          {hybridRightTab === 'erc'
+            ? ercPaneContent
+            : hybridRightTab === 'logs'
+              ? logsPaneContent
+              : apiPaneContent}
+        </div>
+      </section>
+    );
+  }
+
+  const bodyElement = !collapsed ? (
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden flux-glass-panel">
+      {activeTab === 'bom' && bomPaneContent}
+      {activeTab === 'cables' && cablesPaneContent}
+      {activeTab === 'erc' && ercPaneContent}
+      {activeTab === 'logs' && logsPaneContent}
+      {activeTab === 'api' && apiPaneContent}
     </div>
   ) : null;
 

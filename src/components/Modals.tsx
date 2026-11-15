@@ -20,6 +20,7 @@ import type {
   SignalType,
 } from '../core/e3Types';
 import { UI_SCALE_OPTIONS, type UiScalePercent } from '../core/uiScale';
+import { UI_MODE_OPTIONS, type UiWorkspaceMode } from '../core/uiMode';
 
 export interface E3BridgeStatusInfo {
   isWin32: boolean;
@@ -415,6 +416,8 @@ interface VisualSettingsModalProps {
   settings: E3VisualSettings;
   uiScale?: UiScalePercent;
   onChangeUiScale?: (scale: UiScalePercent) => void;
+  uiMode?: UiWorkspaceMode;
+  onChangeUiMode?: (mode: UiWorkspaceMode) => void;
   onClose: () => void;
   onApply: (next: E3VisualSettings) => void;
 }
@@ -434,6 +437,8 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
   settings,
   uiScale = 100,
   onChangeUiScale,
+  uiMode = 'classic',
+  onChangeUiMode,
   onClose,
   onApply,
 }) => {
@@ -488,6 +493,50 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = ({
       closeAriaLabel="Закрыть настройки визуализации"
     >
         <div className="flex-1 min-h-0 p-4 space-y-4 overflow-y-auto text-[length:calc(12px*var(--flux-ui-scale))]">
+          {onChangeUiMode && (
+            <div
+              data-testid="vs-ui-mode-switcher"
+              className="p-2.5 rounded-lg border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
+                  Режим интерфейса программы
+                </span>
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                  все функции одинаковы
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                {UI_MODE_OPTIONS.map((opt) => {
+                  const active = uiMode === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      data-testid={`vs-ui-mode-${opt.id}`}
+                      aria-pressed={active}
+                      onClick={() => onChangeUiMode(opt.id)}
+                      className={`p-2 rounded border text-left transition-colors ${
+                        active
+                          ? 'bg-[var(--flux-sel)] border-[var(--flux-accent)] text-[var(--flux-text)]'
+                          : 'border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
+                      }`}
+                    >
+                      <div className="text-[length:calc(9.5px*var(--flux-ui-scale))] font-mono text-[var(--flux-accent)] uppercase">
+                        {opt.groupLabel}
+                      </div>
+                      <div className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold truncate mt-0.5">
+                        {opt.label}
+                      </div>
+                      <div className="text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] leading-snug mt-0.5">
+                        {opt.description}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {onChangeUiScale && (
             <div className="p-2.5 rounded-lg border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-1.5">
               <div className="flex items-center justify-between gap-2">

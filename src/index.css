@@ -100,6 +100,57 @@
   --flux-window-shadow: 0 28px 72px -12px rgba(0, 0, 0, 0.76), 0 10px 28px -6px rgba(0, 0, 0, 0.48);
 }
 
+/* Precision Graphite / Daylight Paper teal tokens for New UI modes (Hybrid A & Focus-Canvas B) */
+:root[data-ui-mode="hybrid"],
+:root[data-ui-mode="focus"] {
+  --flux-surface: #ffffff;
+  --flux-surface-alt: #f6f8fa;
+  --flux-bg: #f1f3f5;
+  --flux-hover: #e5e9ee;
+  --flux-sel: rgba(15, 118, 110, 0.12);
+  --flux-line: rgba(15, 23, 42, 0.10);
+  --flux-line-strong: rgba(15, 23, 42, 0.20);
+  --flux-text: #111827;
+  --flux-text-muted: #4b5563;
+  --flux-accent: #0f766e;
+  --flux-accent-hover: #115e59;
+  --flux-accent-solid: #0f766e;
+  --flux-accent-solid-hover: #0d665f;
+  --flux-accent-soft: rgba(15, 118, 110, 0.11);
+  --flux-focus: #0f766e;
+  --flux-canvas-bg: #e5e8ec;
+  --flux-grid-dot: #c4cbd4;
+}
+
+.dark:root[data-ui-mode="hybrid"],
+.dark:root[data-ui-mode="focus"] {
+  --flux-surface: #1b1e23;
+  --flux-surface-alt: #16191d;
+  --flux-bg: #141619;
+  --flux-hover: #262b33;
+  --flux-sel: rgba(45, 212, 191, 0.14);
+  --flux-line: rgba(226, 232, 240, 0.10);
+  --flux-line-strong: rgba(226, 232, 240, 0.19);
+  --flux-text: #eef2f6;
+  --flux-text-muted: #8b95a5;
+  --flux-accent: #2dd4bf;
+  --flux-accent-hover: #5eead4;
+  --flux-accent-solid: #0f766e;
+  --flux-accent-solid-hover: #115e59;
+  --flux-accent-soft: rgba(45, 212, 191, 0.14);
+  --flux-focus: #2dd4bf;
+  --flux-canvas-bg: #101215;
+  --flux-grid-dot: #2a2f37;
+
+  /* Precision Graphite semi-transparent floating dock & popover surfaces */
+  --flux-glass-bg: rgba(22, 25, 29, 0.80);
+  --flux-glass-surface: rgba(27, 30, 35, 0.84);
+  --flux-glass-surface-alt: rgba(22, 25, 29, 0.80);
+  --flux-glass-modal: rgba(24, 27, 32, 0.88);
+  --flux-glass-border: rgba(255, 255, 255, 0.11);
+  --flux-glass-specular: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
 html {
   height: 100%;
   margin: 0;
@@ -382,4 +433,14 @@ textarea:focus-visible,
   .no-print {
     display: none !important;
   }
+}
+
+@keyframes fluxPotentialFlow {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+.flux-potential-flow {
+  stroke-dasharray: 6 6;
+  animation: fluxPotentialFlow 0.75s linear infinite;
 }

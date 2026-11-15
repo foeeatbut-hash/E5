@@ -363,7 +363,7 @@ export interface E3VisualSettings {
   netColors: Record<SignalType, string>;
 }
 
-export type CadTool = 'select' | 'wire' | 'pan' | 'text' | 'rect' | 'callout' | 'offpage';
+export type CadTool = 'select' | 'wire' | 'pan' | 'text' | 'rect' | 'callout' | 'offpage' | 'measure';
 
 export type AnnotationKind = 'text' | 'rect' | 'callout' | 'bom_table' | 'cable_table';
 export type AnnotationStrokeStyle = 'solid' | 'dashed' | 'dotted';

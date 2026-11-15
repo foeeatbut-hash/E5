@@ -13,7 +13,7 @@ import type {
   SheetFormat,
 } from './e3Types.ts';
 
-export type HvacTemplateId = 'supply_ahu' | 'exhaust_ahu' | 'avo';
+export type HvacTemplateId = 'supply_ahu' | 'exhaust_ahu' | 'supply_exhaust_recovery' | 'avo';
 
 export interface FluxHvacSpecs {
   systemTag: string;
@@ -27,6 +27,8 @@ export interface FluxHvacSpecs {
   hasFilter: boolean;
   hasOutletDamper: boolean;
   hasLocalPost: boolean;
+  hasFanRedundancy?: boolean;
+  hasFreezeProtection?: boolean;
 }
 
 export interface HvacWizardStage {
@@ -45,6 +47,8 @@ export interface HvacBuildOptions {
   fontFamily: SchematicFontFamily;
   createExternalWiringSheet: boolean;
   replaceExistingHvacSheets?: boolean;
+  hasFanRedundancy?: boolean;
+  hasFreezeProtection?: boolean;
   stages: HvacWizardStage[];
 }
 
@@ -211,9 +215,12 @@ export function matchProductFromFlux(
 export function buildDefaultHvacStages(
   templateId: HvacTemplateId,
   specs: FluxHvacSpecs,
-  catalog: CatalogItem[]
+  catalog: CatalogItem[],
+  options?: { hasFanRedundancy?: boolean; hasFreezeProtection?: boolean }
 ): HvacWizardStage[] {
   const roles: HvacStageRole[] = [];
+  const hasFanRedundancy = options?.hasFanRedundancy ?? specs.hasFanRedundancy;
+  const hasFreezeProtection = options?.hasFreezeProtection ?? specs.hasFreezeProtection;
 
   if (templateId === 'supply_ahu') {
     roles.push('intake_damper');
@@ -222,12 +229,27 @@ export function buildDefaultHvacStages(
     else if (specs.heatingType === 'electric') roles.push('electric_heater');
     if (specs.hasCooler) roles.push('cooler');
     roles.push('supply_fan');
+    if (hasFanRedundancy) roles.push('supply_fan');
     roles.push('temp_sensor');
+    if (hasFreezeProtection) roles.push('pressure_sensor');
     if (specs.hasOutletDamper) roles.push('outlet_damper');
     if (specs.hasLocalPost) roles.push('control_post');
   } else if (templateId === 'exhaust_ahu') {
     roles.push('intake_damper');
     if (specs.hasFilter) roles.push('filter');
+    roles.push('exhaust_fan');
+    if (specs.hasOutletDamper) roles.push('outlet_damper');
+    if (specs.hasLocalPost) roles.push('control_post');
+  } else if (templateId === 'supply_exhaust_recovery') {
+    roles.push('intake_damper');
+    if (specs.hasFilter) roles.push('filter');
+    if (specs.heatingType === 'water') roles.push('water_heater');
+    else if (specs.heatingType === 'electric') roles.push('electric_heater');
+    if (specs.hasCooler) roles.push('cooler');
+    roles.push('supply_fan');
+    if (hasFanRedundancy) roles.push('supply_fan');
+    roles.push('temp_sensor');
+    if (hasFreezeProtection) roles.push('pressure_sensor');
     roles.push('exhaust_fan');
     if (specs.hasOutletDamper) roles.push('outlet_damper');
     if (specs.hasLocalPost) roles.push('control_post');
@@ -801,4 +823,49 @@ export function generateHvacDiagram(
     createdDevicesCount,
     createdWiresCount,
   };
+}
+
+export function exportPlcIoCsv(
+  systemTag: string,
+  cabinetTag: string,
+  stages: HvacWizardStage[],
+  catalog: CatalogItem[]
+): string {
+  const header = ['№', 'Тег', 'Секция / Назначение', 'Изделие', 'DI', 'DO', 'AI', 'AO'];
+  const rows = stages.map((stg, idx) => {
+    const item = catalog.find((c) => c.id === stg.catalogItemId);
+    const io = item ? getIoProfile(item) : { di: 0, do: 0, ai: 0, ao: 0 };
+    return [
+      String(idx + 1),
+      stg.tagOverride || `${systemTag}-${idx + 1}`,
+      stg.label,
+      item?.componentName || stg.catalogItemId,
+      String(io.di),
+      String(io.do),
+      String(io.ai),
+      String(io.ao),
+    ];
+  });
+  const totals = rows.reduce(
+    (acc, r) => ({
+      di: acc.di + Number(r[4]),
+      do: acc.do + Number(r[5]),
+      ai: acc.ai + Number(r[6]),
+      ao: acc.ao + Number(r[7]),
+    }),
+    { di: 0, do: 0, ai: 0, ao: 0 }
+  );
+  rows.push(['ИТОГО', systemTag, `Шкаф ${cabinetTag}`, 'Без резерва', String(totals.di), String(totals.do), String(totals.ai), String(totals.ao)]);
+  rows.push([
+    'РЕЗЕРВ +20%',
+    systemTag,
+    `Шкаф ${cabinetTag}`,
+    'С учётом 20% резерва ПЛК',
+    String(Math.ceil(totals.di * 1.2)),
+    String(Math.ceil(totals.do * 1.2)),
+    String(Math.ceil(totals.ai * 1.2)),
+    String(Math.ceil(totals.ao * 1.2)),
+  ]);
+  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  return '\uFEFF' + [header, ...rows].map((r) => r.map(esc).join(';')).join('\r\n');
 }

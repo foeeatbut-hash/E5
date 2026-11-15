@@ -57,9 +57,11 @@ import type {
 } from '../core/e3Types';
 import type { StampFieldKey } from '../core/gostFrame';
 import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
+import { isNewUiMode, type UiWorkspaceMode } from '../core/uiMode';
 import { SymbolEditorInspector } from './SymbolEditorInspector';
 
 interface RightInspectorProps {
+  uiMode?: UiWorkspaceMode;
   project: E3Project;
   activeSheet: E3Sheet | undefined;
   customTemplates?: GostStampTemplate[];
@@ -75,6 +77,10 @@ interface RightInspectorProps {
   onRotateSelected?: () => void;
   onDuplicateSelected?: () => void;
   onDeleteSelected?: () => void;
+  onBatchUpdateDevices?: (
+    deviceIds: string[],
+    patch: { manufacturer?: string; article?: string; rotation?: 0 | 90 | 180 | 270 }
+  ) => void;
   onClearSelection?: () => void;
   onUpdateDevice: (deviceId: string, patch: Partial<E3Device>) => void;
   onSaveDeviceToCatalog?: (device: E3Device) => void;
@@ -107,7 +113,111 @@ const parseFiniteNum = (raw: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+function renderInspectorSymbolPreview(device: E3Device) {
+  if (device.customSymbol && device.customSymbol.shapes.length > 0) {
+    return (
+      <svg
+        viewBox={`0 0 ${Math.max(20, device.width)} ${Math.max(20, device.height)}`}
+        className="w-full h-full"
+        aria-hidden="true"
+      >
+        {device.customSymbol.shapes.map((sh) => {
+          if (sh.kind === 'line') {
+            return (
+              <line
+                key={sh.id}
+                x1={sh.x1}
+                y1={sh.y1}
+                x2={sh.x2}
+                y2={sh.y2}
+                stroke="var(--flux-accent)"
+                strokeWidth={Math.max(2, sh.strokeWidth || 2)}
+              />
+            );
+          }
+          if (sh.kind === 'rect') {
+            return (
+              <rect
+                key={sh.id}
+                x={sh.x}
+                y={sh.y}
+                width={sh.width}
+                height={sh.height}
+                fill="none"
+                stroke="var(--flux-accent)"
+                strokeWidth={Math.max(2, sh.strokeWidth || 2)}
+              />
+            );
+          }
+          if (sh.kind === 'circle') {
+            return (
+              <circle
+                key={sh.id}
+                cx={sh.cx}
+                cy={sh.cy}
+                r={sh.r}
+                fill="none"
+                stroke="var(--flux-accent)"
+                strokeWidth={Math.max(2, sh.strokeWidth || 2)}
+              />
+            );
+          }
+          return null;
+        })}
+      </svg>
+    );
+  }
+  const cat = device.category;
+  const stroke = 'currentColor';
+  if (cat === 'breaker') {
+    return (
+      <svg viewBox="0 0 28 28" className="w-full h-full text-[var(--flux-accent)]" fill="none" aria-hidden="true">
+        <line x1="14" y1="2" x2="14" y2="9" stroke={stroke} strokeWidth="1.7" />
+        <line x1="14" y1="9" x2="8" y2="19" stroke={stroke} strokeWidth="1.7" />
+        <line x1="14" y1="19" x2="14" y2="26" stroke={stroke} strokeWidth="1.7" />
+        <line x1="11" y1="9" x2="17" y2="9" stroke={stroke} strokeWidth="1.2" />
+      </svg>
+    );
+  }
+  if (cat === 'motor' || cat === 'fan' || cat === 'pump') {
+    return (
+      <svg viewBox="0 0 28 28" className="w-full h-full text-[var(--flux-accent)]" fill="none" aria-hidden="true">
+        <circle cx="14" cy="14" r="9" stroke={stroke} strokeWidth="1.6" />
+        <text x="14" y="17.5" textAnchor="middle" fontSize="10" fill={stroke} fontFamily="monospace" fontWeight="600">
+          {cat === 'fan' ? 'V' : cat === 'pump' ? 'P' : 'M'}
+        </text>
+      </svg>
+    );
+  }
+  if (cat === 'contactor' || cat === 'relay') {
+    return (
+      <svg viewBox="0 0 28 28" className="w-full h-full text-[var(--flux-accent)]" fill="none" aria-hidden="true">
+        <rect x="4" y="8" width="9" height="12" stroke={stroke} strokeWidth="1.5" />
+        <line x1="20" y1="4" x2="20" y2="10" stroke={stroke} strokeWidth="1.5" />
+        <line x1="20" y1="10" x2="24" y2="17" stroke={stroke} strokeWidth="1.5" />
+        <line x1="20" y1="17" x2="20" y2="24" stroke={stroke} strokeWidth="1.5" />
+      </svg>
+    );
+  }
+  if (cat === 'terminal') {
+    return (
+      <svg viewBox="0 0 28 28" className="w-full h-full text-[var(--flux-accent)]" fill="none" aria-hidden="true">
+        <circle cx="14" cy="14" r="6" stroke={stroke} strokeWidth="1.6" />
+        <line x1="14" y1="2" x2="14" y2="26" stroke={stroke} strokeWidth="1.5" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 28 28" className="w-full h-full text-[var(--flux-accent)]" fill="none" aria-hidden="true">
+      <rect x="5" y="7" width="18" height="14" rx="2" stroke={stroke} strokeWidth="1.5" />
+      <line x1="1" y1="14" x2="5" y2="14" stroke={stroke} strokeWidth="1.4" />
+      <line x1="23" y1="14" x2="27" y2="14" stroke={stroke} strokeWidth="1.4" />
+    </svg>
+  );
+}
+
 export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
+  uiMode = 'classic',
   project,
   activeSheet,
   customTemplates = [],
@@ -121,6 +231,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   onRotateSelected,
   onDuplicateSelected,
   onDeleteSelected,
+  onBatchUpdateDevices,
   onClearSelection,
   onUpdateDevice,
   onSaveDeviceToCatalog,
@@ -145,6 +256,10 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
   symbolWorkspace,
   onEditDeviceSymbol,
 }) => {
+  const isNewUi = isNewUiMode(uiMode);
+  const [deviceTab, setDeviceTab] = useState<'main' | 'pins' | 'attrs'>('main');
+  const [batchMfr, setBatchMfr] = useState('');
+  const [batchArticle, setBatchArticle] = useState('');
   const [newAttrName, setNewAttrName] = useState('');
   const [newAttrValue, setNewAttrValue] = useState('');
   const [copiedElId, setCopiedElId] = useState(false);
@@ -439,6 +554,50 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               <span>Операции над группой</span>
             </div>
             <div className="p-1.5 space-y-1">
+              {selectedDeviceIds.length >= 2 && onBatchUpdateDevices && (
+                <div
+                  data-testid="inspector-batch-update"
+                  className="mb-1.5 p-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] space-y-1.5"
+                >
+                  <div className="text-[length:calc(10px*var(--flux-ui-scale))] font-semibold uppercase tracking-wide text-[var(--flux-text-muted)]">
+                    Пакетные свойства ({selectedDeviceIds.length} изд.)
+                  </div>
+                  <input
+                    type="text"
+                    value={batchMfr}
+                    onChange={(e) => setBatchMfr(e.target.value)}
+                    placeholder="Производитель (для всех)…"
+                    aria-label="Производитель для всех выделенных изделий"
+                    className="w-full h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)]"
+                  />
+                  <input
+                    type="text"
+                    value={batchArticle}
+                    onChange={(e) => setBatchArticle(e.target.value)}
+                    placeholder="Артикул (для всех)…"
+                    aria-label="Артикул для всех выделенных изделий"
+                    className="w-full h-6 px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)]"
+                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      data-testid="batch-apply-btn"
+                      disabled={!batchMfr.trim() && !batchArticle.trim()}
+                      onClick={() => {
+                        onBatchUpdateDevices(selectedDeviceIds, {
+                          manufacturer: batchMfr.trim() || undefined,
+                          article: batchArticle.trim() || undefined,
+                        });
+                        setBatchMfr('');
+                        setBatchArticle('');
+                      }}
+                      className="flex-1 h-6 px-2 rounded-[4px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] disabled:opacity-40 text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors"
+                    >
+                      Применить ко всем
+                    </button>
+                  </div>
+                </div>
+              )}
               {selectedDeviceIds.length > 0 && onRotateSelected && (
                 <button
                   type="button"
@@ -485,42 +644,123 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
           </div>
         ) : selectedDevice ? (
           <>
-            <div className="px-2 py-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-1.5">
-              <div className="min-w-0">
-                <div className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] truncate">
-                  {selectedDevice.designation} · {selectedDevice.attributes.length} атр. · {selectedDevice.pins.length} выв.
+            {isNewUi ? (
+              <div
+                data-testid="inspector-symbol-header"
+                className="px-2 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className={`${
+                      uiMode === 'focus'
+                        ? 'w-[calc(28px*var(--flux-ui-scale))] h-[calc(28px*var(--flux-ui-scale))] p-1'
+                        : 'w-[calc(34px*var(--flux-ui-scale))] h-[calc(34px*var(--flux-ui-scale))] p-1.5'
+                    } shrink-0 rounded-[4px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] flex items-center justify-center`}
+                  >
+                    {renderInspectorSymbolPreview(selectedDevice)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[length:calc(12px*var(--flux-ui-scale))] font-mono font-semibold text-[var(--flux-text)] truncate">
+                      {selectedDevice.designation}
+                    </div>
+                    <div className="text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate">
+                      {selectedDevice.componentName}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-[length:calc(10px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)] truncate">
-                  {selectedDevice.e3BlockName || selectedDevice.article}
+                <div className="flex items-center gap-1 shrink-0">
+                  {onEditDeviceSymbol && (
+                    <button
+                      type="button"
+                      data-testid="insp-edit-device-symbol-btn"
+                      onClick={() => onEditDeviceSymbol(selectedDevice)}
+                      title="Открыть графику УГО этого объекта в редакторе блоков"
+                      className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
+                    >
+                      <span>УГО…</span>
+                    </button>
+                  )}
+                  {onSaveDeviceToCatalog && (
+                    <button
+                      type="button"
+                      onClick={() => onSaveDeviceToCatalog(selectedDevice)}
+                      title="Сохранить изделие со всеми атрибутами и выводами в базу компонентов"
+                      aria-label="Сохранить в базу компонентов"
+                      className={`inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] ${
+                        uiMode === 'focus' ? 'px-1.5' : 'px-1.5'
+                      } rounded-[4px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors`}
+                    >
+                      <BookmarkPlus className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                      {uiMode !== 'focus' && <span>В базу</span>}
+                    </button>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {onEditDeviceSymbol && (
-                  <button
-                    type="button"
-                    data-testid="insp-edit-device-symbol-btn"
-                    onClick={() => onEditDeviceSymbol(selectedDevice)}
-                    title="Открыть графику УГО этого объекта в редакторе блоков"
-                    className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
-                  >
-                    <span>УГО…</span>
-                  </button>
-                )}
-                {onSaveDeviceToCatalog && (
-                  <button
-                    type="button"
-                    onClick={() => onSaveDeviceToCatalog(selectedDevice)}
-                    title="Сохранить изделие со всеми атрибутами и выводами в базу компонентов"
-                    className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
-                  >
-                    <BookmarkPlus className="w-3 h-3 text-[var(--flux-text-muted)]" />
-                    <span>В базу</span>
-                  </button>
-                )}
+            ) : (
+              <div className="px-2 py-1 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-1.5">
+                <div className="min-w-0">
+                  <div className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] truncate">
+                    {selectedDevice.designation} · {selectedDevice.attributes.length} атр. · {selectedDevice.pins.length} выв.
+                  </div>
+                  <div className="text-[length:calc(10px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)] truncate">
+                    {selectedDevice.e3BlockName || selectedDevice.article}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {onEditDeviceSymbol && (
+                    <button
+                      type="button"
+                      data-testid="insp-edit-device-symbol-btn"
+                      onClick={() => onEditDeviceSymbol(selectedDevice)}
+                      title="Открыть графику УГО этого объекта в редакторе блоков"
+                      className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-accent)] whitespace-nowrap shrink-0 transition-colors"
+                    >
+                      <span>УГО…</span>
+                    </button>
+                  )}
+                  {onSaveDeviceToCatalog && (
+                    <button
+                      type="button"
+                      onClick={() => onSaveDeviceToCatalog(selectedDevice)}
+                      title="Сохранить изделие со всеми атрибутами и выводами в базу компонентов"
+                      className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                    >
+                      <BookmarkPlus className="w-3 h-3 text-[var(--flux-text-muted)]" />
+                      <span>В базу</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
+
+            {isNewUi && (
+              <div className="grid grid-cols-3 border-b border-[var(--flux-line)] bg-[var(--flux-bg)] shrink-0">
+                {(
+                  [
+                    ['main', 'Основное'],
+                    ['pins', `Выводы (${selectedDevice.pins.length})`],
+                    ['attrs', `Атрибуты (${selectedDevice.attributes.length})`],
+                  ] as const
+                ).map(([tabKey, tabLabel]) => (
+                  <button
+                    key={tabKey}
+                    type="button"
+                    onClick={() => setDeviceTab(tabKey)}
+                    className={`h-7 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors whitespace-nowrap ${
+                      deviceTab === tabKey
+                        ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
+                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
+                    }`}
+                  >
+                    {tabLabel}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <fieldset disabled={activeLayerLocked} className="min-w-0 disabled:opacity-65">
+              {(!isNewUi || deviceTab === 'main') && (
+              <>
               <div className="cad-prop-section">
                 <span>Идентификация и позиция</span>
               </div>
@@ -833,8 +1073,11 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                 </div>
               );
             })()}
+              </>
+              )}
 
             {/* E3 Attributes 2-Column Table */}
+            {(!isNewUi || deviceTab === 'attrs') && (
             <div>
               <div className="cad-prop-section">
                 <span>Атрибуты E3 / Flux</span>
@@ -915,8 +1158,10 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                 </button>
               </form>
             </div>
+            )}
 
             {/* Pin Connections Matrix */}
+            {(!isNewUi || deviceTab === 'pins') && (
             <div>
               <div className="cad-prop-section">
                 <span>Выводы и связи</span>
@@ -933,8 +1178,23 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   );
                   return (
                     <React.Fragment key={pin.id}>
-                      <span className="cad-prop-label font-mono font-medium text-[var(--flux-text)]">
-                        {pin.name}
+                      <span className="cad-prop-label font-mono font-medium text-[var(--flux-text)] inline-flex items-center gap-1.5">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{
+                            backgroundColor:
+                              pin.signalType === 'power'
+                                ? '#ef4444'
+                                : pin.signalType === 'neutral'
+                                  ? '#3b82f6'
+                                  : pin.signalType === 'pe'
+                                    ? '#22c55e'
+                                    : pin.signalType === 'bus'
+                                      ? '#14b8a6'
+                                      : '#f59e0b',
+                          }}
+                        />
+                        <span>{pin.name}</span>
                       </span>
                       <div className="cad-prop-cell px-1.5 justify-between gap-1 text-[length:calc(11px*var(--flux-ui-scale))]">
                         {wire ? (
@@ -961,6 +1221,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                 })}
               </div>
             </div>
+            )}
             </fieldset>
           </>
         ) : selectedWire ? (

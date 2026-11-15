@@ -62,8 +62,18 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     const timer = window.setTimeout(() => {
       inputRef.current?.focus();
     }, 10);
-    return () => window.clearTimeout(timer);
-  }, [open, initialQuery]);
+    const onWindowKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onWindowKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', onWindowKeyDown);
+    };
+  }, [open, initialQuery, onClose]);
 
   useEffect(() => {
     setSelectedIdx(0);

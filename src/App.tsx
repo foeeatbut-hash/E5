@@ -30,6 +30,16 @@ import { AutoNumberingModal } from './components/AutoNumberingModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { SystemHealthDashboard } from './components/SystemHealthDashboard';
 import { SymbolWorkspaceCanvas } from './components/SymbolWorkspaceCanvas';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Cpu,
+  FileCode2,
+  Layers,
+  ShieldCheck,
+  SlidersHorizontal,
+  TerminalSquare,
+} from 'lucide-react';
 import { type CadTool, TopToolbar } from './components/TopToolbar';
 import {
   clampDockLayoutToViewport,
@@ -64,6 +74,13 @@ import {
   uiScaleFactor,
   type UiScalePercent,
 } from './core/uiScale';
+import {
+  applyUiModeToDocument,
+  loadUiMode,
+  saveUiMode,
+  UI_MODE_OPTIONS,
+  type UiWorkspaceMode,
+} from './core/uiMode';
 import {
   CAD_LAYER_DEFS,
   isLayerLocked,
@@ -270,6 +287,9 @@ export default function App() {
   const history = docState.past;
   const future = docState.future;
 
+  const [navHistory, setNavHistory] = useState<string[]>([]);
+  const [navIdx, setNavIdx] = useState<number>(-1);
+  const navSkipRecordRef = useRef(false);
   const [activeSheetId, setActiveSheetId] = useState<string>(
     () => initialSessionRef.current?.activeSheetId || 'sheet-1'
   );
@@ -356,7 +376,15 @@ export default function App() {
   viewportTransformsRef.current = viewportTransforms;
   const cameraAnimRef = useRef<Record<number, number>>({});
 
-  // UI Scale (100% / 120% / 140% / 160% / 180%)
+  // UI Mode ('classic' | 'hybrid' | 'focus') & UI Scale (100%..180%)
+  const [uiMode, setUiMode] = useState<UiWorkspaceMode>(() => loadUiMode());
+  const uiModeRef = useRef<UiWorkspaceMode>(uiMode);
+  uiModeRef.current = uiMode;
+  useEffect(() => {
+    applyUiModeToDocument(uiMode);
+    saveUiMode(uiMode);
+  }, [uiMode]);
+
   const [uiScale, setUiScale] = useState<UiScalePercent>(() => loadUiScale());
   const uiScaleRef = useRef<UiScalePercent>(uiScale);
   uiScaleRef.current = uiScale;
@@ -380,20 +408,20 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
 
   const handleChangeUiScale = useCallback((nextScale: UiScalePercent) => {
-    setUiScale((prevScale) => {
-      if (prevScale === nextScale) return prevScale;
-      applyUiScaleToDocument(nextScale);
-      setDockLayout((prevLayout) =>
-        rescaleDockLayoutForUiScale(
-          prevLayout,
-          prevScale,
-          nextScale,
-          typeof window !== 'undefined' ? window.innerWidth : 1440,
-          typeof window !== 'undefined' ? window.innerHeight : 900
-        )
-      );
-      return nextScale;
-    });
+    const prevScale = uiScaleRef.current;
+    if (prevScale === nextScale) return;
+    applyUiScaleToDocument(nextScale);
+    saveUiScale(nextScale);
+    setUiScale(nextScale);
+    setDockLayout((prevLayout) =>
+      rescaleDockLayoutForUiScale(
+        prevLayout,
+        prevScale,
+        nextScale,
+        typeof window !== 'undefined' ? window.innerWidth : 1440,
+        typeof window !== 'undefined' ? window.innerHeight : 900
+      )
+    );
   }, []);
 
   useEffect(() => {
@@ -440,6 +468,9 @@ export default function App() {
       return togglePanelCollapse(prev, 'console');
     });
   }, []);
+  const [focusExplorerOpen, setFocusExplorerOpen] = useState(false);
+  const [focusConsoleOpen, setFocusConsoleOpen] = useState(false);
+  const [focusInspectorCollapsed, setFocusInspectorCollapsed] = useState(false);
 
   const [bom, setBom] = useState<BomRow[]>(() => buildBom(project));
   const [cables, setCables] = useState<CableJournalRow[]>(() => buildCableJournal(project));
@@ -460,6 +491,7 @@ export default function App() {
   const [terminalEditorOpen, setTerminalEditorOpen] = useState(false);
   const [autoNumberModalOpen, setAutoNumberModalOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandPaletteInitialQuery, setCommandPaletteInitialQuery] = useState('');
   const [healthOpen, setHealthOpen] = useState(false);
   const [perfSnapshot, setPerfSnapshot] = useState<PerfSnapshot>({
@@ -597,6 +629,32 @@ export default function App() {
       ]);
     },
     []
+  );
+
+  const handleChangeUiMode = useCallback(
+    (nextMode: UiWorkspaceMode) => {
+      setFocusExplorerOpen(false);
+      setFocusConsoleOpen(false);
+      setFocusInspectorCollapsed(false);
+      if (nextMode === 'hybrid') {
+        setDockLayout((prev) => {
+          let next = prev;
+          if (next.panels.explorer.collapsed) next = togglePanelCollapse(next, 'explorer');
+          if (next.panels.inspector.collapsed) next = togglePanelCollapse(next, 'inspector');
+          if (next.panels.console.collapsed) next = togglePanelCollapse(next, 'console');
+          return next;
+        });
+      }
+      setUiMode((prev) => {
+        if (prev === nextMode) return prev;
+        applyUiModeToDocument(nextMode);
+        saveUiMode(nextMode);
+        const label = UI_MODE_OPTIONS.find((o) => o.id === nextMode)?.label || nextMode;
+        appendLog('INFO', 'UI-INTERACT', `Режим интерфейса переключён: «${label}».`);
+        return nextMode;
+      });
+    },
+    [appendLog]
   );
 
   const setTool = useCallback(
@@ -952,6 +1010,39 @@ export default function App() {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [healthOpen]);
+
+  useEffect(() => {
+    if (!activeSheetId) return;
+    if (navSkipRecordRef.current) {
+      navSkipRecordRef.current = false;
+      return;
+    }
+    setNavHistory((prev) => {
+      if (prev[navIdx] === activeSheetId) return prev;
+      const sliced = prev.slice(0, navIdx + 1);
+      const next = [...sliced, activeSheetId].slice(-25);
+      setNavIdx(next.length - 1);
+      return next;
+    });
+  }, [activeSheetId]);
+
+  const handleNavBack = useCallback(() => {
+    if (navIdx <= 0) return;
+    const targetId = navHistory[navIdx - 1];
+    if (!targetId) return;
+    navSkipRecordRef.current = true;
+    setNavIdx(navIdx - 1);
+    setActiveSheetId(targetId);
+  }, [navIdx, navHistory]);
+
+  const handleNavForward = useCallback(() => {
+    if (navIdx >= navHistory.length - 1) return;
+    const targetId = navHistory[navIdx + 1];
+    if (!targetId) return;
+    navSkipRecordRef.current = true;
+    setNavIdx(navIdx + 1);
+    setActiveSheetId(targetId);
+  }, [navIdx, navHistory]);
 
   // Sync theme class on <html>
   useEffect(() => {
@@ -1516,6 +1607,140 @@ export default function App() {
     }
   }, [selectedDeviceIds, selectedDeviceId, project.devices, commitProject, appendLog]);
 
+  const handleMirrorSelected = useCallback(
+    (axis: 'x' | 'y') => {
+      const devIds = selectedDeviceIds.length > 0 ? selectedDeviceIds : selectedDeviceId ? [selectedDeviceId] : [];
+      if (devIds.length === 0) return;
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Нельзя отразить: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const idSet = new Set(devIds);
+      commitProject((prev) => {
+        const devices = prev.devices.map((d) => {
+          if (!idSet.has(d.id)) return d;
+          const flipPinDir = (dir: E3Device['pins'][number]['direction']) => {
+            if (axis === 'x') return dir === 'left' ? 'right' : dir === 'right' ? 'left' : dir;
+            return dir === 'top' ? 'bottom' : dir === 'bottom' ? 'top' : dir;
+          };
+          const pins = d.pins.map((p) => ({
+            ...p,
+            dx: axis === 'x' ? d.width - p.dx : p.dx,
+            dy: axis === 'y' ? d.height - p.dy : p.dy,
+            direction: flipPinDir(p.direction),
+          }));
+          const customSymbol = d.customSymbol
+            ? {
+                ...d.customSymbol,
+                shapes: d.customSymbol.shapes.map((sh) => {
+                  if (sh.kind === 'line') {
+                    return {
+                      ...sh,
+                      x1: axis === 'x' ? d.width - sh.x1 : sh.x1,
+                      y1: axis === 'y' ? d.height - sh.y1 : sh.y1,
+                      x2: axis === 'x' ? d.width - sh.x2 : sh.x2,
+                      y2: axis === 'y' ? d.height - sh.y2 : sh.y2,
+                    };
+                  }
+                  if (sh.kind === 'rect') {
+                    return {
+                      ...sh,
+                      x: axis === 'x' ? d.width - (sh.x + sh.width) : sh.x,
+                      y: axis === 'y' ? d.height - (sh.y + sh.height) : sh.y,
+                    };
+                  }
+                  if (sh.kind === 'circle') {
+                    return {
+                      ...sh,
+                      cx: axis === 'x' ? d.width - sh.cx : sh.cx,
+                      cy: axis === 'y' ? d.height - sh.cy : sh.cy,
+                    };
+                  }
+                  if (sh.kind === 'arc') {
+                    return {
+                      ...sh,
+                      cx: axis === 'x' ? d.width - sh.cx : sh.cx,
+                      cy: axis === 'y' ? d.height - sh.cy : sh.cy,
+                      startAngle: axis === 'x' ? 180 - sh.endAngle : -sh.endAngle,
+                      endAngle: axis === 'x' ? 180 - sh.startAngle : -sh.startAngle,
+                    };
+                  }
+                  if (sh.kind === 'polyline') {
+                    return {
+                      ...sh,
+                      points: sh.points.map((pt) => ({
+                        x: axis === 'x' ? d.width - pt.x : pt.x,
+                        y: axis === 'y' ? d.height - pt.y : pt.y,
+                      })),
+                    };
+                  }
+                  if (sh.kind === 'text') {
+                    return {
+                      ...sh,
+                      x: axis === 'x' ? d.width - sh.x : sh.x,
+                      y: axis === 'y' ? d.height - sh.y : sh.y,
+                    };
+                  }
+                  return sh;
+                }),
+              }
+            : undefined;
+          return { ...d, pins, ...(customSymbol ? { customSymbol } : {}) };
+        });
+        let wires = prev.wires;
+        for (const id of idSet) {
+          const updated = devices.find((d) => d.id === id);
+          if (updated) wires = rerouteDeviceWires(updated, devices, wires, prev.sheets);
+        }
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices,
+          wires,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Зеркальное отражение по оси ${axis.toUpperCase()} (${devIds.length} изд.).`);
+    },
+    [selectedDeviceIds, selectedDeviceId, commitProject, appendLog]
+  );
+
+  const handleAlignSelected = useCallback(
+    (mode: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+      const mapped: DeviceAlignKind =
+        mode === 'center' ? 'center-x' : mode === 'middle' ? 'center-y' : mode;
+      const devIds = selectedDeviceIds.length > 0 ? selectedDeviceIds : selectedDeviceId ? [selectedDeviceId] : [];
+      if (devIds.length < 2) return;
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Выравнивание отклонено: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      commitProject((prev) => {
+        const devices = alignSelectedDevices(
+          prev.devices,
+          devIds,
+          mapped,
+          prev.visualSettings.gridSize,
+          prev.visualSettings.snapToGrid
+        );
+        let wires = prev.wires;
+        for (const id of devIds) {
+          const moved = devices.find((d) => d.id === id);
+          if (moved) wires = rerouteDeviceWires(moved, devices, wires, prev.sheets);
+        }
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices,
+          wires,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Выровнена группа изделий (${devIds.length} шт.).`);
+    },
+    [selectedDeviceIds, selectedDeviceId, commitProject, appendLog]
+  );
+
   const handleDeleteSelected = useCallback(() => {
     const curLayers = docStateRef.current.present.layers;
     const devIds = new Set(selectedDeviceIds);
@@ -1836,16 +2061,76 @@ export default function App() {
         const dy = y - target.y;
         if (dx === 0 && dy === 0) return s;
 
-        const moveAnnSet = new Set(
-          selectedAnnotationIds.includes(annId) && selectedAnnotationIds.length > 1
-            ? selectedAnnotationIds
-            : [annId]
+        const isMultiGroup =
+          selectedAnnotationIds.includes(annId) &&
+          (selectedAnnotationIds.length > 1 || selectedDeviceIds.length > 0);
+        const moveAnnSet = new Set(isMultiGroup ? selectedAnnotationIds : [annId]);
+        const moveDevSet = new Set(
+          isMultiGroup && !isLayerLocked(prev.layers, 'devices') ? selectedDeviceIds : []
         );
+
+        const devices =
+          moveDevSet.size > 0
+            ? prev.devices.map((d) =>
+                moveDevSet.has(d.id) && d.sheetId === target.sheetId
+                  ? { ...d, x: d.x + dx, y: d.y + dy }
+                  : d
+              )
+            : prev.devices;
+        const actuallyMovedDevIds = new Set(
+          moveDevSet.size > 0
+            ? devices
+                .filter((d) => moveDevSet.has(d.id) && d.sheetId === target.sheetId)
+                .map((d) => d.id)
+            : []
+        );
+
+        let wires = prev.wires;
+        if (actuallyMovedDevIds.size > 0) {
+          const internalWireIds = new Set(
+            prev.wires
+              .filter((w) => actuallyMovedDevIds.has(w.fromDeviceId) && actuallyMovedDevIds.has(w.toDeviceId))
+              .map((w) => w.id)
+          );
+          const translatedWires = prev.wires.map((w) =>
+            internalWireIds.has(w.id)
+              ? { ...w, waypoints: w.waypoints.map((pt) => ({ x: pt.x + dx, y: pt.y + dy })) }
+              : w
+          );
+          const devMap = new Map(devices.map((d) => [d.id, d]));
+          const sheetObj = prev.sheets.find((sh) => sh.id === target.sheetId);
+          const sheetDrawableBounds = getSheetDrawableBounds(sheetObj);
+          const sheetObstacles = devices
+            .filter((d) => d.sheetId === target.sheetId && d.bindingState !== 'REMOVED_IN_FLUX')
+            .map((d) => getDeviceBounds(d));
+          wires = translatedWires.map((w) => {
+            if (w.sheetId !== target.sheetId || internalWireIds.has(w.id)) return w;
+            if (!actuallyMovedDevIds.has(w.fromDeviceId) && !actuallyMovedDevIds.has(w.toDeviceId)) return w;
+            const d1 = devMap.get(w.fromDeviceId);
+            const d2 = devMap.get(w.toDeviceId);
+            const p1 = d1?.pins.find((p) => p.id === w.fromPinId);
+            const p2 = d2?.pins.find((p) => p.id === w.toPinId);
+            if (!d1 || !d2 || !p1 || !p2) return w;
+            const abs1 = getAbsolutePinPos(d1, p1);
+            const abs2 = getAbsolutePinPos(d2, p2);
+            const obstacles = sheetObstacles.filter((o) => o.id !== d1.id && o.id !== d2.id);
+            return {
+              ...w,
+              manualRoute: false,
+              waypoints: autoRouteOrthogonal(abs1, abs2, 20, obstacles, 0, [], {
+                sheetBounds: sheetDrawableBounds,
+              }),
+            };
+          });
+        }
+
         return {
           ...s,
           present: {
             ...prev,
             updatedAt: new Date().toISOString(),
+            devices,
+            wires,
             annotations: (prev.annotations || []).map((a) =>
               moveAnnSet.has(a.id) && a.sheetId === target.sheetId
                 ? { ...a, x: a.x + dx, y: a.y + dy }
@@ -1855,7 +2140,7 @@ export default function App() {
         };
       });
     },
-    [selectedAnnotationIds]
+    [selectedAnnotationIds, selectedDeviceIds]
   );
 
   const handleUpdateAnnotation = useCallback(
@@ -4071,6 +4356,7 @@ export default function App() {
     autoNumberModalOpen ||
     fluxPublishOpen ||
     healthOpen ||
+    shortcutsOpen ||
     stampModalState.open;
 
   // Export & Import handlers (.e3s OLE2 + XML + Flux Bridge)
@@ -4468,6 +4754,9 @@ export default function App() {
         case 'set-tool':
           setTool(act.tool);
           break;
+        case 'set-ui-mode':
+          handleChangeUiMode(act.mode);
+          break;
         case 'copy-selected':
           handleCopySelected();
           break;
@@ -4538,6 +4827,7 @@ export default function App() {
         case 'open-erc':
           setConsoleTab('erc');
           setConsoleCollapsed(false);
+          if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
           break;
         case 'open-health':
           setHealthOpen(true);
@@ -4545,6 +4835,7 @@ export default function App() {
         case 'open-bom':
           setConsoleTab('bom');
           setConsoleCollapsed(false);
+          if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
           break;
         case 'open-terminals':
           setTerminalEditorOpen(true);
@@ -4554,9 +4845,13 @@ export default function App() {
           break;
         case 'open-catalog':
           setLeftTab('library');
-          setDockLayout((prev) =>
-            prev.panels.explorer.collapsed ? togglePanelCollapse(prev, 'explorer') : prev
-          );
+          if (uiModeRef.current === 'focus') {
+            setFocusExplorerOpen(true);
+          } else {
+            setDockLayout((prev) =>
+              prev.panels.explorer.collapsed ? togglePanelCollapse(prev, 'explorer') : prev
+            );
+          }
           break;
         case 'open-hvac-wizard':
           setHvacWizardOpen(true);
@@ -4685,6 +4980,7 @@ export default function App() {
       applySelection,
       centerCameraOnCoords,
       openBlockEditorWorkspace,
+      handleChangeUiMode,
     ]
   );
 
@@ -4721,10 +5017,38 @@ export default function App() {
             target.isContentEditable ||
             target.closest('.select-text, pre, [data-selectable="true"]'))
       );
+      if ((e.ctrlKey || e.metaKey) && key === 's') {
+        e.preventDefault();
+        if (symbolDraft.open) {
+          saveSymbolWorkspace();
+        } else {
+          handleSaveSessionNow();
+        }
+        return;
+      }
+      if ((e.key === 'F1' || (e.key === '?' && !e.ctrlKey && !e.metaKey)) && !inEditableText) {
+        e.preventDefault();
+        setShortcutsOpen((o) => !o);
+        return;
+      }
+      if (e.key === 'Escape' && shortcutsOpen) {
+        e.preventDefault();
+        setShortcutsOpen(false);
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && key === 'k') {
         if (anyModalOpen) return;
         e.preventDefault();
         setCommandPaletteOpen((o) => !o);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && key === '\\') {
+        e.preventDefault();
+        if (uiModeRef.current === 'focus') {
+          setFocusExplorerOpen((o) => !o);
+        } else {
+          setDockLayout((prev) => togglePanelCollapse(prev, 'explorer'));
+        }
         return;
       }
       if ((e.ctrlKey || e.metaKey) && key === 'a' && !inEditableText) {
@@ -4755,6 +5079,16 @@ export default function App() {
         } else if (e.key === 'Escape') {
           symbolWorkspaceActions.onSetTool('select');
         }
+        return;
+      }
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleNavBack();
+        return;
+      }
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNavForward();
         return;
       }
       if (e.key === 'F3') {
@@ -4811,6 +5145,9 @@ export default function App() {
         setTool('wire');
       } else if (!e.ctrlKey && !e.metaKey && key === 'h') {
         setTool('pan');
+      } else if (!e.ctrlKey && !e.metaKey && key === 'z') {
+        e.preventDefault();
+        fitSheetToViewport(undefined, activeViewportIdx, true);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -4818,6 +5155,7 @@ export default function App() {
   }, [
     anyModalOpen,
     commandPaletteOpen,
+    shortcutsOpen,
     symbolDraft.open,
     undoSymbolEditor,
     redoSymbolEditor,
@@ -4834,6 +5172,11 @@ export default function App() {
     handleSelectAllOnSheet,
     handleDeleteSelected,
     handleRotateSelected,
+    handleSaveSessionNow,
+    handleNavBack,
+    handleNavForward,
+    fitSheetToViewport,
+    activeViewportIdx,
   ]);
 
   const handlePatchVisualSettings = useCallback(
@@ -5132,12 +5475,110 @@ export default function App() {
     dockLayout.panels.console.dock === 'bottom' &&
     getPanelsByDock(dockLayout, 'bottom').length === 1;
 
+  const handleQuickFixErc = useCallback(
+    (issue: ErcIssue) => {
+      if (issue.code === 'E3-DUP-DES' && issue.deviceId) {
+        commitProject((prev) => {
+          const target = prev.devices.find((d) => d.id === issue.deviceId);
+          if (!target) return prev;
+          const prefixMatch = /^([A-Za-zА-Яа-яЁё_-]*?[A-Za-zА-Яа-яЁё]+)/.exec(target.designation);
+          const prefix = prefixMatch ? prefixMatch[1] : '-K';
+          const nextDes = nextUniqueDesignation(prev.devices, prefix);
+          return {
+            ...prev,
+            revision: prev.revision + 1,
+            updatedAt: new Date().toISOString(),
+            devices: prev.devices.map((d) =>
+              d.id === target.id ? { ...d, designation: nextDes } : d
+            ),
+          };
+        });
+        appendLog('INFO', 'E3-CORE', `Автоперенумерация дубликата ОУО (${issue.message}).`);
+      } else if (issue.code === 'E3-POTENTIAL-CONFLICT' && issue.wireId) {
+        commitProject((prev) => {
+          const wire = prev.wires.find((w) => w.id === issue.wireId);
+          if (!wire) return prev;
+          const dFrom = prev.devices.find((d) => d.id === wire.fromDeviceId);
+          const pFrom = dFrom?.pins.find((p) => p.id === wire.fromPinId);
+          if (!pFrom) return prev;
+          return {
+            ...prev,
+            revision: prev.revision + 1,
+            updatedAt: new Date().toISOString(),
+            wires: prev.wires.map((w) =>
+              w.id === wire.id ? { ...w, signalType: pFrom.signalType } : w
+            ),
+          };
+        });
+        appendLog('INFO', 'E3-CORE', `Потенциал цепи согласован с источником (${issue.wireId}).`);
+      } else if (issue.code === 'E3-FLUX-REMOVED' && issue.deviceId) {
+        commitProject((prev) => ({
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices: prev.devices.filter((d) => d.id !== issue.deviceId),
+          wires: prev.wires.filter(
+            (w) => w.fromDeviceId !== issue.deviceId && w.toDeviceId !== issue.deviceId
+          ),
+        }));
+        appendLog('INFO', 'E3-CORE', `Удалена устаревшая позиция ${issue.deviceId}.`);
+      }
+    },
+    [commitProject, appendLog]
+  );
+
+  const handleBatchUpdateDevices = useCallback(
+    (
+      deviceIds: string[],
+      patch: { manufacturer?: string; article?: string; rotation?: 0 | 90 | 180 | 270 }
+    ) => {
+      if (deviceIds.length === 0) return;
+      if (isLayerLocked(docStateRef.current.present.layers, 'devices')) {
+        appendLog('WARN', 'E3-CORE', 'Нельзя изменить: слой «Изделия и аппараты» заблокирован.');
+        return;
+      }
+      const idSet = new Set(deviceIds);
+      commitProject((prev) => {
+        const devices = prev.devices.map((d) => {
+          if (!idSet.has(d.id)) return d;
+          return {
+            ...d,
+            ...(patch.manufacturer !== undefined && patch.manufacturer !== ''
+              ? { manufacturer: patch.manufacturer }
+              : {}),
+            ...(patch.article !== undefined && patch.article !== ''
+              ? { article: patch.article }
+              : {}),
+            ...(patch.rotation !== undefined ? { rotation: patch.rotation } : {}),
+          };
+        });
+        let wires = prev.wires;
+        if (patch.rotation !== undefined) {
+          for (const id of idSet) {
+            const updated = devices.find((d) => d.id === id);
+            if (updated) wires = rerouteDeviceWires(updated, devices, wires, prev.sheets);
+          }
+        }
+        return {
+          ...prev,
+          revision: prev.revision + 1,
+          updatedAt: new Date().toISOString(),
+          devices,
+          wires,
+        };
+      });
+      appendLog('INFO', 'E3-CORE', `Пакетно обновлено изделий: ${deviceIds.length}.`);
+    },
+    [commitProject, appendLog]
+  );
+
   const renderPanelContent = (panelId: PanelId) => {
     if (panelId === 'explorer') {
       return (
         <LeftExplorer
           project={project}
           catalog={mergedCatalog}
+          uiMode={uiMode}
           activeSheetId={activeSheetId}
           selectedDeviceId={selectedDeviceId}
           activeTab={leftTab}
@@ -5175,6 +5616,7 @@ export default function App() {
       return (
         <RightInspector
           project={project}
+          uiMode={uiMode}
           activeSheet={activeSheet}
           customTemplates={mergedStampTemplates}
           selectedDevice={selectedDevice}
@@ -5237,6 +5679,7 @@ export default function App() {
           onOpenBomPanel={() => {
             setConsoleTab('bom');
             setConsoleCollapsed(false);
+            if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
           }}
           onToggleLayerLock={handleToggleLayerLock}
           onNavigateOffPage={handleNavigateOffPage}
@@ -5244,6 +5687,7 @@ export default function App() {
           onUpdateOffPageMeta={handleUpdateOffPageMeta}
           onHighlightPotential={(seed) => setHighlightedPotentialSeed(seed)}
           onRestoreSheetRevision={handleRestoreSheetRevision}
+          onBatchUpdateDevices={handleBatchUpdateDevices}
           onReleaseSheetRevision={handleReleaseSheetRevision}
         />
       );
@@ -5252,6 +5696,7 @@ export default function App() {
     return (
       <BottomConsole
         project={project}
+        uiMode={uiMode}
         activeTab={consoleTab}
         collapsed={consoleCollapsed}
         tabsPosition={isConsoleBottomSingle ? 'bottom' : 'top'}
@@ -5288,6 +5733,7 @@ export default function App() {
         onExpandPanel={() => setConsoleCollapsed(false)}
         onToggleCollapse={() => setConsoleCollapsed((c) => !c)}
         onJumpToIssue={handleJumpToIssue}
+        onQuickFixIssue={handleQuickFixErc}
         onSelectDeviceByDesignation={(designation) => {
           const dev = project.devices.find((d) => d.designation === designation);
           if (!dev) return;
@@ -5735,8 +6181,15 @@ export default function App() {
         tool={tool}
         zoom={zoom}
         uiScale={uiScale}
+        uiMode={uiMode}
+        onChangeUiMode={handleChangeUiMode}
         viewportLayout={viewportLayout}
         canUndo={history.length > 0}
+        canNavBack={navIdx > 0}
+        canNavForward={navIdx >= 0 && navIdx < navHistory.length - 1}
+        onNavBack={handleNavBack}
+        onNavForward={handleNavForward}
+        selectedDesignation={project.devices.find((d) => d.id === selectedDeviceId)?.designation || null}
         canRedo={future.length > 0}
         hasSelection={selectedDeviceIds.length > 0 || selectedWireIds.length > 0 || selectedAnnotationIds.length > 0}
         hasClipboard={hasClipboard}
@@ -5765,6 +6218,9 @@ export default function App() {
         onPasteClipboard={handlePasteClipboard}
         onDuplicateSelected={handleDuplicateSelected}
         onRotateSelected={handleRotateSelected}
+        onMirrorSelected={handleMirrorSelected}
+        onAlignSelected={handleAlignSelected}
+        selectedDeviceCount={selectedDeviceIds.length > 0 ? selectedDeviceIds.length : selectedDeviceId ? 1 : 0}
         onDeleteSelected={handleDeleteSelected}
         onZoomChange={setZoom}
         onFitView={() => fitSheetToViewport(undefined, activeViewportIdx, true)}
@@ -5824,10 +6280,12 @@ export default function App() {
         onRunErc={() => {
           setConsoleTab('erc');
           setConsoleCollapsed(false);
+          if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
         }}
         onGenerateBom={() => {
           setConsoleTab('bom');
           setConsoleCollapsed(false);
+          if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
           appendLog('INFO', 'E3-CORE', `Открыта спецификация ПЭ3 (${bom.length} позиций).`);
         }}
         onDirectOpenE3={async () => {
@@ -5846,6 +6304,7 @@ export default function App() {
             );
             setConsoleTab('logs');
             setConsoleCollapsed(false);
+            if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
           }
         }}
         onOpenExchangeModal={() => setExchangeOpen(true)}
@@ -5875,6 +6334,7 @@ export default function App() {
           setConsoleTab('api');
           setRequestedApiSubTab('flux-internal');
           setConsoleCollapsed(false);
+          if (uiModeRef.current === 'focus') setFocusConsoleOpen(true);
         }}
         onExportE3sOle2={handleExportE3sOle2}
         onExportE3sXml={handleExportE3sXml}
@@ -5905,9 +6365,13 @@ export default function App() {
         }}
         onOpenCatalogTab={() => {
           setLeftTab('library');
-          setDockLayout((prev) =>
-            prev.panels.explorer.collapsed ? togglePanelCollapse(prev, 'explorer') : prev
-          );
+          if (uiModeRef.current === 'focus') {
+            setFocusExplorerOpen(true);
+          } else {
+            setDockLayout((prev) =>
+              prev.panels.explorer.collapsed ? togglePanelCollapse(prev, 'explorer') : prev
+            );
+          }
         }}
         onAddSheet={handleAddSheet}
         onExportDxf={handleExportDxf}
@@ -5955,12 +6419,90 @@ export default function App() {
         onRemoveRecentProject={handleRemoveRecentProject}
       />
 
-      {/* Dockable Workspace Shell */}
+      {/* Dockable Workspace Shell (Full-Bleed in Focus Mode, Docked 4-Zone Grid in Classic & Hybrid) */}
       <div ref={workspaceRef} className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
-        {renderDockBand(topPanels, 'top')}
+        {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(topPanels, 'top')}
 
         <main className="flex-1 min-h-0 flex overflow-hidden">
-          {renderDockBand(leftPanels, 'left')}
+          {uiMode === 'hybrid' && (
+            <nav
+              data-testid="hybrid-mode-rail"
+              aria-label="Режимы рабочего пространства"
+              className="no-print w-10 shrink-0 border-r border-[var(--flux-line)] bg-[var(--flux-surface)] flex flex-col items-center py-1.5 gap-1 select-none"
+            >
+              <button
+                type="button"
+                title="Режим «Схема» (фокус на чертеже)"
+                onClick={() => {
+                  setConsoleCollapsed(true);
+                  setDockLayout((prev) =>
+                    prev.panels.explorer.collapsed ? togglePanelCollapse(prev, 'explorer') : prev
+                  );
+                }}
+                className={`relative w-8 h-8 rounded-[4px] grid place-items-center transition-colors ${
+                  consoleCollapsed
+                    ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
+                    : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)] hover:text-[var(--flux-text)]'
+                }`}
+              >
+                <FileCode2 className="w-4 h-4" strokeWidth={1.6} />
+              </button>
+              <button
+                type="button"
+                title="Клеммники XT и раскладка"
+                onClick={() => setTerminalEditorOpen(true)}
+                className="w-8 h-8 rounded-[4px] grid place-items-center text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)] hover:text-[var(--flux-text)] transition-colors"
+              >
+                <TerminalSquare className="w-4 h-4" strokeWidth={1.6} />
+              </button>
+              <button
+                type="button"
+                title="Конструктор ФСА / ОВиК"
+                onClick={() => setHvacWizardOpen(true)}
+                className="w-8 h-8 rounded-[4px] grid place-items-center text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)] hover:text-[var(--flux-text)] transition-colors"
+              >
+                <Cpu className="w-4 h-4" strokeWidth={1.6} />
+              </button>
+              <button
+                type="button"
+                title="Переключить сетку чертежа (F9)"
+                onClick={() =>
+                  handleApplyVisualSettings({
+                    ...project.visualSettings,
+                    showGrid: !project.visualSettings.showGrid,
+                  })
+                }
+                className="w-8 h-8 rounded-[4px] grid place-items-center text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)] hover:text-[var(--flux-text)] transition-colors"
+              >
+                <Layers className="w-4 h-4" strokeWidth={1.6} />
+              </button>
+              <button
+                type="button"
+                title="Режим «Проверка и ПЭ3» (открыть сплит ПЭ3 | ERC)"
+                onClick={() => {
+                  setConsoleTab('bom');
+                  setConsoleCollapsed((c) => !c);
+                }}
+                className={`w-8 h-8 rounded-[4px] grid place-items-center transition-colors ${
+                  !consoleCollapsed
+                    ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
+                    : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)] hover:text-[var(--flux-text)]'
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4" strokeWidth={1.6} />
+              </button>
+              <div className="flex-1" />
+              <button
+                type="button"
+                title="Параметры визуализации, режима интерфейса и ГОСТ"
+                onClick={() => setVisualOpen(true)}
+                className="w-8 h-8 rounded-[4px] grid place-items-center text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)] hover:text-[var(--flux-text)] transition-colors"
+              >
+                <SlidersHorizontal className="w-4 h-4" strokeWidth={1.6} />
+              </button>
+            </nav>
+          )}
+          {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(leftPanels, 'left')}
 
           {/* Center Area: Sheetless Block Editor (BEDIT) OR Multi-Viewport Schematics */}
           <AnimatePresence mode="wait" initial={false}>
@@ -6007,6 +6549,9 @@ export default function App() {
                   <SchematicCanvas
                     project={project}
                     catalog={mergedCatalog}
+                    uiMode={uiMode}
+                    focusConsoleOpen={focusConsoleOpen}
+                    onToggleFocusConsole={() => setFocusConsoleOpen((o) => !o)}
                     activeSheetId={vpSheetId}
                     openSheetIds={viewportLayout === 'single' ? openSheetIds : undefined}
                     viewportIndex={idx}
@@ -6043,6 +6588,17 @@ export default function App() {
                     onSelectWire={handleCanvasSelectWire}
                     onSelectAnnotation={handleCanvasSelectAnnotation}
                     onSetSelection={handleCanvasSetSelection}
+                    onRotateSelected={handleRotateSelected}
+                    onMirrorSelected={handleMirrorSelected}
+                    onAlignSelected={handleAlignSelected}
+                    onDuplicateSelected={handleDuplicateSelected}
+                    onPasteClipboard={handlePasteClipboard}
+                    hasClipboard={hasClipboard}
+                    onOpenCommandPalette={() => {
+                      setCommandPaletteInitialQuery('');
+                      setCommandPaletteOpen(true);
+                    }}
+                    onDeleteSelected={handleDeleteSelected}
                     onBeginDrag={handleBeginDrag}
                     onCommitDrag={handleCommitDrag}
                     highlightedTrace={highlightedTrace}
@@ -6071,29 +6627,205 @@ export default function App() {
           )}
           </AnimatePresence>
 
-          {renderDockBand(rightPanels, 'right')}
+          {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(rightPanels, 'right')}
         </main>
 
-        {renderDockBand(bottomPanels, 'bottom')}
+        {(uiMode !== 'focus' || symbolDraft.open) && renderDockBand(bottomPanels, 'bottom')}
 
-        {/* Floating Undocked Panels */}
-        <AnimatePresence initial={false}>
-          {floatingPanels.map((fp) => (
-            <FloatingPanelWindow
-              key={fp.id}
-              panel={fp}
-              uiScale={uiScale}
-              isResizing={resizingDockEdge === 'floating'}
-              isMoving={panelDrag?.panelId === fp.id}
-              onStartDrag={handleStartPanelDrag}
-              onResizeFloatingStart={handleResizeFloatingStart}
-              onMoveDock={handleMoveDockPanel}
-              onToggleCollapse={handleToggleDockCollapse}
-            >
-              {renderPanelContent(fp.id)}
-            </FloatingPanelWindow>
-          ))}
-        </AnimatePresence>
+        {/* Focus Mode (Variant B) Glass Overlays: Left Edge Drawer, Floating Inspector, Slide-Up Console */}
+        {uiMode === 'focus' && !symbolDraft.open && (
+          <>
+            {!focusExplorerOpen && (
+              <button
+                type="button"
+                data-testid="focus-left-edge-tab"
+                onClick={() => setFocusExplorerOpen(true)}
+                title="Открыть устройства и библиотеку компонентов (Ctrl+\\)"
+                aria-label="Открыть устройства и библиотеку компонентов"
+                className="no-print fixed left-0 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1.5 py-2.5 px-1 rounded-r-[8px] border border-l-0 border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/85 hover:bg-[var(--flux-surface)] hover:border-[var(--flux-accent)] backdrop-blur-md shadow-lg text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-all"
+              >
+                <ChevronRight className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                <span
+                  className="text-[10px] font-semibold tracking-wider uppercase select-none"
+                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                >
+                  Устройства · База
+                </span>
+              </button>
+            )}
+
+            <AnimatePresence initial={false}>
+              {focusExplorerOpen && (
+                <motion.div
+                  data-testid="focus-explorer-drawer"
+                  initial={{ opacity: 0, x: -16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -16 }}
+                  transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                  className="no-print absolute left-3 sm:left-[52px] top-[54px] bottom-[96px] w-[264px] max-w-[82vw] z-30 rounded-[10px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/92 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col"
+                >
+                  <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between shrink-0">
+                    <span className="text-[10.5px] font-semibold uppercase tracking-wider text-[var(--flux-text-muted)]">
+                      Устройства и библиотека
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="focus-explorer-close-btn"
+                      onClick={() => setFocusExplorerOpen(false)}
+                      title="Свернуть панель устройств (Ctrl+\)"
+                      aria-label="Закрыть панель устройств"
+                      className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    {renderPanelContent('explorer')}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Floating Semi-Transparent Right Inspector (.fl-prop) */}
+            {focusInspectorCollapsed ? (
+              <button
+                type="button"
+                data-testid="focus-floating-inspector"
+                onClick={() => setFocusInspectorCollapsed(false)}
+                title="Развернуть плавающий инспектор свойств"
+                className="no-print absolute right-3 top-[54px] z-30 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/85 hover:bg-[var(--flux-surface)] hover:border-[var(--flux-accent)] backdrop-blur-md shadow-lg text-[11px] font-medium text-[var(--flux-text)] transition-all"
+              >
+                <ChevronLeft className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                <span>Свойства</span>
+              </button>
+            ) : (
+              <div
+                data-testid="focus-floating-inspector"
+                className="no-print absolute right-3 top-[54px] w-[276px] max-w-[calc(100vw-24px)] max-h-[calc(100vh-124px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/90 hover:bg-[var(--flux-surface)]/97 focus-within:bg-[var(--flux-surface)]/97 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col opacity-92 hover:opacity-100 focus-within:opacity-100 transition-all"
+              >
+                <div className="h-5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between shrink-0">
+                  <span className="text-[9.5px] font-semibold uppercase tracking-wider text-[var(--flux-text-muted)]">
+                    Плавающий инспектор
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="focus-inspector-collapse-btn"
+                    onClick={() => setFocusInspectorCollapsed(true)}
+                    title="Свернуть инспектор в кнопку"
+                    aria-label="Свернуть инспектор"
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-[3px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
+                  >
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  {renderPanelContent('inspector')}
+                </div>
+              </div>
+            )}
+
+            {/* Slide-Up Glass Console Drawer (ПЭ3, Кабели, ERC, Логи, API) */}
+            <AnimatePresence initial={false}>
+              {focusConsoleOpen && (
+                <motion.div
+                  data-testid="focus-console-drawer"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                  className={`no-print absolute bottom-[96px] ${
+                    focusExplorerOpen ? 'left-3 sm:left-[324px]' : 'left-3'
+                  } ${
+                    focusInspectorCollapsed ? 'right-3' : 'right-3 lg:right-[296px]'
+                  } h-[225px] z-35 rounded-[10px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/95 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col`}
+                >
+                  <BottomConsole
+                    project={project}
+                    uiMode={uiMode}
+                    activeTab={consoleTab}
+                    collapsed={false}
+                    tabsPosition="top"
+                    requestedApiSubTab={requestedApiSubTab}
+                    bom={bom}
+                    cables={cables}
+                    netLengths={netLengths}
+                    terminals={terminals}
+                    erc={erc}
+                    logs={logs}
+                    fluxBusMessages={fluxBusMessages}
+                    dockSide="bottom"
+                    onFluxBusLog={(entry) => setFluxBusMessages((prev) => [entry, ...prev.slice(0, 49)])}
+                    onSetTab={setConsoleTab}
+                    onExpandPanel={() => setFocusConsoleOpen(true)}
+                    onToggleCollapse={() => setFocusConsoleOpen(false)}
+                    onJumpToIssue={handleJumpToIssue}
+                    onQuickFixIssue={handleQuickFixErc}
+                    onSelectDeviceByDesignation={(designation) => {
+                      const dev = project.devices.find((d) => d.designation === designation);
+                      if (!dev) return;
+                      openSheetTab(dev.sheetId, activeViewportIdx);
+                      setSelectedDeviceId(dev.id);
+                      setSelectedWireId(null);
+                      setSelectedAnnotationId(null);
+                    }}
+                    onHighlightNet={(netName) => {
+                      setHighlightedPotentialSeed({ netName });
+                      const trace = traceConnectedPotential(project, { netName });
+                      const firstWire = project.wires.find((w) => trace.wireIds.includes(w.id));
+                      if (firstWire && firstWire.sheetId !== activeSheetId) {
+                        openSheetTab(firstWire.sheetId, activeViewportIdx);
+                      }
+                    }}
+                    onDownloadBomCsv={() => {
+                      downloadText(`${project.projectCode}-PE3.csv`, exportBomCsv(bom), 'text/csv;charset=utf-8');
+                    }}
+                    onDownloadCablesCsv={() => {
+                      downloadText(
+                        `${project.projectCode}-cables.csv`,
+                        exportCableJournalCsv(cables, netLengths),
+                        'text/csv;charset=utf-8'
+                      );
+                    }}
+                    onDownloadNetLengthsCsv={() => {
+                      downloadText(
+                        `${project.projectCode}-net-lengths.csv`,
+                        exportNetWireLengthsCsv(netLengths),
+                        'text/csv;charset=utf-8'
+                      );
+                    }}
+                    onOpenReportModal={() => setReportOpen(true)}
+                    onOpenFluxPublishModal={() => setFluxPublishOpen(true)}
+                    onOpenTerminalEditor={() => setTerminalEditorOpen(true)}
+                    onClearLogs={() => setLogs([])}
+                    onOpenHealthDashboard={() => setHealthOpen(true)}
+                    onTestApiSyncPush={handleTestApiSyncPush}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>
+        )}
+
+        {/* Floating Undocked Panels (Classic & Hybrid only) */}
+        {(uiMode !== 'focus' || symbolDraft.open) && (
+          <AnimatePresence initial={false}>
+            {floatingPanels.map((fp) => (
+              <FloatingPanelWindow
+                key={fp.id}
+                panel={fp}
+                uiScale={uiScale}
+                isResizing={resizingDockEdge === 'floating'}
+                isMoving={panelDrag?.panelId === fp.id}
+                onStartDrag={handleStartPanelDrag}
+                onResizeFloatingStart={handleResizeFloatingStart}
+                onMoveDock={handleMoveDockPanel}
+                onToggleCollapse={handleToggleDockCollapse}
+              >
+                {renderPanelContent(fp.id)}
+              </FloatingPanelWindow>
+            ))}
+          </AnimatePresence>
+        )}
 
         {/* Live Dock Drop Targets while dragging panel headers */}
         <DockDropOverlay
@@ -6144,6 +6876,8 @@ export default function App() {
         settings={project.visualSettings}
         uiScale={uiScale}
         onChangeUiScale={handleChangeUiScale}
+        uiMode={uiMode}
+        onChangeUiMode={handleChangeUiMode}
         onClose={() => setVisualOpen(false)}
         onApply={handleApplyVisualSettings}
       />
@@ -6323,6 +7057,55 @@ export default function App() {
         }}
       />
     </div>
+      {shortcutsOpen && (
+        <div
+          role="dialog"
+          aria-label="Справка по горячим клавишам"
+          onClick={() => setShortcutsOpen(false)}
+          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-xl border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden text-[var(--flux-text)]"
+          >
+            <div className="px-4 py-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between">
+              <span className="font-semibold text-[13px]">Горячие клавиши САПР E3ProMax</span>
+              <button
+                type="button"
+                onClick={() => setShortcutsOpen(false)}
+                className="px-2 py-0.5 rounded border border-[var(--flux-line)] text-[11px] hover:bg-[var(--flux-hover)]"
+              >
+                Esc
+              </button>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-x-6 gap-y-2 text-[11.5px]">
+              {[
+                ['V / Esc', 'Выбор (Select)'],
+                ['W / Пробел', 'Провод (Wire)'],
+                ['H / СКМ', 'Панорама (Pan)'],
+                ['/', 'Сменить изгиб провода'],
+                ['R', 'Повернуть на 90°'],
+                ['Z', 'Вписать лист в окно'],
+                ['Ctrl + S', 'Сохранить сессию'],
+                ['Ctrl + K', 'Палитра команд'],
+                ['Ctrl + \\', 'Свернуть/развернуть проводник'],
+                ['Ctrl + Z / Y', 'Отменить / Повторить'],
+                ['Ctrl + C / V / D', 'Копия / Вставка / Дубль'],
+                ['Alt + ← / →', 'История переходов'],
+                ['F3 / F8 / F9', 'Привязка / Орто / Сетка'],
+                ['F1 или ?', 'Эта справка'],
+              ].map(([k, desc]) => (
+                <div key={k} className="flex items-center justify-between gap-2 border-b border-[var(--flux-line)]/60 pb-1">
+                  <span className="text-[var(--flux-text-muted)]">{desc}</span>
+                  <kbd className="px-1.5 py-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[10.5px] font-semibold">
+                    {k}
+                  </kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </MotionConfig>
   );
 }

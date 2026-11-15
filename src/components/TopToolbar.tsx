@@ -2,8 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Activity,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignStartHorizontal,
+  AlignStartVertical,
   Archive,
+  ArrowLeft,
   ArrowLeftRight,
+  ArrowRight,
   ArrowUpRight,
   Check,
   CheckCircle2,
@@ -39,6 +45,7 @@ import {
   Maximize2,
   Minus,
   Moon,
+  Monitor,
   MousePointer2,
   Package,
   Palette,
@@ -51,6 +58,7 @@ import {
   RefreshCw,
   RotateCcw,
   RotateCw,
+  Ruler,
   Save,
   Search,
   Send,
@@ -103,6 +111,12 @@ import {
   UI_SCALE_OPTIONS,
   type UiScalePercent,
 } from '../core/uiScale';
+import {
+  defaultRibbonCollapsedForMode,
+  isNewUiMode,
+  UI_MODE_OPTIONS,
+  type UiWorkspaceMode,
+} from '../core/uiMode';
 import { LayerManagerPopover } from './LayerManagerPopover';
 
 export type { CadTool };
@@ -123,9 +137,16 @@ interface TopToolbarProps {
   tool: CadTool;
   zoom: number;
   uiScale?: UiScalePercent;
+  uiMode?: UiWorkspaceMode;
+  onChangeUiMode?: (mode: UiWorkspaceMode) => void;
   viewportLayout: ViewportLayoutMode;
   canUndo: boolean;
   canRedo: boolean;
+  canNavBack?: boolean;
+  canNavForward?: boolean;
+  onNavBack?: () => void;
+  onNavForward?: () => void;
+  selectedDesignation?: string | null;
   hasSelection: boolean;
   hasClipboard?: boolean;
   ercErrorCount: number;
@@ -142,6 +163,9 @@ interface TopToolbarProps {
   onPasteClipboard?: () => void;
   onDuplicateSelected?: () => void;
   onRotateSelected: () => void;
+  onMirrorSelected?: (axis: 'x' | 'y') => void;
+  onAlignSelected?: (mode: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
+  selectedDeviceCount?: number;
   onDeleteSelected: () => void;
   onZoomChange: (nextZoom: number) => void;
   onFitView: () => void;
@@ -430,9 +454,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   tool,
   zoom,
   uiScale = 100,
+  uiMode = 'classic',
+  onChangeUiMode,
   viewportLayout,
   canUndo,
   canRedo,
+  canNavBack = false,
+  canNavForward = false,
+  onNavBack,
+  onNavForward,
+  selectedDesignation = null,
   hasSelection,
   hasClipboard = false,
   ercErrorCount,
@@ -448,6 +479,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   onCopySelected,
   onPasteClipboard,
   onRotateSelected,
+  onMirrorSelected,
+  onAlignSelected,
+  selectedDeviceCount = 0,
   onDeleteSelected,
   onZoomChange,
   onFitView,
@@ -520,11 +554,19 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   const headerRef = useRef<HTMLElement | null>(null);
 
   const [activeTab, setActiveTab] = useState<RibbonSectionId>('home');
-  const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
+  const [ribbonCollapsed, setRibbonCollapsed] = useState<boolean>(() => defaultRibbonCollapsedForMode(uiMode));
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const [layersPopoverOpen, setLayersPopoverOpen] = useState(false);
   const [layersPopoverLeft, setLayersPopoverLeft] = useState<number | null>(null);
   const [menuCategory, setMenuCategory] = useState<AppMenuCategory>('file');
+
+  const prevUiModeRef = useRef<UiWorkspaceMode>(uiMode);
+  useEffect(() => {
+    if (prevUiModeRef.current !== uiMode) {
+      prevUiModeRef.current = uiMode;
+      setRibbonCollapsed(defaultRibbonCollapsedForMode(uiMode));
+    }
+  }, [uiMode]);
 
   const isSymbolEditorOpen = Boolean(symbolWorkspace?.draft.open);
   const prevSymbolOpenRef = useRef(false);
@@ -535,9 +577,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
       setLayersPopoverOpen(false);
     } else if (!isSymbolEditorOpen && prevSymbolOpenRef.current) {
       setActiveTab((curr) => (curr === 'ugo_editor' ? 'home' : curr));
+      setRibbonCollapsed(defaultRibbonCollapsedForMode(uiMode));
     }
     prevSymbolOpenRef.current = isSymbolEditorOpen;
-  }, [isSymbolEditorOpen]);
+  }, [isSymbolEditorOpen, uiMode]);
 
   const vs = project.visualSettings;
   const resolvedLayers = resolveCadLayers(project.layers, vs.showGostFrame);
@@ -595,7 +638,11 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   return (
     <header
       ref={headerRef}
-      className="no-print shrink-0 w-full max-w-full min-w-0 relative z-40 border-b border-[var(--flux-line)] flux-glass-surface select-none"
+      className={
+        uiMode === 'focus'
+          ? 'no-print shrink-0 w-full h-0 relative z-40 select-none overflow-visible'
+          : 'no-print shrink-0 w-full max-w-full min-w-0 relative z-40 border-b border-[var(--flux-line)] flux-glass-surface select-none'
+      }
     >
       <input
         ref={fileInputRef}
@@ -612,169 +659,596 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
         }}
       />
 
-      {/* Row 1: CAD Application Button + Monochrome Quick Access Toolbar + Document Title */}
-      <div className="flex items-center justify-between gap-2 lg:gap-4 px-1.5 h-7 border-b border-[var(--flux-line)] min-w-0 flux-glass-bar">
-        <div className="flex items-center gap-0.5 shrink-0">
-          <button
-            ref={menuBtnRef}
-            type="button"
-            data-testid="app-menu-btn"
-            aria-haspopup="menu"
-            aria-expanded={appMenuOpen}
-            onClick={() => setAppMenuOpen((o) => !o)}
-            title="Главное меню программы: файлы, экспорт, штампы, настройки"
-            className={`inline-flex items-center gap-1.5 h-[calc(21px*var(--flux-ui-scale))] pl-1.5 pr-2 rounded-[4px] font-semibold text-[length:calc(11px*var(--flux-ui-scale))] tracking-tight border transition-colors whitespace-nowrap shrink-0 mr-1 ${
-              appMenuOpen
-                ? 'bg-[var(--flux-accent-solid)] text-white border-[var(--flux-accent-solid)]'
-                : 'bg-[#12261e] dark:bg-[#193329] hover:bg-[#183428] dark:hover:bg-[#214235] text-emerald-50 border-[#285442]'
-            }`}
+      {/* Row 1: Focus Floating Pills | Hybrid 36px Header | Classic Emerald Header */}
+      {uiMode === 'focus' ? (
+        <div
+          data-testid="header-mode-new"
+          className="pointer-events-none absolute top-2.5 left-3 right-3 z-40 flex items-center justify-between gap-3"
+        >
+          {/* Top-left floating glass pill (.fl-top) */}
+          <div
+            data-testid="focus-top-left"
+            className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/85 backdrop-blur-md shadow-lg min-w-0 max-w-[38vw]"
           >
-            <svg
-              viewBox="0 0 18 18"
-              fill="none"
-              aria-hidden="true"
-              className="w-[calc(12px*var(--flux-ui-scale))] h-[calc(12px*var(--flux-ui-scale))] shrink-0"
-            >
-              <rect x="1.5" y="1.5" width="15" height="15" rx="3" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.5" />
-              <path
-                d="M4.2 9h3.4l1.9-3.6 2 7.2 1.6-3.6H14"
-                stroke="#34d399"
-                strokeWidth="1.7"
-                strokeLinecap="square"
-                strokeLinejoin="miter"
-              />
-            </svg>
-            <span style={{ fontFamily: 'var(--font-display)' }}>E3ProMax</span>
-            <ChevronDown className={`w-3 h-3 opacity-80 transition-transform duration-150 ${appMenuOpen ? 'rotate-180' : ''}`} />
-          </button>
-
-          <span className="h-3.5 w-px bg-[var(--flux-line)] mr-0.5 shrink-0" aria-hidden="true" />
-
-          {/* Quick Access Toolbar (QAT): Undo / Redo */}
-
-          <button
-            type="button"
-            onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onUndo() : onUndo())}
-            disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canUndo : !canUndo}
-            title={isSymbolEditorOpen ? 'Отменить в редакторе УГО (Ctrl+Z)' : 'Отменить (Ctrl+Z)'}
-            aria-label="Отменить действие"
-            className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
-          >
-            <Undo2 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onRedo() : onRedo())}
-            disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canRedo : !canRedo}
-            title={isSymbolEditorOpen ? 'Повторить в редакторе УГО (Ctrl+Y)' : 'Повторить (Ctrl+Y)'}
-            aria-label="Повторить действие"
-            className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
-          >
-            <Redo2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Centered Document Title */}
-        <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
-          <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate max-w-[calc(200px*var(--flux-ui-scale))] md:max-w-[calc(320px*var(--flux-ui-scale))] lg:max-w-[calc(460px*var(--flux-ui-scale))]">
-            {isSymbolEditorOpen && symbolWorkspace
-              ? `Редактор блока УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
-              : project.name}
-          </span>
-          <span className="hidden xl:inline text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
-            {isSymbolEditorOpen && symbolWorkspace
-              ? `${symbolWorkspace.draft.e3BlockName || 'BLOCK'} · ${symbolWorkspace.draft.width}×${symbolWorkspace.draft.height}`
-              : `${project.projectCode} · Rev ${project.revision}`}
-          </span>
-        </div>
-
-        {/* Right Window Utilities */}
-        <div className="flex items-center gap-0.5 shrink-0">
-          {onOpenCommandPalette && (
             <button
+              ref={menuBtnRef}
               type="button"
-              data-testid="toolbar-command-palette-btn"
-              onClick={onOpenCommandPalette}
-              aria-label="Палитра команд (Ctrl+K)"
-              title="Палитра команд и быстрый переход (Ctrl+K)"
-              className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 mr-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
-            >
-              <Search className="w-3 h-3 text-[var(--flux-accent)]" />
-              <span className="hidden sm:inline">Команды</span>
-              <kbd className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-                Ctrl+K
-              </kbd>
-            </button>
-          )}
-          {onOpenHealthDashboard && (
-            <button
-              type="button"
-              data-testid="toolbar-health-btn"
-              onClick={onOpenHealthDashboard}
-              aria-label="Монитор здоровья и телеметрия процессов"
-              title="Монитор здоровья, частота логов и диагностика лагов"
-              className={`inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 mr-0.5 rounded-[2px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
-                errorLogCount > 0
-                  ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20'
-                  : 'border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+              data-testid="app-menu-btn"
+              aria-haspopup="menu"
+              aria-expanded={appMenuOpen}
+              onClick={() => setAppMenuOpen((o) => !o)}
+              title="Главное меню программы: файлы, экспорт, штампы, настройки интерфейса"
+              className={`inline-flex items-center gap-1.5 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] font-semibold text-[length:calc(11px*var(--flux-ui-scale))] transition-colors whitespace-nowrap shrink-0 ${
+                appMenuOpen
+                  ? 'bg-[var(--flux-accent-solid)] text-white'
+                  : 'hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
               }`}
             >
-              <Activity
-                className={`w-3 h-3 ${
-                  errorLogCount > 0 ? 'text-rose-500' : 'text-[var(--flux-text-muted)]'
-                }`}
-              />
-              <span className="hidden lg:inline">Здоровье</span>
-              {errorLogCount > 0 && (
-                <span className="font-mono tabular-nums text-[length:calc(9.5px*var(--flux-ui-scale))] font-semibold">
-                  {errorLogCount}
-                </span>
-              )}
+              <svg viewBox="0 0 18 18" fill="none" aria-hidden="true" className="w-3.5 h-3.5 shrink-0 text-[var(--flux-accent)]">
+                <rect x="1.5" y="1.5" width="15" height="15" rx="3" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.5" />
+                <path d="M4.2 9h3.4l1.9-3.6 2 7.2 1.6-3.6H14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="square" strokeLinejoin="miter" />
+              </svg>
+              <span>E3ProMax</span>
+              <ChevronDown className={`w-3 h-3 opacity-70 transition-transform ${appMenuOpen ? 'rotate-180' : ''}`} />
             </button>
-          )}
-          {onChangeUiScale && (
-            <select
-              data-testid="ui-scale-select"
-              aria-label="Масштаб интерфейса"
-              title="Масштаб интерфейса программы (100%–180%)"
-              value={uiScale}
-              onChange={(e) => onChangeUiScale(normalizeUiScalePercent(Number(e.target.value)))}
-              className="h-[calc(21px*var(--flux-ui-scale))] px-1 mr-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)] transition-colors shrink-0 cursor-pointer"
+            <span className="h-4 w-px bg-[var(--flux-line)] shrink-0" aria-hidden="true" />
+            <button
+              type="button"
+              onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onUndo() : onUndo())}
+              disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canUndo : !canUndo}
+              title="Отменить (Ctrl+Z)"
+              aria-label="Отменить действие"
+              className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 shrink-0"
             >
-              {UI_SCALE_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}%
-                </option>
-              ))}
-            </select>
-          )}
-          <button
-            type="button"
-            onClick={onToggleTheme}
-            aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}
-            title={isDark ? 'Светлая тема' : 'Тёмная тема'}
-            className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
-          >
-            {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          </button>
-          <button
-            type="button"
-            data-testid="ribbon-collapse-btn"
-            onClick={() => setRibbonCollapsed((c) => !c)}
-            aria-label={ribbonCollapsed ? 'Развернуть ленту команд' : 'Свернуть ленту команд'}
-            title={ribbonCollapsed ? 'Развернуть ленту' : 'Свернуть ленту'}
-            className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
-          >
-            <motion.span
-              animate={{ rotate: ribbonCollapsed ? 180 : 0 }}
-              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-              className="inline-flex items-center justify-center"
+              <Undo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+            </button>
+            <button
+              type="button"
+              onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onRedo() : onRedo())}
+              disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canRedo : !canRedo}
+              title="Повторить (Ctrl+Y)"
+              aria-label="Повторить действие"
+              className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 shrink-0"
             >
-              <ChevronUp className="w-3.5 h-3.5" />
-            </motion.span>
-          </button>
+              <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+            </button>
+            {onSaveSessionNow && (
+              <button
+                type="button"
+                onClick={onSaveSessionNow}
+                title="Сохранить сессию (Ctrl+S)"
+                aria-label="Сохранить сессию"
+                className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] shrink-0"
+              >
+                <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
+              </button>
+            )}
+            {onNavBack && onNavForward && (
+              <>
+                <button
+                  type="button"
+                  onClick={onNavBack}
+                  disabled={!canNavBack}
+                  title="Назад (Alt+←)"
+                  aria-label="Назад"
+                  className="hidden sm:inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 shrink-0"
+                >
+                  <ArrowLeft className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onNavForward}
+                  disabled={!canNavForward}
+                  title="Вперёд (Alt+→)"
+                  aria-label="Вперёд"
+                  className="hidden sm:inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 shrink-0"
+                >
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </>
+            )}
+            <span className="hidden lg:inline-block h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
+            <div className="hidden lg:flex items-center gap-1 min-w-0 pr-1 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+              <span className="truncate max-w-[84px]">{project.projectCode}</span>
+              {activeSheet && (
+                <>
+                  <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
+                  <span className="truncate max-w-[64px]">Л.{activeSheet.number}</span>
+                </>
+              )}
+              {selectedDesignation && (
+                <>
+                  <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
+                  <span className="font-mono font-semibold text-[var(--flux-accent)] shrink-0">{selectedDesignation}</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Top-right floating glass pill (.fl-top2) */}
+          <div
+            data-testid="focus-top-right"
+            className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/85 backdrop-blur-md shadow-lg shrink-0"
+          >
+            <button
+              type="button"
+              onClick={onRunErc}
+              title="Открыть проверку электрических правил (ERC)"
+              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono font-medium transition-colors shrink-0 ${
+                ercErrorCount > 0
+                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 hover:bg-rose-500/25'
+                  : 'hover:bg-[var(--flux-hover)] text-[var(--flux-accent)]'
+              }`}
+            >
+              <CheckCircle2 className="w-3 h-3 shrink-0" strokeWidth={1.8} />
+              <span>ERC {ercErrorCount}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onOpenHvacWizard}
+              title="Конструктор ФСА / ОВиК"
+              className="hidden sm:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors shrink-0"
+            >
+              <Cpu className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.6} />
+              <span>ФСА</span>
+            </button>
+            <button
+              type="button"
+              onClick={onOpenPublishModal}
+              title="Пакетный выпуск PDF / DXF"
+              className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2.5 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0"
+            >
+              <Printer className="w-3 h-3" strokeWidth={1.6} />
+              <span>Выпуск</span>
+            </button>
+            <button
+              type="button"
+              data-testid="ribbon-collapse-btn"
+              onClick={() => setRibbonCollapsed((c) => !c)}
+              aria-label={ribbonCollapsed ? 'Развернуть ленту команд' : 'Свернуть ленту команд'}
+              title={ribbonCollapsed ? 'Открыть ленту инструментов поверх холста' : 'Скрыть ленту'}
+              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                !ribbonCollapsed
+                  ? 'border-[var(--flux-accent)] bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
+                  : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+              }`}
+            >
+              <span>Лента</span>
+            </button>
+            {onChangeUiScale && (
+              <select
+                data-testid="ui-scale-select"
+                aria-label="Масштаб интерфейса"
+                title="Масштаб интерфейса программы (100%–180%)"
+                value={uiScale}
+                onChange={(e) => onChangeUiScale(normalizeUiScalePercent(Number(e.target.value)))}
+                className="hidden md:inline-block h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] focus:outline-none cursor-pointer"
+              >
+                {UI_SCALE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}%
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}
+              title={isDark ? 'Светлая тема' : 'Тёмная тема'}
+              className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            >
+              {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
-      </div>
+      ) : isNewUiMode(uiMode) ? (
+        <div
+          data-testid="header-mode-new"
+          className="flex items-center justify-between gap-2 lg:gap-3 px-2 h-[calc(36px*var(--flux-ui-scale))] border-b border-[var(--flux-line)] min-w-0 bg-[var(--flux-surface)]"
+        >
+          <div className="flex items-center gap-1 shrink-0 min-w-0">
+            <button
+              ref={menuBtnRef}
+              type="button"
+              data-testid="app-menu-btn"
+              aria-haspopup="menu"
+              aria-expanded={appMenuOpen}
+              onClick={() => setAppMenuOpen((o) => !o)}
+              title="Главное меню программы: файлы, экспорт, штампы, настройки интерфейса"
+              className={`inline-flex items-center gap-1.5 h-[calc(24px*var(--flux-ui-scale))] pl-2 pr-2 rounded-[4px] font-semibold text-[length:calc(11.5px*var(--flux-ui-scale))] tracking-tight border transition-colors whitespace-nowrap shrink-0 ${
+                appMenuOpen
+                  ? 'bg-[var(--flux-accent-solid)] text-white border-[var(--flux-accent-solid)]'
+                  : 'bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] border-[var(--flux-line-strong)]'
+              }`}
+            >
+              <svg
+                viewBox="0 0 18 18"
+                fill="none"
+                aria-hidden="true"
+                className="w-[calc(13px*var(--flux-ui-scale))] h-[calc(13px*var(--flux-ui-scale))] shrink-0 text-[var(--flux-accent)]"
+              >
+                <rect x="1.5" y="1.5" width="15" height="15" rx="3" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.5" />
+                <path
+                  d="M4.2 9h3.4l1.9-3.6 2 7.2 1.6-3.6H14"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="square"
+                  strokeLinejoin="miter"
+                />
+              </svg>
+              <span style={{ fontFamily: 'var(--font-display)' }}>E3ProMax</span>
+              <ChevronDown className={`w-3 h-3 opacity-70 transition-transform duration-150 ${appMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            <span className="h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onUndo() : onUndo())}
+              disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canUndo : !canUndo}
+              title={isSymbolEditorOpen ? 'Отменить в редакторе УГО (Ctrl+Z)' : 'Отменить (Ctrl+Z)'}
+              aria-label="Отменить действие"
+              className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+            >
+              <Undo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+            </button>
+            <button
+              type="button"
+              onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onRedo() : onRedo())}
+              disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canRedo : !canRedo}
+              title={isSymbolEditorOpen ? 'Повторить в редакторе УГО (Ctrl+Y)' : 'Повторить (Ctrl+Y)'}
+              aria-label="Повторить действие"
+              className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+            >
+              <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+            </button>
+
+            {onSaveSessionNow && (
+              <button
+                type="button"
+                onClick={onSaveSessionNow}
+                title="Сохранить сессию (Ctrl+S)"
+                aria-label="Сохранить сессию"
+                className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+              >
+                <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
+              </button>
+            )}
+
+            {onNavBack && onNavForward && (
+              <>
+                <span className="hidden sm:inline-block h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
+                <button
+                  type="button"
+                  onClick={onNavBack}
+                  disabled={!canNavBack}
+                  title="Назад по истории переходов (Alt+←)"
+                  aria-label="Назад"
+                  className="hidden sm:inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.6} />
+                </button>
+                <button
+                  type="button"
+                  onClick={onNavForward}
+                  disabled={!canNavForward}
+                  title="Вперёд по истории переходов (Alt+→)"
+                  aria-label="Вперёд"
+                  className="hidden sm:inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" strokeWidth={1.6} />
+                </button>
+              </>
+            )}
+
+            <span className="hidden md:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
+            <div className="hidden md:flex items-center gap-1 min-w-0 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+              <span className="font-medium text-[var(--flux-text)] truncate max-w-[140px]">
+                {isSymbolEditorOpen && symbolWorkspace
+                  ? `УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
+                  : project.projectCode}
+              </span>
+              {!isSymbolEditorOpen && activeSheet && (
+                <>
+                  <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
+                  <span className="truncate max-w-[130px]">Л.{activeSheet.number} {activeSheet.name}</span>
+                </>
+              )}
+              {!isSymbolEditorOpen && selectedDesignation && (
+                <>
+                  <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
+                  <span className="font-mono font-semibold text-[var(--flux-accent)] shrink-0">{selectedDesignation}</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center flex-1 min-w-0 max-w-md">
+            {onOpenCommandPalette && (
+              <button
+                type="button"
+                data-testid="toolbar-command-palette-btn"
+                onClick={onOpenCommandPalette}
+                aria-label="Палитра команд (Ctrl+K)"
+                title="Палитра команд и быстрый поиск по проекту (Ctrl+K)"
+                className="w-full max-w-[320px] inline-flex items-center justify-between gap-2 h-[calc(24px*var(--flux-ui-scale))] px-2.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-surface-alt)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
+              >
+                <span className="inline-flex items-center gap-1.5 truncate">
+                  <Search className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" strokeWidth={1.6} />
+                  <span className="truncate">Поиск команд, изделий, листов…</span>
+                </span>
+                <kbd className="px-1 py-0 rounded bg-[var(--flux-surface)] border border-[var(--flux-line)] font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  Ctrl+K
+                </kbd>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={onRunErc}
+              title="Открыть проверку электрических правил (ERC)"
+              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[4px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono font-medium transition-colors shrink-0 ${
+                ercErrorCount > 0
+                  ? 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20'
+                  : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-accent)]'
+              }`}
+            >
+              <CheckCircle2 className="w-3 h-3 shrink-0" strokeWidth={1.8} />
+              <span>ERC {ercErrorCount}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onOpenHvacWizard}
+              title="Конструктор ФСА / ОВиК"
+              className="hidden xl:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors shrink-0"
+            >
+              <Cpu className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.6} />
+              <span>ФСА</span>
+            </button>
+            <button
+              type="button"
+              onClick={onOpenPublishModal}
+              title="Пакетный выпуск PDF / DXF"
+              className="hidden sm:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[4px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0"
+            >
+              <Printer className="w-3 h-3" strokeWidth={1.6} />
+              <span>Выпуск</span>
+            </button>
+            {onOpenHealthDashboard && (
+              <button
+                type="button"
+                data-testid="toolbar-health-btn"
+                onClick={onOpenHealthDashboard}
+                aria-label="Монитор здоровья и телеметрия процессов"
+                title="Монитор здоровья и диагностика"
+                className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                  errorLogCount > 0
+                    ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20'
+                    : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                }`}
+              >
+                <Activity className={`w-3 h-3 ${errorLogCount > 0 ? 'text-rose-500' : 'text-[var(--flux-text-muted)]'}`} />
+                {errorLogCount > 0 && (
+                  <span className="font-mono tabular-nums text-[length:calc(9.5px*var(--flux-ui-scale))] font-semibold">
+                    {errorLogCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {onChangeUiScale && (
+              <select
+                data-testid="ui-scale-select"
+                aria-label="Масштаб интерфейса"
+                title="Масштаб интерфейса программы (100%–180%)"
+                value={uiScale}
+                onChange={(e) => onChangeUiScale(normalizeUiScalePercent(Number(e.target.value)))}
+                className="h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)] transition-colors shrink-0 cursor-pointer"
+              >
+                {UI_SCALE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}%
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}
+              title={isDark ? 'Светлая тема' : 'Тёмная тема'}
+              className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            >
+              {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
+              data-testid="ribbon-collapse-btn"
+              onClick={() => setRibbonCollapsed((c) => !c)}
+              aria-label={ribbonCollapsed ? 'Развернуть ленту команд' : 'Свернуть ленту команд'}
+              title={ribbonCollapsed ? 'Развернуть ленту инструментов' : 'Свернуть ленту инструментов'}
+              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                !ribbonCollapsed
+                  ? 'border-[var(--flux-accent)] bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
+                  : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+              }`}
+            >
+              <span className="hidden lg:inline">Лента</span>
+              <motion.span
+                animate={{ rotate: ribbonCollapsed ? 180 : 0 }}
+                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                className="inline-flex items-center justify-center"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </motion.span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          data-testid="header-mode-classic"
+          className="flex items-center justify-between gap-2 lg:gap-4 px-1.5 h-7 border-b border-[var(--flux-line)] min-w-0 flux-glass-bar"
+        >
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button
+              ref={menuBtnRef}
+              type="button"
+              data-testid="app-menu-btn"
+              aria-haspopup="menu"
+              aria-expanded={appMenuOpen}
+              onClick={() => setAppMenuOpen((o) => !o)}
+              title="Главное меню программы: файлы, экспорт, штампы, настройки"
+              className={`inline-flex items-center gap-1.5 h-[calc(21px*var(--flux-ui-scale))] pl-1.5 pr-2 rounded-[4px] font-semibold text-[length:calc(11px*var(--flux-ui-scale))] tracking-tight border transition-colors whitespace-nowrap shrink-0 mr-1 ${
+                appMenuOpen
+                  ? 'bg-[var(--flux-accent-solid)] text-white border-[var(--flux-accent-solid)]'
+                  : 'bg-[#12261e] dark:bg-[#193329] hover:bg-[#183428] dark:hover:bg-[#214235] text-emerald-50 border-[#285442]'
+              }`}
+            >
+              <svg
+                viewBox="0 0 18 18"
+                fill="none"
+                aria-hidden="true"
+                className="w-[calc(12px*var(--flux-ui-scale))] h-[calc(12px*var(--flux-ui-scale))] shrink-0"
+              >
+                <rect x="1.5" y="1.5" width="15" height="15" rx="3" stroke="currentColor" strokeOpacity="0.65" strokeWidth="1.5" />
+                <path
+                  d="M4.2 9h3.4l1.9-3.6 2 7.2 1.6-3.6H14"
+                  stroke="#34d399"
+                  strokeWidth="1.7"
+                  strokeLinecap="square"
+                  strokeLinejoin="miter"
+                />
+              </svg>
+              <span style={{ fontFamily: 'var(--font-display)' }}>E3ProMax</span>
+              <ChevronDown className={`w-3 h-3 opacity-80 transition-transform duration-150 ${appMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            <span className="h-3.5 w-px bg-[var(--flux-line)] mr-0.5 shrink-0" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onUndo() : onUndo())}
+              disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canUndo : !canUndo}
+              title={isSymbolEditorOpen ? 'Отменить в редакторе УГО (Ctrl+Z)' : 'Отменить (Ctrl+Z)'}
+              aria-label="Отменить действие"
+              className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => (isSymbolEditorOpen && symbolWorkspace ? symbolWorkspace.onRedo() : onRedo())}
+              disabled={isSymbolEditorOpen && symbolWorkspace ? !symbolWorkspace.canRedo : !canRedo}
+              title={isSymbolEditorOpen ? 'Повторить в редакторе УГО (Ctrl+Y)' : 'Повторить (Ctrl+Y)'}
+              aria-label="Повторить действие"
+              className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-30 transition-colors shrink-0"
+            >
+              <Redo2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
+            <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate max-w-[calc(200px*var(--flux-ui-scale))] md:max-w-[calc(320px*var(--flux-ui-scale))] lg:max-w-[calc(460px*var(--flux-ui-scale))]">
+              {isSymbolEditorOpen && symbolWorkspace
+                ? `Редактор блока УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
+                : project.name}
+            </span>
+            <span className="hidden xl:inline text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap shrink-0">
+              {isSymbolEditorOpen && symbolWorkspace
+                ? `${symbolWorkspace.draft.e3BlockName || 'BLOCK'} · ${symbolWorkspace.draft.width}×${symbolWorkspace.draft.height}`
+                : `${project.projectCode} · Rev ${project.revision}`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-0.5 shrink-0">
+            {onOpenCommandPalette && (
+              <button
+                type="button"
+                data-testid="toolbar-command-palette-btn"
+                onClick={onOpenCommandPalette}
+                aria-label="Палитра команд (Ctrl+K)"
+                title="Палитра команд и быстрый переход (Ctrl+K)"
+                className="inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 mr-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+              >
+                <Search className="w-3 h-3 text-[var(--flux-accent)]" />
+                <span className="hidden sm:inline">Команды</span>
+                <kbd className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                  Ctrl+K
+                </kbd>
+              </button>
+            )}
+            {onOpenHealthDashboard && (
+              <button
+                type="button"
+                data-testid="toolbar-health-btn"
+                onClick={onOpenHealthDashboard}
+                aria-label="Монитор здоровья и телеметрия процессов"
+                title="Монитор здоровья, частота логов и диагностика лагов"
+                className={`inline-flex items-center gap-1 h-[calc(21px*var(--flux-ui-scale))] px-1.5 mr-0.5 rounded-[2px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                  errorLogCount > 0
+                    ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20'
+                    : 'border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
+                }`}
+              >
+                <Activity
+                  className={`w-3 h-3 ${
+                    errorLogCount > 0 ? 'text-rose-500' : 'text-[var(--flux-text-muted)]'
+                  }`}
+                />
+                <span className="hidden lg:inline">Здоровье</span>
+                {errorLogCount > 0 && (
+                  <span className="font-mono tabular-nums text-[length:calc(9.5px*var(--flux-ui-scale))] font-semibold">
+                    {errorLogCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {onChangeUiScale && (
+              <select
+                data-testid="ui-scale-select"
+                aria-label="Масштаб интерфейса"
+                title="Масштаб интерфейса программы (100%–180%)"
+                value={uiScale}
+                onChange={(e) => onChangeUiScale(normalizeUiScalePercent(Number(e.target.value)))}
+                className="h-[calc(21px*var(--flux-ui-scale))] px-1 mr-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)] transition-colors shrink-0 cursor-pointer"
+              >
+                {UI_SCALE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}%
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              aria-label={isDark ? 'Включить светлую тему' : 'Включить тёмную тему'}
+              title={isDark ? 'Светлая тема' : 'Тёмная тема'}
+              className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            >
+              {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
+              data-testid="ribbon-collapse-btn"
+              onClick={() => setRibbonCollapsed((c) => !c)}
+              aria-label={ribbonCollapsed ? 'Развернуть ленту команд' : 'Свернуть ленту команд'}
+              title={ribbonCollapsed ? 'Развернуть ленту' : 'Свернуть ленту'}
+              className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+            >
+              <motion.span
+                animate={{ rotate: ribbonCollapsed ? 180 : 0 }}
+                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                className="inline-flex items-center justify-center"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </motion.span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Floating Application Menu Drawer */}
       <AnimatePresence>
@@ -1065,7 +1539,58 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 )}
 
                 {menuCategory === 'system' && (
-                  <div className="space-y-0.5 pb-1">
+                  <div className="space-y-1 pb-1">
+                    {onChangeUiMode && (
+                      <div
+                        data-testid="appmenu-ui-mode-switcher"
+                        className="p-2 mb-1 rounded-lg border border-[var(--flux-line)] bg-[var(--flux-bg)]/75 space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1.5 text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)]">
+                            <Monitor className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
+                            <span>Интерфейс программы</span>
+                          </span>
+                          <span className="text-[length:calc(9.5px*var(--flux-ui-scale))] font-mono text-[var(--flux-text-muted)]">
+                            все функции едины
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-1">
+                          {(['classic', 'hybrid', 'focus'] as const).map((modeId) => {
+                            const opt = UI_MODE_OPTIONS.find((o) => o.id === modeId)!;
+                            const active = uiMode === modeId;
+                            return (
+                              <button
+                                key={modeId}
+                                type="button"
+                                data-testid={`appmenu-ui-mode-${modeId}`}
+                                aria-pressed={active}
+                                onClick={() => onChangeUiMode(modeId)}
+                                className={`w-full px-2 py-1.5 rounded-md border text-left transition-colors flex items-center justify-between gap-2 ${
+                                  active
+                                    ? 'border-[var(--flux-accent)] bg-[var(--flux-sel)] text-[var(--flux-text)]'
+                                    : 'border-[var(--flux-line)] bg-[var(--flux-surface)]/80 hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[length:calc(10px*var(--flux-ui-scale))] font-mono px-1 py-0 rounded bg-[var(--flux-surface-alt)] border border-[var(--flux-line)] text-[var(--flux-text-muted)]">
+                                      {opt.groupLabel}
+                                    </span>
+                                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-semibold truncate">
+                                      {opt.label}
+                                    </span>
+                                  </div>
+                                  <div className="text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate mt-0.5">
+                                    {opt.description}
+                                  </div>
+                                </div>
+                                {active && <Check className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <AppMenuActionRow
                       icon={<Workflow className="w-4 h-4" />}
                       title="Выровнять провода на листе (Автотрассировка)"
@@ -1147,69 +1672,82 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
         )}
       </AnimatePresence>
 
-      {/* Row 2: CAD Ribbon Section Tabs */}
-      <div className="flex items-center justify-between px-2 h-6 border-b border-[var(--flux-line)] bg-[var(--flux-surface)]">
+      {/* Row 2 & Row 3: Classic shows tab strip permanently; Hybrid/Focus collapse cleanly to single-row/floating pills until expanded */}
+      {(uiMode === 'classic' || !ribbonCollapsed) && (
         <div
-          role="tablist"
-          aria-label="Разделы ленты инструментов"
-          className="flex items-end gap-0.5 h-full overflow-x-auto no-scrollbar"
+          className={
+            uiMode === 'focus'
+              ? 'absolute top-[calc(44px*var(--flux-ui-scale))] left-3 right-3 z-40 rounded-xl border border-[var(--flux-line-strong)] bg-[var(--flux-surface)]/95 backdrop-blur-md shadow-2xl overflow-hidden'
+              : ''
+          }
         >
-          {(isSymbolEditorOpen
-            ? [...RIBBON_TABS, { id: 'ugo_editor' as const, label: 'Редактор УГО', contextual: true }]
-            : RIBBON_TABS
-          ).map((tab) => {
-            const isActive = activeTab === tab.id;
-            const isContextual = Boolean(tab.contextual);
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                data-testid={`ribbon-tab-${tab.id}`}
-                aria-selected={isActive}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  if (ribbonCollapsed) setRibbonCollapsed(false);
-                }}
-                className={`relative h-full px-2.5 text-[length:calc(11px*var(--flux-ui-scale))] border-x border-t transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
-                  isActive
-                    ? 'bg-[var(--flux-bg)] border-[var(--flux-line)] border-t-2 border-t-[var(--flux-accent)] text-[var(--flux-text)] border-b-transparent -mb-px pb-px font-semibold'
-                    : isContextual
-                      ? 'bg-[var(--flux-accent-soft)] border-[var(--flux-accent)]/35 text-[var(--flux-accent)] hover:bg-[var(--flux-sel)] font-semibold'
-                      : 'bg-transparent border-transparent text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
-                }`}
+          {/* Row 2: CAD Ribbon Section Tabs */}
+          <div className="flex items-center justify-between px-2 h-6 border-b border-[var(--flux-line)] bg-[var(--flux-surface)]">
+            <div
+              role="tablist"
+              aria-label="Разделы ленты инструментов"
+              className="flex items-end gap-0.5 h-full overflow-x-auto no-scrollbar"
+            >
+              {(isSymbolEditorOpen
+                ? [...RIBBON_TABS, { id: 'ugo_editor' as const, label: 'Редактор УГО', contextual: true }]
+                : RIBBON_TABS
+              ).map((tab) => {
+                const isActive = activeTab === tab.id;
+                const isContextual = Boolean(tab.contextual);
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    data-testid={`ribbon-tab-${tab.id}`}
+                    aria-selected={isActive}
+                    onClick={() => {
+                      if (activeTab === tab.id) {
+                        setRibbonCollapsed((c) => !c);
+                      } else {
+                        setActiveTab(tab.id);
+                        setRibbonCollapsed(false);
+                      }
+                    }}
+                    className={`relative h-full px-2.5 text-[length:calc(11px*var(--flux-ui-scale))] border-x border-t transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
+                      isActive
+                        ? 'bg-[var(--flux-bg)] border-[var(--flux-line)] border-t-2 border-t-[var(--flux-accent)] text-[var(--flux-text)] border-b-transparent -mb-px pb-px font-semibold'
+                        : isContextual
+                          ? 'bg-[var(--flux-accent-soft)] border-[var(--flux-accent)]/35 text-[var(--flux-accent)] hover:bg-[var(--flux-sel)] font-semibold'
+                          : 'bg-transparent border-transparent text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:flex items-center gap-2 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] whitespace-nowrap shrink-0 pl-2">
+              {isSymbolEditorOpen && symbolWorkspace ? (
+                <span className="font-mono tabular-nums text-[var(--flux-accent)]">
+                  Блок: {symbolWorkspace.draft.shapes.length} прим. · {symbolWorkspace.draft.pins.length} выв. · {symbolWorkspace.draft.attributes.length} атр.
+                </span>
+              ) : (
+                <span className="font-mono tabular-nums">
+                  {project.sheets.length} л. · {project.devices.length} изд. · {project.wires.length} цеп.
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Row 3: Dual-Hierarchy Structured CAD Ribbon */}
+          <AnimatePresence initial={false}>
+            {!ribbonCollapsed && (
+              <motion.div
+                key="ribbon-body"
+                data-testid="ribbon-body"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: ribbonHeight, opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+                className="overflow-hidden bg-[var(--flux-bg)]"
               >
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="hidden md:flex items-center gap-2 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] whitespace-nowrap shrink-0 pl-2">
-          {isSymbolEditorOpen && symbolWorkspace ? (
-            <span className="font-mono tabular-nums text-[var(--flux-accent)]">
-              Блок: {symbolWorkspace.draft.shapes.length} прим. · {symbolWorkspace.draft.pins.length} выв. · {symbolWorkspace.draft.attributes.length} атр.
-            </span>
-          ) : (
-            <span className="font-mono tabular-nums">
-              {project.sheets.length} л. · {project.devices.length} изд. · {project.wires.length} цеп.
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Row 3: Dual-Hierarchy Structured CAD Ribbon */}
-      <AnimatePresence initial={false}>
-        {!ribbonCollapsed && (
-          <motion.div
-            key="ribbon-body"
-            data-testid="ribbon-body"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: ribbonHeight, opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-            className="overflow-hidden bg-[var(--flux-bg)]"
-          >
             <div
               style={{ height: ribbonHeight }}
               className="flex items-stretch px-1 bg-[var(--flux-bg)] overflow-x-auto no-scrollbar"
@@ -1231,6 +1769,13 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                           title="Соединить выводы проводом (W)"
                           active={tool === 'wire'}
                           onClick={() => onSetTool('wire')}
+                        />
+                        <LargeRibbonBtn
+                          icon={<Ruler className="w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))]" />}
+                          label="Линейка"
+                          title="Измерить расстояние и дельту координат на схеме"
+                          active={tool === 'measure'}
+                          onClick={() => onSetTool('measure')}
                         />
                       </RibbonPanel>
 
@@ -1272,7 +1817,62 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                             onClick={onDeleteSelected}
                           />
                         </RibbonStack>
+                        {onMirrorSelected && (
+                          <RibbonStack>
+                            <SmallRibbonBtn
+                              icon={<FlipHorizontal2 className="w-3.5 h-3.5" />}
+                              label="Отр. X"
+                              title="Зеркально отразить по горизонтали"
+                              disabled={!hasSelection}
+                              onClick={() => onMirrorSelected('x')}
+                            />
+                            <SmallRibbonBtn
+                              icon={<FlipVertical2 className="w-3.5 h-3.5" />}
+                              label="Отр. Y"
+                              title="Зеркально отразить по вертикали"
+                              disabled={!hasSelection}
+                              onClick={() => onMirrorSelected('y')}
+                            />
+                          </RibbonStack>
+                        )}
                       </RibbonPanel>
+
+                      {onAlignSelected && (
+                        <RibbonPanel title="Выравнивание">
+                          <RibbonStack>
+                            <SmallRibbonBtn
+                              icon={<AlignStartVertical className="w-3.5 h-3.5" />}
+                              label="Слева"
+                              title="Выровнять выбранные изделия по левому краю"
+                              disabled={selectedDeviceCount < 2}
+                              onClick={() => onAlignSelected('left')}
+                            />
+                            <SmallRibbonBtn
+                              icon={<AlignCenterVertical className="w-3.5 h-3.5" />}
+                              label="Центр X"
+                              title="Выровнять выбранные изделия по вертикальной оси"
+                              disabled={selectedDeviceCount < 2}
+                              onClick={() => onAlignSelected('center')}
+                            />
+                          </RibbonStack>
+                          <RibbonStack>
+                            <SmallRibbonBtn
+                              icon={<AlignStartHorizontal className="w-3.5 h-3.5" />}
+                              label="Сверху"
+                              title="Выровнять выбранные изделия по верхнему краю"
+                              disabled={selectedDeviceCount < 2}
+                              onClick={() => onAlignSelected('top')}
+                            />
+                            <SmallRibbonBtn
+                              icon={<AlignCenterHorizontal className="w-3.5 h-3.5" />}
+                              label="Центр Y"
+                              title="Выровнять выбранные изделия по горизонтальной оси"
+                              disabled={selectedDeviceCount < 2}
+                              onClick={() => onAlignSelected('middle')}
+                            />
+                          </RibbonStack>
+                        </RibbonPanel>
+                      )}
 
                       <RibbonPanel title="База изделий">
                         <LargeRibbonBtn
@@ -2238,6 +2838,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           </motion.div>
         )}
       </AnimatePresence>
+        </div>
+      )}
 
       {/* Unclipped Ribbon Layer Manager Popover */}
       <div

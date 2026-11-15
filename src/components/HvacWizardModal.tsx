@@ -5,6 +5,7 @@ import { SCHEMATIC_FONT_OPTIONS, SHEET_DIMENSIONS } from '../core/e3Catalog';
 import type { CatalogItem, E3Project, HvacStageRole, SchematicFontFamily, SheetFormat } from '../core/e3Types';
 import {
   buildDefaultHvacStages,
+  exportPlcIoCsv,
   type FluxHvacSpecs,
   HVAC_ROLE_LABELS,
   type HvacBuildOptions,
@@ -35,6 +36,8 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
   const [sheetFormat, setSheetFormat] = useState<SheetFormat>('A2');
   const [fontFamily, setFontFamily] = useState<SchematicFontFamily>(project.visualSettings.fontFamily || 'GOST');
   const [createExternalWiring, setCreateExternalWiring] = useState<boolean>(true);
+  const [hasFanRedundancy, setHasFanRedundancy] = useState<boolean>(false);
+  const [hasFreezeProtection, setHasFreezeProtection] = useState<boolean>(true);
   const [stages, setStages] = useState<HvacWizardStage[]>([]);
   const [addRole, setAddRole] = useState<HvacStageRole>('temp_sensor');
   const wasOpenRef = useRef(false);
@@ -44,10 +47,10 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
       const parsed = parseFluxSpecsFromProject(project);
       setSpecs(parsed);
       setFontFamily(project.visualSettings.fontFamily || 'GOST');
-      setStages(buildDefaultHvacStages(templateId, parsed, catalog));
+      setStages(buildDefaultHvacStages(templateId, parsed, catalog, { hasFanRedundancy, hasFreezeProtection }));
     }
     wasOpenRef.current = open;
-  }, [open, project, catalog, templateId]);
+  }, [open, project, catalog, templateId, hasFanRedundancy, hasFreezeProtection]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,9 +70,19 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
     );
   };
 
-  const handleRegenerateTemplate = (nextTpl: HvacTemplateId, nextSpecs: FluxHvacSpecs) => {
+  const handleRegenerateTemplate = (
+    nextTpl: HvacTemplateId,
+    nextSpecs: FluxHvacSpecs,
+    nextRedundancy = hasFanRedundancy,
+    nextFreeze = hasFreezeProtection
+  ) => {
     setTemplateId(nextTpl);
-    setStages(buildDefaultHvacStages(nextTpl, nextSpecs, catalog));
+    setStages(
+      buildDefaultHvacStages(nextTpl, nextSpecs, catalog, {
+        hasFanRedundancy: nextRedundancy,
+        hasFreezeProtection: nextFreeze,
+      })
+    );
   };
 
   const moveStage = (idx: number, dir: -1 | 1) => {
@@ -138,6 +151,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                 className="w-full h-8 px-2 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[var(--flux-text)] font-medium"
               >
                 <option value="supply_ahu">Приточная установка (ПВ)</option>
+                <option value="supply_exhaust_recovery">Приточно-вытяжная с рекуперацией (ПВ-Р)</option>
                 <option value="exhaust_ahu">Вытяжная система (В)</option>
                 <option value="avo">Аппарат воздушного охлаждения (АВО)</option>
               </select>
@@ -206,7 +220,7 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                 ))}
               </select>
             </div>
-            <div className="flex items-end pb-1">
+            <div className="flex flex-col justify-end pb-0.5 gap-1">
               <label className="flex items-center gap-2 cursor-pointer text-[var(--flux-text)]">
                 <input
                   type="checkbox"
@@ -216,6 +230,34 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                 />
                 <span>Построить Схему внешних соединений КИПиА</span>
               </label>
+              <div className="flex flex-wrap items-center gap-3 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+                <label className="flex items-center gap-1.5 cursor-pointer hover:text-[var(--flux-text)]">
+                  <input
+                    type="checkbox"
+                    checked={hasFanRedundancy}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setHasFanRedundancy(next);
+                      handleRegenerateTemplate(templateId, specs, next, hasFreezeProtection);
+                    }}
+                    className="accent-[var(--flux-accent)]"
+                  />
+                  <span>Резервирование вентиляторов (2×)</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer hover:text-[var(--flux-text)]">
+                  <input
+                    type="checkbox"
+                    checked={hasFreezeProtection}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setHasFreezeProtection(next);
+                      handleRegenerateTemplate(templateId, specs, hasFanRedundancy, next);
+                    }}
+                    className="accent-[var(--flux-accent)]"
+                  />
+                  <span>Защита от замораживания / ΔP</span>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -291,7 +333,12 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                     onChange={(e) => {
                       const nextSpecs = { ...specs, heatingType: e.target.value as FluxHvacSpecs['heatingType'] };
                       setSpecs(nextSpecs);
-                      setStages(buildDefaultHvacStages(templateId, nextSpecs, catalog));
+                      setStages(
+                        buildDefaultHvacStages(templateId, nextSpecs, catalog, {
+                          hasFanRedundancy,
+                          hasFreezeProtection,
+                        })
+                      );
                     }}
                     className="w-full h-7 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[var(--flux-text)]"
                   >
@@ -451,6 +498,23 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
+              data-testid="hvac-export-plc-csv-btn"
+              onClick={() => {
+                const csv = exportPlcIoCsv(specs.systemTag, specs.cabinetTag, stages, catalog);
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${specs.systemTag || 'HVAC'}-PLC-IO.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="h-8 px-3 rounded border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium"
+            >
+              I/O ПЛК (CSV)
+            </button>
+            <button
+              type="button"
               onClick={onClose}
               className="h-8 px-3 rounded border border-[var(--flux-line)] text-[var(--flux-text)] hover:bg-[var(--flux-hover)]"
             >
@@ -466,6 +530,8 @@ export const HvacWizardModal: React.FC<HvacWizardModalProps> = ({
                   sheetFormat,
                   fontFamily,
                   createExternalWiringSheet: createExternalWiring,
+                  hasFanRedundancy,
+                  hasFreezeProtection,
                   stages,
                 });
                 onClose();

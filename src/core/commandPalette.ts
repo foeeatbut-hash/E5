@@ -1,9 +1,11 @@
 import type { E3Project, SheetFormat } from './e3Types.ts';
+import type { UiWorkspaceMode } from './uiMode.ts';
 
 export type CommandPaletteCategory = 'tool' | 'action' | 'view' | 'device' | 'sheet';
 
 export type CommandPaletteAction =
-  | { type: 'set-tool'; tool: 'select' | 'wire' | 'pan' }
+  | { type: 'set-tool'; tool: 'select' | 'wire' | 'pan' | 'measure' }
+  | { type: 'set-ui-mode'; mode: UiWorkspaceMode }
   | { type: 'copy-selected' }
   | { type: 'paste-clipboard' }
   | { type: 'duplicate-selected' }
@@ -410,6 +412,38 @@ export function buildCommandPaletteItems(
       shortcut: 'Ctrl+Y',
       disabled: opts.canRedo === false,
       action: { type: 'redo' },
+    },
+    {
+      id: 'cmd-measure',
+      title: 'Линейка / Измерить расстояние (MEASURE / DIST)',
+      subtitle: 'Замер расстояния и дельты X/Y по схеме',
+      category: 'tool',
+      keywords: ['measure', 'dist', 'ruler', 'линейка', 'размер', 'измерить'],
+      action: { type: 'set-tool', tool: 'measure' },
+    },
+    {
+      id: 'cmd-ui-classic',
+      title: 'Интерфейс: Этот интерфейс (Классический E3ProMax)',
+      subtitle: 'Переключиться на классический зелёно-минеральный интерфейс с открытой лентой',
+      category: 'view',
+      keywords: ['интерфейс', 'классический', 'этот', 'classic', 'ui', 'mode'],
+      action: { type: 'set-ui-mode', mode: 'classic' },
+    },
+    {
+      id: 'cmd-ui-hybrid',
+      title: 'Интерфейс: Новый — Гибрид (Вариант А)',
+      subtitle: 'Боковой рельс, 2-колоночный каталог, сплит ПЭ3|ERC и нижний док холста',
+      category: 'view',
+      keywords: ['интерфейс', 'новый', 'гибрид', 'hybrid', 'ui', 'mode'],
+      action: { type: 'set-ui-mode', mode: 'hybrid' },
+    },
+    {
+      id: 'cmd-ui-focus',
+      title: 'Интерфейс: Новый — Фокус-холст (Вариант Б)',
+      subtitle: 'Максимум площади схемы, левый плавающий док и быстрая строка Ctrl+K',
+      category: 'view',
+      keywords: ['интерфейс', 'новый', 'фокус', 'focus', 'ui', 'mode'],
+      action: { type: 'set-ui-mode', mode: 'focus' },
     },
   ];
 

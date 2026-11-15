@@ -252,10 +252,16 @@ export function buildOrthogonalWireWithWaypoints(
   start: { x: number; y: number; direction: PinDirection },
   anchors: WirePoint[],
   end: { x: number; y: number; direction: PinDirection },
-  stub = 20
+  stub = 20,
+  preferPosture?: 'hv' | 'vh'
 ): WirePoint[] {
   const out: WirePoint[] = [{ x: Math.round(start.x), y: Math.round(start.y) }];
-  const startHoriz = start.direction === 'left' || start.direction === 'right';
+  const startHoriz =
+    preferPosture === 'hv'
+      ? true
+      : preferPosture === 'vh'
+        ? false
+        : start.direction === 'left' || start.direction === 'right';
   const endHoriz = end.direction === 'left' || end.direction === 'right';
 
   const cleanAnchors = anchors.map((a) => ({ x: Math.round(a.x), y: Math.round(a.y) }));
@@ -265,7 +271,7 @@ export function buildOrthogonalWireWithWaypoints(
   }
 
   const firstStub = exitStubForPin(start, cleanAnchors[0], stub);
-  if (firstStub) {
+  if (firstStub && !preferPosture) {
     out.push(firstStub);
     appendOrthogonalLeg(out, cleanAnchors[0], !startHoriz);
   } else {
@@ -301,7 +307,8 @@ export function buildOrthogonalWireWithWaypoints(
 export function buildWirePreviewWithWaypoints(
   start: { x: number; y: number; direction: PinDirection },
   anchors: WirePoint[],
-  cursorOrEndPin: { x: number; y: number; direction?: PinDirection }
+  cursorOrEndPin: { x: number; y: number; direction?: PinDirection },
+  preferPosture?: 'hv' | 'vh'
 ): WirePoint[] {
   const inferredDir: PinDirection =
     cursorOrEndPin.direction ||
@@ -320,7 +327,9 @@ export function buildWirePreviewWithWaypoints(
   return buildOrthogonalWireWithWaypoints(
     start,
     anchors,
-    { x: cursorOrEndPin.x, y: cursorOrEndPin.y, direction: inferredDir }
+    { x: cursorOrEndPin.x, y: cursorOrEndPin.y, direction: inferredDir },
+    20,
+    preferPosture
   );
 }
 

@@ -99,6 +99,7 @@ interface EntityStyleOpts {
 interface DxfWriter {
   lines: string[];
   add: (code: number | string, value: string | number) => void;
+  nextHandle: () => string;
   line: (
     x1: number,
     y1: number,
@@ -189,6 +190,8 @@ function resolveStyle(colorOrOpts?: number | EntityStyleOpts): EntityStyleOpts {
 
 function createDxfWriter(): DxfWriter {
   const lines: string[] = [];
+  let handleSeq = 0x10;
+  const nextHandle = () => (handleSeq++).toString(16).toUpperCase();
   const add = (code: number | string, value: string | number) => {
     lines.push(String(code), String(value));
   };
@@ -202,8 +205,10 @@ function createDxfWriter(): DxfWriter {
   const w: DxfWriter = {
     lines,
     add,
+    nextHandle,
     line(x1, y1, x2, y2, layer, colorOrOpts = 256) {
       add(0, 'LINE');
+      add(5, nextHandle());
       add(8, layer);
       emitStyle(resolveStyle(colorOrOpts));
       add(10, x1.toFixed(2));
@@ -228,6 +233,7 @@ function createDxfWriter(): DxfWriter {
     },
     circle(cx, cy, r, layer, colorOrOpts = 256) {
       add(0, 'CIRCLE');
+      add(5, nextHandle());
       add(8, layer);
       emitStyle(resolveStyle(colorOrOpts));
       add(10, cx.toFixed(2));
@@ -237,6 +243,7 @@ function createDxfWriter(): DxfWriter {
     },
     arc(cx, cy, r, startDeg, endDeg, layer, colorOrOpts = 256) {
       add(0, 'ARC');
+      add(5, nextHandle());
       add(8, layer);
       emitStyle(resolveStyle(colorOrOpts));
       add(10, cx.toFixed(2));
@@ -250,6 +257,7 @@ function createDxfWriter(): DxfWriter {
     polyline(pts, layer, colorOrOpts = 256, closed = false) {
       if (pts.length < 2) return;
       add(0, 'LWPOLYLINE');
+      add(5, nextHandle());
       add(8, layer);
       emitStyle(resolveStyle(colorOrOpts));
       add(90, pts.length);
@@ -262,6 +270,7 @@ function createDxfWriter(): DxfWriter {
     text(x, y, value, height, layer, color = 256, hAlign = 0, vAlign = 0, lineweight) {
       const clean = dxfTextEscape(value);
       add(0, 'TEXT');
+      add(5, nextHandle());
       add(8, layer);
       add(7, 'GOST_STYLE');
       if (color !== 256) add(62, color);
@@ -281,6 +290,7 @@ function createDxfWriter(): DxfWriter {
     },
     attdef(x, y, tag, prompt, defVal, height, layer, color = 7, hAlign = 0, lineweight) {
       add(0, 'ATTDEF');
+      add(5, nextHandle());
       add(8, layer);
       add(7, 'GOST_STYLE');
       add(62, color);
@@ -303,6 +313,7 @@ function createDxfWriter(): DxfWriter {
     },
     insertWithAttribs(blockName, x, y, layer, attribs, rotationDeg = 0) {
       add(0, 'INSERT');
+      add(5, nextHandle());
       add(8, layer);
       if (attribs.length > 0) add(66, 1);
       add(2, sanitizeBlockName(blockName));
@@ -317,6 +328,7 @@ function createDxfWriter(): DxfWriter {
       }
       for (const att of attribs) {
         add(0, 'ATTRIB');
+        add(5, nextHandle());
         add(8, att.layer || layer);
         add(7, 'GOST_STYLE');
         add(62, att.color ?? 7);
@@ -517,7 +529,9 @@ function writeHeaderAndTables(
   w.add(9, '$ACADVER');
   w.add(1, 'AC1021');
   w.add(9, '$DWGCODEPAGE');
-  w.add(3, 'ANSI_1251');
+  w.add(3, 'UTF-8');
+  w.add(9, '$HANDSEED');
+  w.add(5, 'FFFF');
   w.add(9, '$INSUNITS');
   w.add(70, 4); // Millimeters
   w.add(9, '$LWDISPLAY');
@@ -593,6 +607,7 @@ function writeHeaderAndTables(
   for (const [name, color, ltype, lw] of layers) {
     const mapped = mapDxfLayerFlags(name, cadLayers, color);
     w.add(0, 'LAYER');
+    w.add(5, w.nextHandle());
     w.add(2, name);
     w.add(70, mapped.flags70);
     w.add(62, mapped.color62);
@@ -1139,6 +1154,23 @@ export function exportSheetsToDxf(project: E3Project, options: DxfExportOptions 
     drawBomTableInDxf(w, project, cursorX, bomY);
   }
 
+  w.add(0, 'ENDSEC');
+  w.add(0, 'SECTION');
+  w.add(2, 'OBJECTS');
+  const rootDictHandle = w.nextHandle();
+  const groupDictHandle = w.nextHandle();
+  w.add(0, 'DICTIONARY');
+  w.add(5, rootDictHandle);
+  w.add(330, '0');
+  w.add(100, 'AcDbDictionary');
+  w.add(281, 1);
+  w.add(3, 'ACAD_GROUP');
+  w.add(350, groupDictHandle);
+  w.add(0, 'DICTIONARY');
+  w.add(5, groupDictHandle);
+  w.add(330, rootDictHandle);
+  w.add(100, 'AcDbDictionary');
+  w.add(281, 1);
   w.add(0, 'ENDSEC');
   w.add(0, 'EOF');
   return w.lines.join('\n');
