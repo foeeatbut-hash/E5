@@ -10,6 +10,9 @@ export interface FocusLayoutInput {
   consoleOpen: boolean;
   showMinimap?: boolean;
   railItemCount?: number;
+  explorerWidthOverride?: number;
+  inspectorWidthOverride?: number;
+  consoleHeightOverride?: number;
 }
 
 export interface FocusLayoutMetrics {
@@ -70,13 +73,23 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
     ? ribbonTop + ribbonTotalHeight + gutter
     : outerPad + topBarHeight + gutter;
 
-  // Reserve asymmetric left/right pill widths and center the sheet-tabs pill cleanly inside the open gap
-  const leftPillMaxWidth = Math.round((vw >= 1400 ? 408 : vw >= 1100 ? 304 : 232) * f);
-  const rightPillMaxWidth = Math.round((vw >= 1400 ? 500 : vw >= 1100 ? 484 : 380) * f);
+  // Proportionally guard left/right/center top pills using effective (scale-normalized) width so 100%..150% never overlap
+  const effW = vw / f;
+  const rawLeftPill = Math.round((effW >= 1536 ? 408 : effW >= 1100 ? 304 : 230) * f);
+  const rawRightPill = Math.round((effW >= 1536 ? 500 : effW >= 1100 ? 484 : 372) * f);
+  const minCenterGap = Math.max(220, Math.round(Math.min(360, vw * 0.28)));
+  const topHorizontalBudget = Math.max(240, vw - 2 * outerPad - 2 * gutter - minCenterGap);
+  let leftPillMaxWidth = rawLeftPill;
+  let rightPillMaxWidth = rawRightPill;
+  if (leftPillMaxWidth + rightPillMaxWidth > topHorizontalBudget) {
+    const ratio = topHorizontalBudget / (leftPillMaxWidth + rightPillMaxWidth);
+    leftPillMaxWidth = Math.max(150, Math.floor(leftPillMaxWidth * ratio));
+    rightPillMaxWidth = Math.max(180, topHorizontalBudget - leftPillMaxWidth);
+  }
   const sheetTabsZoneLeft = outerPad + leftPillMaxWidth + gutter;
   const sheetTabsZoneRight = vw - outerPad - rightPillMaxWidth - gutter;
-  const sheetTabsAvailable = Math.max(150, sheetTabsZoneRight - sheetTabsZoneLeft);
-  const sheetTabsMaxWidth = Math.min(760, sheetTabsAvailable);
+  const sheetTabsAvailable = Math.max(minCenterGap, sheetTabsZoneRight - sheetTabsZoneLeft);
+  const sheetTabsMaxWidth = Math.min(Math.round(760 * Math.min(f, 1.25)), sheetTabsAvailable);
   const sheetTabsCenterX = Math.round((sheetTabsZoneLeft + sheetTabsZoneRight) / 2);
 
   const bottomBarHeight = Math.round(36 * f);
@@ -85,8 +98,20 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
   const minimapWidth = 112;
   const minimapHeight = 68;
 
+  const consoleMinH = Math.round(120 * Math.min(f, 1.35));
+  const consoleMaxH = Math.max(consoleMinH, vh - topClearance - bottomDockClearance - 140);
+  const consoleDefaultH = Math.max(
+    176,
+    Math.min(Math.round(232 * (1 + (f - 1) * 0.35)), Math.round(vh * 0.25 * (1 + (f - 1) * 0.25)))
+  );
   const consoleHeight = input.consoleOpen
-    ? Math.max(176, Math.min(232, Math.round(vh * 0.25)))
+    ? Math.max(
+        consoleMinH,
+        Math.min(
+          consoleMaxH,
+          Math.round(input.consoleHeightOverride ?? consoleDefaultH)
+        )
+      )
     : 0;
   const consoleBottom = bottomDockClearance;
   const consoleLeft = outerPad;
@@ -98,15 +123,44 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
 
   const explorerLeft = outerPad + toolRailWidth + gutter;
   const explorerTop = topClearance;
-  const explorerWidth = Math.min(276, Math.max(224, Math.round(vw * 0.195)));
+  const explorerMinW = Math.round(210 * Math.min(f, 1.35));
+  const inspectorMinW = Math.round(210 * Math.min(f, 1.35));
+  const sideClearanceGap = 140;
+  const maxExplorerAbsolute = Math.max(explorerMinW + 30, Math.round(vw * 0.56));
+  const maxInspectorAbsolute = Math.max(inspectorMinW + 30, Math.round(vw * 0.58));
+
+  const defaultExplorerW = Math.min(
+    Math.round(276 * (1 + (f - 1) * 0.3)),
+    Math.max(224, Math.round(vw * 0.195))
+  );
+  const defaultInspectorW = Math.min(
+    Math.round(312 * (1 + (f - 1) * 0.3)),
+    Math.max(264, Math.round(vw * 0.215))
+  );
+
+  const explorerBudget = input.inspectorCollapsed
+    ? vw - explorerLeft - outerPad - 80
+    : vw - explorerLeft - gutter - sideClearanceGap - inspectorMinW - outerPad;
+  const explorerMaxW = Math.max(explorerMinW, Math.min(maxExplorerAbsolute, explorerBudget));
+  const explorerWidth = Math.max(
+    explorerMinW,
+    Math.min(explorerMaxW, Math.round(input.explorerWidthOverride ?? defaultExplorerW))
+  );
 
   const inspectorTop = topClearance;
   const inspectorRight = outerPad;
-  const inspectorWidth = Math.min(312, Math.max(264, Math.round(vw * 0.215)));
+  const inspectorBudget = input.explorerOpen
+    ? vw - (explorerLeft + explorerWidth + gutter + sideClearanceGap) - inspectorRight
+    : vw - explorerLeft - inspectorRight - 80;
+  const inspectorMaxW = Math.max(inspectorMinW, Math.min(maxInspectorAbsolute, inspectorBudget));
+  const inspectorWidth = Math.max(
+    inspectorMinW,
+    Math.min(inspectorMaxW, Math.round(input.inspectorWidthOverride ?? defaultInspectorW))
+  );
 
   const aboveConsoleBottom = consoleBottom + consoleHeight + gutter;
   const inspectorBottom = input.consoleOpen ? aboveConsoleBottom : bottomDockClearance;
-  const inspectorMaxHeight = Math.max(200, vh - inspectorTop - inspectorBottom);
+  const inspectorMaxHeight = Math.max(180, vh - inspectorTop - inspectorBottom);
 
   const minimapEnabled = input.showMinimap !== false;
   const minimapBottom = input.consoleOpen ? aboveConsoleBottom : outerPad;
@@ -148,12 +202,12 @@ export function computeFocusLayoutMetrics(input: FocusLayoutInput): FocusLayoutM
       : outerPad + minimapHeight + gutter;
   const toolRailMaxHeight = Math.max(180, vh - toolRailTop - toolRailBottomClearance);
 
-  // Bottom-center command bar sits cleanly between minimap (when at bottom) and status pill (~340px)
+  // Bottom-center command bar sits cleanly between minimap and scaled right status pill
   const leftBottomReserve = !input.consoleOpen && showMinimap ? outerPad + minimapWidth + gutter : outerPad;
-  const rightBottomReserve = outerPad + (vw >= 1280 ? 356 : 264) + gutter;
+  const rightBottomReserve = outerPad + Math.round((vw >= 1280 ? 348 : 260) * f) + gutter;
   const commandPillMaxWidth = Math.max(
-    220,
-    Math.min(430, vw - 2 * Math.max(leftBottomReserve, rightBottomReserve))
+    160,
+    Math.min(Math.round(430 * f), vw - 2 * Math.max(leftBottomReserve, rightBottomReserve))
   );
 
   return {

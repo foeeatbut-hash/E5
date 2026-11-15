@@ -120,4 +120,59 @@ test('disabling minimap hides minimap and reclaims bottom space for Explorer and
   assert.equal(withoutMap.explorerBottom, withoutMap.bottomDockClearance);
 });
 
+test('computeFocusLayoutMetrics preserves non-overlapping top & bottom pills at 150% UI scale and supports panel resize overrides', () => {
+  for (const [vw, vh] of [
+    [1280, 720],
+    [1440, 900],
+  ] as const) {
+    const m = computeFocusLayoutMetrics({
+      viewportWidth: vw,
+      viewportHeight: vh,
+      uiScale: 150,
+      ribbonOpen: false,
+      explorerOpen: true,
+      inspectorCollapsed: false,
+      consoleOpen: false,
+    });
+    const centerLeft = m.sheetTabsCenterX - m.sheetTabsMaxWidth / 2;
+    const centerRight = m.sheetTabsCenterX + m.sheetTabsMaxWidth / 2;
+    assert.ok(centerLeft >= m.outerPad + m.leftPillMaxWidth + m.gutter - 1);
+    assert.ok(centerRight <= vw - m.outerPad - m.rightPillMaxWidth - m.gutter + 1);
+    assert.ok(m.commandPillMaxWidth >= 160);
+    assert.ok(vw / 2 + m.commandPillMaxWidth / 2 <= vw - m.outerPad - Math.round(348 * 1.5));
+  }
+
+  const expanded = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 100,
+    ribbonOpen: false,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: true,
+    explorerWidthOverride: 620,
+    inspectorWidthOverride: 600,
+    consoleHeightOverride: 560,
+  });
+  assert.ok(expanded.explorerWidth >= 560);
+  assert.ok(expanded.explorerLeft + expanded.explorerWidth + expanded.inspectorWidth < 1440);
+  assert.ok(expanded.consoleHeight >= 520);
+
+  const minimized = computeFocusLayoutMetrics({
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    uiScale: 100,
+    ribbonOpen: false,
+    explorerOpen: true,
+    inspectorCollapsed: false,
+    consoleOpen: true,
+    explorerWidthOverride: 80,
+    inspectorWidthOverride: 80,
+    consoleHeightOverride: 40,
+  });
+  assert.equal(minimized.explorerWidth, 210);
+  assert.equal(minimized.inspectorWidth, 210);
+  assert.equal(minimized.consoleHeight, 120);
+});
+
 

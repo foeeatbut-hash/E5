@@ -398,7 +398,7 @@ export default function App() {
   viewportTransformsRef.current = viewportTransforms;
   const cameraAnimRef = useRef<Record<number, number>>({});
 
-  // UI Mode ('classic' | 'hybrid' | 'focus') & UI Scale (100%..180%)
+  // UI Mode ('classic' | 'hybrid' | 'focus') & UI Scale (100%..150%)
   const [uiMode, setUiMode] = useState<UiWorkspaceMode>(() => loadUiMode());
   const uiModeRef = useRef<UiWorkspaceMode>(uiMode);
   uiModeRef.current = uiMode;
@@ -494,6 +494,12 @@ export default function App() {
   const [focusConsoleOpen, setFocusConsoleOpen] = useState(false);
   const [focusInspectorCollapsed, setFocusInspectorCollapsed] = useState(false);
   const [focusRibbonOpen, setFocusRibbonOpen] = useState(false);
+  const [focusPanelSizes, setFocusPanelSizes] = useState<{
+    explorerWidth?: number;
+    inspectorWidth?: number;
+    consoleHeight?: number;
+  }>({});
+  const [resizingFocusPanel, setResizingFocusPanel] = useState<'explorer' | 'inspector' | 'console' | null>(null);
   const [focusQuickAccessIds, setFocusQuickAccessIds] = useState<FocusQuickActionId[]>(() =>
     loadFocusQuickAccess()
   );
@@ -545,6 +551,9 @@ export default function App() {
         consoleOpen: focusConsoleOpen,
         showMinimap: project.visualSettings.showMinimap !== false,
         railItemCount: focusQuickAccessIds.length,
+        explorerWidthOverride: focusPanelSizes.explorerWidth,
+        inspectorWidthOverride: focusPanelSizes.inspectorWidth,
+        consoleHeightOverride: focusPanelSizes.consoleHeight,
       }),
     [
       viewportSize.width,
@@ -556,6 +565,9 @@ export default function App() {
       focusConsoleOpen,
       project.visualSettings.showMinimap,
       focusQuickAccessIds.length,
+      focusPanelSizes.explorerWidth,
+      focusPanelSizes.inspectorWidth,
+      focusPanelSizes.consoleHeight,
     ]
   );
 
@@ -4181,6 +4193,68 @@ export default function App() {
     [dockLayout.panels]
   );
 
+  const handleResizeFocusPanelStart = useCallback(
+    (panel: 'explorer' | 'inspector' | 'console', e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startSize =
+        panel === 'explorer'
+          ? focusLayout.explorerWidth
+          : panel === 'inspector'
+            ? focusLayout.inspectorWidth
+            : focusLayout.consoleHeight;
+      setResizingFocusPanel(panel);
+
+      let rafId: number | null = null;
+      let latestSize = startSize;
+
+      const applySize = (nextSize: number) => {
+        setFocusPanelSizes((prev) =>
+          panel === 'explorer'
+            ? { ...prev, explorerWidth: nextSize }
+            : panel === 'inspector'
+              ? { ...prev, inspectorWidth: nextSize }
+              : { ...prev, consoleHeight: nextSize }
+        );
+      };
+
+      const onMove = (ev: PointerEvent) => {
+        const delta =
+          panel === 'explorer'
+            ? ev.clientX - startX
+            : panel === 'inspector'
+              ? startX - ev.clientX
+              : startY - ev.clientY;
+        latestSize = Math.round(startSize + delta);
+        if (!rafId) {
+          rafId = window.requestAnimationFrame(() => {
+            rafId = null;
+            applySize(latestSize);
+          });
+        }
+      };
+
+      const onUp = () => {
+        if (rafId) {
+          window.cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        applySize(latestSize);
+        setResizingFocusPanel(null);
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    },
+    [focusLayout.explorerWidth, focusLayout.inspectorWidth, focusLayout.consoleHeight]
+  );
+
   const handleBuildHvacDiagram = useCallback(
     (options: HvacBuildOptions) => {
       const res = generateHvacDiagram(options, mergedCatalog, project);
@@ -5943,7 +6017,7 @@ export default function App() {
           ? 'Переключить панель на вкладки'
           : 'Разделить панель: проект сверху, база снизу'
       }
-      className={`inline-flex items-center gap-0.5 h-5 px-1 rounded-[4px] border text-[9.5px] font-medium transition-colors shrink-0 ${
+      className={`inline-flex items-center gap-0.5 h-[calc(18px*var(--flux-ui-scale))] px-1 rounded-[4px] border text-[length:calc(9.5px*var(--flux-ui-scale))] font-medium transition-colors whitespace-nowrap shrink-0 ${
         explorerSplitView
           ? 'border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
           : 'border-[var(--flux-line)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:border-[var(--flux-line-strong)]'
@@ -7306,7 +7380,7 @@ export default function App() {
                 title="Открыть устройства и библиотеку компонентов (Ctrl+\)"
                 aria-label="Открыть устройства и библиотеку компонентов"
                 style={{ top: focusLayout.explorerTop, left: focusLayout.outerPad }}
-                className="no-print absolute z-30 inline-flex items-center gap-1.5 h-[calc(34px*var(--flux-ui-scale))] px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface hover:border-[var(--flux-accent)] shadow-lg text-[11px] font-medium text-[var(--flux-text)] transition-all"
+                className="no-print absolute z-30 inline-flex items-center gap-1.5 h-[calc(34px*var(--flux-ui-scale))] px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface hover:border-[var(--flux-accent)] shadow-lg text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-all"
               >
                 <ChevronRight className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                 <span>Навигатор</span>
@@ -7327,11 +7401,13 @@ export default function App() {
                     bottom: focusLayout.explorerBottom,
                     width: focusLayout.explorerWidth,
                   }}
-                  className="no-print absolute max-w-[calc(100vw-80px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col transition-[top,bottom] duration-150"
+                  className={`no-print absolute max-w-[calc(100vw-80px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col ${
+                    resizingFocusPanel === 'explorer' ? '' : 'transition-[top,bottom] duration-150'
+                  }`}
                 >
-                  <div className="h-7 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 shrink-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-[11px] font-semibold text-[var(--flux-text)] truncate">
+                  <div className="min-h-7 h-auto py-0.5 px-2.5 border-b border-[var(--flux-line)] flux-glass-bar flex items-center justify-between gap-2 shrink-0 overflow-hidden">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+                      <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold text-[var(--flux-text)] truncate">
                         Навигатор проекта
                       </span>
                       {explorerHeaderActions}
@@ -7350,6 +7426,18 @@ export default function App() {
                   <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                     {renderPanelContent('explorer')}
                   </div>
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Изменить ширину навигатора проекта"
+                    data-testid="focus-explorer-resizer"
+                    onPointerDown={(e) => handleResizeFocusPanelStart('explorer', e)}
+                    className={`no-print absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize z-20 transition-colors ${
+                      resizingFocusPanel === 'explorer'
+                        ? 'bg-[var(--flux-accent)]'
+                        : 'hover:bg-[var(--flux-accent)]/40'
+                    }`}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -7362,7 +7450,7 @@ export default function App() {
                 onClick={() => setFocusInspectorCollapsed(false)}
                 title="Развернуть инспектор свойств"
                 style={{ top: focusLayout.inspectorTop, right: focusLayout.inspectorRight }}
-                className="no-print absolute z-30 inline-flex items-center gap-1.5 h-[calc(34px*var(--flux-ui-scale))] px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface hover:border-[var(--flux-accent)] shadow-lg text-[11px] font-medium text-[var(--flux-text)] transition-[top] duration-150"
+                className="no-print absolute z-30 inline-flex items-center gap-1.5 h-[calc(34px*var(--flux-ui-scale))] px-2.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface hover:border-[var(--flux-accent)] shadow-lg text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-[top] duration-150"
               >
                 <ChevronLeft className="w-3.5 h-3.5 text-[var(--flux-accent)]" />
                 <span>Свойства</span>
@@ -7376,8 +7464,22 @@ export default function App() {
                   width: focusLayout.inspectorWidth,
                   maxHeight: focusLayout.inspectorMaxHeight,
                 }}
-                className="no-print absolute max-w-[calc(100vw-24px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col transition-[top,max-height] duration-150"
+                className={`no-print absolute max-w-[calc(100vw-24px)] z-30 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col ${
+                  resizingFocusPanel === 'inspector' ? '' : 'transition-[top,max-height] duration-150'
+                }`}
               >
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Изменить ширину правой панели"
+                  data-testid="focus-inspector-resizer"
+                  onPointerDown={(e) => handleResizeFocusPanelStart('inspector', e)}
+                  className={`no-print absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize z-20 transition-colors ${
+                    resizingFocusPanel === 'inspector'
+                      ? 'bg-[var(--flux-accent)]'
+                      : 'hover:bg-[var(--flux-accent)]/40'
+                  }`}
+                />
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   {renderPanelContent('inspector')}
                 </div>
@@ -7401,6 +7503,18 @@ export default function App() {
                   }}
                   className="no-print absolute z-35 rounded-[10px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-2xl overflow-hidden flex flex-col"
                 >
+                  <div
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Изменить высоту нижней панели"
+                    data-testid="focus-console-resizer"
+                    onPointerDown={(e) => handleResizeFocusPanelStart('console', e)}
+                    className={`no-print absolute top-0 left-0 right-0 h-1.5 cursor-row-resize z-20 transition-colors ${
+                      resizingFocusPanel === 'console'
+                        ? 'bg-[var(--flux-accent)]'
+                        : 'hover:bg-[var(--flux-accent)]/40'
+                    }`}
+                  />
                   <BottomConsole
                     project={project}
                     uiMode={uiMode}
@@ -7731,17 +7845,17 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-lg rounded-xl border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] shadow-2xl overflow-hidden text-[var(--flux-text)]"
           >
-            <div className="px-4 py-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between">
-              <span className="font-semibold text-[13px]">Горячие клавиши САПР E3ProMax</span>
+            <div className="px-4 py-2.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-2">
+              <span className="font-semibold text-[length:calc(13px*var(--flux-ui-scale))]">Горячие клавиши САПР E3ProMax</span>
               <button
                 type="button"
                 onClick={() => setShortcutsOpen(false)}
-                className="px-2 py-0.5 rounded border border-[var(--flux-line)] text-[11px] hover:bg-[var(--flux-hover)]"
+                className="px-2 py-0.5 rounded border border-[var(--flux-line)] text-[length:calc(11px*var(--flux-ui-scale))] hover:bg-[var(--flux-hover)] shrink-0"
               >
                 Esc
               </button>
             </div>
-            <div className="p-4 grid grid-cols-2 gap-x-6 gap-y-2 text-[11.5px]">
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-[length:calc(11.5px*var(--flux-ui-scale))] max-h-[75vh] overflow-y-auto">
               {[
                 ['V / Esc', 'Выбор (Select)'],
                 ['W / Пробел', 'Провод (Wire)'],
@@ -7758,9 +7872,9 @@ export default function App() {
                 ['F3 / F8 / F9', 'Привязка / Орто / Сетка'],
                 ['F1 или ?', 'Эта справка'],
               ].map(([k, desc]) => (
-                <div key={k} className="flex items-center justify-between gap-2 border-b border-[var(--flux-line)]/60 pb-1">
-                  <span className="text-[var(--flux-text-muted)]">{desc}</span>
-                  <kbd className="px-1.5 py-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[10.5px] font-semibold">
+                <div key={k} className="flex items-center justify-between gap-2 border-b border-[var(--flux-line)]/60 pb-1 min-w-0">
+                  <span className="text-[var(--flux-text-muted)] truncate">{desc}</span>
+                  <kbd className="px-1.5 py-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] font-mono text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold shrink-0">
                     {k}
                   </kbd>
                 </div>

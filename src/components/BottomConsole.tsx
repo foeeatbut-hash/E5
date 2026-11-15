@@ -481,7 +481,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const bomPaneContent = (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-      <div className="h-6 px-2 border-b border-[var(--flux-line)] flux-glass-surface flex items-center justify-between gap-2 shrink-0">
+      <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] flux-glass-surface flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <input
             type="search"
@@ -490,7 +490,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
             onChange={(e) => setBomQuery(e.target.value)}
             placeholder="Поиск по ПЭ3 (позиция, артикул, завод)…"
             aria-label="Фильтр спецификации ПЭ3"
-            className="w-56 max-w-full h-[calc(19px*var(--flux-ui-scale))] px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+            className="w-56 min-w-[calc(110px*var(--flux-ui-scale))] max-w-full h-[calc(19px*var(--flux-ui-scale))] px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
           />
           <span className="hidden sm:inline text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono tabular-nums text-[var(--flux-text-muted)] whitespace-nowrap">
             {filteredBom.length} из {bom.length} поз. · {totalDevicesInBom} шт.
@@ -597,13 +597,13 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const cablesPaneContent = (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-      <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
-                    <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
+      <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
+                    <div className="inline-flex min-w-0 overflow-x-auto no-scrollbar divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-bg)] shrink-0">
                       <button
                         type="button"
                         data-testid="cable-subtab-cables"
                         onClick={() => setCableSubTab('cables')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
+                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors ${
                           cableSubTab === 'cables'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -615,7 +615,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         type="button"
                         data-testid="cable-subtab-nets"
                         onClick={() => setCableSubTab('nets')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
+                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors ${
                           cableSubTab === 'nets'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -627,7 +627,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         type="button"
                         data-testid="cable-subtab-terminals"
                         onClick={() => setCableSubTab('terminals')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
+                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors ${
                           cableSubTab === 'terminals'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -880,8 +880,8 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const ercPaneContent = (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-      <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
-                    <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
+      <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
+                    <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-bg)] shrink-0">
                       {(
                         [
                           ['all', `Все (${erc.length})`],
@@ -895,7 +895,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                             key={fId}
                             type="button"
                             onClick={() => setErcFilter(fId)}
-                            className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors ${
+                            className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 transition-colors ${
                               active
                                 ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                                 : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -907,7 +907,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                       })}
                     </div>
                     <span
-                      className={`text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono ${
+                      className={`text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono whitespace-nowrap shrink-0 ${
                         errorCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--flux-accent)]'
                       }`}
                     >
@@ -994,9 +994,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const logsPaneContent = (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-      <div className="h-6 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0">
-                    <div className="flex items-center gap-1 min-w-0">
-                      <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
+      <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] bg-[var(--flux-surface)] flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
+                    <div className="flex items-center gap-1 min-w-0 shrink-0">
+                      <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-bg)] shrink-0">
                         {(['ALL', 'INFO', 'SYNC', 'WARN', 'ERROR'] as const).map((lvl) => {
                           const active = logLevelFilter === lvl;
                           return (
@@ -1004,7 +1004,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                               key={lvl}
                               type="button"
                               onClick={() => setLogLevelFilter(lvl)}
-                              className={`h-[calc(18px*var(--flux-ui-scale))] px-1.5 text-[length:calc(10px*var(--flux-ui-scale))] font-mono transition-colors ${
+                              className={`h-[calc(18px*var(--flux-ui-scale))] px-1.5 text-[length:calc(10px*var(--flux-ui-scale))] font-mono whitespace-nowrap shrink-0 transition-colors ${
                                 active
                                   ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                                   : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
@@ -1022,7 +1022,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                         onChange={(e) => setLogQuery(e.target.value)}
                         placeholder="Поиск по логам…"
                         aria-label="Поиск по логам процессов"
-                        className="w-40 h-[calc(19px*var(--flux-ui-scale))] px-1.5 ml-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                        className="w-[calc(132px*var(--flux-ui-scale))] h-[calc(19px*var(--flux-ui-scale))] px-1.5 ml-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-bg)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                       />
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
@@ -1171,45 +1171,45 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
 
   const apiPaneContent = (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))] bg-[var(--flux-surface)]">
-                  <div className="h-6 px-2 border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0">
-                    <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] overflow-hidden bg-[var(--flux-bg)]">
+                  <div className="min-h-6 py-0.5 px-2 border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
+                    <div className="inline-flex divide-x divide-[var(--flux-line)] border border-[var(--flux-line)] rounded-[2px] bg-[var(--flux-bg)] shrink-0">
                       <button
                         type="button"
                         data-testid="api-subtab-own"
                         onClick={() => setApiSubTab('own')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 transition-colors ${
+                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors ${
                           apiSubTab === 'own'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
-                        <Terminal className="w-2.5 h-2.5" />
+                        <Terminal className="w-2.5 h-2.5 shrink-0" />
                         <span>Свой API (REST)</span>
                       </button>
                       <button
                         type="button"
                         data-testid="api-subtab-flux"
                         onClick={() => setApiSubTab('flux-internal')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 transition-colors ${
+                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors ${
                           apiSubTab === 'flux-internal'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
-                        <Layers className="w-2.5 h-2.5" />
+                        <Layers className="w-2.5 h-2.5 shrink-0" />
                         <span>Шина Flux Studio ({fluxBusMessages.length})</span>
                       </button>
                       <button
                         type="button"
                         data-testid="api-subtab-external"
                         onClick={() => setApiSubTab('external')}
-                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 transition-colors ${
+                        className={`h-[calc(18px*var(--flux-ui-scale))] px-2 text-[length:calc(10.5px*var(--flux-ui-scale))] inline-flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors ${
                           apiSubTab === 'external'
                             ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] font-semibold'
                             : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
                         }`}
                       >
-                        <Globe className="w-2.5 h-2.5" />
+                        <Globe className="w-2.5 h-2.5 shrink-0" />
                         <span>Внешние Webhooks</span>
                       </button>
                     </div>
@@ -1724,9 +1724,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
         <div className="flex flex-col min-h-0 min-w-0 overflow-hidden">
           <div
             data-testid="hybrid-console-left-tabs"
-            className="h-6 pr-2 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 select-none"
+            className="h-6 pr-2 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 min-w-0 overflow-hidden select-none"
           >
-            <div className="flex items-center h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+            <div className="flex items-center min-w-0 flex-1 overflow-x-auto no-scrollbar h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
               {hybridTabBtn('bom', 'Спецификация ПЭ3', hybridLeftTab === 'bom', () => {
                 setHybridLeftTab('bom');
                 onSetTab('bom');
@@ -1736,7 +1736,7 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
                 onSetTab('cables');
               }, cables.length)}
             </div>
-            <span className="hidden xl:inline font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate">
+            <span className="hidden xl:inline font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] truncate shrink-0">
               Изд.: {totalDevicesInBom} · Цепей: {project.wires.length}
             </span>
           </div>
@@ -1747,9 +1747,9 @@ export const BottomConsole: React.FC<BottomConsoleProps> = React.memo(({
         <div data-testid="hybrid-split-erc" className="flex flex-col min-h-0 min-w-0 overflow-hidden">
           <div
             data-testid="hybrid-console-right-tabs"
-            className="h-6 pr-1.5 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 select-none"
+            className="h-6 pr-1.5 bg-[var(--flux-surface-alt)] border-b border-[var(--flux-line)] flex items-center justify-between gap-2 shrink-0 min-w-0 overflow-hidden select-none"
           >
-            <div className="flex items-center h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
+            <div className="flex items-center min-w-0 flex-1 overflow-x-auto no-scrollbar h-full divide-x divide-[var(--flux-line)] border-r border-[var(--flux-line)]">
               {hybridTabBtn('erc', 'Проверка ERC', hybridRightTab === 'erc', () => {
                 setHybridRightTab('erc');
                 onSetTab('erc');

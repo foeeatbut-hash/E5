@@ -276,8 +276,8 @@ export const FocusQuickAccessMenu: React.FC<FocusQuickAccessMenuProps> = ({
       data-testid="quick-access-context-menu"
       onMouseDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
-      style={{ left, top, width: estWidth }}
-      className="no-print fixed z-[80] rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover shadow-2xl overflow-hidden text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] select-none"
+      style={{ left, top, minWidth: estWidth }}
+      className="no-print fixed z-[80] w-[min(calc(246px*var(--flux-ui-scale)),calc(100vw-16px))] rounded-xl border border-[var(--flux-line-strong)] flux-glass-popover shadow-2xl overflow-hidden text-[length:calc(11.5px*var(--flux-ui-scale))] text-[var(--flux-text)] select-none"
     >
       <div className="px-2.5 py-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface)]/80 flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 min-w-0 font-semibold text-[var(--flux-text)]">
@@ -287,7 +287,7 @@ export const FocusQuickAccessMenu: React.FC<FocusQuickAccessMenuProps> = ({
           <span className="truncate">{def.label}</span>
         </span>
         {def.shortcut && (
-          <kbd className="font-mono text-[9.5px] px-1 py-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text-muted)] shrink-0">
+          <kbd className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] px-1 py-0.5 rounded bg-[var(--flux-bg)] border border-[var(--flux-line)] text-[var(--flux-text-muted)] shrink-0">
             {def.shortcut}
           </kbd>
         )}

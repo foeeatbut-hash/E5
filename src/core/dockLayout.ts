@@ -76,17 +76,18 @@ export function clampDockSize(
   viewportH = 900,
   uiScale = 1
 ): number {
-  const safeScale = Math.max(1, Math.min(1.8, uiScale));
+  const safeScale = Math.max(1, Math.min(1.5, uiScale));
   if (edge === 'left' || edge === 'right') {
     const minW = Math.round(210 * Math.min(safeScale, 1.45));
-    const maxW = Math.max(minW + 30, Math.round(viewportW * 0.42));
+    const maxW = Math.max(minW + 30, Math.round(viewportW * 0.68));
     return Math.max(minW, Math.min(maxW, Math.round(px)));
   }
   const minH = Math.round(120 * Math.min(safeScale, 1.45));
   const estHeaderH = Math.round(126 * safeScale);
-  const minCenterH = Math.max(180, Math.round((viewportH - estHeaderH) * 0.36));
+  const minCenterH = Math.max(180, Math.round((viewportH - estHeaderH) * 0.2));
   const budgetH = Math.max(minH, viewportH - estHeaderH - minCenterH);
-  const maxH = Math.min(Math.max(160, Math.round(viewportH * 0.48)), budgetH);
+  const legacyViewportCap = Math.max(minH, viewportH - 320);
+  const maxH = Math.min(Math.max(160, Math.round(viewportH * 0.66)), budgetH, legacyViewportCap);
   return Math.max(minH, Math.min(maxH, Math.round(px)));
 }
 
@@ -172,11 +173,28 @@ export function resizeDockEdge(
   viewportH = 900,
   uiScale = 1
 ): DockLayoutState {
+  const safeW = Math.max(640, Math.round(viewportW));
+  const safeH = Math.max(480, Math.round(viewportH));
+  const safeScale = Math.max(1, Math.min(1.5, uiScale));
+  let clamped = clampDockSize(edge, px, safeW, safeH, safeScale);
+
+  if (edge === 'left' || edge === 'right') {
+    const minCenterW = safeW >= 1360 ? Math.max(280, Math.round(safeW * 0.22)) : 280;
+    const maxSideBudget = Math.max(360, safeW - minCenterW);
+    const oppositeEdge = edge === 'left' ? 'right' : 'left';
+    const oppositeActive = getPanelsByDock(state, oppositeEdge).some((p) => !p.collapsed);
+    const minSelf = Math.round(210 * Math.min(safeScale, 1.45));
+    const edgeBudget = oppositeActive
+      ? Math.max(minSelf, maxSideBudget - state.sizes[oppositeEdge])
+      : Math.max(minSelf, maxSideBudget);
+    clamped = Math.min(clamped, edgeBudget);
+  }
+
   return {
     ...state,
     sizes: {
       ...state.sizes,
-      [edge]: clampDockSize(edge, px, viewportW, viewportH, uiScale),
+      [edge]: clamped,
     },
   };
 }
@@ -211,13 +229,13 @@ export function clampDockLayoutToViewport(
 ): DockLayoutState {
   const safeW = Math.max(640, Math.round(viewportW));
   const safeH = Math.max(480, Math.round(viewportH));
-  const safeScale = Math.max(1, Math.min(1.8, uiScale));
+  const safeScale = Math.max(1, Math.min(1.5, uiScale));
 
   const leftActive = getPanelsByDock(state, 'left').some((p) => !p.collapsed);
   const rightActive = getPanelsByDock(state, 'right').some((p) => !p.collapsed);
 
-  // Reserve a minimum usable center canvas width so side docks and footer controls never clip off-screen
-  const minCenterW = safeW >= 1360 ? Math.max(520, safeW - 760) : safeW >= 1200 ? Math.max(440, safeW - 640) : safeW >= 960 ? 360 : 280;
+  // Reserve a minimum usable center canvas width while letting side docks expand significantly larger
+  const minCenterW = safeW >= 1360 ? Math.max(280, Math.round(safeW * 0.22)) : 280;
   const maxSideBudget = Math.max(360, safeW - minCenterW);
 
   let nextLeft = clampDockSize('left', state.sizes.left, safeW, safeH, safeScale);

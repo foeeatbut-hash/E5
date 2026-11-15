@@ -126,7 +126,7 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
   onToggleCollapse,
 }) => {
   const dockBtnCls = (active: boolean) =>
-    `inline-flex items-center justify-center w-[calc(18px*var(--flux-ui-scale))] h-[calc(18px*var(--flux-ui-scale))] rounded-md transition-colors ${
+    `inline-flex items-center justify-center w-[calc(16px*var(--flux-ui-scale))] h-[calc(16px*var(--flux-ui-scale))] rounded-md transition-colors ${
       active
         ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]'
         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
@@ -153,11 +153,11 @@ const PanelHeaderBar: React.FC<PanelHeaderBarProps> = ({
         onToggleCollapse(panel.id);
       }}
       title="Перетащите заголовок для закрепления или дважды кликните для сворачивания"
-      className={`group/header h-7 ${headerActions ? 'px-1.5' : 'px-2.5'} border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1 shrink-0 cursor-grab active:cursor-grabbing select-none`}
+      className={`group/header h-7 ${headerActions ? 'px-1.5' : 'px-2'} border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center justify-between gap-1 shrink-0 overflow-hidden cursor-grab active:cursor-grabbing select-none`}
     >
-      <div className="flex items-center gap-1 min-w-0">
+      <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
         <GripHorizontal className="w-3 h-3 text-[var(--flux-text-muted)]/50 group-hover/header:text-[var(--flux-text-muted)] transition-colors shrink-0" />
-        <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold tracking-normal text-[var(--flux-text)] truncate">
+        <span className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold tracking-normal text-[var(--flux-text)] truncate min-w-0">
           {panel.title}
         </span>
         {headerActions && (

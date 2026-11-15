@@ -1,4 +1,4 @@
-export const UI_SCALE_OPTIONS = [100, 120, 140, 160, 180] as const;
+export const UI_SCALE_OPTIONS = [100, 110, 120, 130, 140, 150] as const;
 
 export type UiScalePercent = (typeof UI_SCALE_OPTIONS)[number];
 

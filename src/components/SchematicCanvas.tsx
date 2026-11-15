@@ -4240,7 +4240,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
                   >
                     <span>Повернуть 90°</span>
-                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">R</span>
+                    <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">R</span>
                   </button>
                 )}
                 {onMirrorSelected && (
@@ -4268,7 +4268,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
                   >
                     <span>Дублировать</span>
-                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">Ctrl+D</span>
+                    <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">Ctrl+D</span>
                   </button>
                 )}
                 {onDeleteSelected && (
@@ -4278,7 +4278,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     className="w-full px-3 py-1.5 text-left hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-between"
                   >
                     <span>Удалить</span>
-                    <span className="font-mono text-[10px]">Del</span>
+                    <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))]">Del</span>
                   </button>
                 )}
               </>
@@ -4301,7 +4301,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     className="w-full px-3 py-1.5 text-left hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-between"
                   >
                     <span>Удалить цепь</span>
-                    <span className="font-mono text-[10px]">Del</span>
+                    <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))]">Del</span>
                   </button>
                 )}
               </>
@@ -4315,7 +4315,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
                   >
                     <span>Вставить</span>
-                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">Ctrl+V</span>
+                    <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">Ctrl+V</span>
                   </button>
                 )}
                 {onFitViewport && (
@@ -4325,7 +4325,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
                   >
                     <span>Вписать лист в окно</span>
-                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">Z</span>
+                    <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">Z</span>
                   </button>
                 )}
                 {onSetTool && (
@@ -4336,7 +4336,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                       className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
                     >
                       <span>Рисовать провод</span>
-                      <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">W</span>
+                      <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">W</span>
                     </button>
                     <button
                       type="button"
@@ -4354,7 +4354,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                     className="w-full px-3 py-1.5 text-left hover:bg-[var(--flux-hover)] flex items-center justify-between"
                   >
                     <span>Сетка чертежа</span>
-                    <span className="font-mono text-[10px] text-[var(--flux-text-muted)]">F9</span>
+                    <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">F9</span>
                   </button>
                 )}
               </>
@@ -4373,7 +4373,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               transform: 'translateX(-50%)',
               maxWidth: resolvedFocusLayout.sheetTabsMaxWidth,
             }}
-            className="no-print absolute top-3 z-30 inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-[200px]"
+            className="no-print absolute top-3 z-30 inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-hidden"
           >
             <button
               type="button"
@@ -4393,7 +4393,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                   e.currentTarget.scrollLeft += e.deltaY;
                 }
               }}
-              className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0"
+              className="flex flex-1 items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0"
             >
               {openSingleTabs.map((s) => {
                 const active = s.id === sheet?.id;
@@ -4410,7 +4410,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                     }`}
                   >
-                    <span className="max-w-[140px] truncate">Л.{s.number}: {s.name}</span>
+                    <span className="max-w-[calc(140px*var(--flux-ui-scale))] truncate">Л.{s.number}: {s.name}</span>
                   </button>
                 );
               })}
@@ -4962,7 +4962,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
             onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
             style={{ maxWidth: resolvedFocusLayout.commandPillMaxWidth }}
-            className="no-print absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(430px,calc(100vw-540px))] min-w-[230px] h-[calc(36px*var(--flux-ui-scale))] rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl px-2 flex items-center gap-1.5"
+            className="no-print absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(calc(430px*var(--flux-ui-scale)),92vw)] min-w-0 h-[calc(36px*var(--flux-ui-scale))] rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl px-2 flex items-center gap-1.5"
           >
             <div className="relative flex-1 flex items-center gap-1.5 h-[calc(26px*var(--flux-ui-scale))] px-2 rounded-[6px] border border-[var(--flux-line)] bg-[var(--flux-bg)]/85 focus-within:border-[var(--flux-accent)] min-w-0">
               <span className="font-mono font-bold text-[var(--flux-accent)] shrink-0">›</span>
@@ -5078,7 +5078,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
           >
             <span
               data-testid="canvas-coords"
-              className="hidden xl:inline-block min-w-[92px] tabular-nums whitespace-nowrap"
+              className="hidden xl:inline-block min-w-[calc(84px*var(--flux-ui-scale))] tabular-nums whitespace-nowrap"
             >
               <span ref={coordsSpanRef} />
             </span>
@@ -5088,7 +5088,7 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 onClick={onToggleGrid}
                 title="Сетка чертежа (F9)"
                 aria-label="Переключить сетку"
-                className={`inline-flex items-center justify-center w-6 h-6 rounded-[4px] transition-colors ${
+                className={`inline-flex items-center justify-center w-6 h-6 rounded-[4px] shrink-0 transition-colors ${
                   vs.showGrid ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]' : 'hover:bg-[var(--flux-hover)]'
                 }`}
               >
@@ -5102,14 +5102,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 onClick={onToggleSnapToGrid}
                 title="Привязка к сетке (F3)"
                 aria-label="Переключить привязку"
-                className={`inline-flex items-center justify-center w-6 h-6 rounded-[4px] transition-colors ${
+                className={`inline-flex items-center justify-center w-6 h-6 rounded-[4px] shrink-0 transition-colors ${
                   vs.snapToGrid ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]' : 'hover:bg-[var(--flux-hover)]'
                 }`}
               >
                 <Magnet className="w-3 h-3" />
               </button>
             )}
-            <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5" />
+            <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" />
             <button
               type="button"
               onClick={() => {
@@ -5117,14 +5117,14 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 onSetTransform ? onSetTransform(nextZ, livePanRef.current) : onSetZoom(nextZ);
               }}
               aria-label="Уменьшить масштаб"
-              className="inline-flex items-center justify-center w-5 h-6 rounded-[4px] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+              className="inline-flex items-center justify-center w-5 h-6 rounded-[4px] shrink-0 hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
             >
               <Minus className="w-3 h-3" />
             </button>
             <span
               ref={zoomTextRef}
               data-testid={viewportIndex === 0 ? 'canvas-zoom-value' : `canvas-zoom-value-${viewportIndex}`}
-              className="w-9 text-center tabular-nums text-[var(--flux-text)]"
+              className="w-9 text-center tabular-nums text-[var(--flux-text)] shrink-0"
             >
               {Math.round(zoom * 100)}%
             </span>
@@ -5135,20 +5135,20 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
                 onSetTransform ? onSetTransform(nextZ, livePanRef.current) : onSetZoom(nextZ);
               }}
               aria-label="Увеличить масштаб"
-              className="inline-flex items-center justify-center w-5 h-6 rounded-[4px] hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
+              className="inline-flex items-center justify-center w-5 h-6 rounded-[4px] shrink-0 hover:bg-[var(--flux-hover)] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]"
             >
               <Plus className="w-3 h-3" />
             </button>
             {onToggleFocusConsole && (
               <>
-                <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5" />
+                <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" />
                 <button
                   type="button"
                   data-testid="focus-console-toggle-btn"
                   onClick={onToggleFocusConsole}
                   aria-pressed={focusConsoleOpen}
                   title="Открыть / скрыть панель ПЭ3, кабелей, ERC, логов и API"
-                  className={`inline-flex items-center gap-1 h-6 px-2 rounded-[5px] font-sans font-medium transition-colors ${
+                  className={`inline-flex items-center gap-1 h-6 px-2 rounded-[5px] font-sans font-medium whitespace-nowrap shrink-0 transition-colors ${
                     focusConsoleOpen
                       ? 'bg-[var(--flux-accent-solid)] text-white'
                       : 'bg-[var(--flux-surface-alt)] border border-[var(--flux-line)] text-[var(--flux-text)] hover:border-[var(--flux-accent)]'

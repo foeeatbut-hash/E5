@@ -552,7 +552,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = React.mem
                   {uiScale}%
                 </span>
               </div>
-              <div className="grid grid-cols-5 gap-1.5">
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                 {UI_SCALE_OPTIONS.map((opt) => {
                   const active = uiScale === opt;
                   return (
@@ -575,7 +575,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = React.mem
               </div>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="vs-preset" className="block text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text-muted)] mb-1">
                 Название профиля
@@ -728,7 +728,7 @@ export const VisualSettingsModal: React.FC<VisualSettingsModalProps> = React.mem
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
             {(
               [
                 ['snapToGrid', 'Привязка к сетке'],

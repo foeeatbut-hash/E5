@@ -47,10 +47,22 @@ test('movePanelDock supports docking any panel to any border or floating', () =>
   assert.equal(getPanelsByDock(layout, 'bottom').length, 0);
 });
 
-test('resizeDockEdge and clampFloatingRect keep geometry bounded within viewport', () => {
+test('resizeDockEdge and clampFloatingRect allow larger max sizes while preserving minimum bounds', () => {
   let layout = createDefaultDockLayout();
   layout = resizeDockEdge(layout, 'left', 9999, 1440, 900);
-  assert.ok(layout.sizes.left <= Math.round(1440 * 0.42));
+  assert.ok(layout.sizes.left > 610 && layout.sizes.left <= Math.round(1440 * 0.68));
+  assert.ok(layout.sizes.left + layout.sizes.right <= 1440 - 280);
+
+  // When opposite side panel is collapsed, left can expand up to 68% viewport width
+  layout = togglePanelCollapse(layout, 'inspector');
+  layout = resizeDockEdge(layout, 'left', 9999, 1440, 900);
+  assert.equal(layout.sizes.left, Math.round(1440 * 0.68));
+
+  layout = resizeDockEdge(layout, 'left', 50, 1440, 900);
+  assert.equal(layout.sizes.left, 210);
+
+  layout = resizeDockEdge(layout, 'bottom', 9999, 1440, 900);
+  assert.ok(layout.sizes.bottom >= 540);
 
   layout = resizeDockEdge(layout, 'bottom', 20, 1440, 900);
   assert.equal(layout.sizes.bottom, 120);

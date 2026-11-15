@@ -300,14 +300,14 @@ svg.lucide {
 
 .cad-prop-grid {
   display: grid;
-  grid-template-columns: minmax(calc(90px * var(--flux-ui-scale)), 43%) minmax(0, 1fr);
+  grid-template-columns: minmax(min(calc(90px * var(--flux-ui-scale)), 45%), 43%) minmax(0, 1fr);
   background-color: var(--flux-glass-surface);
 }
 
 .cad-prop-label {
-  padding: calc(2px * var(--flux-ui-scale)) calc(6px * var(--flux-ui-scale)) calc(2px * var(--flux-ui-scale)) calc(8px * var(--flux-ui-scale));
+  padding: calc(3px * var(--flux-ui-scale)) calc(6px * var(--flux-ui-scale)) calc(3px * var(--flux-ui-scale)) calc(8px * var(--flux-ui-scale));
   font-size: calc(11px * var(--flux-ui-scale));
-  line-height: calc(16px * var(--flux-ui-scale));
+  line-height: 1.2;
   min-height: calc(21px * var(--flux-ui-scale));
   color: var(--flux-text-muted);
   background-color: var(--flux-glass-surface-alt);
@@ -317,14 +317,15 @@ svg.lucide {
   align-items: center;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .cad-prop-cell {
   background-color: var(--flux-glass-surface);
   border-bottom: 1px solid var(--flux-line);
   min-width: 0;
+  overflow: hidden;
   min-height: calc(21px * var(--flux-ui-scale));
   display: flex;
   align-items: center;
@@ -336,6 +337,7 @@ svg.lucide {
 
 .cad-prop-input {
   width: 100%;
+  max-width: 100%;
   height: calc(21px * var(--flux-ui-scale));
   padding: 0 calc(6px * var(--flux-ui-scale));
   background: transparent;
@@ -344,6 +346,8 @@ svg.lucide {
   border: 0;
   outline: none;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cad-prop-input:focus-visible {

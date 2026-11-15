@@ -482,60 +482,60 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                       data-testid="align-left-btn"
                       onClick={() => onAlignDevices('left')}
                       title="Выровнять по левому краю"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="min-w-0 overflow-hidden h-6 px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap"
                     >
-                      <AlignStartVertical className="w-3 h-3" />
-                      <span>Лево</span>
+                      <AlignStartVertical className="w-3 h-3 shrink-0" />
+                      <span className="truncate">Лево</span>
                     </button>
                     <button
                       type="button"
                       data-testid="align-center-x-btn"
                       onClick={() => onAlignDevices('center-x')}
                       title="Выровнять по центру X"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="min-w-0 overflow-hidden h-6 px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap"
                     >
-                      <AlignCenterVertical className="w-3 h-3" />
-                      <span>Центр X</span>
+                      <AlignCenterVertical className="w-3 h-3 shrink-0" />
+                      <span className="truncate">Центр X</span>
                     </button>
                     <button
                       type="button"
                       data-testid="align-right-btn"
                       onClick={() => onAlignDevices('right')}
                       title="Выровнять по правому краю"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="min-w-0 overflow-hidden h-6 px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap"
                     >
-                      <AlignEndVertical className="w-3 h-3" />
-                      <span>Право</span>
+                      <AlignEndVertical className="w-3 h-3 shrink-0" />
+                      <span className="truncate">Право</span>
                     </button>
                     <button
                       type="button"
                       data-testid="align-top-btn"
                       onClick={() => onAlignDevices('top')}
                       title="Выровнять по верхнему краю"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="min-w-0 overflow-hidden h-6 px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap"
                     >
-                      <AlignStartHorizontal className="w-3 h-3" />
-                      <span>Верх</span>
+                      <AlignStartHorizontal className="w-3 h-3 shrink-0" />
+                      <span className="truncate">Верх</span>
                     </button>
                     <button
                       type="button"
                       data-testid="align-center-y-btn"
                       onClick={() => onAlignDevices('center-y')}
                       title="Выровнять по центру Y"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="min-w-0 overflow-hidden h-6 px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap"
                     >
-                      <AlignCenterHorizontal className="w-3 h-3" />
-                      <span>Центр Y</span>
+                      <AlignCenterHorizontal className="w-3 h-3 shrink-0" />
+                      <span className="truncate">Центр Y</span>
                     </button>
                     <button
                       type="button"
                       data-testid="align-bottom-btn"
                       onClick={() => onAlignDevices('bottom')}
                       title="Выровнять по нижнему краю"
-                      className="h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                      className="min-w-0 overflow-hidden h-6 px-1 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap"
                     >
-                      <AlignEndHorizontal className="w-3 h-3" />
-                      <span>Низ</span>
+                      <AlignEndHorizontal className="w-3 h-3 shrink-0" />
+                      <span className="truncate">Низ</span>
                     </button>
                   </div>
 
@@ -545,19 +545,19 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                         type="button"
                         data-testid="distribute-x-btn"
                         onClick={() => onAlignDevices('distribute-x')}
-                        className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                        className="min-w-0 overflow-hidden h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap"
                       >
-                        <AlignHorizontalDistributeCenter className="w-3 h-3" />
-                        <span>Шаг по X</span>
+                        <AlignHorizontalDistributeCenter className="w-3 h-3 shrink-0" />
+                        <span className="truncate">Шаг по X</span>
                       </button>
                       <button
                         type="button"
                         data-testid="distribute-y-btn"
                         onClick={() => onAlignDevices('distribute-y')}
-                        className="h-6 px-2 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                        className="min-w-0 overflow-hidden h-6 px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] inline-flex items-center justify-center gap-1 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap"
                       >
-                        <AlignVerticalDistributeCenter className="w-3 h-3" />
-                        <span>Шаг по Y</span>
+                        <AlignVerticalDistributeCenter className="w-3 h-3 shrink-0" />
+                        <span className="truncate">Шаг по Y</span>
                       </button>
                     </div>
                   )}
@@ -761,7 +761,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                     key={tabKey}
                     type="button"
                     onClick={() => setDeviceTab(tabKey)}
-                    className={`h-7 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors whitespace-nowrap ${
+                    className={`min-w-0 px-1 truncate h-7 text-[length:calc(10.5px*var(--flux-ui-scale))] transition-colors whitespace-nowrap ${
                       deviceTab === tabKey
                         ? 'bg-[var(--flux-surface)] text-[var(--flux-text)] font-semibold border-b-2 border-b-[var(--flux-accent)]'
                         : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] font-medium'
@@ -1144,7 +1144,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
               </div>
 
               {/* Add Attribute */}
-              <form onSubmit={handleAddAttr} className="p-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center gap-1">
+              <form onSubmit={handleAddAttr} className="p-1.5 border-b border-[var(--flux-line)] bg-[var(--flux-surface-alt)] flex items-center gap-1 min-w-0">
                 <input
                   type="text"
                   spellCheck={false}
@@ -1152,7 +1152,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   onChange={(e) => setNewAttrName(e.target.value)}
                   placeholder="Атрибут"
                   aria-label="Название нового атрибута"
-                  className="w-1/2 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                  className="flex-1 min-w-0 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                 />
                 <input
                   type="text"
@@ -1161,7 +1161,7 @@ export const RightInspector: React.FC<RightInspectorProps> = React.memo(({
                   onChange={(e) => setNewAttrValue(e.target.value)}
                   placeholder="Значение"
                   aria-label="Значение нового атрибута"
-                  className="w-1/2 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
+                  className="flex-1 min-w-0 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)]"
                 />
                 <button
                   type="submit"

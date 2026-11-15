@@ -15,28 +15,30 @@ import {
   rescaleDockLayoutForUiScale,
 } from './dockLayout.ts';
 
-test('UI_SCALE_OPTIONS provides 100, 120, 140, 160, 180 presets and normalizes cleanly', () => {
-  assert.deepEqual([...UI_SCALE_OPTIONS], [100, 120, 140, 160, 180]);
+test('UI_SCALE_OPTIONS provides 100, 110, 120, 130, 140, 150 presets and normalizes cleanly', () => {
+  assert.deepEqual([...UI_SCALE_OPTIONS], [100, 110, 120, 130, 140, 150]);
   assert.equal(normalizeUiScalePercent(100), 100);
+  assert.equal(normalizeUiScalePercent(112), 110);
   assert.equal(normalizeUiScalePercent('140%'), 140);
-  assert.equal(normalizeUiScalePercent(162), 160);
-  assert.equal(normalizeUiScalePercent(999), 180);
+  assert.equal(normalizeUiScalePercent(160), 150);
+  assert.equal(normalizeUiScalePercent(180), 150);
+  assert.equal(normalizeUiScalePercent(999), 150);
   assert.equal(normalizeUiScalePercent('bad'), 100);
-  assert.equal(uiScaleFactor(160), 1.6);
-  assert.equal(scaledPx(74, 180), 133);
+  assert.equal(uiScaleFactor(150), 1.5);
+  assert.equal(scaledPx(74, 150), 111);
 });
 
 test('getScaledChromeMetrics scales ribbon, rail, and bar dimensions monotonically', () => {
   const m100 = getScaledChromeMetrics(100);
-  const m140 = getScaledChromeMetrics(140);
-  const m180 = getScaledChromeMetrics(180);
+  const m130 = getScaledChromeMetrics(130);
+  const m150 = getScaledChromeMetrics(150);
 
   assert.equal(m100.ribbonRowHeight, 74);
-  assert.equal(m140.ribbonRowHeight, 104);
-  assert.equal(m180.ribbonRowHeight, 133);
-  assert.ok(m100.collapsedSideRailWidth < m140.collapsedSideRailWidth);
-  assert.ok(m140.collapsedSideRailWidth < m180.collapsedSideRailWidth);
-  assert.ok(m100.baseFontPx < m140.baseFontPx && m140.baseFontPx < m180.baseFontPx);
+  assert.equal(m130.ribbonRowHeight, 96);
+  assert.equal(m150.ribbonRowHeight, 111);
+  assert.ok(m100.collapsedSideRailWidth < m130.collapsedSideRailWidth);
+  assert.ok(m130.collapsedSideRailWidth < m150.collapsedSideRailWidth);
+  assert.ok(m100.baseFontPx < m130.baseFontPx && m130.baseFontPx < m150.baseFontPx);
 });
 
 test('loadUiScale and saveUiScale round-trip through Storage', () => {
@@ -48,11 +50,11 @@ test('loadUiScale and saveUiScale round-trip through Storage', () => {
     },
   };
   assert.equal(loadUiScale(mockStorage), 100);
-  saveUiScale(160, mockStorage);
-  assert.equal(loadUiScale(mockStorage), 160);
+  saveUiScale(150, mockStorage);
+  assert.equal(loadUiScale(mockStorage), 150);
 });
 
-test('rescaleDockLayoutForUiScale keeps panels proportional and non-overlapping at 180% across laptop & desktop viewports', () => {
+test('rescaleDockLayoutForUiScale keeps panels proportional and non-overlapping up to 150% across laptop & desktop viewports', () => {
   const base = createDefaultDockLayout();
   for (const [vw, vh] of [
     [1280, 720],

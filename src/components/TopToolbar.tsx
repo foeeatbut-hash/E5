@@ -832,7 +832,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           <div
             data-testid="focus-top-left"
             style={focusLayout ? { maxWidth: focusLayout.leftPillMaxWidth } : undefined}
-            className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 max-w-[34vw] overflow-hidden"
+            className="pointer-events-auto inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-hidden"
           >
             <button
               ref={menuBtnRef}
@@ -907,20 +907,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
             </button>
             <span
-              className={`${
-                selectedDesignation ? 'hidden lg:inline-block' : 'hidden min-[1400px]:inline-block'
-              } h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0`}
+              className="hidden 2xl:inline-block h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0"
               aria-hidden="true"
             />
-            <div
-              className={`${
-                selectedDesignation ? 'hidden lg:flex' : 'hidden min-[1400px]:flex'
-              } items-center gap-1 min-w-0 pr-1 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]`}
-            >
-              <span className="hidden min-[1400px]:inline truncate max-w-[92px] font-medium text-[var(--flux-text)]">{project.projectCode}</span>
+            <div className="hidden 2xl:flex items-center gap-1 min-w-0 pr-1 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
+              <span className="truncate max-w-[calc(92px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)]">{project.projectCode}</span>
               {selectedDesignation && (
                 <>
-                  <ChevronRight className="hidden min-[1400px]:inline w-3 h-3 shrink-0 opacity-60" />
+                  <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
                   <span className="font-mono font-semibold text-[var(--flux-accent)] shrink-0">{selectedDesignation}</span>
                 </>
               )}
@@ -940,10 +934,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 onClick={onOpenCommandPalette}
                 aria-label="Палитра команд (Ctrl+K)"
                 title="Палитра команд и быстрый поиск по проекту (Ctrl+K)"
-                className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
+                className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors shrink-0"
               >
                 <Search className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.7} />
-                <kbd className="font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text)]">
+                <kbd className="hidden 2xl:inline font-mono text-[length:calc(9.5px*var(--flux-ui-scale))] text-[var(--flux-text)]">
                   Ctrl+K
                 </kbd>
               </button>
@@ -952,7 +946,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               type="button"
               onClick={onRunErc}
               title="Открыть проверку электрических правил (ERC)"
-              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono font-medium transition-colors shrink-0 ${
+              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-mono font-medium transition-colors whitespace-nowrap shrink-0 ${
                 ercErrorCount > 0
                   ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 hover:bg-rose-500/25'
                   : 'hover:bg-[var(--flux-hover)] text-[var(--flux-accent)]'
@@ -965,7 +959,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               type="button"
               onClick={onOpenHvacWizard}
               title="Конструктор ФСА / ОВиК"
-              className="hidden min-[1400px]:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors shrink-0"
+              className="hidden 2xl:inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] transition-colors whitespace-nowrap shrink-0"
             >
               <Cpu className="w-3 h-3 text-[var(--flux-accent)]" strokeWidth={1.6} />
               <span>ФСА</span>
@@ -974,7 +968,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               type="button"
               onClick={onOpenPublishModal}
               title="Пакетный выпуск PDF / DXF"
-              className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2.5 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0"
+              className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors whitespace-nowrap shrink-0"
             >
               <Printer className="w-3 h-3" strokeWidth={1.6} />
               <span>Выпуск</span>
@@ -1011,7 +1005,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                   ? 'Открыть ленту инструментов (Главная, Черчение, Аннотации, Лист и ФСА, Вид, Flux, E³.series)'
                   : 'Свернуть ленту инструментов'
               }
-              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+              className={`inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors whitespace-nowrap shrink-0 ${
                 !ribbonCollapsed
                   ? 'border-[var(--flux-accent)] bg-[var(--flux-accent-soft)] text-[var(--flux-accent)]'
                   : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
@@ -1030,10 +1024,10 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               <select
                 data-testid="ui-scale-select"
                 aria-label="Масштаб интерфейса"
-                title="Масштаб интерфейса программы (100%–180%)"
+                title="Масштаб интерфейса программы (100%–150%)"
                 value={uiScale}
                 onChange={(e) => onChangeUiScale(normalizeUiScalePercent(Number(e.target.value)))}
-                className="hidden md:inline-block h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] focus:outline-none cursor-pointer"
+                className="hidden md:inline-block h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] focus:outline-none shrink-0 cursor-pointer"
               >
                 {UI_SCALE_OPTIONS.map((opt) => (
                   <option key={opt} value={opt}>
@@ -1056,7 +1050,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
       ) : isNewUiMode(uiMode) ? (
         <div
           data-testid="header-mode-new"
-          className="flex items-center justify-between gap-2 lg:gap-3 px-2 h-[calc(36px*var(--flux-ui-scale))] border-b border-[var(--flux-line)] min-w-0 bg-[var(--flux-surface)]"
+          className="flex items-center justify-between gap-2 lg:gap-3 px-2 h-[calc(36px*var(--flux-ui-scale))] border-b border-[var(--flux-line)] min-w-0 overflow-hidden bg-[var(--flux-surface)]"
         >
           <div className="flex items-center gap-1 shrink-0 min-w-0">
             <button
@@ -1148,7 +1142,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 
             <span className="hidden md:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
             <div className="hidden md:flex items-center gap-1 min-w-0 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-              <span className="font-medium text-[var(--flux-text)] truncate max-w-[140px]">
+              <span className="font-medium text-[var(--flux-text)] truncate max-w-[calc(140px*var(--flux-ui-scale))]">
                 {isSymbolEditorOpen && symbolWorkspace
                   ? `УГО · ${symbolWorkspace.draft.name}${symbolWorkspace.draft.dirty ? ' *' : ''}`
                   : project.projectCode}
@@ -1156,7 +1150,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               {!isSymbolEditorOpen && activeSheet && (
                 <>
                   <ChevronRight className="w-3 h-3 shrink-0 opacity-60" />
-                  <span className="truncate max-w-[130px]">Л.{activeSheet.number} {activeSheet.name}</span>
+                  <span className="truncate max-w-[calc(130px*var(--flux-ui-scale))]">Л.{activeSheet.number} {activeSheet.name}</span>
                 </>
               )}
               {!isSymbolEditorOpen && selectedDesignation && (
@@ -1176,7 +1170,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                 onClick={onOpenCommandPalette}
                 aria-label="Палитра команд (Ctrl+K)"
                 title="Палитра команд и быстрый поиск по проекту (Ctrl+K)"
-                className="w-full max-w-[320px] inline-flex items-center justify-between gap-2 h-[calc(24px*var(--flux-ui-scale))] px-2.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-surface-alt)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
+                className="w-full max-w-[calc(320px*var(--flux-ui-scale))] inline-flex items-center justify-between gap-2 h-[calc(24px*var(--flux-ui-scale))] px-2.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-bg)] hover:border-[var(--flux-accent)]/50 hover:bg-[var(--flux-surface-alt)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] transition-colors"
               >
                 <span className="inline-flex items-center gap-1.5 truncate">
                   <Search className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" strokeWidth={1.6} />
@@ -1246,7 +1240,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               <select
                 data-testid="ui-scale-select"
                 aria-label="Масштаб интерфейса"
-                title="Масштаб интерфейса программы (100%–180%)"
+                title="Масштаб интерфейса программы (100%–150%)"
                 value={uiScale}
                 onChange={(e) => onChangeUiScale(normalizeUiScalePercent(Number(e.target.value)))}
                 className="h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)] transition-colors shrink-0 cursor-pointer"
@@ -1293,7 +1287,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
       ) : (
         <div
           data-testid="header-mode-classic"
-          className="flex items-center justify-between gap-2 lg:gap-4 px-1.5 h-7 border-b border-[var(--flux-line)] min-w-0 flux-glass-bar"
+          className="flex items-center justify-between gap-2 lg:gap-4 px-1.5 h-[calc(28px*var(--flux-ui-scale))] border-b border-[var(--flux-line)] min-w-0 overflow-hidden flux-glass-bar"
         >
           <div className="flex items-center gap-0.5 shrink-0">
             <button
@@ -1443,7 +1437,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               <select
                 data-testid="ui-scale-select"
                 aria-label="Масштаб интерфейса"
-                title="Масштаб интерфейса программы (100%–180%)"
+                title="Масштаб интерфейса программы (100%–150%)"
                 value={uiScale}
                 onChange={(e) => onChangeUiScale(normalizeUiScalePercent(Number(e.target.value)))}
                 className="h-[calc(21px*var(--flux-ui-scale))] px-1 mr-0.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] font-mono tabular-nums text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] focus:outline-none focus:border-[var(--flux-accent)] transition-colors shrink-0 cursor-pointer"
@@ -1522,7 +1516,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         data-testid={`app-menu-cat-${catId}`}
                         onMouseEnter={() => setMenuCategory(catId)}
                         onClick={() => setMenuCategory(catId)}
-                        className={`w-full px-2 h-8 rounded-[2px] flex items-center justify-between gap-2 text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium transition-colors ${
+                        className={`w-full px-2 min-h-8 h-auto py-1 rounded-[2px] flex items-center justify-between gap-2 text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium transition-colors ${
                           active
                             ? 'bg-[var(--flux-sel)] text-[var(--flux-text)]'
                             : 'text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)] hover:text-[var(--flux-text)]'
