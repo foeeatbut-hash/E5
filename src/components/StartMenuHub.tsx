@@ -4,7 +4,9 @@ import {
   ArrowRight,
   Cpu,
   FilePlus2,
+  FolderKanban,
   FolderOpen,
+  Layers,
   LayoutGrid,
   List,
   Moon,
@@ -19,28 +21,44 @@ import {
   X,
 } from 'lucide-react';
 import type {
+  CatalogItem,
   E3Project,
+  E3SymbolDef,
   SheetFormat,
   StandardType,
 } from '../core/e3Types';
+import type { HvacBuildOptions } from '../core/hvacBuilder';
 import type { RecentProjectEntry } from '../core/sessionStorage';
 import {
+  type CustomProjectTemplate,
+  deleteCustomTemplate,
   filterAndSortRecentProjects,
   filterStartTemplates,
   formatRelativeTimestampRu,
+  loadCustomTemplates,
   loadPinnedProjectIds,
+  saveCustomTemplates,
   savePinnedProjectIds,
   START_TEMPLATE_DEFS,
+  type StartHubLayer,
   type StartHubTab,
   type StartHubViewMode,
   type StartTemplateId,
   summarizeProjectHealth,
   togglePinnedProjectId,
+  upsertCustomTemplate,
   type WaveCardFocusRect,
 } from '../core/startHub';
 import { normalizeUiScalePercent, UI_SCALE_OPTIONS, type UiScalePercent } from '../core/uiScale';
 import { AntigravityWaveCanvas } from './AntigravityWaveCanvas';
+import type { E3BridgeStatusInfo } from './Modals';
 import { ProjectMiniPreview } from './ProjectMiniPreview';
+import {
+  StartHubExchangeLayer,
+  StartHubHvacLayer,
+  StartHubUgoLayer,
+} from './StartHubStandaloneLayers';
+import { StartHubTemplatesLayer } from './StartHubTemplatesLayer';
 
 interface StartMenuHubProps {
   open: boolean;
@@ -48,22 +66,25 @@ interface StartMenuHubProps {
   activeSheetId: string;
   activeFilename: string;
   recentProjects: RecentProjectEntry[];
+  catalog: CatalogItem[];
+  customSymbols: E3SymbolDef[];
+  bridgeStatus: E3BridgeStatusInfo;
   isDark: boolean;
   uiMode: string;
   uiScale: UiScalePercent;
-  e3BridgeHost: string | null;
-  fluxHosted?: boolean;
   onCloseToCanvas: () => void;
   onCreateProjectFromTemplate: (
     templateId: StartTemplateId,
     options: { standard: StandardType; format: SheetFormat; gridSize: number }
   ) => void;
+  onCreateProjectFromCustomTemplate: (tpl: CustomProjectTemplate) => void;
+  onCreateStandaloneHvacProject: (options: HvacBuildOptions) => void;
+  onSaveGlobalCatalogAndSymbol: (item: CatalogItem, sym: E3SymbolDef) => void;
+  onDeleteGlobalCatalogItem: (itemId: string, symbolId?: string) => void;
+  onDownloadConnector: () => void;
   onOpenRecentProject: (projectId: string) => void;
   onRemoveRecentProject: (projectId: string) => void;
   onImportE3sFile: (file: File) => void | Promise<void>;
-  onOpenHvacWizard: () => void;
-  onOpenSymbolDesigner: () => void;
-  onOpenExchangeModal: () => void;
   onOpenCommandPalette: () => void;
   onToggleTheme: () => void;
   onChangeUiScale: (scale: UiScalePercent) => void;
@@ -77,24 +98,28 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
   activeSheetId,
   activeFilename,
   recentProjects,
+  catalog,
+  customSymbols,
+  bridgeStatus,
   isDark,
   uiMode,
   uiScale,
-  e3BridgeHost,
-  fluxHosted,
   onCloseToCanvas,
   onCreateProjectFromTemplate,
+  onCreateProjectFromCustomTemplate,
+  onCreateStandaloneHvacProject,
+  onSaveGlobalCatalogAndSymbol,
+  onDeleteGlobalCatalogItem,
+  onDownloadConnector,
   onOpenRecentProject,
   onRemoveRecentProject,
   onImportE3sFile,
-  onOpenHvacWizard,
-  onOpenSymbolDesigner,
-  onOpenExchangeModal,
   onOpenCommandPalette,
   onToggleTheme,
   onChangeUiScale,
 }) => {
   const [settling, setSettling] = useState(false);
+  const [activeLayer, setActiveLayer] = useState<StartHubLayer>('projects');
   const [tab, setTab] = useState<StartHubTab>('all');
   const [viewMode, setViewMode] = useState<StartHubViewMode>(() => {
     try {
@@ -106,14 +131,10 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
     return 'grid';
   });
   const [query, setQuery] = useState('');
-  const [defaultStandard, setDefaultStandard] = useState<StandardType>(
-    () => currentProject.standard || 'GOST'
-  );
-  const [defaultFormat, setDefaultFormat] = useState<SheetFormat>('A3');
-  const [defaultGridSize, setDefaultGridSize] = useState<number>(
-    () => currentProject.visualSettings?.gridSize || 20
-  );
   const [pinnedIds, setPinnedIds] = useState<string[]>(() => loadPinnedProjectIds());
+  const [customTemplates, setCustomTemplates] = useState<CustomProjectTemplate[]>(() =>
+    loadCustomTemplates()
+  );
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hoverRectRef = useRef<WaveCardFocusRect | null>(null);
@@ -133,6 +154,7 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
     if (!open) {
       setSettling(false);
       hoverRectRef.current = null;
+      setActiveLayer('projects');
     }
     return () => {
       if (settleTimerRef.current !== null) {
@@ -168,7 +190,11 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        triggerGridLockTransition(onCloseToCanvas);
+        if (activeLayer !== 'projects') {
+          setActiveLayer('projects');
+        } else {
+          triggerGridLockTransition(onCloseToCanvas);
+        }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         e.stopPropagation();
@@ -177,7 +203,7 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [open, onCloseToCanvas, onOpenCommandPalette, triggerGridLockTransition]);
+  }, [open, activeLayer, onCloseToCanvas, onOpenCommandPalette, triggerGridLockTransition]);
 
   // Ensure current active session is always represented in recents list if storage was empty
   const effectiveRecentEntries = useMemo<RecentProjectEntry[]>(() => {
@@ -230,6 +256,22 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
     setPinnedIds((prev) => {
       const next = togglePinnedProjectId(prev, projectId);
       savePinnedProjectIds(next);
+      return next;
+    });
+  }, []);
+
+  const handleSaveCustomTemplate = useCallback((tpl: CustomProjectTemplate) => {
+    setCustomTemplates((prev) => {
+      const next = upsertCustomTemplate(prev, tpl);
+      saveCustomTemplates(next);
+      return next;
+    });
+  }, []);
+
+  const handleDeleteCustomTemplate = useCallback((templateId: string) => {
+    setCustomTemplates((prev) => {
+      const next = deleteCustomTemplate(prev, templateId);
+      saveCustomTemplates(next);
       return next;
     });
   }, []);
@@ -377,54 +419,8 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
             </div>
           </div>
 
-          {/* Right: Environment Readiness Strip */}
+          {/* Right: UI Scale & Theme */}
           <div className="flex items-center gap-1.5 order-2 lg:order-3 shrink-0">
-            <div
-              className="hidden sm:inline-flex items-center gap-1.5 px-2 h-[calc(26px*var(--flux-ui-scale))] rounded-[6px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]"
-              title={
-                e3BridgeHost
-                  ? `Мост E³.series активен (${e3BridgeHost})`
-                  : fluxHosted
-                    ? 'Среда хоста Flux Studio активна'
-                    : 'Локальный движок E3-CORE готов (мост E³.series в режиме ожидания)'
-              }
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  e3BridgeHost || fluxHosted ? 'bg-emerald-500' : 'bg-[var(--flux-accent)]'
-                }`}
-              />
-              <span className="font-mono">
-                {e3BridgeHost ? `E3:${e3BridgeHost}` : 'E3·CORE'}
-              </span>
-            </div>
-
-            <div
-              role="group"
-              aria-label="Стандарт по умолчанию для новых проектов"
-              className="inline-flex items-center h-[calc(26px*var(--flux-ui-scale))] p-0.5 rounded-[6px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)]"
-            >
-              {(['GOST', 'IEC'] as const).map((std) => {
-                const active = defaultStandard === std;
-                return (
-                  <button
-                    key={std}
-                    type="button"
-                    data-testid={`start-hub-std-${std.toLowerCase()}`}
-                    aria-pressed={active}
-                    onClick={() => setDefaultStandard(std)}
-                    className={`px-2 h-full rounded-[4px] font-mono text-[length:calc(10px*var(--flux-ui-scale))] font-medium transition-colors ${
-                      active
-                        ? 'bg-[var(--flux-surface)] text-[var(--flux-accent)] shadow-xs'
-                        : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)]'
-                    }`}
-                  >
-                    {std === 'GOST' ? 'ГОСТ' : 'IEC'}
-                  </button>
-                );
-              })}
-            </div>
-
             <select
               aria-label="Масштаб интерфейса"
               value={uiScale}
@@ -513,9 +509,9 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                 onClick={() =>
                   triggerGridLockTransition(() =>
                     onCreateProjectFromTemplate('gost_blank_a3', {
-                      standard: defaultStandard,
-                      format: defaultFormat,
-                      gridSize: defaultGridSize,
+                      standard: 'GOST',
+                      format: 'A3',
+                      gridSize: 20,
                     })
                   )
                 }
@@ -526,11 +522,60 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                   <span>Новый проект</span>
                 </span>
                 <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] opacity-85">
-                  {defaultStandard === 'GOST' ? 'ГОСТ' : 'IEC'} · {defaultFormat}
+                  ГОСТ · A3
                 </span>
               </button>
 
-              <div className="grid grid-cols-1 gap-1 pt-1 antigravity-wave-cascade">
+              {/* Dedicated Templates Layer Button right after New Project */}
+              <button
+                type="button"
+                data-testid="start-hub-nav-templates"
+                onPointerMove={trackWaveCursor}
+                onMouseEnter={(e) => bindHoverTarget(e.currentTarget, 0.72)}
+                onMouseLeave={() => bindHoverTarget(null)}
+                onClick={() => setActiveLayer('templates')}
+                aria-pressed={activeLayer === 'templates'}
+                className={`antigravity-wave-row w-full h-[calc(34px*var(--flux-ui-scale))] px-3 rounded-[7px] border text-left flex items-center justify-between gap-2 transition-colors ${
+                  activeLayer === 'templates'
+                    ? 'border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)]/55 text-[var(--flux-text)]'
+                    : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)]/70 hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
+                }`}
+              >
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <Layers className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                  <span className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold truncate">
+                    Шаблоны
+                  </span>
+                </span>
+                <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  {customTemplates.length > 0 ? `${customTemplates.length} своих` : 'конструктор'}
+                </span>
+              </button>
+
+              <div className="grid grid-cols-1 gap-1 pt-1 border-t border-[var(--flux-line)]/70 antigravity-wave-cascade">
+                <button
+                  type="button"
+                  data-testid="start-hub-nav-projects"
+                  onPointerMove={trackWaveCursor}
+                  onClick={() => setActiveLayer('projects')}
+                  aria-pressed={activeLayer === 'projects'}
+                  className={`antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] text-left flex items-center justify-between gap-2 transition-colors ${
+                    activeLayer === 'projects'
+                      ? 'bg-[var(--flux-accent-soft)]/55 text-[var(--flux-text)]'
+                      : 'hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-2 min-w-0">
+                    <FolderKanban className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium truncate">
+                      Проекты и обзор
+                    </span>
+                  </span>
+                  <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                    {effectiveRecentEntries.length}
+                  </span>
+                </button>
+
                 <button
                   type="button"
                   data-testid="start-hub-open-file-btn"
@@ -553,22 +598,22 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                   type="button"
                   data-testid="start-hub-hvac-wizard-btn"
                   onPointerMove={trackWaveCursor}
-                  onClick={() =>
-                    triggerGridLockTransition(() => {
-                      onCloseToCanvas();
-                      onOpenHvacWizard();
-                    })
-                  }
-                  className="antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] hover:bg-[var(--flux-hover)] text-left flex items-center justify-between gap-2"
+                  onClick={() => setActiveLayer('hvac')}
+                  aria-pressed={activeLayer === 'hvac'}
+                  className={`antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] text-left flex items-center justify-between gap-2 transition-colors ${
+                    activeLayer === 'hvac'
+                      ? 'bg-[var(--flux-accent-soft)]/55 text-[var(--flux-text)]'
+                      : 'hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
+                  }`}
                 >
                   <span className="inline-flex items-center gap-2 min-w-0">
                     <Cpu className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
+                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium truncate">
                       Мастер ФСА / ОВиК
                     </span>
                   </span>
                   <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                    автогенерация
+                    отдельный слой
                   </span>
                 </button>
 
@@ -576,22 +621,22 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                   type="button"
                   data-testid="start-hub-symbol-editor-btn"
                   onPointerMove={trackWaveCursor}
-                  onClick={() =>
-                    triggerGridLockTransition(() => {
-                      onCloseToCanvas();
-                      onOpenSymbolDesigner();
-                    })
-                  }
-                  className="antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] hover:bg-[var(--flux-hover)] text-left flex items-center justify-between gap-2"
+                  onClick={() => setActiveLayer('ugo')}
+                  aria-pressed={activeLayer === 'ugo'}
+                  className={`antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] text-left flex items-center justify-between gap-2 transition-colors ${
+                    activeLayer === 'ugo'
+                      ? 'bg-[var(--flux-accent-soft)]/55 text-[var(--flux-text)]'
+                      : 'hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
+                  }`}
                 >
                   <span className="inline-flex items-center gap-2 min-w-0">
                     <PenTool className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
+                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium truncate">
                       Редактор УГО и база
                     </span>
                   </span>
                   <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                    блоки E3
+                    база блоков
                   </span>
                 </button>
 
@@ -599,17 +644,17 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                   type="button"
                   data-testid="start-hub-exchange-btn"
                   onPointerMove={trackWaveCursor}
-                  onClick={() =>
-                    triggerGridLockTransition(() => {
-                      onCloseToCanvas();
-                      onOpenExchangeModal();
-                    })
-                  }
-                  className="antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] hover:bg-[var(--flux-hover)] text-left flex items-center justify-between gap-2"
+                  onClick={() => setActiveLayer('exchange')}
+                  aria-pressed={activeLayer === 'exchange'}
+                  className={`antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] text-left flex items-center justify-between gap-2 transition-colors ${
+                    activeLayer === 'exchange'
+                      ? 'bg-[var(--flux-accent-soft)]/55 text-[var(--flux-text)]'
+                      : 'hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
+                  }`}
                 >
                   <span className="inline-flex items-center gap-2 min-w-0">
-                    <Share2 className="w-3.5 h-3.5 text-[var(--flux-text-muted)] shrink-0" />
-                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
+                    <Share2 className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium truncate">
                       Центр обмена E³.series
                     </span>
                   </span>
@@ -632,9 +677,13 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                 <h2 className="text-[length:calc(11px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.05em] text-[var(--flux-text-muted)]">
                   Быстрые шаблоны
                 </h2>
-                <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-                  {filteredTemplates.length}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveLayer('templates')}
+                  className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-accent)] hover:underline"
+                >
+                  настроить →
+                </button>
               </div>
               <div className="space-y-1 antigravity-wave-cascade">
                 {filteredTemplates.map((tpl) => (
@@ -648,9 +697,9 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                     onClick={() =>
                       triggerGridLockTransition(() =>
                         onCreateProjectFromTemplate(tpl.id, {
-                          standard: defaultStandard,
+                          standard: 'GOST',
                           format: tpl.defaultFormat,
-                          gridSize: defaultGridSize,
+                          gridSize: 20,
                         })
                       )
                     }
@@ -678,14 +727,63 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
             </motion.section>
           </aside>
 
-          {/* Main Stage: Recent Projects */}
-          <motion.section
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}
-            aria-label="Недавние проекты"
-            className="lg:col-span-8 xl:col-span-9 p-4 rounded-[12px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg flex flex-col"
-          >
+          {/* Main Stage: Switchable Program Layers */}
+          <div className="lg:col-span-8 xl:col-span-9 min-w-0">
+            {activeLayer === 'templates' && (
+              <StartHubTemplatesLayer
+                customTemplates={customTemplates}
+                isDark={isDark}
+                onSaveTemplate={handleSaveCustomTemplate}
+                onDeleteTemplate={handleDeleteCustomTemplate}
+                onCreateProjectFromCustomTemplate={(tpl) =>
+                  triggerGridLockTransition(() => onCreateProjectFromCustomTemplate(tpl))
+                }
+                trackWaveCursor={trackWaveCursor}
+                bindHoverTarget={bindHoverTarget}
+              />
+            )}
+
+            {activeLayer === 'hvac' && (
+              <StartHubHvacLayer
+                catalog={catalog}
+                onCreateStandaloneHvacProject={(opts) =>
+                  triggerGridLockTransition(() => onCreateStandaloneHvacProject(opts))
+                }
+                trackWaveCursor={trackWaveCursor}
+              />
+            )}
+
+            {activeLayer === 'ugo' && (
+              <StartHubUgoLayer
+                catalog={catalog}
+                customSymbols={customSymbols}
+                onSaveGlobalCatalogAndSymbol={onSaveGlobalCatalogAndSymbol}
+                onDeleteGlobalCatalogItem={onDeleteGlobalCatalogItem}
+                trackWaveCursor={trackWaveCursor}
+              />
+            )}
+
+            {activeLayer === 'exchange' && (
+              <StartHubExchangeLayer
+                bridgeStatus={bridgeStatus}
+                onDownloadConnector={onDownloadConnector}
+                onImportAsNewProject={async (file) => {
+                  await Promise.resolve(onImportE3sFile(file));
+                  triggerGridLockTransition(onCloseToCanvas);
+                }}
+                trackWaveCursor={trackWaveCursor}
+              />
+            )}
+
+            {activeLayer === 'projects' && (
+              <motion.section
+                data-testid="start-hub-layer-projects"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}
+                aria-label="Недавние проекты"
+                className="p-4 rounded-[12px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg flex flex-col"
+              >
             {/* Stage Header: Underlined Tabs + Grid/Table Toggle */}
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[var(--flux-line)]">
               <div className="flex items-center gap-4" role="tablist" aria-label="Фильтр проектов">
@@ -1020,57 +1118,11 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                 )}
               </div>
             )}
-          </motion.section>
+              </motion.section>
+            )}
+          </div>
         </div>
       </main>
-
-      {/* Compact Engineering Footer Strip */}
-      <motion.footer
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.22, delay: 0.14, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 shrink-0 px-3 sm:px-6 pb-3 pt-1"
-      >
-        <div className="max-w-[1380px] mx-auto px-3.5 py-2 rounded-[10px] border border-[var(--flux-line)] flux-glass-surface flex flex-wrap items-center justify-between gap-3 text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text-muted)]">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono">
-            <span><strong className="text-[var(--flux-text)]">W</strong> провод</span>
-            <span><strong className="text-[var(--flux-text)]">R</strong> поворот 90°</span>
-            <span><strong className="text-[var(--flux-text)]">Z</strong> вписать лист</span>
-            <span><strong className="text-[var(--flux-text)]">Ctrl+K</strong> палитра</span>
-            <span><strong className="text-[var(--flux-text)]">Esc</strong> к схеме</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <label className="inline-flex items-center gap-1.5">
-              <span>Формат по умолчанию:</span>
-              <select
-                aria-label="Формат листа по умолчанию"
-                value={defaultFormat}
-                onChange={(e) => setDefaultFormat(e.target.value as SheetFormat)}
-                className="h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] font-mono text-[var(--flux-text)] cursor-pointer"
-              >
-                <option value="A4">A4</option>
-                <option value="A3">A3</option>
-                <option value="A2">A2</option>
-                <option value="A1">A1</option>
-              </select>
-            </label>
-            <label className="inline-flex items-center gap-1.5">
-              <span>Сетка:</span>
-              <select
-                aria-label="Шаг сетки по умолчанию"
-                value={defaultGridSize}
-                onChange={(e) => setDefaultGridSize(Number(e.target.value))}
-                className="h-6 px-1.5 rounded border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] font-mono text-[var(--flux-text)] cursor-pointer"
-              >
-                <option value={10}>10 мм</option>
-                <option value={20}>20 мм</option>
-                <option value={40}>40 мм</option>
-              </select>
-            </label>
-          </div>
-        </div>
-      </motion.footer>
         </motion.div>
       )}
     </AnimatePresence>

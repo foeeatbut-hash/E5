@@ -296,7 +296,10 @@ import {
   renameSheetFolderInProject,
 } from './core/sheetTree';
 import {
+  buildProjectFromCustomTemplate,
   createProjectFromTemplate,
+  createStandaloneHvacProject,
+  type CustomProjectTemplate,
   type StartTemplateId,
 } from './core/startHub';
 import { ecadAsync } from './workers/ecadAsync';
@@ -5345,6 +5348,93 @@ export default function App() {
     [applySelection, pushSync, fitSheetToViewport, activeViewportIdx, appendLog]
   );
 
+  const handleCreateProjectFromCustomTemplate = useCallback(
+    (tpl: CustomProjectTemplate) => {
+      saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+      const fresh = buildProjectFromCustomTemplate(tpl);
+      const nextSheetId = fresh.sheets[0]?.id || 'sheet-1';
+      setOpenedFileName(null);
+      setDocState({ past: [], present: fresh, future: [] });
+      setOpenSheetIds(fresh.sheets.map((s) => s.id));
+      setActiveSheetId(nextSheetId);
+      setViewportSheetIds(fresh.sheets.map((s) => s.id));
+      applySelection({ deviceIds: fresh.devices[0] ? [fresh.devices[0].id] : [] });
+      const res = saveActiveSession(fresh, nextSheetId);
+      setLastSavedAt(res.savedAt);
+      setRecentProjects(res.recent);
+      pushSync(fresh);
+      setStartHubOpen(false);
+      if (fresh.sheets[0]) {
+        window.requestAnimationFrame(() => fitSheetToViewport(fresh.sheets[0], activeViewportIdx));
+      }
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Создан проект по шаблону «${tpl.title}»: ${fresh.name} (${fresh.projectCode}).`
+      );
+    },
+    [applySelection, pushSync, fitSheetToViewport, activeViewportIdx, appendLog]
+  );
+
+  const handleCreateStandaloneHvacProject = useCallback(
+    (options: HvacBuildOptions) => {
+      saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+      const built = createStandaloneHvacProject(options, mergedCatalog, {
+        theme: docStateRef.current.present.visualSettings.theme,
+      });
+      const fresh = built.project;
+      const nextSheetId = built.fsaSheetId || fresh.sheets[0]?.id || 'sheet-1';
+      setOpenedFileName(null);
+      setDocState({ past: [], present: fresh, future: [] });
+      setOpenSheetIds(fresh.sheets.map((s) => s.id));
+      setActiveSheetId(nextSheetId);
+      setViewportSheetIds(fresh.sheets.map((s) => s.id));
+      applySelection({ deviceIds: fresh.devices[0] ? [fresh.devices[0].id] : [] });
+      const res = saveActiveSession(fresh, nextSheetId);
+      setLastSavedAt(res.savedAt);
+      setRecentProjects(res.recent);
+      pushSync(fresh);
+      setStartHubOpen(false);
+      const fsaSheet = fresh.sheets.find((s) => s.id === nextSheetId) || fresh.sheets[0];
+      if (fsaSheet) {
+        window.requestAnimationFrame(() => fitSheetToViewport(fsaSheet, activeViewportIdx));
+      }
+      appendLog(
+        'INFO',
+        'E3-CORE',
+        `Создан автономный проект ФСА ${options.systemTag}: ${fresh.sheets.length} л., ${fresh.devices.length} изд.`
+      );
+    },
+    [mergedCatalog, applySelection, pushSync, fitSheetToViewport, activeViewportIdx, appendLog]
+  );
+
+  const handleSaveGlobalCatalogAndSymbol = useCallback(
+    (item: CatalogItem, sym: E3SymbolDef) => {
+      setCustomSymbols((prev) => {
+        const idx = prev.findIndex((s) => s.id === sym.id);
+        const next = idx >= 0 ? prev.map((s) => (s.id === sym.id ? sym : s)) : [...prev, sym];
+        saveCustomSymbols(next);
+        return next;
+      });
+      handleSaveCustomCatalogItem(item);
+    },
+    [handleSaveCustomCatalogItem]
+  );
+
+  const handleDeleteGlobalCatalogItem = useCallback(
+    (itemId: string, symbolId?: string) => {
+      handleDeleteCustomCatalogItem(itemId);
+      if (symbolId) {
+        setCustomSymbols((prev) => {
+          const next = prev.filter((s) => s.id !== symbolId);
+          saveCustomSymbols(next);
+          return next;
+        });
+      }
+    },
+    [handleDeleteCustomCatalogItem]
+  );
+
   const handleOpenRecentProject = useCallback(
     (projectId: string) => {
       const latest = loadRecentProjects();
@@ -8259,19 +8349,22 @@ export default function App() {
         activeSheetId={activeSheetId}
         activeFilename={openedFileName || buildE3FluxFilename(project)}
         recentProjects={recentProjects}
+        catalog={mergedCatalog}
+        customSymbols={customSymbols}
+        bridgeStatus={bridgeStatus}
         isDark={project.visualSettings.theme === 'dark'}
         uiMode={uiMode}
         uiScale={uiScale}
-        e3BridgeHost={
-          bridgeStatus.isWin32
-            ? 'Windows'
-            : bridgeStatus.bridgeConnected
-              ? bridgeStatus.bridgeHost
-              : null
-        }
-        fluxHosted={fluxHostStatus.hostedInFlux}
         onCloseToCanvas={() => setStartHubOpen(false)}
         onCreateProjectFromTemplate={handleCreateProjectFromTemplate}
+        onCreateProjectFromCustomTemplate={handleCreateProjectFromCustomTemplate}
+        onCreateStandaloneHvacProject={handleCreateStandaloneHvacProject}
+        onSaveGlobalCatalogAndSymbol={handleSaveGlobalCatalogAndSymbol}
+        onDeleteGlobalCatalogItem={handleDeleteGlobalCatalogItem}
+        onDownloadConnector={() => {
+          window.location.assign('/api/v1/e3-bridge/connector.cmd');
+          appendLog('INFO', 'E3-XML', 'Скачан фоновый коннектор E3ProMax_Connector.cmd для Windows.');
+        }}
         onOpenRecentProject={(id) => {
           handleOpenRecentProject(id);
           setStartHubOpen(false);
@@ -8281,9 +8374,6 @@ export default function App() {
           const buf = await file.arrayBuffer();
           await handleImportE3sBytes(buf, file.name);
         }}
-        onOpenHvacWizard={() => setHvacWizardOpen(true)}
-        onOpenSymbolDesigner={openBlockEditorWorkspace}
-        onOpenExchangeModal={() => setExchangeOpen(true)}
         onOpenCommandPalette={() => {
           setCommandPaletteInitialQuery('');
           setCommandPaletteOpen(true);

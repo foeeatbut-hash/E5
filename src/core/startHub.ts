@@ -1,13 +1,23 @@
 import { SHEET_DIMENSIONS } from './e3Catalog.ts';
 import { runErc } from './e3Engine.ts';
 import { createSeedProject, DEFAULT_VISUAL_SETTINGS } from './e3Seed.ts';
+import { generateHvacDiagram, type HvacBuildOptions } from './hvacBuilder.ts';
 import type {
+  CatalogItem,
+  E3Annotation,
+  E3Cable,
+  E3Device,
   E3Project,
+  E3Sheet,
+  E3Wire,
+  GostStampForm,
+  SchematicFontFamily,
   SheetFormat,
   StandardType,
 } from './e3Types.ts';
 import { hydrateProjectDefaults, type RecentProjectEntry } from './sessionStorage.ts';
 
+export type StartHubLayer = 'projects' | 'templates' | 'hvac' | 'ugo' | 'exchange';
 export type StartHubTab = 'all' | 'pinned' | 'gost' | 'iec';
 export type StartHubViewMode = 'grid' | 'table';
 export type StartTemplateId =
@@ -641,3 +651,592 @@ export function parseCssColorToRgb(
   }
   return fallback;
 }
+
+/**
+ * Custom Project Templates (Конструктор шаблонов проектов)
+ */
+export type CustomTemplateCategory = 'power' | 'automation' | 'hvac' | 'terminal' | 'custom';
+
+export const CUSTOM_TEMPLATE_CATEGORY_LABELS: Record<CustomTemplateCategory, string> = {
+  power: 'Силовые щиты 3~380В',
+  automation: 'Автоматизация и ПЛК',
+  hvac: 'Вентиляция и ОВиК',
+  terminal: 'Клеммные шкафы / Кросс',
+  custom: 'Универсальный профиль',
+};
+
+export interface CustomTemplateSheetSpec {
+  id: string;
+  name: string;
+  format: SheetFormat;
+}
+
+export interface CustomProjectTemplate {
+  id: string;
+  title: string;
+  description: string;
+  category: CustomTemplateCategory;
+  standard: StandardType;
+  projectCodePrefix: string;
+  defaultFormat: SheetFormat;
+  initialSheets: CustomTemplateSheetSpec[];
+  gridSize: 10 | 20 | 40;
+  fontFamily: SchematicFontFamily;
+  theme: 'light' | 'dark';
+  wireWidth: number;
+  symbolStrokeWidth: number;
+  snapToGrid: boolean;
+  smartGuides: boolean;
+  wireCrossingBridge: boolean;
+  showGostFrame: boolean;
+  showPinNumbers: boolean;
+  showWireNumbers: boolean;
+  showCrossRefs: boolean;
+  stampDefaults: {
+    stampForm: GostStampForm;
+    organization: string;
+    author: string;
+    checker: string;
+    approver: string;
+    litera: string;
+  };
+  modules: {
+    includePowerInfeed: boolean;
+    includePlcRack: boolean;
+    includeTerminalStrip: boolean;
+    includeGostBomTable: boolean;
+    includeCrossRefs: boolean;
+  };
+  isBuiltin?: boolean;
+  updatedAt: string;
+}
+
+export const CUSTOM_TEMPLATES_STORAGE_KEY = 'e3promax.customTemplates.v1';
+
+export function createDefaultCustomTemplateDraft(
+  overrides: Partial<CustomProjectTemplate> = {}
+): CustomProjectTemplate {
+  const nowIso = new Date().toISOString();
+  return {
+    id: overrides.id || `tpl-custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+    title: 'Новый пользовательский шаблон',
+    description: 'Настроенный шаблон с основной надписью ГОСТ, параметрами трассировки и составом листов.',
+    category: 'custom',
+    standard: 'GOST',
+    projectCodePrefix: 'ПДХ',
+    defaultFormat: 'A3',
+    initialSheets: [
+      { id: 'sh-1', name: 'Схема электрическая принципиальная', format: 'A3' },
+    ],
+    gridSize: 20,
+    fontFamily: 'GOST',
+    theme: 'light',
+    wireWidth: 2,
+    symbolStrokeWidth: 1.75,
+    snapToGrid: true,
+    smartGuides: true,
+    wireCrossingBridge: true,
+    showGostFrame: true,
+    showPinNumbers: true,
+    showWireNumbers: true,
+    showCrossRefs: true,
+    stampDefaults: {
+      stampForm: 'form1',
+      organization: 'ООО «ПромВентАвтоматика»',
+      author: 'Инженер-проектировщик',
+      checker: '',
+      approver: '',
+      litera: 'Р',
+    },
+    modules: {
+      includePowerInfeed: false,
+      includePlcRack: false,
+      includeTerminalStrip: false,
+      includeGostBomTable: false,
+      includeCrossRefs: true,
+    },
+    isBuiltin: false,
+    updatedAt: nowIso,
+    ...overrides,
+  };
+}
+
+export const BUILTIN_CUSTOM_TEMPLATE_PRESETS: ReadonlyArray<CustomProjectTemplate> = [
+  createDefaultCustomTemplateDraft({
+    id: 'builtin-tpl-power-shield',
+    title: 'Щит силовой ВРУ / ПЧ 380В',
+    description: 'Многолистовой шаблон с вводной цепью 380В, таблицей ПЭ3 и Формой 1.',
+    category: 'power',
+    standard: 'GOST',
+    projectCodePrefix: 'ВРУ',
+    defaultFormat: 'A3',
+    initialSheets: [
+      { id: 'sh-1', name: 'Силовая цепь 3~380В', format: 'A3' },
+      { id: 'sh-2', name: 'Клеммный ряд и кабели', format: 'A4' },
+    ],
+    modules: {
+      includePowerInfeed: true,
+      includePlcRack: false,
+      includeTerminalStrip: true,
+      includeGostBomTable: true,
+      includeCrossRefs: true,
+    },
+    isBuiltin: true,
+  }),
+  createDefaultCustomTemplateDraft({
+    id: 'builtin-tpl-plc-cabinet',
+    title: 'Шкаф автоматизации ПЛК + КИП',
+    description: 'Питание 24VDC, контроллер ПЛК210, каналы датчиков и перекрёстные ссылки.',
+    category: 'automation',
+    standard: 'GOST',
+    projectCodePrefix: 'ШУА',
+    defaultFormat: 'A3',
+    initialSheets: [
+      { id: 'sh-1', name: 'Ввод питания и БП 24В', format: 'A3' },
+      { id: 'sh-2', name: 'Контроллер ПЛК и цепи КИП', format: 'A3' },
+    ],
+    modules: {
+      includePowerInfeed: true,
+      includePlcRack: true,
+      includeTerminalStrip: false,
+      includeGostBomTable: true,
+      includeCrossRefs: true,
+    },
+    isBuiltin: true,
+  }),
+  createDefaultCustomTemplateDraft({
+    id: 'builtin-tpl-iec-compact',
+    title: 'IEC 60617 Compact Panel',
+    description: 'Международный профиль IEC с шагом сетки 10 мм, шрифтом DM Sans и ПЭ3.',
+    category: 'terminal',
+    standard: 'IEC',
+    projectCodePrefix: 'IEC',
+    defaultFormat: 'A4',
+    gridSize: 10,
+    fontFamily: 'DM Sans',
+    initialSheets: [
+      { id: 'sh-1', name: 'Main Power & Control', format: 'A4' },
+    ],
+    stampDefaults: {
+      stampForm: 'form2a',
+      organization: 'Flux Engineering Lab',
+      author: 'Lead Electrical Engineer',
+      checker: '',
+      approver: '',
+      litera: 'A',
+    },
+    modules: {
+      includePowerInfeed: false,
+      includePlcRack: false,
+      includeTerminalStrip: true,
+      includeGostBomTable: false,
+      includeCrossRefs: true,
+    },
+    isBuiltin: true,
+  }),
+];
+
+export function loadCustomTemplates(
+  storage?: Pick<Storage, 'getItem'> | null
+): CustomProjectTemplate[] {
+  try {
+    const store =
+      storage !== undefined
+        ? storage
+        : typeof window !== 'undefined'
+          ? window.localStorage
+          : null;
+    if (!store) return [];
+    const raw = store.getItem(CUSTOM_TEMPLATES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((x): x is CustomProjectTemplate => Boolean(x && typeof x.id === 'string' && typeof x.title === 'string'))
+      .map((tpl) =>
+        createDefaultCustomTemplateDraft({
+          ...tpl,
+          isBuiltin: false,
+          initialSheets:
+            Array.isArray(tpl.initialSheets) && tpl.initialSheets.length > 0
+              ? tpl.initialSheets
+              : [{ id: 'sh-1', name: 'Лист 1', format: tpl.defaultFormat || 'A3' }],
+        })
+      );
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomTemplates(
+  templates: CustomProjectTemplate[],
+  storage?: Pick<Storage, 'setItem'> | null
+): void {
+  try {
+    const store =
+      storage !== undefined
+        ? storage
+        : typeof window !== 'undefined'
+          ? window.localStorage
+          : null;
+    if (!store) return;
+    const onlyCustom = templates.filter((t) => !t.isBuiltin);
+    store.setItem(CUSTOM_TEMPLATES_STORAGE_KEY, JSON.stringify(onlyCustom));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function upsertCustomTemplate(
+  list: CustomProjectTemplate[],
+  template: CustomProjectTemplate
+): CustomProjectTemplate[] {
+  const clean: CustomProjectTemplate = {
+    ...structuredClone(template),
+    isBuiltin: false,
+    updatedAt: new Date().toISOString(),
+  };
+  const idx = list.findIndex((t) => t.id === clean.id);
+  if (idx >= 0) {
+    return list.map((t) => (t.id === clean.id ? clean : t));
+  }
+  return [clean, ...list];
+}
+
+export function deleteCustomTemplate(
+  list: CustomProjectTemplate[],
+  templateId: string
+): CustomProjectTemplate[] {
+  return list.filter((t) => t.id !== templateId);
+}
+
+export function duplicateCustomTemplate(
+  source: CustomProjectTemplate,
+  nowIso = new Date().toISOString()
+): CustomProjectTemplate {
+  return {
+    ...structuredClone(source),
+    id: `tpl-custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+    title: `${source.title} (копия)`,
+    isBuiltin: false,
+    updatedAt: nowIso,
+  };
+}
+
+export function buildProjectFromCustomTemplate(
+  template: CustomProjectTemplate,
+  options: { nowIso?: string; themeOverride?: 'light' | 'dark' } = {}
+): E3Project {
+  const seed = createSeedProject();
+  const nowIso = options.nowIso ?? new Date().toISOString();
+  const suffix = Date.now().toString(36).slice(-4).toUpperCase();
+  const prefix = (template.projectCodePrefix || 'ПДХ').trim().toUpperCase();
+  const docCode = `${prefix}-${suffix}-Э3`;
+
+  const sheetSpecs =
+    template.initialSheets.length > 0
+      ? template.initialSheets
+      : [{ id: 'sh-1', name: 'Схема электрическая принципиальная', format: template.defaultFormat }];
+
+  const sheets: E3Sheet[] = sheetSpecs.map((spec, idx) => {
+    const dims = SHEET_DIMENSIONS[spec.format] || SHEET_DIMENSIONS[template.defaultFormat] || SHEET_DIMENSIONS.A3;
+    return {
+      id: `sheet-${idx + 1}`,
+      number: idx + 1,
+      name: spec.name.trim() || `Лист ${idx + 1}`,
+      format: spec.format,
+      width: dims.width,
+      height: dims.height,
+      titleBlock: {
+        ...seed.sheets[0].titleBlock,
+        stampForm: idx === 0 ? template.stampDefaults.stampForm : 'form2a',
+        documentCode: docCode,
+        projectTitle: template.title,
+        organization: template.stampDefaults.organization || 'ООО «ПромВентАвтоматика»',
+        designer: template.stampDefaults.author || 'Инженер',
+        checker: template.stampDefaults.checker || '',
+        approver: template.stampDefaults.approver || '',
+        litera: template.stampDefaults.litera || '',
+        date: formatStampMonthYear(nowIso),
+        sheetTitle: spec.name.trim() || `Лист ${idx + 1}`,
+        izm: '',
+      },
+    };
+  });
+
+  const devices: E3Device[] = [];
+  const wires: E3Wire[] = [];
+  const cables: E3Cable[] = [];
+  const annotations: E3Annotation[] = [];
+
+  const getSheetId = (preferredIndex: number) =>
+    sheets[Math.min(preferredIndex, sheets.length - 1)]?.id || 'sheet-1';
+
+  const usedSheets = new Set<string>();
+
+  if (template.modules.includePowerInfeed) {
+    const targetSheet = getSheetId(0);
+    usedSheets.add(targetSheet);
+    const powerIds = new Set(['dev-qf1', 'dev-km1', 'dev-uz1', 'dev-m1']);
+    for (const d of seed.devices) {
+      if (powerIds.has(d.id)) {
+        devices.push({ ...structuredClone(d), sheetId: targetSheet });
+      }
+    }
+    for (const w of seed.wires) {
+      if (w.sheetId === 'sheet-1' && powerIds.has(w.fromDeviceId) && powerIds.has(w.toDeviceId)) {
+        wires.push({ ...structuredClone(w), sheetId: targetSheet });
+      }
+    }
+    for (const c of seed.cables) {
+      if (c.id === 'cab-w2') cables.push(structuredClone(c));
+    }
+  }
+
+  if (template.modules.includePlcRack) {
+    // Prefer sheet 2 if sheet 1 already carries power infeed, otherwise sheet 1
+    let targetIdx = template.modules.includePowerInfeed && sheets.length > 1 ? 1 : 0;
+    let targetSheet = getSheetId(targetIdx);
+    const shiftX = usedSheets.has(targetSheet) ? 580 : 0;
+    usedSheets.add(targetSheet);
+    const ctrlIds = new Set(['dev-a1', 'dev-bt1', 'dev-ka1', 'dev-hl1']);
+    for (const d of seed.devices) {
+      if (ctrlIds.has(d.id)) {
+        const clone = structuredClone(d);
+        clone.sheetId = targetSheet;
+        clone.x += shiftX;
+        devices.push(clone);
+      }
+    }
+    for (const w of seed.wires) {
+      if (w.sheetId === 'sheet-2' && ctrlIds.has(w.fromDeviceId) && ctrlIds.has(w.toDeviceId)) {
+        const clone = structuredClone(w);
+        clone.sheetId = targetSheet;
+        clone.waypoints = clone.waypoints.map((pt) => ({ x: pt.x + shiftX, y: pt.y }));
+        wires.push(clone);
+      }
+    }
+    for (const c of seed.cables) {
+      if (c.id === 'cab-w3') cables.push(structuredClone(c));
+    }
+  }
+
+  if (template.modules.includeTerminalStrip) {
+    const targetIdx = sheets.length > 2 ? 2 : sheets.length > 1 ? 1 : 0;
+    const targetSheet = getSheetId(targetIdx);
+    const shiftX = usedSheets.has(targetSheet) ? 520 : 0;
+    const termIds = new Set(['dev-xt1', 'dev-xt2']);
+    for (const d of seed.devices) {
+      if (termIds.has(d.id)) {
+        const clone = structuredClone(d);
+        clone.sheetId = targetSheet;
+        clone.x += shiftX;
+        devices.push(clone);
+      }
+    }
+    for (const w of seed.wires) {
+      if (w.sheetId === 'sheet-3' && termIds.has(w.fromDeviceId) && termIds.has(w.toDeviceId)) {
+        const clone = structuredClone(w);
+        clone.sheetId = targetSheet;
+        clone.waypoints = clone.waypoints.map((pt) => ({ x: pt.x + shiftX, y: pt.y }));
+        wires.push(clone);
+      }
+    }
+    for (const c of seed.cables) {
+      if (c.id === 'cab-w1') cables.push(structuredClone(c));
+    }
+  }
+
+  if (template.modules.includeGostBomTable) {
+    const sheet1 = sheets[0];
+    annotations.push({
+      id: `ann-bom-${suffix}`,
+      sheetId: sheet1.id,
+      kind: 'bom_table',
+      x: Math.max(80, sheet1.width - 540),
+      y: 80,
+      width: 460,
+      height: 220,
+      text: 'Перечень элементов (ПЭ3)',
+      tableConfig: {
+        title: 'Перечень элементов (ПЭ3)',
+        maxRows: 12,
+        sheetOnly: false,
+        rowHeight: 22,
+      },
+    });
+  }
+
+  return hydrateProjectDefaults({
+    ...seed,
+    id: `proj-tpl-${Date.now().toString(36)}`,
+    name: `${template.title} (${suffix})`,
+    projectCode: docCode,
+    author: template.stampDefaults.author || seed.author,
+    revision: 1,
+    standard: template.standard,
+    updatedAt: nowIso,
+    visualSettings: {
+      ...structuredClone(DEFAULT_VISUAL_SETTINGS),
+      theme: options.themeOverride ?? template.theme,
+      gridSize: template.gridSize,
+      fontFamily: template.fontFamily,
+      wireWidth: template.wireWidth,
+      symbolStrokeWidth: template.symbolStrokeWidth,
+      snapToGrid: template.snapToGrid,
+      smartGuides: template.smartGuides,
+      wireCrossingBridge: template.wireCrossingBridge,
+      showGostFrame: template.showGostFrame,
+      showPinNumbers: template.showPinNumbers,
+      showWireNumbers: template.showWireNumbers,
+      showCrossRefs: template.modules.includeCrossRefs && template.showCrossRefs,
+    },
+    sheets,
+    devices,
+    wires,
+    cables,
+    annotations,
+  });
+}
+
+/**
+ * Standalone Main Menu Layer Global Preferences (isolated from active project)
+ */
+export interface StandaloneHvacPrefs {
+  systemTag: string;
+  cabinetTag: string;
+  fanPowerKw: number;
+  heaterPowerKw: number;
+  voltage: '24V' | '230V' | '380V';
+  exZone: 'non-Ex' | 'Exd';
+  heatingType: 'water' | 'electric' | 'none';
+  sheetFormat: SheetFormat;
+  fontFamily: SchematicFontFamily;
+  createExternalWiringSheet: boolean;
+  hasFanRedundancy: boolean;
+  hasFreezeProtection: boolean;
+}
+
+export interface StandaloneUgoPrefs {
+  defaultGridStep: 5 | 10 | 20;
+  defaultStrokeWidth: number;
+  defaultPinPitch: 10 | 20;
+  defaultPrefix: string;
+  autoSnapPins: boolean;
+  standardConvention: StandardType;
+}
+
+export interface StandaloneExchangePrefs {
+  e3VersionProfile: '2022_sp2' | '2024_x64';
+  dxfEncoding: 'utf8' | 'cp1251';
+  xmlSchemaMode: 'strict_gost' | 'extended_flux';
+  autoPollConnector: boolean;
+  importModeDefault: 'new_project' | 'inspect_only';
+}
+
+export const STANDALONE_HVAC_PREFS_KEY = 'e3promax.standaloneHvacPrefs.v1';
+export const STANDALONE_UGO_PREFS_KEY = 'e3promax.standaloneUgoPrefs.v1';
+export const STANDALONE_EXCHANGE_PREFS_KEY = 'e3promax.standaloneExchangePrefs.v1';
+
+export const DEFAULT_STANDALONE_HVAC_PREFS: StandaloneHvacPrefs = {
+  systemTag: 'ПВ1-01',
+  cabinetTag: 'ЩУ-ПВ1',
+  fanPowerKw: 2.2,
+  heaterPowerKw: 15,
+  voltage: '380V',
+  exZone: 'non-Ex',
+  heatingType: 'water',
+  sheetFormat: 'A2',
+  fontFamily: 'GOST',
+  createExternalWiringSheet: true,
+  hasFanRedundancy: false,
+  hasFreezeProtection: true,
+};
+
+export const DEFAULT_STANDALONE_UGO_PREFS: StandaloneUgoPrefs = {
+  defaultGridStep: 10,
+  defaultStrokeWidth: 1.75,
+  defaultPinPitch: 20,
+  defaultPrefix: 'K',
+  autoSnapPins: true,
+  standardConvention: 'GOST',
+};
+
+export const DEFAULT_STANDALONE_EXCHANGE_PREFS: StandaloneExchangePrefs = {
+  e3VersionProfile: '2022_sp2',
+  dxfEncoding: 'utf8',
+  xmlSchemaMode: 'extended_flux',
+  autoPollConnector: true,
+  importModeDefault: 'new_project',
+};
+
+export function loadStandalonePrefs<T extends object>(
+  key: string,
+  defaults: T,
+  storage?: Pick<Storage, 'getItem'> | null
+): T {
+  try {
+    const store =
+      storage !== undefined
+        ? storage
+        : typeof window !== 'undefined'
+          ? window.localStorage
+          : null;
+    if (!store) return structuredClone(defaults);
+    const raw = store.getItem(key);
+    if (!raw) return structuredClone(defaults);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return structuredClone(defaults);
+    return { ...structuredClone(defaults), ...parsed };
+  } catch {
+    return structuredClone(defaults);
+  }
+}
+
+export function saveStandalonePrefs<T extends object>(
+  key: string,
+  value: T,
+  storage?: Pick<Storage, 'setItem'> | null
+): void {
+  try {
+    const store =
+      storage !== undefined
+        ? storage
+        : typeof window !== 'undefined'
+          ? window.localStorage
+          : null;
+    if (!store) return;
+    store.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+export function createStandaloneHvacProject(
+  options: HvacBuildOptions,
+  catalog: CatalogItem[],
+  extra: { theme?: 'light' | 'dark'; nowIso?: string } = {}
+): { project: E3Project; fsaSheetId: string; wiringSheetId?: string } {
+  const base = createProjectFromTemplate('gost_blank_a3', {
+    standard: 'GOST',
+    format: options.sheetFormat,
+    theme: extra.theme,
+    nowIso: extra.nowIso,
+  });
+  const suffix = Date.now().toString(36).slice(-4).toUpperCase();
+  const sysTag = options.systemTag.trim() || 'ПВ1';
+  base.id = `proj-fsa-${Date.now().toString(36)}`;
+  base.name = `ФСА ${sysTag} (${suffix})`;
+  base.projectCode = `${sysTag}-АТМ`;
+  // Start with empty sheet list so FSA sheet becomes sheet #1 cleanly
+  base.sheets = [];
+
+  const res = generateHvacDiagram(options, catalog, base);
+  const hydrated = hydrateProjectDefaults(res.nextProject);
+  return {
+    project: hydrated,
+    fsaSheetId: res.fsaSheetId,
+    wiringSheetId: res.wiringSheetId,
+  };
+}
+

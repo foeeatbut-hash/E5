@@ -1,21 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  BUILTIN_CUSTOM_TEMPLATE_PRESETS,
+  buildProjectFromCustomTemplate,
   computeWaveDotSample,
   computeWavePulseContribution,
+  createDefaultCustomTemplateDraft,
   createProjectFromTemplate,
+  createStandaloneHvacProject,
+  DEFAULT_STANDALONE_HVAC_PREFS,
+  deleteCustomTemplate,
+  duplicateCustomTemplate,
   easeGridLockSettle,
   filterAndSortRecentProjects,
   filterStartTemplates,
   formatRelativeTimestampRu,
+  loadCustomTemplates,
   loadPinnedProjectIds,
+  loadStandalonePrefs,
   parseCssColorToRgb,
+  saveCustomTemplates,
   savePinnedProjectIds,
+  saveStandalonePrefs,
+  STANDALONE_HVAC_PREFS_KEY,
   START_TEMPLATE_DEFS,
   summarizeProjectHealth,
   togglePinnedProjectId,
+  upsertCustomTemplate,
   WAVE_PULSE_LIFETIME_SEC,
 } from './startHub.ts';
+import { E3_CATALOG } from './e3Catalog.ts';
+import { buildDefaultHvacStages } from './hvacBuilder.ts';
 import type { RecentProjectEntry } from './sessionStorage.ts';
 
 function makeMemoryStorage(): Pick<Storage, 'getItem' | 'setItem'> {
@@ -242,3 +257,126 @@ test('Antigravity wave pulse expands radially over lifetime and stops at Grid-Lo
   assert.equal(lockedDot.x, 190);
   assert.equal(lockedDot.accentMix, 0);
 });
+
+test('custom project templates support CRUD, persistence, duplication, and ERC-clean build', () => {
+  const store = makeMemoryStorage();
+  assert.deepEqual(loadCustomTemplates(store), []);
+
+  const draft = createDefaultCustomTemplateDraft({
+    title: 'Мой щит управления',
+    standard: 'IEC',
+    projectCodePrefix: 'МЩУ',
+    gridSize: 10,
+    fontFamily: 'DM Sans',
+    initialSheets: [
+      { id: 's1', name: 'Ввод питания', format: 'A3' },
+      { id: 's2', name: 'Шкаф ПЛК', format: 'A2' },
+    ],
+    stampDefaults: {
+      stampForm: 'form1',
+      organization: 'ООО «ТестЭнерго»',
+      author: 'Соколов И.А.',
+      checker: 'Смирнов Д.В.',
+      approver: '',
+      litera: 'П',
+    },
+    modules: {
+      includePowerInfeed: true,
+      includePlcRack: true,
+      includeTerminalStrip: true,
+      includeGostBomTable: true,
+      includeCrossRefs: true,
+    },
+  });
+
+  const list1 = upsertCustomTemplate([], draft);
+  saveCustomTemplates(list1, store);
+  const loaded = loadCustomTemplates(store);
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].title, 'Мой щит управления');
+  assert.equal(loaded[0].initialSheets.length, 2);
+
+  const built = buildProjectFromCustomTemplate(loaded[0], {
+    nowIso: '2026-11-15T10:00:00.000Z',
+  });
+  assert.equal(built.standard, 'IEC');
+  assert.equal(built.sheets.length, 2);
+  assert.equal(built.sheets[0].format, 'A3');
+  assert.equal(built.sheets[1].format, 'A2');
+  assert.equal(built.sheets[0].titleBlock.organization, 'ООО «ТестЭнерго»');
+  assert.equal(built.visualSettings.gridSize, 10);
+  assert.equal(built.visualSettings.fontFamily, 'DM Sans');
+  assert.ok((built.annotations || []).some((a) => a.kind === 'bom_table'));
+  assert.ok(built.devices.length >= 8);
+  assert.equal(summarizeProjectHealth(built).errors, 0, 'Generated custom template project must pass ERC cleanly');
+
+  const dup = duplicateCustomTemplate(loaded[0]);
+  assert.ok(dup.id !== loaded[0].id);
+  assert.ok(dup.title.includes('(копия)'));
+  const list2 = upsertCustomTemplate(loaded, dup);
+  assert.equal(list2.length, 2);
+
+  const afterDel = deleteCustomTemplate(list2, loaded[0].id);
+  saveCustomTemplates(afterDel, store);
+  assert.equal(loadCustomTemplates(store).length, 1);
+});
+
+test('builtin custom template presets generate valid projects with zero ERC errors', () => {
+  for (const preset of BUILTIN_CUSTOM_TEMPLATE_PRESETS) {
+    const proj = buildProjectFromCustomTemplate(preset, {
+      nowIso: '2026-11-15T10:00:00.000Z',
+    });
+    assert.equal(proj.sheets.length, preset.initialSheets.length);
+    assert.equal(summarizeProjectHealth(proj).errors, 0);
+  }
+});
+
+test('standalone layer preferences and standalone HVAC project generation work cleanly without open project', () => {
+  const store = makeMemoryStorage();
+  const prefs = {
+    ...DEFAULT_STANDALONE_HVAC_PREFS,
+    systemTag: 'ПВ-99',
+    cabinetTag: 'ЩУ-99',
+    sheetFormat: 'A2' as const,
+  };
+  saveStandalonePrefs(STANDALONE_HVAC_PREFS_KEY, prefs, store);
+  const loaded = loadStandalonePrefs(STANDALONE_HVAC_PREFS_KEY, DEFAULT_STANDALONE_HVAC_PREFS, store);
+  assert.equal(loaded.systemTag, 'ПВ-99');
+  assert.equal(loaded.cabinetTag, 'ЩУ-99');
+
+  const stages = buildDefaultHvacStages('supply_ahu', {
+    systemTag: loaded.systemTag,
+    cabinetTag: loaded.cabinetTag,
+    fanPowerKw: loaded.fanPowerKw,
+    heaterPowerKw: loaded.heaterPowerKw,
+    voltage: loaded.voltage,
+    exZone: loaded.exZone,
+    heatingType: loaded.heatingType,
+    hasCooler: true,
+    hasFilter: true,
+    hasOutletDamper: true,
+    hasLocalPost: true,
+    hasFanRedundancy: loaded.hasFanRedundancy,
+    hasFreezeProtection: loaded.hasFreezeProtection,
+  }, E3_CATALOG);
+
+  const hvacRes = createStandaloneHvacProject(
+    {
+      templateId: 'supply_ahu',
+      systemTag: loaded.systemTag,
+      cabinetTag: loaded.cabinetTag,
+      sheetFormat: loaded.sheetFormat,
+      fontFamily: loaded.fontFamily,
+      createExternalWiringSheet: true,
+      hasFanRedundancy: false,
+      hasFreezeProtection: true,
+      stages,
+    },
+    E3_CATALOG
+  );
+
+  assert.equal(hvacRes.project.sheets.length, 2);
+  assert.ok(hvacRes.project.devices.length > 0);
+  assert.equal(hvacRes.project.sheets[0].id, hvacRes.fsaSheetId);
+});
+
