@@ -1,7 +1,12 @@
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
 import JSZip from 'jszip';
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import {
   autoRouteOrthogonal,
   buildBom,
@@ -26,6 +31,8 @@ import {
   getSheetDrawableBounds,
   importFromFluxBridge,
   nextUniqueDesignation,
+  parseE3BridgeSummary,
+  applyE3FluxMeta,
   parseE3Xml,
   parseVisualSettings,
   rerouteAttachedWires,
@@ -277,7 +284,11 @@ test('E3.series 2022 COM VBScript embeds project sheets, 1-based graphics/wires,
   assert.ok(buildVbs.includes('DrawDeviceBox'));
   assert.ok(buildVbs.includes('FinalizeIntegralDeviceGroup'));
   assert.ok(buildVbs.includes('g.CreateGroup('));
-  assert.ok(buildVbs.includes('d.CreateDynamic('));
+  assert.ok(buildVbs.includes('Function CreateOrPlaceFluxDevice('));
+  assert.ok(buildVbs.includes('PlaceNativeSymbol('));
+  assert.ok(buildVbs.includes('sm.PlaceBlock(shId, xMin, yMin, w, h)'));
+  assert.ok(buildVbs.includes('sm.GetDevId()'));
+  assert.ok(buildVbs.includes('Call d.SetName(des)'));
   assert.ok(buildVbs.includes('sm.PlaceBlock('));
   assert.ok(buildVbs.includes('Prj.CreatePinObject()'));
   assert.ok(buildVbs.includes('SafeSetGraphAttr'));
@@ -770,3 +781,248 @@ test('showCrosshair setting persists through XML and JSON visual settings round-
 });
 
 
+
+
+// ---------------------------------------------------------------------------
+// generateE3ComScript: расширенное покрытие нового генератора VBScript
+// ---------------------------------------------------------------------------
+
+function createRichScriptProject() {
+  const p = createSeedProject();
+  const sh = p.sheets[0].id;
+  p.annotations = [
+    { id: 'a1', sheetId: sh, kind: 'bom_table', x: 900, y: 500, width: 610, height: 200, text: '' },
+    { id: 'a2', sheetId: sh, kind: 'cable_table', x: 100, y: 600, width: 570, height: 150, text: '' },
+    { id: 'a3', sheetId: sh, kind: 'callout', x: 300, y: 100, width: 80, height: 60, text: 'Узел "А"' },
+    { id: 'a4', sheetId: sh, kind: 'rect', x: 50, y: 50, width: 200, height: 100, text: 'Шкаф' },
+    { id: 'a5', sheetId: sh, kind: 'text', x: 60, y: 30, width: 100, height: 20, text: 'Примечание' },
+  ] as any;
+  const d0 = p.devices[0];
+  d0.customSymbol = {
+    shapes: [
+      { id: 's1', kind: 'rect', x: 0, y: 0, width: 40, height: 20, filled: true, fillColor: '#dc2626' },
+      { id: 's2', kind: 'polyline', points: [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 20 }], closed: true, filled: true },
+      { id: 's3', kind: 'circle', cx: 20, cy: 10, r: 5, filled: true },
+    ],
+  } as any;
+  d0.attributes.push(
+    { name: 'Ток', value: '16', owner: d0.pins[0].name, conflict: 'flux' } as any,
+    { name: 'Цвет', value: 'серый', owner: '#1', conflict: 'flux' } as any,
+    { name: 'СлужебныйАтрибут', value: 'secret', owner: '', conflict: 'flux', service: true } as any
+  );
+  p.devices.push({ ...structuredClone(p.devices[1]), id: 'io1', elementId: 'el-io1', designation: '-A9', category: 'io_matrix' } as any);
+  return p;
+}
+
+test('COM script: devId is read after PlaceBlock, with two-mode device creation and guarded pin ticks', () => {
+  const vbs = generateE3ComScript(createSeedProject(), 'build');
+  assert.ok(vbs.includes('devId = sm.GetDevId()'));
+  assert.ok(vbs.includes('FindNewDeviceId(p)'));
+  assert.ok(/curDevId = CreateOrPlaceFluxDevice\(Prj, Dev, Sym, shId_1, [^\n]*, 0, "-QF1", [^\n]*, curMode\)/.test(vbs));
+  assert.ok(vbs.includes('If curMode = 1 Or curMode = 3 Then'));
+  assert.ok(vbs.includes('Call CollectDevicePinPositions(Dev, PinObj, curDevId, "-QF1"'));
+  assert.ok(vbs.includes('SafeCreateDevicePin(Prj, PinObj, curDevId, curMode, shId_1, "-QF1", "1/L1"'));
+  assert.ok(vbs.includes('If Not pinOk(1) Then Call DrawPinTickGrouped('));
+});
+
+test('COM script: rectangle is normalized and rotated devices use getDeviceBounds (swapped w/h)', () => {
+  const seed = createSeedProject();
+  const dev = seed.devices[0];
+  dev.rotation = 90;
+  const b = getDeviceBounds(dev);
+  assert.notEqual(b.width, dev.width);
+  const sh = seed.sheets.find((s) => s.id === dev.sheetId)!;
+  const vbs = generateE3ComScript(seed, 'build');
+  assert.ok(vbs.includes('Sub NormRect('));
+  assert.ok(vbs.includes('Call NormRect(x1, y1, x2, y2, xMin, yMin, xMax, yMax)'));
+  const line = vbs.split('\n').find((l) => l.includes('CreateOrPlaceFluxDevice(Prj') && l.includes(`"${dev.designation}"`))!;
+  assert.ok(line);
+  const num = (n: number) => String(n);
+  const expected = [
+    `MapX(shX1_1, shX2_1, ${num(b.x)}, ${sh.width})`,
+    `MapY(shY1_1, shY2_1, ${num(b.y + b.height)}, ${sh.height})`,
+    `MapX(shX1_1, shX2_1, ${num(b.x + b.width)}, ${sh.width})`,
+    `MapY(shY1_1, shY2_1, ${num(b.y)}, ${sh.height})`,
+  ];
+  for (const e of expected) assert.ok(line.includes(e), `missing ${e} in ${line}`);
+  // Flux rotates clockwise, E3 counter-clockwise: 90 -> 270
+  assert.ok(line.includes(`, 270, "${dev.designation}"`));
+});
+
+test('COM script: attribute errors are captured; pin-owned attrs go to pins, others to device; service attrs excluded', () => {
+  const vbs = generateE3ComScript(createRichScriptProject(), 'build');
+  assert.ok(vbs.includes('Function SafeSetObjAttr('));
+  assert.ok(vbs.includes('Sub RegisterAttrWarn('));
+  assert.ok(vbs.includes('attrWarnCnt = attrWarnCnt + 1'));
+  assert.ok(vbs.includes("Не удалось записать атрибут '"));
+  assert.ok(vbs.includes('Код ошибки: '));
+  assert.ok(vbs.includes('Call SafeSetPinAttr(Dev, PinObj, curDevId, "1/L1", "Ток", "16", "-QF1")'));
+  assert.ok(vbs.includes('Call SafeSetDevAttr(Dev, curDevId, "[#1] Цвет", "серый", "-QF1")'));
+  // service attrs are never written as E3 attributes (they may only live in the fluxMeta JSON)
+  assert.ok(!vbs.split('\n').some((l) => /SafeSet(Dev|Pin)Attr\(/.test(l) && l.includes('СлужебныйАтрибут')));
+});
+
+test('COM script: sheet stamp attributes are written only when non-empty and unused start sheets are removed', () => {
+  const seed = createSeedProject();
+  const sheet = seed.sheets[0];
+  sheet.titleBlock.designer = '';
+  const vbs = generateE3ComScript(seed, 'build');
+  const pre = 'Call SafeSetSheetAttr(Sheet, shId_1,';
+  assert.ok(vbs.includes(`${pre} "1. ${sheet.name}", "Обозначение", "${sheet.titleBlock.documentCode}")`));
+  assert.ok(vbs.includes(`${pre} "1. ${sheet.name}", "Проверил",`));
+  assert.ok(vbs.includes(`${pre} "1. ${sheet.name}", "FLUX_SHEET_ID", "${sheet.id}")`));
+  assert.ok(!vbs.includes(`${pre} "1. ${sheet.name}", "Разработал"`));
+  assert.ok(vbs.includes('RemoveUnusedStartSheets(Sheet, exIds, exCnt)'));
+});
+
+test('COM script: cable parameters are created and export reads cores/shield from E3', () => {
+  const seed = createSeedProject();
+  const vbs = generateE3ComScript(seed, 'build');
+  for (const c of seed.cables) {
+    const re = `CreateFluxCable(Prj, Dev, "${c.designation}", "${c.cableType}", "${c.fromDevice}", "${c.toDevice}", ${c.lengthMeters}, ${c.coresCount}, "${c.crossSection}", ${c.shielded ? 'True' : 'False'}, "${c.id}")`;
+    assert.ok(vbs.includes(re), re);
+  }
+  const exp = generateE3ComScript(seed, 'export', 'C:\\x\\a.e3s');
+  assert.ok(exp.includes('"Число жил"'));
+  assert.ok(exp.includes('"Экранированный"'));
+  assert.ok(!exp.includes('""coresCount"": 4'));
+});
+
+test('COM script: tables, callouts and filled custom shapes are drawn natively', () => {
+  const vbs = generateE3ComScript(createRichScriptProject(), 'build');
+  assert.equal(vbs.split('tablesOk = tablesOk + 1').length - 1, 2);
+  assert.ok(vbs.includes('calloutsOk = calloutsOk + 1'));
+  for (const label of ['Поз. обозначение', 'Марка кабеля']) {
+    assert.ok(vbs.split('\n').some((l) => l.includes('DrawCustomText(') && l.includes(`"${label}"`)), label);
+  }
+  assert.ok(/Call DrawCustomLine\(/.test(vbs));
+  assert.ok(/Call DrawCustomRect\(/.test(vbs));
+  assert.ok(/Call DrawCustomPolygon\(Graph, shId_1, 3, [^\n]*\)/.test(vbs) || vbs.includes('DrawCustomPolygon('));
+  const rectEx = vbs.split('\n').find((l) => l.includes('Call DrawCustomRectEx('))!;
+  assert.ok(rectEx);
+  const fillIdx = Number(rectEx.match(/, (-?\d+), gIds, gCnt\)/)![1]);
+  assert.ok(fillIdx >= 0);
+  const poly = vbs.split('\n').find((l) => l.includes('Call DrawCustomPolygon(Graph, shId_1, 4,') && l.includes('gIds, gCnt'))!;
+  assert.ok(Number(poly.match(/, (-?\d+), gIds, gCnt\)/)![1]) >= 0);
+  const fillSub = vbs.slice(vbs.indexOf('Sub ApplyFill('));
+  assert.ok(fillSub.slice(0, 400).includes('SetFillColour'));
+});
+
+test('COM script: io_matrix devices are included in the build script', () => {
+  const vbs = generateE3ComScript(createRichScriptProject(), 'build');
+  assert.ok(vbs.includes('"-A9"'));
+  assert.ok(vbs.includes('"GOST_KM_3P_COIL"'));
+});
+
+test('COM script: wires snap to uppercase pin keys and carry number, section, cable, core and id', () => {
+  const seed = createSeedProject();
+  const vbs = generateE3ComScript(seed, 'build');
+  const w = seed.wires.find((x) => x.cableId && x.coreNumber)!;
+  const dFrom = seed.devices.find((d) => d.id === w.fromDeviceId)!;
+  const dTo = seed.devices.find((d) => d.id === w.toDeviceId)!;
+  const pFrom = dFrom.pins.find((p) => p.id === w.fromPinId)!;
+  const pTo = dTo.pins.find((p) => p.id === w.toPinId)!;
+  const snap = `nW = SnapWireEndpoints(nW, "${(dFrom.designation + ':' + pFrom.name).toUpperCase()}", "${(dTo.designation + ':' + pTo.name).toUpperCase()}")`;
+  assert.ok(vbs.includes(snap), snap);
+  const cab = seed.cables.find((c) => c.id === w.cableId)!;
+  const draw = vbs.split('\n').find((l) => l.includes('DrawWirePolyline(') && l.includes(`"${w.id}")`))!;
+  assert.ok(draw.includes(`"${w.wireNumber}"`));
+  assert.ok(draw.includes(`"${w.crossSection}"`));
+  assert.ok(draw.includes(`"${cab.designation}"`));
+  assert.ok(draw.includes(`"${w.coreNumber}"`));
+});
+
+test('COM script: E3_BRIDGE_SUMMARY is emitted and parseE3BridgeSummary returns the last valid line', () => {
+  const vbs = generateE3ComScript(createSeedProject(), 'build');
+  assert.ok(vbs.includes('E3_BRIDGE_SUMMARY'));
+  const log = [
+    'garbage line',
+    '2026-01-01 INFO E3_BRIDGE_SUMMARY {"mode":"build","sheets":1,"devTotal":3,"wires":2}',
+    'E3_BRIDGE_SUMMARY {broken json',
+    '2026-01-01 INFO E3_BRIDGE_SUMMARY {"mode":"export","sheets":4,"devTotal":9,"wires":7,"cables":"x"}',
+    'trailing noise',
+  ].join('\r\n');
+  const s = parseE3BridgeSummary(log)!;
+  assert.equal(s.mode, 'export');
+  assert.equal(s.sheets, 4);
+  assert.equal(s.devTotal, 9);
+  assert.equal(s.wires, 7);
+  assert.equal(s.cables, 0);
+  assert.equal(parseE3BridgeSummary('nothing here\nE3_BRIDGE_SUMMARY {oops'), null);
+  assert.equal(parseE3BridgeSummary('no summary'), null);
+  assert.equal(parseE3BridgeSummary(''), null);
+});
+
+test('COM script: generated build scripts pass the VBScript static linter (when available)', (t) => {
+  const linter = fileURLToPath(new URL('../../scripts/vbslint.py', import.meta.url));
+  if (!fs.existsSync(linter)) {
+    t.skip('vbslint.py not available');
+    return;
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vbslint-'));
+  for (const [name, proj] of [['seed', createSeedProject()], ['rich', createRichScriptProject()]] as const) {
+    const f = `${dir}/${name}.vbs`;
+    fs.writeFileSync(f, generateE3ComScript(proj, 'build'));
+    const r = spawnSync('python3', [linter, f], { encoding: 'utf8' });
+    if (r.error) {
+      t.skip('python3 not available');
+      return;
+    }
+    assert.ok(String(r.stdout).trim().startsWith('OK'), `${name}: ${r.stdout}${r.stderr}`);
+  }
+});
+
+test('Flux bridge round-trip through fake E3 export with fluxMeta restores model; E3 edits win', () => {
+  const p = createRichScriptProject();
+  const src = { ...exportToFluxBridge(p), annotations: p.annotations };
+  const sh = p.sheets[0];
+  const locs: Record<string, [number, number]> = {};
+  p.devices.forEach((d, i) => { locs[d.designation] = [50 + i, 100 + i]; });
+  const e3Bundle: any = {
+    format: 'flux-e3-bridge/v1', replaceAll: true, fluxProjectKey: p.fluxProjectKey, projectName: 'X_native', exportedAt: '', revision: 1,
+    sheets: [{ id: sh.id, number: 1, name: '1. ' + sh.name, format: 'A3', width: 1400, height: 920, titleBlock: { documentCode: 'X_native', designer: 'Петров', sheetTitle: '1. ' + sh.name } }],
+    nodes: p.devices.map((d, i) => ({
+      elementId: d.elementId, version: 'e3', tag: d.designation, designation: d.designation, status: 'one', solutionId: 'e3', solutionName: d.e3BlockName,
+      rect: { sheet: sh.id, x: 1, y: 1, rotation: 0, width: 100, height: 100 },
+      e3loc: i === 0 ? [60, 90] : locs[d.designation],
+      attrs: [{ name: 'Артикул', value: d.article, owner: '' }, { name: 'Ток', value: '20', owner: '' }], checked: true,
+    })),
+    cables: [{ id: p.cables[0].id, designation: p.cables[0].designation, cableType: 'ВВГ', coresCount: 7, crossSection: '2.5', lengthMeters: 12.5, fromDevice: '', toDevice: '', shielded: true }],
+    wires: [{ id: p.wires[0].id, sheetId: sh.id, netName: 'N1', signalType: 'signal', fromDeviceId: '', fromPinId: '', toDeviceId: '', toPinId: '', waypoints: [{ x: 0, y: 0 }, { x: 5, y: 0 }], crossSection: '', wireNumber: 'N1' }],
+    e3SheetBounds: { [sh.id]: [10, 10, 410, 287] },
+    fluxMeta: { format: 'flux-e3-meta/v1', e3Locations: locs, sheets: { [sh.id]: { e3Id: 5, bounds: [10, 10, 410, 287] } }, bundle: src },
+  };
+  const out = importFromFluxBridge(e3Bundle, p);
+  assert.equal(out.devices.length, p.devices.length);
+  for (const d of p.devices) {
+    const o = out.devices.find((x) => x.elementId === d.elementId)!;
+    assert.ok(o, d.designation);
+    assert.equal(o.id, d.id);
+    assert.equal(o.pins.length, d.pins.length);
+  }
+  const d0 = out.devices.find((d) => d.elementId === p.devices[0].elementId)!;
+  const d1 = out.devices.find((d) => d.elementId === p.devices[1].elementId)!;
+  assert.ok(d0.customSymbol && d0.customSymbol.shapes.length === 3);
+  // moved in E3 -> new position; unmoved -> exact original
+  assert.ok(d0.x !== p.devices[0].x || d0.y !== p.devices[0].y);
+  assert.equal(d1.x, p.devices[1].x);
+  assert.equal(d1.y, p.devices[1].y);
+  assert.equal(out.annotations?.length, p.annotations?.length);
+  assert.equal(out.wires.length, p.wires.length);
+  const devIds = new Set(out.devices.map((d) => d.id));
+  const pinIds = new Set(out.devices.flatMap((d) => d.pins.map((x) => x.id)));
+  for (const w of out.wires) {
+    assert.ok(devIds.has(w.fromDeviceId) && pinIds.has(w.fromPinId) && devIds.has(w.toDeviceId) && pinIds.has(w.toPinId), w.id);
+  }
+  const cab = out.cables.find((c) => c.id === p.cables[0].id)!;
+  assert.equal(cab.coresCount, 7);
+  assert.equal(cab.crossSection, '2.5');
+  assert.equal(cab.shielded, true);
+  assert.equal(out.sheets[0].name, sh.name);
+});
+
+test('applyE3FluxMeta is a no-op without fluxMeta', () => {
+  const p = createSeedProject();
+  const b = exportToFluxBridge(p);
+  assert.equal(applyE3FluxMeta(b), b);
+});

@@ -248,7 +248,7 @@ test('bidirectional round-trip for custom polyline/arc/dashdot/attrKey symbols a
   assert.ok(vbs.includes('DrawCustomCircle'));
   assert.ok(vbs.includes('DrawCustomText'));
   assert.ok(vbs.includes('-BT99'));
-  assert.ok(vbs.includes('SafeSetDevAttr(Dev, "Диапазон измерения"'));
+  assert.ok(/SafeSetDevAttr\(Dev, curDevId, "Диапазон измерения", "[^"]*", "-BT99"\)/.test(vbs));
 
   // 4. AutoCAD DXF export (BLOCK + ARC + LWPOLYLINE + DASHDOT + resolved designation)
   const dxf = exportSheetsToDxf(richProj, { sheetIds: [proj.sheets[0].id] });

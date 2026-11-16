@@ -568,11 +568,55 @@ export interface FluxExportNode {
   solutionName: string;
   category?: DeviceCategory;
   symbolId?: string;
-  pins?: Array<Omit<E3Pin, 'id'>>;
+  pins?: Array<Omit<E3Pin, 'id'> & { id?: string }>;
   customSymbol?: CustomSymbolSpec;
+  /** Внутренний ID изделия E3ProMax — сохраняет привязку цепей (fromDeviceId/toDeviceId) при обмене. */
+  deviceId?: string;
   rect: { sheet: string; x: number; y: number; rotation: number; width: number; height: number };
   attrs: Array<{ name: string; value: string; owner: string; conflict?: 'flux' | 'script' | 'ask'; service?: boolean }>;
   checked: boolean;
+  /** Сырые координаты символа/блока изделия в E3.series (мм), заполняются при выгрузке из E3. */
+  e3loc?: [number, number];
+  /** Режим размещения в E3: 'native' (символ из БД), 'block' (динамический блок), 'none'. */
+  e3mode?: 'native' | 'block' | 'none';
+}
+
+/** Сводка выполнения COM-переноса (строка E3_BRIDGE_SUMMARY в flux_e3_com_debug.log). */
+export interface E3BridgeSummary {
+  mode: 'build' | 'export';
+  sheets: number;
+  sheetsTotal: number;
+  devNative: number;
+  devBlock: number;
+  devExisting: number;
+  devNoSymbol: number;
+  devFailed: number;
+  devTotal: number;
+  pinsPlaced: number;
+  wires: number;
+  wiresGraphicOnly: number;
+  wiresFailed: number;
+  wiresTotal: number;
+  cables: number;
+  cablesTotal: number;
+  tables: number;
+  callouts: number;
+  annotations: number;
+  attrWarn: number;
+  missingAttrs: string[];
+  startSheetRemoved: boolean;
+  savedPath: string;
+  metaPath: string;
+}
+
+/** Метаданные, которые COM-скрипт сохраняет рядом с .e3s для обратной синхронизации без потерь. */
+export interface E3FluxMeta {
+  format: 'flux-e3-meta/v1';
+  /** Обозначение изделия -> [x, y] символа/блока в E3 (мм) сразу после размещения. */
+  e3Locations?: Record<string, [number, number]>;
+  /** Flux ID листа -> { e3Id, bounds:[x1,y1,x2,y2] } */
+  sheets?: Record<string, { e3Id: number; bounds: [number, number, number, number] }>;
+  bundle?: FluxBridgeBundle;
 }
 
 export interface FluxBridgeBundle {
@@ -587,4 +631,9 @@ export interface FluxBridgeBundle {
   cables: E3Cable[];
   sheets: E3Sheet[];
   symbolLibrary?: E3SymbolDef[];
+  annotations?: E3Annotation[];
+  /** Метаданные исходного переноса (вкладываются VBS-выгрузкой из файла *.flux-meta.json). */
+  fluxMeta?: E3FluxMeta;
+  /** Границы рабочей области листов E3 (мм) по Flux ID листа — для пересчёта перемещений. */
+  e3SheetBounds?: Record<string, [number, number, number, number]>;
 }
