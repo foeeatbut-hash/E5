@@ -2842,8 +2842,9 @@ export function generateE3ComScript(
     const sh = shEntry?.sheet.height || 920;
     const idx = shEntry?.idx || (sheets.length > 0 ? 1 : 0);
     const shVar = idx > 0 ? `shId_${idx}` : '0';
-    const mx = (wx: number) => `MapX(shX1_${idx}, shX2_${idx}, ${r2(wx)}, ${sw})`;
-    const my = (wy: number) => `MapY(shY1_${idx}, shY2_${idx}, ${r2(wy)}, ${sh})`;
+    // Без листов (idx = 0) переменные shX1_0... не объявлены — подставляем числа, чтобы не нарушить Option Explicit
+    const mx = (wx: number) => (idx > 0 ? `MapX(shX1_${idx}, shX2_${idx}, ${r2(wx)}, ${sw})` : `${r2(wx)}`);
+    const my = (wy: number) => (idx > 0 ? `MapY(shY1_${idx}, shY2_${idx}, ${r2(wy)}, ${sh})` : `${r2(wy)}`);
     return { idx, shVar, sw, sh, mx, my };
   };
 
@@ -4149,13 +4150,12 @@ Function SnapWireEndpoints(ByVal n, ByVal fromKey, ByVal toKey)
       End If
     End If
   End If
-  If cnt <> n Then
-    ReDim wXs(cnt)
-    ReDim wYs(cnt)
-    For i = 1 To cnt
-      wXs(i) = nx(i) : wYs(i) = ny(i)
-    Next
-  End If
+  ' Массивы всегда точно по числу точек (без «хвоста» пустых элементов для Connection.Create)
+  ReDim wXs(cnt)
+  ReDim wYs(cnt)
+  For i = 1 To cnt
+    wXs(i) = nx(i) : wYs(i) = ny(i)
+  Next
   SnapWireEndpoints = cnt
 End Function
 
