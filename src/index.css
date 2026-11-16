@@ -464,6 +464,26 @@ textarea:focus-visible,
   }
 }
 
+@keyframes slideInRight {
+  0% {
+    opacity: 0;
+    transform: translate3d(44px, 0, 0) scale(0.986);
+  }
+  65% {
+    opacity: 1;
+    transform: translate3d(-3px, 0, 0) scale(1.002);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
 .antigravity-wave-item,
 .antigravity-wave-row,
 .antigravity-wave-pill {
@@ -555,7 +575,8 @@ textarea:focus-visible,
   .antigravity-wave-item,
   .antigravity-wave-row,
   .antigravity-wave-pill,
-  .antigravity-wave-cascade > * {
+  .antigravity-wave-cascade > *,
+  .animate-slide-in-right {
     animation: none !important;
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease !important;
   }

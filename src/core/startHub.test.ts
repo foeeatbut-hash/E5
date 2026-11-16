@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  APP_STANDALONE_SECTIONS,
   BUILTIN_CUSTOM_TEMPLATE_PRESETS,
   buildProjectFromCustomTemplate,
+  clearTemplateWorkspaceDraft,
   computeWaveDotSample,
   computeWavePulseContribution,
   createDefaultCustomTemplateDraft,
@@ -18,10 +20,14 @@ import {
   loadCustomTemplates,
   loadPinnedProjectIds,
   loadStandalonePrefs,
+  loadTemplateWorkspaceDraft,
   parseCssColorToRgb,
+  parseCustomTemplateFile,
   saveCustomTemplates,
   savePinnedProjectIds,
   saveStandalonePrefs,
+  saveTemplateWorkspaceDraft,
+  serializeCustomTemplateFile,
   STANDALONE_HVAC_PREFS_KEY,
   START_TEMPLATE_DEFS,
   summarizeProjectHealth,
@@ -156,10 +162,16 @@ test('filterAndSortRecentProjects puts pinned projects first and filters by tab 
 });
 
 test('filterStartTemplates matches title and engineering tags', () => {
-  assert.equal(filterStartTemplates(START_TEMPLATE_DEFS, '').length, 4);
-  const vfd = filterStartTemplates(START_TEMPLATE_DEFS, '380');
+  assert.equal(filterStartTemplates(START_TEMPLATE_DEFS, '').length, 7);
+  const v380 = filterStartTemplates(START_TEMPLATE_DEFS, '380');
+  assert.ok(v380.some((t) => t.id === 'power_380v'));
+  const vfd = filterStartTemplates(START_TEMPLATE_DEFS, 'vfd');
   assert.equal(vfd.length, 1);
   assert.equal(vfd[0].id, 'power_380v');
+
+  assert.equal(filterStartTemplates(START_TEMPLATE_DEFS, 'Щит управления').length, 1);
+  assert.equal(filterStartTemplates(START_TEMPLATE_DEFS, 'ФСА компрессора').length, 1);
+  assert.equal(filterStartTemplates(START_TEMPLATE_DEFS, 'Электропитание 24В').length, 1);
 });
 
 test('formatRelativeTimestampRu formats fresh and older dates cleanly', () => {
@@ -379,4 +391,51 @@ test('standalone layer preferences and standalone HVAC project generation work c
   assert.ok(hvacRes.project.devices.length > 0);
   assert.equal(hvacRes.project.sheets[0].id, hvacRes.fsaSheetId);
 });
+
+test('standalone sections descriptor covers all 5 independent program spaces', () => {
+  const ids = APP_STANDALONE_SECTIONS.map((s) => s.id);
+  assert.deepEqual(ids, ['hub', 'templates', 'hvac', 'ugo', 'exchange']);
+});
+
+test('custom template file (.e3tpl.json) round-trip and template workspace draft autosave', () => {
+  const store = makeMemoryStorage();
+  const fullStore: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> = {
+    getItem: store.getItem,
+    setItem: store.setItem,
+    removeItem: () => {
+      store.setItem('e3promax.templateWorkspaceDraft.v1', '');
+    },
+  };
+
+  const tpl = createDefaultCustomTemplateDraft({
+    title: 'Шаблон компрессорной АСУ',
+    projectCodePrefix: 'КАСУ',
+    standard: 'GOST',
+    defaultFormat: 'A2',
+    modules: {
+      includePowerInfeed: true,
+      includePlcRack: true,
+      includeTerminalStrip: false,
+      includeGostBomTable: true,
+      includeCrossRefs: true,
+    },
+  });
+
+  saveTemplateWorkspaceDraft(tpl, store);
+  const loadedDraft = loadTemplateWorkspaceDraft(store);
+  assert.ok(loadedDraft);
+  assert.equal(loadedDraft.title, 'Шаблон компрессорной АСУ');
+  assert.equal(loadedDraft.defaultFormat, 'A2');
+
+  const json = serializeCustomTemplateFile(tpl, '2026-11-15T12:00:00.000Z');
+  const imported = parseCustomTemplateFile(json);
+  assert.ok(imported);
+  assert.equal(imported.title, 'Шаблон компрессорной АСУ');
+  assert.equal(imported.projectCodePrefix, 'КАСУ');
+  assert.equal(imported.modules.includePlcRack, true);
+  assert.equal(parseCustomTemplateFile('{invalid'), null);
+
+  clearTemplateWorkspaceDraft(fullStore);
+});
+
 

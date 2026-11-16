@@ -8,7 +8,7 @@ import type {
   E3SymbolDef,
   SignalType,
 } from './e3Types';
-import type { SymbolEditorTool } from './symbolDesigner';
+import type { SymbolEditorTool, SymbolPresetId, UgoBlockFilePayload } from './symbolDesigner';
 
 export type SymbolWorkspaceTargetMode = 'symbol' | 'component' | 'device';
 export type SymbolWorkspaceOrigin = 'project' | 'hub';
@@ -76,6 +76,7 @@ export interface SymbolWorkspaceActions {
   activeTabId: string | null;
   canUndo: boolean;
   canRedo: boolean;
+  autosavedAt?: string | null;
   symbolLibrary: E3SymbolDef[];
   catalog: CatalogItem[];
   onSelectTab: (tabId: string) => void;
@@ -121,7 +122,9 @@ export interface SymbolWorkspaceActions {
   onMirrorBlockX: () => void;
   onMirrorBlockY: () => void;
   onApplyAttributeTemplate: (presetId: string) => void;
-  onApplyPresetShapes: (presetId: 'blank_box' | 'sensor_circle' | 'breaker_1p' | 'coil_relay') => void;
+  onApplyPresetShapes: (presetId: SymbolPresetId) => void;
+  onCreatePresetTab?: (presetId: SymbolPresetId) => void;
+  onImportBlockPayload?: (payload: UgoBlockFilePayload) => void;
   onOpenSymbolInEditor: (sym: E3SymbolDef) => void;
   onOpenCatalogItemInEditor: (item: CatalogItem) => void;
   onCreateNewBlankSymbol: () => void;

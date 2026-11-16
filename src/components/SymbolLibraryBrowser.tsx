@@ -1,6 +1,12 @@
-import React, { useMemo, useState } from 'react';
-import { Copy, Database, Layers, Plus, Search, Trash2 } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { Copy, Database, FileCode2, Layers, Plus, Search, Sparkles, Trash2, Upload } from 'lucide-react';
+import { parseDxfToSymbolPrimitives } from '../core/dxfImporter';
 import type { CustomSymbolShape, E3Pin } from '../core/e3Types';
+import {
+  parseUgoBlockPayload,
+  QUICK_SYMBOL_TEMPLATES,
+  type SymbolPresetId,
+} from '../core/symbolDesigner';
 import {
   describeSvgArcPath,
   extractBuiltInSymbolShapes,
@@ -114,6 +120,22 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
   );
   const [query, setQuery] = useState('');
   const [filterKind, setFilterKind] = useState<'all' | 'custom' | 'builtin'>('all');
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const dxfInputRef = useRef<HTMLInputElement | null>(null);
+  const blkInputRef = useRef<HTMLInputElement | null>(null);
+
+  const showImportNotice = (msg: string) => {
+    setImportStatus(msg);
+    window.setTimeout(() => setImportStatus((cur) => (cur === msg ? null : cur)), 2800);
+  };
+
+  const handleQuickTemplateClick = (presetId: SymbolPresetId) => {
+    if (workspace.onCreatePresetTab) {
+      workspace.onCreatePresetTab(presetId);
+    } else {
+      workspace.onApplyPresetShapes(presetId);
+    }
+  };
 
   const q = query.trim().toLowerCase();
 
@@ -191,12 +213,70 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
 
       {/* Actions + Search + Filter */}
       <div className="p-2 border-b border-[var(--flux-line)] space-y-1.5">
+        <input
+          ref={dxfInputRef}
+          type="file"
+          accept=".dxf"
+          data-testid="sym-lib-dxf-input"
+          className="sr-only"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            try {
+              const text = await file.text();
+              const parsed = parseDxfToSymbolPrimitives(text, {
+                gridStep: draft.gridStep || 5,
+                snapToGrid: draft.snapToGrid,
+              });
+              workspace.onCommitGeometry(parsed.shapes, draft.pins, {
+                width: parsed.width,
+                height: parsed.height,
+              });
+              showImportNotice(`DXF: +${parsed.stats.importedShapes} прим.`);
+            } catch (err) {
+              showImportNotice(err instanceof Error ? err.message : 'Ошибка чтения DXF');
+            }
+          }}
+        />
+        <input
+          ref={blkInputRef}
+          type="file"
+          accept=".e3blk.json,.json"
+          data-testid="sym-lib-blk-input"
+          className="sr-only"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            try {
+              const text = await file.text();
+              const payload = parseUgoBlockPayload(text);
+              if (!payload) {
+                showImportNotice('Неверный формат .e3blk.json');
+                return;
+              }
+              if (workspace.onImportBlockPayload) {
+                workspace.onImportBlockPayload(payload);
+              } else {
+                workspace.onCommitGeometry(payload.shapes, payload.pins, {
+                  width: payload.width,
+                  height: payload.height,
+                });
+              }
+              showImportNotice(`Загружен блок «${payload.name}»`);
+            } catch {
+              showImportNotice('Ошибка чтения .e3blk.json');
+            }
+          }}
+        />
+
         <div className="flex flex-wrap gap-1.5">
           <button
             type="button"
             data-testid="sym-lib-new-symbol-btn"
             onClick={workspace.onCreateNewBlankSymbol}
-            className="flex-1 min-w-[calc(94px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[6px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="flex-1 min-w-[calc(88px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[6px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
             <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
             <span className="truncate">Новое УГО</span>
@@ -205,11 +285,71 @@ export const SymbolLibraryBrowser: React.FC<SymbolLibraryBrowserProps> = React.m
             type="button"
             data-testid="sym-lib-new-component-btn"
             onClick={workspace.onCreateNewComponentFromSymbol}
-            className="flex-1 min-w-[calc(88px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[6px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+            className="flex-1 min-w-[calc(84px*var(--flux-ui-scale))] inline-flex items-center justify-center gap-1 min-h-[calc(26px*var(--flux-ui-scale))] h-auto py-0.5 px-2 rounded-[6px] border border-[var(--flux-line-strong)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
           >
             <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
             <span className="truncate">Изделие</span>
           </button>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            data-testid="sym-lib-import-dxf-btn"
+            onClick={() => dxfInputRef.current?.click()}
+            title="Импорт геометрии из DXF прямо на холст УГО"
+            className="flex-1 inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] py-0.5 px-2 rounded-[6px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/50 text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+          >
+            <FileCode2 className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+            <span>Импорт DXF</span>
+          </button>
+          <button
+            type="button"
+            data-testid="sym-lib-import-blk-btn"
+            onClick={() => blkInputRef.current?.click()}
+            title="Загрузить отдельный блок библиотеки .e3blk.json"
+            className="flex-1 inline-flex items-center justify-center gap-1 min-h-[calc(24px*var(--flux-ui-scale))] py-0.5 px-2 rounded-[6px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/50 text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap transition-colors"
+          >
+            <Upload className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+            <span>Блок .e3blk</span>
+          </button>
+        </div>
+
+        {importStatus && (
+          <div className="px-2 py-1 rounded-[5px] border border-[var(--flux-accent)]/35 bg-[var(--flux-accent-soft)]/50 text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text)]">
+            {importStatus}
+          </div>
+        )}
+
+        {/* Quick Popular Symbol Templates */}
+        <div className="pt-1 border-t border-[var(--flux-line)]/70">
+          <div className="flex items-center justify-between mb-1 px-0.5">
+            <span className="inline-flex items-center gap-1 text-[length:calc(9.5px*var(--flux-ui-scale))] font-semibold uppercase tracking-[0.04em] text-[var(--flux-text-muted)]">
+              <Sparkles className="w-2.5 h-2.5 text-[var(--flux-accent)]" />
+              <span>Быстрые шаблоны УГО</span>
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            {QUICK_SYMBOL_TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.id}
+                type="button"
+                data-testid={`ugo-quick-tpl-${tpl.id}`}
+                onClick={() => handleQuickTemplateClick(tpl.id)}
+                title={`${tpl.shortDesc} — открыть в новой вкладке`}
+                className="px-2 py-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)]/70 hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/50 text-left transition-colors min-w-0"
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
+                    {tpl.label}
+                  </span>
+                  <span className="font-mono text-[length:calc(9px*var(--flux-ui-scale))] text-[var(--flux-accent)] shrink-0">
+                    -{tpl.defaultPrefix}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="relative">

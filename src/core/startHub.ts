@@ -20,8 +20,53 @@ import { hydrateProjectDefaults, type RecentProjectEntry } from './sessionStorag
 export type StartHubLayer = 'projects' | 'templates' | 'hvac' | 'ugo' | 'exchange';
 export type StartHubTab = 'all' | 'pinned' | 'gost' | 'iec';
 export type StartHubViewMode = 'grid' | 'table';
+export type AppStandaloneSectionId = 'hub' | 'templates' | 'hvac' | 'ugo' | 'exchange';
+
+export interface AppStandaloneSectionMeta {
+  id: AppStandaloneSectionId;
+  title: string;
+  subtitle: string;
+  badge: string;
+}
+
+export const APP_STANDALONE_SECTIONS: ReadonlyArray<AppStandaloneSectionMeta> = [
+  {
+    id: 'hub',
+    title: 'Главное меню',
+    subtitle: 'Обзор проектов, быстрые шаблоны и недавние чертежи',
+    badge: 'Главная',
+  },
+  {
+    id: 'templates',
+    title: 'Шаблон проекта',
+    subtitle: 'Независимая мастерская шаблонов листов, ГОСТ штампов и модулей',
+    badge: 'Шаблоны',
+  },
+  {
+    id: 'hvac',
+    title: 'Мастер ФСА',
+    subtitle: 'Автономный генератор функциональных схем автоматизации ОВиК/КИП',
+    badge: 'ФСА',
+  },
+  {
+    id: 'ugo',
+    title: 'Редактор УГО',
+    subtitle: 'Отдельная студия создания векторных символов и изделий базы E3',
+    badge: 'УГО',
+  },
+  {
+    id: 'exchange',
+    title: 'Центр обмена',
+    subtitle: 'Двусторонний шлюз E3.series COM/XML, DXF и Flux Studio',
+    badge: 'Обмен',
+  },
+];
+
 export type StartTemplateId =
   | 'gost_blank_a3'
+  | 'control_cabinet'
+  | 'compressor_fsa'
+  | 'power_24v'
   | 'power_380v'
   | 'plc_automation'
   | 'terminal_x1';
@@ -51,6 +96,36 @@ export const START_TEMPLATE_DEFS: ReadonlyArray<StartTemplateDef> = [
     tags: ['чистый', 'пустой', 'гост', 'а3', 'а4', 'blank'],
   },
   {
+    id: 'control_cabinet',
+    title: 'Щит управления',
+    subtitle: 'Ввод 3~380В, питание 24VDC, ПЛК и цепи управления на 2 листах',
+    badge: 'А3 · ЩУ',
+    defaultFormat: 'A3',
+    sheetCount: 2,
+    deviceCount: 10,
+    tags: ['щит', 'управления', 'щу', 'ввод', 'плк', 'шкаф', 'control', 'cabinet'],
+  },
+  {
+    id: 'compressor_fsa',
+    title: 'ФСА компрессора',
+    subtitle: 'Функциональная схема: привод, давление P, температура T, клапан разгрузки',
+    badge: 'А2 · ФСА',
+    defaultFormat: 'A2',
+    sheetCount: 1,
+    deviceCount: 7,
+    tags: ['фса', 'компрессор', 'автоматизация', 'давление', 'температура', 'кип', 'compressor'],
+  },
+  {
+    id: 'power_24v',
+    title: 'Электропитание 24В',
+    subtitle: 'Автомат QF2 10А, блок питания 24VDC -G1, реле -KA1 и индикация -HL1',
+    badge: 'А4 · 24В',
+    defaultFormat: 'A4',
+    sheetCount: 1,
+    deviceCount: 4,
+    tags: ['питание', '24в', 'бп', 'dc24', 'power', '24v', 'psu'],
+  },
+  {
     id: 'power_380v',
     title: 'Силовой ввод 3~380В + ПЧ',
     subtitle: 'Вводной автомат QF1, контактор KM1, ПЧ UZ1 и двигатель M1',
@@ -64,7 +139,7 @@ export const START_TEMPLATE_DEFS: ReadonlyArray<StartTemplateDef> = [
     id: 'plc_automation',
     title: 'Щит автоматизации (ПЛК)',
     subtitle: 'БП 24VDC, контроллер ПЛК210, датчик КИП и выходное реле',
-    badge: 'А3 · 24В',
+    badge: 'А3 · ПЛК',
     defaultFormat: 'A3',
     sheetCount: 1,
     deviceCount: 4,
@@ -144,6 +219,547 @@ export function createProjectFromTemplate(
       ],
       devices: [],
       wires: [],
+      cables: [],
+      annotations: [],
+    });
+  }
+
+  if (templateId === 'control_cabinet') {
+    const format: SheetFormat = options.format ?? 'A3';
+    const dims = SHEET_DIMENSIONS[format];
+    const cabIds = new Set([
+      'dev-qf1',
+      'dev-km1',
+      'dev-qf2',
+      'dev-g1',
+      'dev-xp1',
+      'dev-a1',
+      'dev-bt1',
+      'dev-ka1',
+      'dev-hl1',
+      'dev-xp2',
+    ]);
+    const devices = seed.devices
+      .filter((d) => cabIds.has(d.id))
+      .map((d) => structuredClone(d));
+    const wires = seed.wires
+      .filter((w) => cabIds.has(w.fromDeviceId) && cabIds.has(w.toDeviceId))
+      .map((w) => structuredClone(w));
+    return hydrateProjectDefaults({
+      ...seed,
+      id: `proj-ctrl-cab-${Date.now().toString(36)}`,
+      name: `Щит управления ЩУ (${suffix})`,
+      projectCode: `ЩУ-${suffix}-Э3`,
+      revision: 1,
+      standard,
+      updatedAt: nowIso,
+      visualSettings,
+      sheets: [
+        {
+          ...structuredClone(seed.sheets[0]),
+          id: 'sheet-1',
+          number: 1,
+          name: 'Силовой ввод и питание 24В',
+          format,
+          width: dims.width,
+          height: dims.height,
+          titleBlock: {
+            ...seed.sheets[0].titleBlock,
+            stampForm: 'form1',
+            documentCode: `ЩУ-${suffix}-Э3`,
+            projectTitle: `Щит управления ЩУ (${suffix})`,
+            sheetTitle: 'Схема электрическая принципиальная. Ввод 380В и БП 24VDC',
+            date: formatStampMonthYear(nowIso),
+          },
+        },
+        {
+          ...structuredClone(seed.sheets[1]),
+          id: 'sheet-2',
+          number: 2,
+          name: 'ПЛК и цепи управления',
+          format,
+          width: dims.width,
+          height: dims.height,
+          titleBlock: {
+            ...seed.sheets[1].titleBlock,
+            stampForm: 'form2a',
+            documentCode: `ЩУ-${suffix}-Э3`,
+            projectTitle: `Щит управления ЩУ (${suffix})`,
+            sheetTitle: 'Контроллер, датчики и выходные реле щита управления',
+            date: formatStampMonthYear(nowIso),
+          },
+        },
+      ],
+      devices,
+      wires,
+      cables: seed.cables.filter((c) => c.id === 'cab-w1' || c.id === 'cab-w3').map((c) => structuredClone(c)),
+      annotations: (seed.annotations || [])
+        .filter((a) => a.sheetId === 'sheet-1' || a.sheetId === 'sheet-2')
+        .map((a) => structuredClone(a)),
+    });
+  }
+
+  if (templateId === 'compressor_fsa') {
+    const format: SheetFormat = options.format ?? 'A2';
+    const dims = SHEET_DIMENSIONS[format];
+    const devices: E3Device[] = [
+      {
+        id: 'cmp-qf1',
+        elementId: 'el-cmp-qf1',
+        designation: '-QF1',
+        componentName: 'Автоматический выключатель защиты двигателя 3P 32A',
+        article: 'GV2ME32',
+        manufacturer: 'Schneider Electric',
+        category: 'breaker',
+        sheetId: 'sheet-1',
+        x: 160,
+        y: 120,
+        rotation: 0,
+        width: 100,
+        height: 110,
+        e3BlockName: 'GOST_QF_3P_32A',
+        bindingState: 'PLACED',
+        pins: [
+          { id: 'p-cqf-2', name: '2/T1', dx: 20, dy: 110, direction: 'bottom', signalType: 'power' },
+          { id: 'p-cqf-4', name: '4/T2', dx: 50, dy: 110, direction: 'bottom', signalType: 'power' },
+          { id: 'p-cqf-6', name: '6/T3', dx: 80, dy: 110, direction: 'bottom', signalType: 'power' },
+        ],
+        attributes: [{ name: 'Номинальный ток', value: '32 А', owner: '', conflict: 'flux' }],
+      },
+      {
+        id: 'cmp-km1',
+        elementId: 'el-cmp-km1',
+        designation: '-KM1',
+        componentName: 'Контактор привода компрессора 32А 24VDC',
+        article: 'LC1D32BD',
+        manufacturer: 'Schneider Electric',
+        category: 'contactor',
+        sheetId: 'sheet-1',
+        x: 150,
+        y: 300,
+        rotation: 0,
+        width: 120,
+        height: 120,
+        e3BlockName: 'GOST_KM_3P_COIL',
+        bindingState: 'PLACED',
+        pins: [
+          { id: 'p-ckm-1', name: '1/L1', dx: 30, dy: 0, direction: 'top', signalType: 'power' },
+          { id: 'p-ckm-3', name: '3/L2', dx: 60, dy: 0, direction: 'top', signalType: 'power' },
+          { id: 'p-ckm-5', name: '5/L3', dx: 90, dy: 0, direction: 'top', signalType: 'power' },
+          { id: 'p-ckm-2', name: '2/T1', dx: 30, dy: 120, direction: 'bottom', signalType: 'power' },
+          { id: 'p-ckm-4', name: '4/T2', dx: 60, dy: 120, direction: 'bottom', signalType: 'power' },
+          { id: 'p-ckm-6', name: '6/T3', dx: 90, dy: 120, direction: 'bottom', signalType: 'power' },
+          { id: 'p-ckm-a1', name: 'A1', dx: 120, dy: 40, direction: 'right', signalType: 'dc24' },
+          { id: 'p-ckm-a2', name: 'A2', dx: 120, dy: 80, direction: 'right', signalType: 'dc0' },
+        ],
+        attributes: [{ name: 'Категория AC-3', value: '32 А', owner: '', conflict: 'flux' }],
+      },
+      {
+        id: 'cmp-m1',
+        elementId: 'el-cmp-m1',
+        designation: '-M1',
+        componentName: 'Винтовой компрессорный агрегат 11 кВт',
+        article: 'АИР132M2У2',
+        manufacturer: 'Элдин',
+        category: 'motor',
+        sheetId: 'sheet-1',
+        x: 155,
+        y: 500,
+        rotation: 0,
+        width: 110,
+        height: 110,
+        e3BlockName: 'GOST_MOTOR_3P',
+        bindingState: 'PLACED',
+        pins: [
+          { id: 'p-cm1-u', name: 'U1', dx: 25, dy: 0, direction: 'top', signalType: 'power' },
+          { id: 'p-cm1-v', name: 'V1', dx: 55, dy: 0, direction: 'top', signalType: 'power' },
+          { id: 'p-cm1-w', name: 'W1', dx: 85, dy: 0, direction: 'top', signalType: 'power' },
+        ],
+        attributes: [{ name: 'Мощность привода', value: '11 кВт', owner: '', conflict: 'flux' }],
+      },
+      {
+        id: 'cmp-a1',
+        elementId: 'el-cmp-a1',
+        designation: '-A1',
+        componentName: 'Контроллер управления компрессорной станцией ПЛК210',
+        article: 'ПЛК210-03-CS',
+        manufacturer: 'ОВЕН',
+        category: 'plc',
+        sheetId: 'sheet-1',
+        x: 560,
+        y: 250,
+        rotation: 0,
+        width: 180,
+        height: 170,
+        e3BlockName: 'GOST_PLC_210',
+        bindingState: 'PLACED',
+        pins: [
+          { id: 'p-ca1-ai1', name: 'AI1', dx: 0, dy: 50, direction: 'left', signalType: 'signal' },
+          { id: 'p-ca1-ai2', name: 'AI2', dx: 0, dy: 90, direction: 'left', signalType: 'signal' },
+          { id: 'p-ca1-do1', name: 'DO1', dx: 0, dy: 130, direction: 'left', signalType: 'dc24' },
+          { id: 'p-ca1-do2', name: 'DO2', dx: 180, dy: 70, direction: 'right', signalType: 'dc24' },
+          { id: 'p-ca1-di1', name: 'DI1', dx: 180, dy: 120, direction: 'right', signalType: 'signal' },
+        ],
+        attributes: [{ name: 'Алгоритм ФСА', value: 'Пуск / Разгрузка / Авария Т°', owner: '', conflict: 'flux' }],
+      },
+      {
+        id: 'cmp-pt1',
+        elementId: 'el-cmp-pt1',
+        designation: '-BP1',
+        componentName: 'Датчик давления нагнетания 0..16 бар 4-20 мА (PT-101)',
+        article: 'ПД100И-ДИ1.6',
+        manufacturer: 'ОВЕН',
+        category: 'sensor',
+        sheetId: 'sheet-1',
+        x: 360,
+        y: 210,
+        rotation: 0,
+        width: 120,
+        height: 80,
+        e3BlockName: 'GOST_SENSOR_PRESSURE',
+        bindingState: 'PLACED',
+        pins: [{ id: 'p-cpt1-out', name: 'OUT', dx: 120, dy: 40, direction: 'right', signalType: 'signal' }],
+        attributes: [{ name: 'Позиция ФСА', value: 'PT-101 Нагнетание', owner: '', conflict: 'flux' }],
+      },
+      {
+        id: 'cmp-bt1',
+        elementId: 'el-cmp-bt1',
+        designation: '-BT1',
+        componentName: 'Датчик температуры масла/воздуха 4-20 мА (TT-102)',
+        article: 'ДТС3005-PT1000',
+        manufacturer: 'ОВЕН',
+        category: 'sensor',
+        sheetId: 'sheet-1',
+        x: 360,
+        y: 330,
+        rotation: 0,
+        width: 120,
+        height: 80,
+        e3BlockName: 'GOST_SENSOR_TEMP',
+        bindingState: 'PLACED',
+        pins: [{ id: 'p-cbt1-out', name: 'OUT', dx: 120, dy: 40, direction: 'right', signalType: 'signal' }],
+        attributes: [{ name: 'Позиция ФСА', value: 'TT-102 Масло', owner: '', conflict: 'flux' }],
+      },
+      {
+        id: 'cmp-yv1',
+        elementId: 'el-cmp-yv1',
+        designation: '-YV1',
+        componentName: 'Электромагнитный клапан разгрузки компрессора 24VDC',
+        article: 'EV220B 15B',
+        manufacturer: 'Danfoss',
+        category: 'valve',
+        sheetId: 'sheet-1',
+        x: 840,
+        y: 280,
+        rotation: 0,
+        width: 110,
+        height: 80,
+        e3BlockName: 'GOST_VALVE_24V',
+        bindingState: 'PLACED',
+        pins: [{ id: 'p-cyv1-a1', name: 'Y1', dx: 0, dy: 40, direction: 'left', signalType: 'dc24' }],
+        attributes: [{ name: 'Позиция ФСА', value: 'HS-103 Клапан разгрузки', owner: '', conflict: 'flux' }],
+      },
+    ];
+
+    const wires: E3Wire[] = [
+      {
+        id: 'cw-1',
+        sheetId: 'sheet-1',
+        netName: 'L1.CMP',
+        signalType: 'power',
+        fromDeviceId: 'cmp-qf1',
+        fromPinId: 'p-cqf-2',
+        toDeviceId: 'cmp-km1',
+        toPinId: 'p-ckm-1',
+        waypoints: [{ x: 180, y: 230 }, { x: 180, y: 300 }],
+        crossSection: '6.0 мм²',
+        wireNumber: 'L1.1',
+      },
+      {
+        id: 'cw-2',
+        sheetId: 'sheet-1',
+        netName: 'L2.CMP',
+        signalType: 'power',
+        fromDeviceId: 'cmp-qf1',
+        fromPinId: 'p-cqf-4',
+        toDeviceId: 'cmp-km1',
+        toPinId: 'p-ckm-3',
+        waypoints: [{ x: 210, y: 230 }, { x: 210, y: 300 }],
+        crossSection: '6.0 мм²',
+        wireNumber: 'L2.1',
+      },
+      {
+        id: 'cw-3',
+        sheetId: 'sheet-1',
+        netName: 'L3.CMP',
+        signalType: 'power',
+        fromDeviceId: 'cmp-qf1',
+        fromPinId: 'p-cqf-6',
+        toDeviceId: 'cmp-km1',
+        toPinId: 'p-ckm-5',
+        waypoints: [{ x: 240, y: 230 }, { x: 240, y: 300 }],
+        crossSection: '6.0 мм²',
+        wireNumber: 'L3.1',
+      },
+      {
+        id: 'cw-4',
+        sheetId: 'sheet-1',
+        netName: 'U.CMP',
+        signalType: 'power',
+        fromDeviceId: 'cmp-km1',
+        fromPinId: 'p-ckm-2',
+        toDeviceId: 'cmp-m1',
+        toPinId: 'p-cm1-u',
+        waypoints: [{ x: 180, y: 420 }, { x: 180, y: 500 }],
+        crossSection: '6.0 мм²',
+        wireNumber: 'U1',
+      },
+      {
+        id: 'cw-5',
+        sheetId: 'sheet-1',
+        netName: 'V.CMP',
+        signalType: 'power',
+        fromDeviceId: 'cmp-km1',
+        fromPinId: 'p-ckm-4',
+        toDeviceId: 'cmp-m1',
+        toPinId: 'p-cm1-v',
+        waypoints: [{ x: 210, y: 420 }, { x: 210, y: 500 }],
+        crossSection: '6.0 мм²',
+        wireNumber: 'V1',
+      },
+      {
+        id: 'cw-6',
+        sheetId: 'sheet-1',
+        netName: 'W.CMP',
+        signalType: 'power',
+        fromDeviceId: 'cmp-km1',
+        fromPinId: 'p-ckm-6',
+        toDeviceId: 'cmp-m1',
+        toPinId: 'p-cm1-w',
+        waypoints: [{ x: 240, y: 420 }, { x: 240, y: 500 }],
+        crossSection: '6.0 мм²',
+        wireNumber: 'W1',
+      },
+      {
+        id: 'cw-7',
+        sheetId: 'sheet-1',
+        netName: 'PT101_AI1',
+        signalType: 'signal',
+        fromDeviceId: 'cmp-pt1',
+        fromPinId: 'p-cpt1-out',
+        toDeviceId: 'cmp-a1',
+        toPinId: 'p-ca1-ai1',
+        waypoints: [{ x: 480, y: 250 }, { x: 520, y: 250 }, { x: 520, y: 300 }, { x: 560, y: 300 }],
+        crossSection: '0.75 мм²',
+        wireNumber: '201',
+      },
+      {
+        id: 'cw-8',
+        sheetId: 'sheet-1',
+        netName: 'TT102_AI2',
+        signalType: 'signal',
+        fromDeviceId: 'cmp-bt1',
+        fromPinId: 'p-cbt1-out',
+        toDeviceId: 'cmp-a1',
+        toPinId: 'p-ca1-ai2',
+        waypoints: [{ x: 480, y: 370 }, { x: 520, y: 370 }, { x: 520, y: 340 }, { x: 560, y: 340 }],
+        crossSection: '0.75 мм²',
+        wireNumber: '202',
+      },
+      {
+        id: 'cw-9',
+        sheetId: 'sheet-1',
+        netName: 'CMD_RUN_CMP',
+        signalType: 'dc24',
+        fromDeviceId: 'cmp-a1',
+        fromPinId: 'p-ca1-do1',
+        toDeviceId: 'cmp-km1',
+        toPinId: 'p-ckm-a1',
+        waypoints: [{ x: 560, y: 380 }, { x: 310, y: 380 }, { x: 310, y: 340 }, { x: 270, y: 340 }],
+        crossSection: '1.0 мм²',
+        wireNumber: '301',
+      },
+      {
+        id: 'cw-10',
+        sheetId: 'sheet-1',
+        netName: 'CMD_UNLOAD',
+        signalType: 'dc24',
+        fromDeviceId: 'cmp-a1',
+        fromPinId: 'p-ca1-do2',
+        toDeviceId: 'cmp-yv1',
+        toPinId: 'p-cyv1-a1',
+        waypoints: [{ x: 740, y: 320 }, { x: 840, y: 320 }],
+        crossSection: '1.0 мм²',
+        wireNumber: '302',
+      },
+    ];
+
+    return hydrateProjectDefaults({
+      ...seed,
+      id: `proj-cmp-fsa-${Date.now().toString(36)}`,
+      name: `ФСА компрессора (${suffix})`,
+      projectCode: `КМП-${suffix}-ФСА`,
+      revision: 1,
+      standard,
+      updatedAt: nowIso,
+      visualSettings,
+      sheets: [
+        {
+          ...structuredClone(seed.sheets[0]),
+          id: 'sheet-1',
+          number: 1,
+          name: 'ФСА компрессорной установки',
+          format,
+          width: dims.width,
+          height: dims.height,
+          titleBlock: {
+            ...seed.sheets[0].titleBlock,
+            stampForm: 'form1',
+            documentCode: `КМП-${suffix}-ФСА`,
+            projectTitle: `ФСА компрессора (${suffix})`,
+            sheetTitle: 'Схема автоматизации функциональная компрессорного агрегата',
+            date: formatStampMonthYear(nowIso),
+          },
+        },
+      ],
+      devices,
+      wires,
+      cables: [],
+      annotations: [
+        {
+          id: `ann-cmp-${suffix}`,
+          sheetId: 'sheet-1',
+          kind: 'callout',
+          x: 560,
+          y: 120,
+          width: 380,
+          height: 80,
+          text: 'Контур ФСА компрессора: Pнагн (PT-101), Tмасла (TT-102), пуск -KM1 и разгрузка -YV1',
+        },
+      ],
+    });
+  }
+
+  if (templateId === 'power_24v') {
+    const format: SheetFormat = options.format ?? 'A4';
+    const dims = SHEET_DIMENSIONS[format];
+    const qf2 = structuredClone(seed.devices.find((d) => d.id === 'dev-qf2')!);
+    const g1 = structuredClone(seed.devices.find((d) => d.id === 'dev-g1')!);
+    const ka1 = structuredClone(seed.devices.find((d) => d.id === 'dev-ka1')!);
+    const hl1 = structuredClone(seed.devices.find((d) => d.id === 'dev-hl1')!);
+
+    qf2.sheetId = 'sheet-1';
+    qf2.x = 180;
+    qf2.y = 120;
+    g1.sheetId = 'sheet-1';
+    g1.x = 150;
+    g1.y = 280;
+    ka1.sheetId = 'sheet-1';
+    ka1.x = 460;
+    ka1.y = 320;
+    hl1.sheetId = 'sheet-1';
+    hl1.x = 460;
+    hl1.y = 480;
+    hl1.bindingState = 'PLACED';
+
+    const wires: E3Wire[] = [
+      {
+        id: 'p24-w1',
+        sheetId: 'sheet-1',
+        netName: 'L1.PSU',
+        signalType: 'power',
+        fromDeviceId: qf2.id,
+        fromPinId: 'p-qf2-2',
+        toDeviceId: g1.id,
+        toPinId: 'p-g1-l',
+        waypoints: [{ x: 210, y: 220 }, { x: 210, y: 250 }, { x: 180, y: 250 }, { x: 180, y: 280 }],
+        crossSection: '1.5 мм²',
+        wireNumber: '101',
+      },
+      {
+        id: 'p24-w2',
+        sheetId: 'sheet-1',
+        netName: '+24V_DC',
+        signalType: 'dc24',
+        fromDeviceId: g1.id,
+        fromPinId: 'p-g1-24',
+        toDeviceId: ka1.id,
+        toPinId: 'p-ka1-a1',
+        waypoints: [{ x: 190, y: 390 }, { x: 190, y: 420 }, { x: 380, y: 420 }, { x: 380, y: 350 }, { x: 460, y: 350 }],
+        crossSection: '1.5 мм²',
+        wireNumber: '24V+',
+      },
+      {
+        id: 'p24-w3',
+        sheetId: 'sheet-1',
+        netName: '+24V_DC',
+        signalType: 'dc24',
+        fromDeviceId: g1.id,
+        fromPinId: 'p-g1-24',
+        toDeviceId: hl1.id,
+        toPinId: 'p-hl1-x1',
+        waypoints: [{ x: 190, y: 390 }, { x: 190, y: 515 }, { x: 460, y: 515 }],
+        crossSection: '1.0 мм²',
+        wireNumber: '24V+',
+      },
+      {
+        id: 'p24-w4',
+        sheetId: 'sheet-1',
+        netName: '0V_DC',
+        signalType: 'dc0',
+        fromDeviceId: g1.id,
+        fromPinId: 'p-g1-0',
+        toDeviceId: ka1.id,
+        toPinId: 'p-ka1-a2',
+        waypoints: [{ x: 240, y: 390 }, { x: 240, y: 440 }, { x: 410, y: 440 }, { x: 410, y: 380 }, { x: 460, y: 380 }],
+        crossSection: '1.5 мм²',
+        wireNumber: '0V',
+      },
+      {
+        id: 'p24-w5',
+        sheetId: 'sheet-1',
+        netName: '0V_DC',
+        signalType: 'dc0',
+        fromDeviceId: g1.id,
+        fromPinId: 'p-g1-0',
+        toDeviceId: hl1.id,
+        toPinId: 'p-hl1-x2',
+        waypoints: [{ x: 240, y: 390 }, { x: 240, y: 560 }, { x: 560, y: 560 }, { x: 560, y: 515 }, { x: 530, y: 515 }],
+        crossSection: '1.0 мм²',
+        wireNumber: '0V',
+      },
+    ];
+
+    return hydrateProjectDefaults({
+      ...seed,
+      id: `proj-pwr24-${Date.now().toString(36)}`,
+      name: `Электропитание 24В (${suffix})`,
+      projectCode: `БП24-${suffix}-Э3`,
+      revision: 1,
+      standard,
+      updatedAt: nowIso,
+      visualSettings,
+      sheets: [
+        {
+          ...structuredClone(seed.sheets[0]),
+          id: 'sheet-1',
+          number: 1,
+          name: 'Цепь электропитания 24VDC',
+          format,
+          width: dims.width,
+          height: dims.height,
+          titleBlock: {
+            ...seed.sheets[0].titleBlock,
+            stampForm: 'form1',
+            documentCode: `БП24-${suffix}-Э3`,
+            projectTitle: `Электропитание 24В (${suffix})`,
+            sheetTitle: 'Схема электрическая принципиальная. Блок питания 24VDC и нагрузка',
+            date: formatStampMonthYear(nowIso),
+          },
+        },
+      ],
+      devices: [qf2, g1, ka1, hl1],
+      wires,
       cables: [],
       annotations: [],
     });
@@ -1239,4 +1855,115 @@ export function createStandaloneHvacProject(
     wiringSheetId: res.wiringSheetId,
   };
 }
+
+/**
+ * Standalone Template Studio Workspace persistence & .e3tpl.json file format
+ */
+export const TEMPLATE_WORKSPACE_DRAFT_KEY = 'e3promax.templateWorkspaceDraft.v1';
+
+export interface CustomTemplateFilePayload {
+  format: 'e3promax-template';
+  version: 1;
+  exportedAt: string;
+  template: CustomProjectTemplate;
+}
+
+export function serializeCustomTemplateFile(
+  template: CustomProjectTemplate,
+  nowIso = new Date().toISOString()
+): string {
+  const clean: CustomProjectTemplate = {
+    ...structuredClone(template),
+    isBuiltin: false,
+    updatedAt: nowIso,
+  };
+  const payload: CustomTemplateFilePayload = {
+    format: 'e3promax-template',
+    version: 1,
+    exportedAt: nowIso,
+    template: clean,
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+export function parseCustomTemplateFile(rawText: string): CustomProjectTemplate | null {
+  try {
+    const parsed = JSON.parse(rawText) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const candidate =
+      parsed.format === 'e3promax-template' && parsed.template && typeof parsed.template === 'object'
+        ? (parsed.template as Partial<CustomProjectTemplate>)
+        : typeof parsed.title === 'string' && Array.isArray(parsed.initialSheets)
+          ? (parsed as Partial<CustomProjectTemplate>)
+          : null;
+    if (!candidate || typeof candidate.title !== 'string' || !candidate.title.trim()) {
+      return null;
+    }
+    return createDefaultCustomTemplateDraft({
+      ...candidate,
+      id: `tpl-custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+      isBuiltin: false,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function loadTemplateWorkspaceDraft(
+  storage?: Pick<Storage, 'getItem'> | null
+): CustomProjectTemplate | null {
+  try {
+    const store =
+      storage !== undefined
+        ? storage
+        : typeof window !== 'undefined'
+          ? window.localStorage
+          : null;
+    if (!store) return null;
+    const raw = store.getItem(TEMPLATE_WORKSPACE_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CustomProjectTemplate>;
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.title !== 'string') return null;
+    return createDefaultCustomTemplateDraft(parsed);
+  } catch {
+    return null;
+  }
+}
+
+export function saveTemplateWorkspaceDraft(
+  template: CustomProjectTemplate,
+  storage?: Pick<Storage, 'setItem'> | null
+): void {
+  try {
+    const store =
+      storage !== undefined
+        ? storage
+        : typeof window !== 'undefined'
+          ? window.localStorage
+          : null;
+    if (!store) return;
+    store.setItem(TEMPLATE_WORKSPACE_DRAFT_KEY, JSON.stringify(template));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function clearTemplateWorkspaceDraft(
+  storage?: Pick<Storage, 'removeItem'> | null
+): void {
+  try {
+    const store =
+      storage !== undefined
+        ? storage
+        : typeof window !== 'undefined'
+          ? window.localStorage
+          : null;
+    if (!store) return;
+    store.removeItem(TEMPLATE_WORKSPACE_DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 

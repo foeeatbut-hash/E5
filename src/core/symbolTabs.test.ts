@@ -2,19 +2,36 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   addBlankSymbolTab,
+  clearSymbolWorkspaceAutosave,
   closeSymbolTab,
   commitActiveTabGeometry,
   createInitialSymbolTabsState,
   createPlaceholderSymbolDraft,
   getActiveSymbolTab,
   getEffectiveSymbolDraft,
+  loadSymbolWorkspaceAutosave,
   openOrFocusSymbolTab,
   redoActiveSymbolTab,
+  saveSymbolWorkspaceAutosave,
   selectSymbolTab,
   summarizeSymbolTabs,
+  SYMBOL_WORKSPACE_AUTOSAVE_KEY,
   undoActiveSymbolTab,
   updateActiveSymbolTabDraft,
 } from './symbolTabs.ts';
+
+function makeMemoryStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
+  const map = new Map<string, string>();
+  return {
+    getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      map.set(k, v);
+    },
+    removeItem: (k: string) => {
+      map.delete(k);
+    },
+  };
+}
 
 test('symbolTabs: opens multiple UGO tabs and prevents duplicate tabs for same symbol', () => {
   let state = createInitialSymbolTabsState();
@@ -103,4 +120,47 @@ test('symbolTabs: closing active tab selects neighbor and closing last closes wo
   assert.equal(state.open, false);
   assert.equal(state.activeTabId, null);
   assert.equal(state.tabs.length, 0);
+});
+
+test('symbolTabs: autosaves and restores active UGO draft, tabs, and undo stack across reload', () => {
+  const store = makeMemoryStorage();
+  let state = createInitialSymbolTabsState();
+  state = addBlankSymbolTab(state, 'hub');
+  state = commitActiveTabGeometry(
+    state,
+    [
+      { id: 'r-1', kind: 'rect', x: 10, y: 10, width: 80, height: 60 },
+      { id: 'c-1', kind: 'circle', cx: 50, cy: 40, r: 12 },
+    ],
+    [{ name: 'A1', dx: 0, dy: 20, direction: 'left', signalType: 'dc24' }],
+    { width: 100, height: 80 }
+  );
+  state = updateActiveSymbolTabDraft(state, (d) => ({
+    ...d,
+    name: 'Автосохранённый контактор',
+    e3BlockName: 'GOST_KM_AUTOSAVE',
+  }));
+
+  const savedAt = saveSymbolWorkspaceAutosave(state, store, '2026-11-15T12:30:00.000Z');
+  assert.equal(savedAt, '2026-11-15T12:30:00.000Z');
+
+  const loaded = loadSymbolWorkspaceAutosave(store);
+  assert.ok(loaded);
+  assert.equal(loaded.savedAt, '2026-11-15T12:30:00.000Z');
+  assert.equal(loaded.state.open, true);
+  assert.equal(loaded.state.origin, 'hub');
+  assert.equal(loaded.state.tabs.length, 1);
+  assert.equal(loaded.state.tabs[0].undoStack.length, 1);
+  const restoredDraft = getEffectiveSymbolDraft(loaded.state);
+  assert.equal(restoredDraft.name, 'Автосохранённый контактор');
+  assert.equal(restoredDraft.e3BlockName, 'GOST_KM_AUTOSAVE');
+  assert.equal(restoredDraft.shapes.length, 2);
+  assert.equal(restoredDraft.pins.length, 1);
+
+  // Corrupted storage should degrade safely
+  store.setItem(SYMBOL_WORKSPACE_AUTOSAVE_KEY, '{broken json');
+  assert.equal(loadSymbolWorkspaceAutosave(store), null);
+
+  clearSymbolWorkspaceAutosave(store);
+  assert.equal(loadSymbolWorkspaceAutosave(store), null);
 });

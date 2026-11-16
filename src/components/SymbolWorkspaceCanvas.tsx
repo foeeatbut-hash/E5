@@ -7,6 +7,7 @@ import {
   CopyPlus,
   Crosshair,
   Download,
+  FileCode2,
   FlipHorizontal2,
   FlipVertical2,
   Magnet,
@@ -26,14 +27,17 @@ import {
   Type,
   X,
 } from 'lucide-react';
+import { parseDxfToSymbolPrimitives } from '../core/dxfImporter';
 import type { CustomSymbolShape, CustomSymbolStrokeStyle, E3Pin, SignalType } from '../core/e3Types';
 import type { FocusLayoutMetrics } from '../core/focusLayout';
 import type { UiWorkspaceMode } from '../core/uiMode';
 import {
   inferPinDirection,
   nextPinName,
+  serializeUgoBlockPayload,
   snapSymbolCoord,
   type SymbolEditorTool,
+  type SymbolPresetId,
 } from '../core/symbolDesigner';
 import {
   describeSvgArcPath,
@@ -224,7 +228,16 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
   const [copyBlockName, setCopyBlockName] = useState('');
   const [copyArticle, setCopyArticle] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
+  const [importFlash, setImportFlash] = useState<string | null>(null);
   const savedFlashTimerRef = useRef<number | null>(null);
+  const importFlashTimerRef = useRef<number | null>(null);
+  const dxfFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const showImportNotice = useCallback((msg: string) => {
+    setImportFlash(msg);
+    if (importFlashTimerRef.current) window.clearTimeout(importFlashTimerRef.current);
+    importFlashTimerRef.current = window.setTimeout(() => setImportFlash(null), 2800);
+  }, []);
 
   const triggerSaveCurrent = useCallback(() => {
     workspace.onSaveCurrent();
@@ -234,29 +247,38 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
   }, [workspace]);
 
   const exportBlockJson = useCallback(() => {
-    const payload = {
-      schema: 'e3promax-ugo-block/v1',
-      name: draft.name,
-      componentName: draft.componentName,
-      article: draft.article,
-      manufacturer: draft.manufacturer,
-      e3BlockName: draft.e3BlockName,
-      defaultPrefix: draft.defaultPrefix,
-      category: draft.category,
-      width: draft.width,
-      height: draft.height,
-      shapes: draft.shapes,
-      pins: draft.pins,
-      attributes: draft.attributes,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const payload = serializeUgoBlockPayload(draft);
+    const jsonText = JSON.stringify(payload, null, 2);
+    const blob = new Blob([jsonText], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${(draft.e3BlockName || draft.name || 'ugo_block').replace(/[^a-zA-Z0-9_-]+/g, '_')}.e3blk.json`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [draft]);
+    showImportNotice(`Экспорт блока: ${draft.e3BlockName || draft.name}`);
+  }, [draft, showImportNotice]);
+
+  const handleImportDxfFile = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const res = parseDxfToSymbolPrimitives(text, {
+          gridStep: draft.gridStep || 5,
+          snapToGrid: draft.snapToGrid,
+        });
+        workspace.onCommitGeometry(res.shapes, draft.pins, {
+          width: res.width,
+          height: res.height,
+        });
+        requestAnimationFrame(() => fitSymbolViewRef.current());
+        showImportNotice(`DXF: импортировано ${res.stats.importedShapes} прим.`);
+      } catch (err) {
+        showImportNotice(err instanceof Error ? err.message : 'Ошибка чтения DXF');
+      }
+    },
+    [draft.gridStep, draft.snapToGrid, draft.pins, workspace, showImportNotice]
+  );
 
   const fitSymbolView = useCallback(() => {
     const el = containerRef.current;
@@ -344,6 +366,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
     return () => {
       if (moveRafRef.current) cancelAnimationFrame(moveRafRef.current);
       if (savedFlashTimerRef.current) window.clearTimeout(savedFlashTimerRef.current);
+      if (importFlashTimerRef.current) window.clearTimeout(importFlashTimerRef.current);
     };
   }, []);
 
@@ -883,8 +906,10 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
                 {tab.dirty && (
                   <span
                     title="Есть несохранённые изменения"
-                    className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"
-                  />
+                    className="font-mono text-[length:calc(11px*var(--flux-ui-scale))] leading-none text-amber-500 shrink-0"
+                  >
+                    *
+                  </span>
                 )}
               </button>
               <button
@@ -923,6 +948,19 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
       data-testid="symbol-workspace-canvas"
       className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-[var(--flux-canvas-bg)] select-none"
     >
+      <input
+        ref={dxfFileInputRef}
+        type="file"
+        accept=".dxf"
+        data-testid="symbol-ws-import-dxf-input"
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) void handleImportDxfFile(file);
+        }}
+      />
+
       {/* Focus Mode: Centered Floating UGO Multi-Tabs Pill (Replaces Schematic Sheet Tabs) */}
       {isFocusMode && focusLayout && (
         <div
@@ -970,13 +1008,24 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
 
             <button
               type="button"
+              data-testid="symbol-ws-import-dxf-btn"
+              onClick={() => dxfFileInputRef.current?.click()}
+              title="Импортировать геометрию из DXF в редактор УГО"
+              className="hidden sm:inline-flex items-center gap-1 h-6 px-2 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
+            >
+              <FileCode2 className="w-3 h-3 text-[var(--flux-accent)]" />
+              <span>Импорт DXF</span>
+            </button>
+
+            <button
+              type="button"
               data-testid="symbol-ws-export-json-btn"
               onClick={exportBlockJson}
-              title="Экспорт блока .e3blk.json"
-              className="hidden md:inline-flex items-center gap-1 h-6 px-2 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-mono whitespace-nowrap transition-colors"
+              title="Экспорт выбранного УГО в отдельный файл библиотеки (.e3blk.json)"
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(11px*var(--flux-ui-scale))] font-medium whitespace-nowrap transition-colors"
             >
               <Download className="w-3 h-3 text-[var(--flux-accent)]" />
-              <span>.e3blk</span>
+              <span>Экспорт блока</span>
             </button>
 
             {origin === 'project' && (
@@ -1168,11 +1217,11 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             transform: 'translateX(-50%)',
             maxWidth: focusLayout.selectionBarMaxWidth,
           }}
-          className="no-print absolute z-20 inline-flex items-center gap-1 h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg overflow-x-auto no-scrollbar transition-[top,left] duration-150"
+          className="no-print absolute z-20 inline-flex flex-wrap items-center justify-center gap-[3px] min-h-[calc(34px*var(--flux-ui-scale))] py-1 px-1.5 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg transition-[top,left] duration-150"
         >
           {/* Color Swatches */}
           <div className="flex items-center gap-0.5 shrink-0">
-            {SYMBOL_COLOR_PALETTE.slice(0, 5).map((c) => {
+            {SYMBOL_COLOR_PALETTE.slice(0, 4).map((c) => {
               const activeCol = draft.activeStyle.strokeColor.toLowerCase() === c.hex.toLowerCase();
               return (
                 <button
@@ -1236,7 +1285,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             onChange={(e) =>
               workspace.onUpdateStyle({ strokeStyle: e.target.value as CustomSymbolStrokeStyle })
             }
-            className="hidden sm:inline-block h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(86px*var(--flux-ui-scale))] shrink-0"
+            className="hidden sm:inline-block h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(76px*var(--flux-ui-scale))] shrink-0"
           >
             {STROKE_STYLE_OPTIONS.map((opt) => (
               <option key={opt.id} value={opt.id}>
@@ -1288,22 +1337,32 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             aria-label="Применить заготовку графики УГО"
             value=""
             onChange={(e) => {
-              const v = e.target.value as
-                | 'blank_box'
-                | 'sensor_circle'
-                | 'breaker_1p'
-                | 'coil_relay'
-                | '';
+              const v = e.target.value as SymbolPresetId | '';
               if (v) workspace.onApplyPresetShapes(v);
             }}
             className="h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(88px*var(--flux-ui-scale))] shrink-0"
           >
             <option value="">Заготовка…</option>
+            <option value="contactor">Контактор KM</option>
+            <option value="relay">Реле KA</option>
+            <option value="breaker">Автомат QF</option>
+            <option value="terminal">Клемма XT</option>
             <option value="blank_box">Корпус ГОСТ</option>
             <option value="sensor_circle">Круг КИП</option>
-            <option value="breaker_1p">Автомат QF</option>
+            <option value="breaker_1p">Автомат 1P</option>
             <option value="coil_relay">Катушка KA</option>
           </select>
+
+          <button
+            type="button"
+            data-testid="symbol-ws-import-dxf-btn"
+            onClick={() => dxfFileInputRef.current?.click()}
+            title="Импортировать геометрию из DXF в примитивы УГО"
+            className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 transition-colors"
+          >
+            <FileCode2 className="w-3 h-3 text-[var(--flux-accent)]" />
+            <span>Импорт DXF</span>
+          </button>
 
           <button
             type="button"
@@ -1320,11 +1379,12 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             type="button"
             data-testid="symbol-ws-export-json-btn"
             onClick={exportBlockJson}
-            aria-label="Скачать блок УГО .e3blk.json"
-            title="Скачать блок УГО (.e3blk.json)"
-            className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] shrink-0 transition-colors"
+            aria-label="Экспорт блока УГО в отдельный файл .e3blk.json"
+            title="Сохранить выбранное УГО в отдельный файл библиотеки (.e3blk.json)"
+            className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 transition-colors"
           >
             <Download className="w-3 h-3 text-[var(--flux-accent)]" />
+            <span>Экспорт блока</span>
           </button>
 
           <button
@@ -1876,11 +1936,26 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
           } z-30 h-[calc(36px*var(--flux-ui-scale))] px-3 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-xl inline-flex items-center gap-2 text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] min-w-0`}
         >
           <Crosshair className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-          <span className="truncate">{toolHint}</span>
+          <span className="truncate">{importFlash || toolHint}</span>
           <span className="hidden xl:inline-block h-3.5 w-px bg-[var(--flux-line)] shrink-0" />
           <span className="hidden xl:inline-block font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text)] whitespace-nowrap shrink-0">
             {renderedWidth}×{renderedHeight} мм
           </span>
+          {workspace.autosavedAt && (
+            <>
+              <span className="hidden lg:inline-block h-3.5 w-px bg-[var(--flux-line)] shrink-0" />
+              <span
+                data-testid="ugo-autosave-status"
+                className="hidden lg:inline-block font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-accent)] whitespace-nowrap shrink-0"
+              >
+                Автосохр.{' '}
+                {new Date(workspace.autosavedAt).toLocaleTimeString('ru-RU', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            </>
+          )}
         </div>
 
         {/* Bottom-Right Floating Status Pill (matching FocusStatusPill) */}

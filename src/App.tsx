@@ -32,6 +32,7 @@ import { TerminalStripModal } from './components/TerminalStripModal';
 import { AutoNumberingModal } from './components/AutoNumberingModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { StartMenuHub } from './components/StartMenuHub';
+import { TemplateWorkspace } from './components/TemplateWorkspace';
 import { SymbolEditorInspector } from './components/SymbolEditorInspector';
 import { SymbolLibraryBrowser } from './components/SymbolLibraryBrowser';
 import { SystemHealthDashboard } from './components/SystemHealthDashboard';
@@ -219,8 +220,10 @@ import type {
 import {
   buildSymbolDesignerPreset,
   normalizeCustomSymbolSpec,
+  QUICK_SYMBOL_TEMPLATES,
   type SymbolEditorTool,
   type SymbolPresetId,
+  type UgoBlockFilePayload,
 } from './core/symbolDesigner';
 import {
   applyAttributeTemplate,
@@ -243,8 +246,10 @@ import {
   commitActiveTabGeometry,
   createInitialSymbolTabsState,
   getEffectiveSymbolDraft,
+  loadSymbolWorkspaceAutosave,
   openOrFocusSymbolTab,
   redoActiveSymbolTab,
+  saveSymbolWorkspaceAutosave,
   selectSymbolTab,
   summarizeSymbolTabs,
   type SymbolTabsState,
@@ -314,11 +319,17 @@ import {
   renameSheetFolderInProject,
 } from './core/sheetTree';
 import {
+  type AppStandaloneSectionId,
   buildProjectFromCustomTemplate,
   createProjectFromTemplate,
   createStandaloneHvacProject,
   type CustomProjectTemplate,
+  deleteCustomTemplate,
+  loadCustomTemplates,
+  saveCustomTemplates,
+  type StartHubLayer,
   type StartTemplateId,
+  upsertCustomTemplate,
 } from './core/startHub';
 import { ecadAsync } from './workers/ecadAsync';
 
@@ -721,11 +732,19 @@ export default function App() {
     if (typeof window === 'undefined') return false;
     try {
       const params = new URLSearchParams(window.location.search);
-      return params.get('autostart') !== '1';
+      if (params.get('autostart') === '1') return false;
+      const recoveredUgo = loadSymbolWorkspaceAutosave();
+      if (recoveredUgo?.state.open && recoveredUgo.state.tabs.length > 0) return false;
+      return true;
     } catch {
       return true;
     }
   });
+  const [templateWorkspaceOpen, setTemplateWorkspaceOpen] = useState(false);
+  const [requestedHubLayer, setRequestedHubLayer] = useState<StartHubLayer | null>(null);
+  const [projectTemplates, setProjectTemplates] = useState<CustomProjectTemplate[]>(() =>
+    loadCustomTemplates()
+  );
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandPaletteInitialQuery, setCommandPaletteInitialQuery] = useState('');
   const [healthOpen, setHealthOpen] = useState(false);
@@ -768,9 +787,16 @@ export default function App() {
     [mergedCatalog, project.symbolLibrary, customSymbols]
   );
 
-  const [symbolTabsState, setSymbolTabsState] = useState<SymbolTabsState>(() =>
-    createInitialSymbolTabsState()
+  const [ugoAutosavedAt, setUgoAutosavedAt] = useState<string | null>(
+    () => loadSymbolWorkspaceAutosave()?.savedAt ?? null
   );
+  const [symbolTabsState, setSymbolTabsState] = useState<SymbolTabsState>(() => {
+    const recovered = loadSymbolWorkspaceAutosave();
+    if (recovered?.state && recovered.state.tabs.length > 0) {
+      return recovered.state;
+    }
+    return createInitialSymbolTabsState();
+  });
   const symbolTabsStateRef = useRef<SymbolTabsState>(symbolTabsState);
   symbolTabsStateRef.current = symbolTabsState;
   const symbolDraft = useMemo(
@@ -786,6 +812,11 @@ export default function App() {
       null,
     [symbolTabsState]
   );
+
+  useEffect(() => {
+    const savedAt = saveSymbolWorkspaceAutosave(symbolTabsState);
+    setUgoAutosavedAt(savedAt);
+  }, [symbolTabsState]);
 
   const [logs, setLogs] = useState<ProcessLogEntry[]>(() => [
     {
@@ -3061,7 +3092,9 @@ export default function App() {
   ]);
 
   const openGlobalUgoWorkspace = useCallback(() => {
+    setTemplateWorkspaceOpen(false);
     setStartHubOpen(false);
+    setFocusExplorerOpen(true);
     setFocusInspectorCollapsed(false);
     const curTabs = symbolTabsStateRef.current;
     if (curTabs.origin === 'hub' && curTabs.tabs.length > 0) {
@@ -3084,6 +3117,67 @@ export default function App() {
     ensureSymbolEditorDocksVisible,
     appendLog,
   ]);
+
+  const handleSaveProjectTemplate = useCallback(
+    (tpl: CustomProjectTemplate) => {
+      setProjectTemplates((prev) => {
+        const next = upsertCustomTemplate(prev, tpl);
+        saveCustomTemplates(next);
+        return next;
+      });
+      appendLog('INFO', 'E3-CORE', `Сохранён шаблон проекта «${tpl.title}».`);
+    },
+    [appendLog]
+  );
+
+  const handleDeleteProjectTemplate = useCallback(
+    (templateId: string) => {
+      setProjectTemplates((prev) => {
+        const next = deleteCustomTemplate(prev, templateId);
+        saveCustomTemplates(next);
+        return next;
+      });
+      appendLog('WARN', 'E3-CORE', 'Пользовательский шаблон проекта удалён.');
+    },
+    [appendLog]
+  );
+
+  const handleOpenStandaloneSection = useCallback(
+    (section: AppStandaloneSectionId) => {
+      if (section === 'hub') {
+        setTemplateWorkspaceOpen(false);
+        if (symbolTabsStateRef.current.origin === 'hub') {
+          setSymbolTabsState((prev) => closeAllSymbolWorkspace(prev));
+        }
+        setRequestedHubLayer('projects');
+        setStartHubOpen(true);
+      } else if (section === 'templates') {
+        setStartHubOpen(false);
+        if (symbolTabsStateRef.current.origin === 'hub') {
+          setSymbolTabsState((prev) => closeAllSymbolWorkspace(prev));
+        }
+        setTemplateWorkspaceOpen(true);
+      } else if (section === 'ugo') {
+        setTemplateWorkspaceOpen(false);
+        openGlobalUgoWorkspace();
+      } else if (section === 'hvac') {
+        setTemplateWorkspaceOpen(false);
+        if (symbolTabsStateRef.current.origin === 'hub') {
+          setSymbolTabsState((prev) => closeAllSymbolWorkspace(prev));
+        }
+        setRequestedHubLayer('hvac');
+        setStartHubOpen(true);
+      } else if (section === 'exchange') {
+        setTemplateWorkspaceOpen(false);
+        if (symbolTabsStateRef.current.origin === 'hub') {
+          setSymbolTabsState((prev) => closeAllSymbolWorkspace(prev));
+        }
+        setRequestedHubLayer('exchange');
+        setStartHubOpen(true);
+      }
+    },
+    [openGlobalUgoWorkspace]
+  );
 
   const commitSymbolGeometry = useCallback(
     (
@@ -3345,6 +3439,7 @@ export default function App() {
       activeTabId: activeSymbolTab?.tabId || symbolTabsState.activeTabId,
       canUndo: (activeSymbolTab?.undoStack.length ?? 0) > 0,
       canRedo: (activeSymbolTab?.redoStack.length ?? 0) > 0,
+      autosavedAt: ugoAutosavedAt,
       symbolLibrary: mergedSymbolLibrary,
       catalog: mergedCatalog,
       onSelectTab: (tabId: string) =>
@@ -3507,6 +3602,107 @@ export default function App() {
           width: preset.width,
           height: preset.height,
         });
+        if (preset.category || preset.defaultPrefix) {
+          setSymbolTabsState((prev) =>
+            updateActiveSymbolTabDraft(prev, (curr) => ({
+              ...curr,
+              category: preset.category || curr.category,
+              defaultPrefix: preset.defaultPrefix || curr.defaultPrefix,
+            }))
+          );
+        }
+      },
+      onCreatePresetTab: (presetId: SymbolPresetId) => {
+        const preset = buildSymbolDesignerPreset(presetId);
+        const meta = QUICK_SYMBOL_TEMPLATES.find((q) => q.id === presetId);
+        const stamp = Date.now().toString(36).slice(-4).toUpperCase();
+        const blockName = `${preset.e3BlockName || meta?.e3BlockName || 'GOST_UGO'}_${stamp}`;
+        setSymbolTabsState((prev) => {
+          const targetOrigin = prev.open ? prev.origin : 'project';
+          const baseState = prev.origin !== targetOrigin ? createInitialSymbolTabsState() : prev;
+          return openOrFocusSymbolTab(
+            baseState,
+            {
+              open: true,
+              targetMode: 'component',
+              symbolId: `sym-${blockName}`,
+              catalogItemId: undefined,
+              deviceId: undefined,
+              name: preset.name || meta?.label || 'Новое УГО',
+              e3BlockName: blockName,
+              category: preset.category || meta?.category || 'relay',
+              width: preset.width,
+              height: preset.height,
+              shapes: structuredClone(preset.shapes),
+              pins: structuredClone(preset.pins),
+              componentName: preset.name || meta?.label || 'Новое изделие',
+              article: `${preset.defaultPrefix || meta?.defaultPrefix || 'K'}-${stamp}`,
+              manufacturer: 'Собств. база',
+              defaultPrefix: preset.defaultPrefix || meta?.defaultPrefix || 'K',
+              defaultCable: 'ВВГнг(А)-LS 3х1,5',
+              attributes: applyAttributeTemplate([], 'gost_base'),
+              tool: 'select',
+              activeStyle: symbolDraftRef.current.activeStyle,
+              activeAttrTagKey: 'designation',
+              activePinSignal: 'signal',
+              gridStep: symbolDraftRef.current.gridStep || 10,
+              snapToGrid: symbolDraftRef.current.snapToGrid,
+              selectedShapeId: null,
+              selectedPinIndex: null,
+              dirty: true,
+            },
+            targetOrigin,
+            { forceNewTab: true }
+          );
+        });
+        ensureSymbolEditorDocksVisible();
+        appendLog('INFO', 'E3-CORE', `Открыта быстрая заготовка УГО «${preset.name || meta?.label || presetId}».`);
+      },
+      onImportBlockPayload: (payload: UgoBlockFilePayload) => {
+        const stamp = Date.now().toString(36).slice(-4).toUpperCase();
+        setSymbolTabsState((prev) => {
+          const targetOrigin = prev.open ? prev.origin : 'hub';
+          const baseState = prev.origin !== targetOrigin ? createInitialSymbolTabsState() : prev;
+          return openOrFocusSymbolTab(
+            baseState,
+            {
+              open: true,
+              targetMode: 'component',
+              symbolId: `sym-${payload.e3BlockName}-${stamp}`,
+              catalogItemId: undefined,
+              deviceId: undefined,
+              name: payload.name,
+              e3BlockName: payload.e3BlockName,
+              category: payload.category,
+              width: payload.width,
+              height: payload.height,
+              shapes: structuredClone(payload.shapes),
+              pins: structuredClone(payload.pins),
+              componentName: payload.componentName,
+              article: payload.article,
+              manufacturer: payload.manufacturer,
+              defaultPrefix: payload.defaultPrefix,
+              defaultCable: payload.defaultCable || '',
+              attributes:
+                payload.attributes.length > 0
+                  ? structuredClone(payload.attributes)
+                  : applyAttributeTemplate([], 'gost_base'),
+              tool: 'select',
+              activeStyle: symbolDraftRef.current.activeStyle,
+              activeAttrTagKey: 'designation',
+              activePinSignal: 'signal',
+              gridStep: symbolDraftRef.current.gridStep || 10,
+              snapToGrid: symbolDraftRef.current.snapToGrid,
+              selectedShapeId: null,
+              selectedPinIndex: null,
+              dirty: true,
+            },
+            targetOrigin,
+            { forceNewTab: true }
+          );
+        });
+        ensureSymbolEditorDocksVisible();
+        appendLog('INFO', 'E3-CORE', `Импортирован файл блока УГО «${payload.name}» (${payload.e3BlockName}).`);
       },
       onOpenSymbolInEditor: (sym) => openSymbolInWorkspace(sym),
       onOpenCatalogItemInEditor: (item) => openCatalogItemInWorkspace(item),
@@ -3558,11 +3754,13 @@ export default function App() {
       symbolTabsState.activeTabId,
       symbolTabSummaries,
       activeSymbolTab,
+      ugoAutosavedAt,
       mergedSymbolLibrary,
       mergedCatalog,
       undoSymbolEditor,
       redoSymbolEditor,
       commitSymbolGeometry,
+      ensureSymbolEditorDocksVisible,
       openSymbolInWorkspace,
       openCatalogItemInWorkspace,
       createNewBlankSymbolInWorkspace,
@@ -5374,6 +5572,7 @@ export default function App() {
       setLastSavedAt(res.savedAt);
       setRecentProjects(res.recent);
       pushSync(fresh);
+      setTemplateWorkspaceOpen(false);
       setStartHubOpen(false);
       if (fresh.sheets[0]) {
         window.requestAnimationFrame(() => fitSheetToViewport(fresh.sheets[0], activeViewportIdx));
@@ -5402,6 +5601,7 @@ export default function App() {
       setLastSavedAt(res.savedAt);
       setRecentProjects(res.recent);
       pushSync(fresh);
+      setTemplateWorkspaceOpen(false);
       setStartHubOpen(false);
       if (fresh.sheets[0]) {
         window.requestAnimationFrame(() => fitSheetToViewport(fresh.sheets[0], activeViewportIdx));
@@ -7592,7 +7792,8 @@ export default function App() {
         onRemoveQuickAccess={handleRemoveFocusQuickAccess}
         onToggleMinimap={handleToggleMinimap}
         focusLayout={focusLayout}
-        onOpenStartHub={() => setStartHubOpen(true)}
+        onOpenStartHub={() => handleOpenStandaloneSection('hub')}
+        onOpenTemplateWorkspace={() => handleOpenStandaloneSection('templates')}
       />
 
       {/* Dockable Workspace Shell (Full-Bleed in Focus Mode, Docked 4-Zone Grid in Classic & Hybrid) */}
@@ -7708,11 +7909,12 @@ export default function App() {
           {symbolDraft.open ? (
             <motion.div
               key="symbol-workspace-pane"
-              initial={{ opacity: 0, scale: 0.994 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.996 }}
-              transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-              className="flex-1 min-w-0 min-h-0 flex"
+              data-transition="slide-in-right"
+              initial={{ opacity: 0, x: 64, scale: 0.986 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 24, scale: 0.992 }}
+              transition={{ type: 'spring', stiffness: 360, damping: 29, mass: 0.85 }}
+              className="flex-1 min-w-0 min-h-0 flex overflow-hidden"
             >
               <SymbolWorkspaceCanvas
                 workspace={symbolWorkspaceActions}
@@ -8477,6 +8679,13 @@ export default function App() {
         isDark={project.visualSettings.theme === 'dark'}
         uiMode={uiMode}
         uiScale={uiScale}
+        customTemplates={projectTemplates}
+        requestedLayer={requestedHubLayer}
+        onConsumeRequestedLayer={() => setRequestedHubLayer(null)}
+        onSaveCustomTemplate={handleSaveProjectTemplate}
+        onDeleteCustomTemplate={handleDeleteProjectTemplate}
+        onOpenTemplateWorkspace={() => handleOpenStandaloneSection('templates')}
+        onOpenStandaloneSection={handleOpenStandaloneSection}
         onCloseToCanvas={() => setStartHubOpen(false)}
         onOpenGlobalUgoWorkspace={openGlobalUgoWorkspace}
         onCreateProjectFromTemplate={handleCreateProjectFromTemplate}
@@ -8506,6 +8715,16 @@ export default function App() {
           })
         }
         onChangeUiScale={handleChangeUiScale}
+      />
+      <TemplateWorkspace
+        open={templateWorkspaceOpen}
+        customTemplates={projectTemplates}
+        isDark={project.visualSettings.theme === 'dark'}
+        onSaveTemplate={handleSaveProjectTemplate}
+        onDeleteTemplate={handleDeleteProjectTemplate}
+        onCreateProjectFromTemplate={handleCreateProjectFromCustomTemplate}
+        onOpenStandaloneSection={handleOpenStandaloneSection}
+        onCloseToHub={() => handleOpenStandaloneSection('hub')}
       />
     </div>
       {shortcutsOpen && (

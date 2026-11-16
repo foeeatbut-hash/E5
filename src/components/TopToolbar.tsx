@@ -106,6 +106,11 @@ import {
   STROKE_STYLE_OPTIONS,
   SYMBOL_COLOR_PALETTE,
 } from '../core/symbolLibrary';
+import {
+  QUICK_SYMBOL_TEMPLATES,
+  serializeUgoBlockPayload,
+  type SymbolPresetId,
+} from '../core/symbolDesigner';
 import type { SymbolWorkspaceActions } from '../core/symbolWorkspaceTypes';
 import {
   getScaledChromeMetrics,
@@ -249,6 +254,7 @@ interface TopToolbarProps {
   onToggleMinimap?: () => void;
   focusLayout?: FocusLayoutMetrics;
   onOpenStartHub?: () => void;
+  onOpenTemplateWorkspace?: () => void;
 }
 
 const RIBBON_TABS: Array<{ id: RibbonSectionId; label: string; contextual?: boolean }> = [
@@ -661,6 +667,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   onToggleMinimap,
   focusLayout,
   onOpenStartHub,
+  onOpenTemplateWorkspace,
 }) => {
   const isDark = project.visualSettings.theme === 'dark';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -684,9 +691,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
     [onRibbonCollapsedChange, ribbonCollapsed]
   );
   const [appMenuOpen, setAppMenuOpen] = useState(false);
-  const appMenuPinnedRef = useRef(false);
-  const appMenuHoverOpenTimerRef = useRef<number | null>(null);
-  const appMenuHoverCloseTimerRef = useRef<number | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exportMenuPos, setExportMenuPos] = useState<{ left: number; top: number } | null>(null);
   const [layersPopoverOpen, setLayersPopoverOpen] = useState(false);
@@ -779,70 +783,14 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
     [uiMode, isSymbolEditorOpen, onAddQuickAccess, onRemoveQuickAccess, focusQuickAccessIds, openRibbonQuickAccessMenu]
   );
 
-  const clearAppMenuTimers = useCallback(() => {
-    if (appMenuHoverOpenTimerRef.current !== null) {
-      window.clearTimeout(appMenuHoverOpenTimerRef.current);
-      appMenuHoverOpenTimerRef.current = null;
-    }
-    if (appMenuHoverCloseTimerRef.current !== null) {
-      window.clearTimeout(appMenuHoverCloseTimerRef.current);
-      appMenuHoverCloseTimerRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => () => clearAppMenuTimers(), [clearAppMenuTimers]);
-
-  const handleAppMenuBtnMouseEnter = useCallback(() => {
-    if (appMenuHoverCloseTimerRef.current !== null) {
-      window.clearTimeout(appMenuHoverCloseTimerRef.current);
-      appMenuHoverCloseTimerRef.current = null;
-    }
-    if (appMenuOpen || exportMenuOpen) return;
-    if (appMenuHoverOpenTimerRef.current !== null) return;
-    appMenuHoverOpenTimerRef.current = window.setTimeout(() => {
-      appMenuHoverOpenTimerRef.current = null;
-      appMenuPinnedRef.current = false;
-      setAppMenuOpen(true);
-    }, 125);
-  }, [appMenuOpen, exportMenuOpen]);
-
-  const handleAppMenuAreaMouseLeave = useCallback(() => {
-    if (appMenuHoverOpenTimerRef.current !== null) {
-      window.clearTimeout(appMenuHoverOpenTimerRef.current);
-      appMenuHoverOpenTimerRef.current = null;
-    }
-    if (!appMenuOpen || appMenuPinnedRef.current) return;
-    if (appMenuHoverCloseTimerRef.current !== null) {
-      window.clearTimeout(appMenuHoverCloseTimerRef.current);
-    }
-    appMenuHoverCloseTimerRef.current = window.setTimeout(() => {
-      appMenuHoverCloseTimerRef.current = null;
-      setAppMenuOpen(false);
-    }, 220);
-  }, [appMenuOpen]);
-
-  const handleAppMenuDrawerMouseEnter = useCallback(() => {
-    if (appMenuHoverCloseTimerRef.current !== null) {
-      window.clearTimeout(appMenuHoverCloseTimerRef.current);
-      appMenuHoverCloseTimerRef.current = null;
-    }
-  }, []);
-
   const handleAppMenuBtnClick = useCallback(() => {
-    clearAppMenuTimers();
-    setAppMenuOpen((prev) => {
-      const next = !prev;
-      appMenuPinnedRef.current = next;
-      return next;
-    });
-  }, [clearAppMenuTimers]);
+    setAppMenuOpen((prev) => !prev);
+  }, []);
 
   useEffect(() => {
     if (!appMenuOpen && !exportMenuOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        clearAppMenuTimers();
-        appMenuPinnedRef.current = false;
         setAppMenuOpen(false);
         setExportMenuOpen(false);
       }
@@ -856,8 +804,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
         menuBtnRef.current &&
         !menuBtnRef.current.contains(target)
       ) {
-        clearAppMenuTimers();
-        appMenuPinnedRef.current = false;
         setAppMenuOpen(false);
       }
       if (
@@ -876,11 +822,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('mousedown', onClickOutside);
     };
-  }, [appMenuOpen, exportMenuOpen, clearAppMenuTimers]);
+  }, [appMenuOpen, exportMenuOpen]);
 
   const toggleExportMenu = (btnEl: HTMLButtonElement | null) => {
-    clearAppMenuTimers();
-    appMenuPinnedRef.current = false;
     setAppMenuOpen(false);
     if (!exportMenuOpen && btnEl && headerRef.current) {
       const hRect = headerRef.current.getBoundingClientRect();
@@ -895,8 +839,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   };
 
   const runMenuAction = (fn: () => void) => {
-    clearAppMenuTimers();
-    appMenuPinnedRef.current = false;
     setAppMenuOpen(false);
     setExportMenuOpen(false);
     fn();
@@ -945,10 +887,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               aria-haspopup="menu"
               aria-expanded={appMenuOpen}
               onPointerMove={trackWavePointer}
-              onMouseEnter={handleAppMenuBtnMouseEnter}
-              onMouseLeave={handleAppMenuAreaMouseLeave}
               onClick={handleAppMenuBtnClick}
-              title="Главное меню программы: наведите курсор или нажмите для открытия"
+              title="Главное меню программы: нажмите для открытия"
               className={`antigravity-wave-pill inline-flex items-center gap-1.5 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] font-semibold text-[length:calc(11px*var(--flux-ui-scale))] whitespace-nowrap shrink-0 ${
                 appMenuOpen
                   ? 'bg-[var(--flux-accent-solid)] text-white shadow-xs'
@@ -1218,10 +1158,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               aria-haspopup="menu"
               aria-expanded={appMenuOpen}
               onPointerMove={trackWavePointer}
-              onMouseEnter={handleAppMenuBtnMouseEnter}
-              onMouseLeave={handleAppMenuAreaMouseLeave}
               onClick={handleAppMenuBtnClick}
-              title="Главное меню программы: наведите курсор или нажмите для открытия"
+              title="Главное меню программы: нажмите для открытия"
               className={`antigravity-wave-pill inline-flex items-center gap-1.5 h-[calc(24px*var(--flux-ui-scale))] pl-2 pr-2 rounded-[4px] font-semibold text-[length:calc(11.5px*var(--flux-ui-scale))] tracking-tight border whitespace-nowrap shrink-0 ${
                 appMenuOpen
                   ? 'bg-[var(--flux-accent-solid)] text-white border-[var(--flux-accent-solid)] shadow-xs'
@@ -1467,10 +1405,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               aria-haspopup="menu"
               aria-expanded={appMenuOpen}
               onPointerMove={trackWavePointer}
-              onMouseEnter={handleAppMenuBtnMouseEnter}
-              onMouseLeave={handleAppMenuAreaMouseLeave}
               onClick={handleAppMenuBtnClick}
-              title="Главное меню программы: наведите курсор или нажмите для открытия"
+              title="Главное меню программы: нажмите для открытия"
               className={`antigravity-wave-pill inline-flex items-center gap-1.5 h-[calc(21px*var(--flux-ui-scale))] pl-1.5 pr-2 rounded-[4px] font-semibold text-[length:calc(11px*var(--flux-ui-scale))] tracking-tight border whitespace-nowrap shrink-0 mr-1 ${
                 appMenuOpen
                   ? 'bg-[var(--flux-accent-solid)] text-white border-[var(--flux-accent-solid)] shadow-xs'
@@ -1678,8 +1614,6 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             role="menu"
             aria-label="Главное системное меню"
             data-testid="app-menu-drawer"
-            onMouseEnter={handleAppMenuDrawerMouseEnter}
-            onMouseLeave={handleAppMenuAreaMouseLeave}
             initial={{ opacity: 0, y: -10, scale: 0.982 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.986 }}
@@ -1721,17 +1655,25 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         aria-pressed={active}
                         onPointerMove={trackWavePointer}
                         onClick={() => setMenuCategory(catId)}
-                        className={`antigravity-wave-row w-full px-2.5 min-h-8 h-auto py-1 rounded-[6px] border flex items-center justify-between gap-2 text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium ${
+                        className={`relative antigravity-wave-row w-full px-2.5 min-h-8 h-auto py-1 rounded-[6px] border flex items-center justify-between gap-2 text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium transition-colors ${
                           active
-                            ? 'bg-[var(--flux-sel)] text-[var(--flux-text)] border-[var(--flux-accent)]/35'
+                            ? 'border-[var(--flux-accent)]/35 text-[var(--flux-text)]'
                             : 'border-transparent text-[var(--flux-text-muted)] hover:bg-[var(--flux-hover)] hover:text-[var(--flux-text)]'
                         }`}
                       >
-                        <span className="flex items-center gap-2 min-w-0">
+                        {active && (
+                          <motion.span
+                            layoutId="app-menu-cat-pill"
+                            aria-hidden="true"
+                            transition={{ type: 'spring', stiffness: 460, damping: 34 }}
+                            className="absolute inset-0 rounded-[5px] bg-[var(--flux-sel)] -z-10"
+                          />
+                        )}
+                        <span className="flex items-center gap-2 min-w-0 relative z-10">
                           <span className={active ? 'text-[var(--flux-accent)]' : ''}>{ic}</span>
                           <span className="truncate">{label}</span>
                         </span>
-                        <ChevronRight className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${active ? 'opacity-90 translate-x-0.5 text-[var(--flux-accent)]' : 'opacity-50'}`} />
+                        <ChevronRight className={`w-3.5 h-3.5 shrink-0 relative z-10 transition-transform duration-150 ${active ? 'opacity-90 translate-x-0.5 text-[var(--flux-accent)]' : 'opacity-50'}`} />
                       </button>
                     );
                   })}
@@ -1746,9 +1688,17 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               </div>
 
               {/* Right Category Actions */}
-              <div className="sm:col-span-8 p-2 min-h-0 h-full overflow-y-auto divide-y divide-[var(--flux-line)]">
+              <div className="sm:col-span-8 p-2 min-h-0 h-full overflow-y-auto">
+                <AnimatePresence mode="wait" initial={false}>
                 {menuCategory === 'file' && (
-                  <div key="cat-file" className="space-y-0.5 pb-1 antigravity-wave-cascade">
+                  <motion.div
+                    key="cat-file"
+                    initial={{ opacity: 0, x: 8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -6 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    className="space-y-0.5 pb-1 divide-y divide-[var(--flux-line)]/50 antigravity-wave-cascade"
+                  >
                     {onOpenStartHub && (
                       <AppMenuActionRow
                         icon={<Home className="w-4 h-4" />}
@@ -1756,6 +1706,15 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         subtitle="Недавние проекты, быстрые шаблоны ГОСТ/IEC и запуск мастеров"
                         testId="menu-open-start-hub"
                         onClick={() => runMenuAction(onOpenStartHub)}
+                      />
+                    )}
+                    {onOpenTemplateWorkspace && (
+                      <AppMenuActionRow
+                        icon={<LayoutTemplate className="w-4 h-4" />}
+                        title="Мастерская шаблонов проектов"
+                        subtitle="Отдельное пространство создания и настройки шаблонов вне проекта"
+                        testId="menu-open-template-workspace"
+                        onClick={() => runMenuAction(onOpenTemplateWorkspace)}
                       />
                     )}
                     {onSaveSessionNow && (
@@ -1925,11 +1884,18 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         </div>
                       </>
                     )}
-                  </div>
+                  </motion.div>
                 )}
 
                 {menuCategory === 'export' && (
-                  <div key="cat-export" className="space-y-0.5 pb-1 antigravity-wave-cascade">
+                  <motion.div
+                    key="cat-export"
+                    initial={{ opacity: 0, x: 8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -6 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    className="space-y-0.5 pb-1 divide-y divide-[var(--flux-line)]/50 antigravity-wave-cascade"
+                  >
                     <AppMenuActionRow
                       icon={<FileCode2 className="w-4 h-4" />}
                       title="Пакетная публикация (PDF и AutoCAD .dxf)"
@@ -1987,11 +1953,18 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       title="Экспорт пакета Flux Bridge (.json)"
                       onClick={() => runMenuAction(onExportFluxBridge)}
                     />
-                  </div>
+                  </motion.div>
                 )}
 
                 {menuCategory === 'stamps' && (
-                  <div key="cat-stamps" className="space-y-0.5 pb-1 antigravity-wave-cascade">
+                  <motion.div
+                    key="cat-stamps"
+                    initial={{ opacity: 0, x: 8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -6 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    className="space-y-0.5 pb-1 divide-y divide-[var(--flux-line)]/50 antigravity-wave-cascade"
+                  >
                     <AppMenuActionRow
                       icon={<Type className="w-4 h-4" />}
                       title="Редактор основной надписи ГОСТ 2.104"
@@ -2023,11 +1996,18 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       title={isDark ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
                       onClick={() => runMenuAction(onToggleTheme)}
                     />
-                  </div>
+                  </motion.div>
                 )}
 
                 {menuCategory === 'system' && (
-                  <div key="cat-system" className="space-y-1 pb-1 antigravity-wave-cascade">
+                  <motion.div
+                    key="cat-system"
+                    initial={{ opacity: 0, x: 8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -6 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    className="space-y-1 pb-1 antigravity-wave-cascade"
+                  >
                     {onChangeUiMode && (
                       <div
                         data-testid="appmenu-ui-mode-switcher"
@@ -2142,8 +2122,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                       testId="menu-stress-test"
                       onClick={() => runMenuAction(() => onRunStressBatch(500))}
                     />
-                  </div>
+                  </motion.div>
                 )}
+                </AnimatePresence>
               </div>
             </div>
           </motion.div>
@@ -2418,12 +2399,20 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                     }}
                     className={`relative h-full px-2.5 text-[length:calc(11px*var(--flux-ui-scale))] border-x border-t transition-colors whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 ${
                       isActive
-                        ? 'bg-[var(--flux-bg)] border-[var(--flux-line)] border-t-2 border-t-[var(--flux-accent)] text-[var(--flux-text)] border-b-transparent -mb-px pb-px font-semibold'
+                        ? 'bg-[var(--flux-bg)] border-[var(--flux-line)] text-[var(--flux-text)] border-b-transparent -mb-px pb-px font-semibold'
                         : isContextual
                           ? 'bg-[var(--flux-accent-soft)] border-[var(--flux-accent)]/35 text-[var(--flux-accent)] hover:bg-[var(--flux-sel)] font-semibold'
                           : 'bg-transparent border-transparent text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)] font-medium'
                     }`}
                   >
+                    {isActive && (
+                      <motion.span
+                        layoutId="ribbon-tab-active-bar"
+                        aria-hidden="true"
+                        transition={{ type: 'spring', stiffness: 460, damping: 35 }}
+                        className="absolute top-0 left-0 right-0 h-[2px] bg-[var(--flux-accent)]"
+                      />
+                    )}
                     <span>{tab.label}</span>
                   </button>
                 );
@@ -3518,17 +3507,17 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                               aria-label="Быстрая заготовка графики УГО"
                               value=""
                               onChange={(e) => {
-                                const val = e.target.value as
-                                  | 'blank_box'
-                                  | 'sensor_circle'
-                                  | 'breaker_1p'
-                                  | 'coil_relay'
-                                  | '';
+                                const val = e.target.value as SymbolPresetId | '';
                                 if (val) symbolWorkspace.onApplyPresetShapes(val);
                               }}
                               className="h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] w-[calc(144px*var(--flux-ui-scale))]"
                             >
                               <option value="">+ Графика УГО…</option>
+                              {QUICK_SYMBOL_TEMPLATES.map((tpl) => (
+                                <option key={tpl.id} value={tpl.id}>
+                                  {tpl.label} ({tpl.defaultPrefix})
+                                </option>
+                              ))}
                               <option value="blank_box">Корпус с тегами</option>
                               <option value="sensor_circle">Круг КИП / Датчик</option>
                               <option value="breaker_1p">Автомат 1P (QF)</option>
@@ -3578,11 +3567,31 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                         )}
                         <RibbonStack>
                           <SmallRibbonBtn
+                            icon={<Download className="w-3.5 h-3.5" />}
+                            label="Экспорт блока"
+                            title="Сохранить выбранное УГО в независимый файл библиотеки (.e3blk.json)"
+                            testId="ugo-ribbon-export-block-btn"
+                            onClick={() => {
+                              const payload = serializeUgoBlockPayload(symbolWorkspace.draft);
+                              const blob = new Blob([JSON.stringify(payload, null, 2)], {
+                                type: 'application/json;charset=utf-8',
+                              });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `${payload.e3BlockName || 'ugo_block'}.e3blk.json`;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            }}
+                          />
+                          <SmallRibbonBtn
                             icon={<FilePlus2 className="w-3.5 h-3.5" />}
                             label="+ Вкладка УГО"
                             title="Создать новую вкладку УГО с нуля"
                             onClick={symbolWorkspace.onAddNewTab}
                           />
+                        </RibbonStack>
+                        <RibbonStack>
                           <SmallRibbonBtn
                             icon={<X className="w-3.5 h-3.5" />}
                             label={symbolWorkspace.origin === 'hub' ? 'В меню' : 'Закрыть УГО'}
