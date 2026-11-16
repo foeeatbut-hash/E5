@@ -789,24 +789,7 @@ app.get('/api/v1/e3-bridge/poll', (req, res) => {
   res.json({ job });
 });
 
-app.post('/api/v1/e3-bridge/ack', (req, res) => {
-  const { jobId, host, ok, message, exportedJson } = req.body || {};
-  if (exportedJson) {
-    try {
-      const parsed = typeof exportedJson === 'string' ? JSON.parse(exportedJson) : exportedJson;
-      if (parsed?.format === 'flux-e3-bridge/v1') {
-        const base = getOrDefaultProject();
-        const merged = importFromFluxBridge(parsed, base);
-        projects.set(merged.id, merged);
-        activeProjectId = merged.id;
-        broadcastUpdate(merged, `E³.series (${host || 'ПК'})`, 'e3-bridge');
-      }
-    } catch (err) {
-      diagLogger.log('ERROR', 'E3-COM', `Ошибка разбора exportedJson от ${host || 'ПК'}`, {
-        details: err instanceof Error ? err.stack || err.message : String(err),
-      });
-    }
-  }
+function recordE3BridgeResult(jobId: string | undefined, host: string | undefined, ok: boolean, message: string): void {
   const rawMessage = String(message || '');
   const hostLabel = host || bridgeState.connectedHost || 'Windows';
   const summary = parseE3BridgeSummary(rawMessage);
@@ -864,6 +847,27 @@ app.post('/api/v1/e3-bridge/ack', (req, res) => {
     summary,
     hasDebugLog: rawMessage.length > 0,
   });
+}
+
+app.post('/api/v1/e3-bridge/ack', (req, res) => {
+  const { jobId, host, ok, message, exportedJson } = req.body || {};
+  if (exportedJson) {
+    try {
+      const parsed = typeof exportedJson === 'string' ? JSON.parse(exportedJson) : exportedJson;
+      if (parsed?.format === 'flux-e3-bridge/v1') {
+        const base = getOrDefaultProject();
+        const merged = importFromFluxBridge(parsed, base);
+        projects.set(merged.id, merged);
+        activeProjectId = merged.id;
+        broadcastUpdate(merged, `E³.series (${host || 'ПК'})`, 'e3-bridge');
+      }
+    } catch (err) {
+      diagLogger.log('ERROR', 'E3-COM', `Ошибка разбора exportedJson от ${host || 'ПК'}`, {
+        details: err instanceof Error ? err.stack || err.message : String(err),
+      });
+    }
+  }
+  recordE3BridgeResult(jobId, host, Boolean(ok), String(message || ''));
   res.json({ ok: true });
 });
 
@@ -902,7 +906,7 @@ function execCscriptUnicode(
     execFile(
       'cscript.exe',
       ['//Nologo', '//U', vbsPath, '/silent', ...extraArgs],
-      { timeout: 45000, encoding: 'buffer', maxBuffer: 10 * 1024 * 1024 },
+      { timeout: 15 * 60 * 1000, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
       (err, stdoutBuf, stderrBuf) => {
         const dt = Math.round((performance.now() - t0) * 100) / 100;
         const stdout = decodeWindowsOutput(stdoutBuf as unknown as Buffer).trim();
@@ -931,12 +935,9 @@ app.post('/api/v1/projects/:id/e3-direct-open', async (req, res) => {
         durationMs: result.durationMs,
         details: result.fullOut || result.err.stack || result.err.message,
       });
-      broadcastSseEvent({
-        type: 'e3-bridge-log',
-        host: os.hostname(),
-        ok: false,
-        message: result.stderr || result.err.message,
-      });
+      const failJobId = `local-${Date.now()}`;
+      e3JobModes.set(failJobId, mode);
+      recordE3BridgeResult(failJobId, os.hostname(), false, result.traceLog || result.stderr || result.err.message);
       res.json({
         ok: false,
         execution: 'local-win32-error',
@@ -948,8 +949,10 @@ app.post('/api/v1/projects/:id/e3-direct-open', async (req, res) => {
     }
     diagLogger.log('SYNC', 'E3-COM', `Локальный Win32 COM выполнен (${mode})`, {
       durationMs: result.durationMs,
-      details: result.fullOut,
     });
+    const localJobId = `local-${Date.now()}`;
+    e3JobModes.set(localJobId, mode);
+    recordE3BridgeResult(localJobId, os.hostname(), true, result.traceLog || result.fullOut);
     if (mode === 'export') {
       const expPath = path.join(tmpDir, 'flux_e3_export.json');
       if (fs.existsSync(expPath)) {
