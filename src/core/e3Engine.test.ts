@@ -1,3 +1,6 @@
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
@@ -951,16 +954,20 @@ test('COM script: E3_BRIDGE_SUMMARY is emitted and parseE3BridgeSummary returns 
 });
 
 test('COM script: generated build scripts pass the VBScript static linter (when available)', (t) => {
-  const linter = '/home/claude/tools/vbslint.py';
+  const linter = fileURLToPath(new URL('../../scripts/vbslint.py', import.meta.url));
   if (!fs.existsSync(linter)) {
     t.skip('vbslint.py not available');
     return;
   }
-  const dir = fs.mkdtempSync('/tmp/vbslint-');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vbslint-'));
   for (const [name, proj] of [['seed', createSeedProject()], ['rich', createRichScriptProject()]] as const) {
     const f = `${dir}/${name}.vbs`;
     fs.writeFileSync(f, generateE3ComScript(proj, 'build'));
     const r = spawnSync('python3', [linter, f], { encoding: 'utf8' });
+    if (r.error) {
+      t.skip('python3 not available');
+      return;
+    }
     assert.ok(String(r.stdout).trim().startsWith('OK'), `${name}: ${r.stdout}${r.stderr}`);
   }
 });
