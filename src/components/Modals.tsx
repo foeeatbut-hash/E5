@@ -7,11 +7,13 @@ import {
   encodeUtf16LeWithBom,
   exportVisualSettings,
   generateE3ComScript,
+  parseE3BridgeSummary,
   parseVisualSettings,
 } from '../core/e3Engine';
 import type {
   BomRow,
   CableJournalRow,
+  E3BridgeSummary,
   E3Project,
   E3VisualSettings,
   ErcIssue,
@@ -70,6 +72,89 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
   const [showScript, setShowScript] = useState(false);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [bridgeSummary, setBridgeSummary] = useState<E3BridgeSummary | null>(null);
+  const [bridgeJobId, setBridgeJobId] = useState<string | null>(null);
+  const [bridgeLogText, setBridgeLogText] = useState('');
+  const [showBridgeLog, setShowBridgeLog] = useState(false);
+
+  const applyBridgeResult = (jobId: string | null, summary: E3BridgeSummary | null, logText: string) => {
+    setBridgeJobId(jobId);
+    setBridgeSummary(summary ?? (logText ? parseE3BridgeSummary(logText) : null));
+    setBridgeLogText(logText);
+  };
+
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch('/api/v1/e3-bridge/summary')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d?.ok && d.summary) {
+          setBridgeJobId(d.jobId || null);
+          setBridgeSummary(d.summary);
+        }
+      })
+      .catch(() => undefined);
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource('/api/sync/stream');
+      es.onmessage = (ev) => {
+        try {
+          const payload = JSON.parse(ev.data);
+          if (payload?.type === 'e3-bridge-log') {
+            applyBridgeResult(payload.jobId || null, payload.summary || null, String(payload.message || ''));
+          }
+        } catch {
+          // ignore malformed SSE payload
+        }
+      };
+    } catch {
+      // EventSource unavailable
+    }
+    return () => {
+      cancelled = true;
+      es?.close();
+    };
+  }, [open]);
+
+  const handleDownloadBridgeLog = () => {
+    if (bridgeJobId || !bridgeLogText) {
+      const a = document.createElement('a');
+      a.href = `/api/v1/e3-bridge/debug-log${bridgeJobId ? `?jobId=${encodeURIComponent(bridgeJobId)}` : ''}`;
+      a.download = 'flux_e3_com_debug.log';
+      a.click();
+      return;
+    }
+    const blob = new Blob([bridgeLogText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'flux_e3_com_debug.log';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const summaryRows: Array<[string, string, boolean]> = bridgeSummary
+    ? [
+        ['Создано листов', `${bridgeSummary.sheets}/${bridgeSummary.sheetsTotal}`, false],
+        ['Изделий из БД', String(bridgeSummary.devNative), false],
+        ['Динамических блоков', String(bridgeSummary.devBlock), false],
+        ['Уже были в проекте', String(bridgeSummary.devExisting), false],
+        ['Без символа', String(bridgeSummary.devNoSymbol), bridgeSummary.devNoSymbol > 0],
+        ['Не создано', String(bridgeSummary.devFailed), bridgeSummary.devFailed > 0],
+        [
+          'Сформировано цепей',
+          `${bridgeSummary.wires}/${bridgeSummary.wiresTotal}` +
+            (bridgeSummary.wiresGraphicOnly > 0 ? `, только графикой: ${bridgeSummary.wiresGraphicOnly}` : '') +
+            (bridgeSummary.wiresFailed > 0 ? `, ошибок: ${bridgeSummary.wiresFailed}` : ''),
+          bridgeSummary.wiresGraphicOnly > 0 || bridgeSummary.wiresFailed > 0,
+        ],
+        ['Перенесено кабелей', `${bridgeSummary.cables}/${bridgeSummary.cablesTotal}`, false],
+        ['Таблиц ПЭ3/КЖ', String(bridgeSummary.tables), false],
+        ['Выносок', String(bridgeSummary.callouts), false],
+        ['Предупреждений по атрибутам', String(bridgeSummary.attrWarn), bridgeSummary.attrWarn > 0],
+      ]
+    : [];
 
   React.useEffect(() => {
     if (!open) return;
@@ -237,6 +322,55 @@ export const ExchangeModal: React.FC<ExchangeModalProps> = ({
             {bridgeMsg && (
               <div className="p-2 rounded border border-[var(--flux-line)] bg-[var(--flux-accent-soft)] text-[length:calc(11px*var(--flux-ui-scale))] text-[var(--flux-text)]">
                 {bridgeMsg}
+              </div>
+            )}
+
+            {(bridgeSummary || bridgeLogText) && (
+              <div className="p-2.5 rounded border border-[var(--flux-line)] bg-[var(--flux-bg)] space-y-1.5 text-[length:calc(11px*var(--flux-ui-scale))]">
+                <div className="font-semibold text-[var(--flux-text)]">Результат последнего переноса в E³.series</div>
+                {bridgeSummary ? (
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
+                    {summaryRows.map(([label, value, warn]) => (
+                      <li key={label} className="flex justify-between gap-2">
+                        <span className="text-[var(--flux-text-muted)]">{label}</span>
+                        <span className={`font-mono ${warn ? 'text-amber-500 font-semibold' : 'text-[var(--flux-text)]'}`}>
+                          {value}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-amber-500">Сводка E3_BRIDGE_SUMMARY в логе не найдена — откройте лог ниже.</div>
+                )}
+                {bridgeSummary && bridgeSummary.missingAttrs.length > 0 && (
+                  <div className="p-2 rounded border border-amber-500/50 bg-amber-500/10 text-[var(--flux-text)]">
+                    Создайте эти атрибуты в БД атрибутов E3.series: {bridgeSummary.missingAttrs.join(', ')}
+                  </div>
+                )}
+                <div className="flex items-center gap-3 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={handleDownloadBridgeLog}
+                    className="inline-flex items-center gap-1 font-medium text-[var(--flux-accent)] hover:underline"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Скачать flux_e3_com_debug.log</span>
+                  </button>
+                  {bridgeLogText && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBridgeLog((v) => !v)}
+                      className="font-medium text-[var(--flux-accent)] hover:underline"
+                    >
+                      {showBridgeLog ? 'Скрыть лог' : 'Показать лог'}
+                    </button>
+                  )}
+                </div>
+                {showBridgeLog && bridgeLogText && (
+                  <pre className="p-2 max-h-44 overflow-auto rounded border border-[var(--flux-line)] bg-[var(--flux-panel,var(--flux-bg))] font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text)] leading-relaxed whitespace-pre-wrap">
+                    {bridgeLogText}
+                  </pre>
+                )}
               </div>
             )}
 

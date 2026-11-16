@@ -25,10 +25,11 @@ import {
   routeSheetWiresCleanly,
   runErc,
   serializeE3Xml,
+  parseE3BridgeSummary,
 } from './src/core/e3Engine.ts';
 import { buildOle2E3sContainer, parseE3sInput } from './src/core/e3SFormat.ts';
 import { createSeedProject } from './src/core/e3Seed.ts';
-import type { E3Device, E3Project, E3TitleBlock, ExternalWebhookConfig } from './src/core/e3Types.ts';
+import type { E3BridgeSummary, E3Device, E3Project, E3TitleBlock, ExternalWebhookConfig } from './src/core/e3Types.ts';
 import {
   buildFluxStudioLogicSource,
   buildFluxStudioManifest,
@@ -298,6 +299,20 @@ const bridgeState = {
   lastPollAt: 0,
 };
 const e3JobQueue: E3BridgeJob[] = [];
+
+interface E3BridgeJobResult {
+  jobId: string;
+  host: string;
+  ok: boolean;
+  mode: 'build' | 'export' | null;
+  summary: E3BridgeSummary | null;
+  debugLog: string;
+  finishedAt: number;
+}
+const e3JobResults = new Map<string, E3BridgeJobResult>();
+let e3LastJobId: string | null = null;
+const E3_JOB_RESULTS_MAX = 20;
+const e3JobModes = new Map<string, 'build' | 'export'>();
 
 function isBridgeOnline(): boolean {
   return Date.now() - bridgeState.lastPollAt < 12000;
@@ -736,6 +751,31 @@ app.get('/api/v1/diagnostics/logs/download', (_req, res) => {
   res.send(diagLogger.formatPlainTextReport());
 });
 
+function findE3JobResult(jobId?: string): E3BridgeJobResult | null {
+  const id = jobId || e3LastJobId;
+  return id ? e3JobResults.get(id) ?? null : null;
+}
+
+app.get('/api/v1/e3-bridge/summary', (req, res) => {
+  const r = findE3JobResult(req.query.jobId ? String(req.query.jobId) : undefined);
+  if (!r) {
+    res.status(404).json({ ok: false, error: 'Результатов переноса в E3 ещё нет.' });
+    return;
+  }
+  res.json({ ok: true, jobId: r.jobId, host: r.host, jobOk: r.ok, mode: r.mode, summary: r.summary, finishedAt: r.finishedAt });
+});
+
+app.get('/api/v1/e3-bridge/debug-log', (req, res) => {
+  const r = findE3JobResult(req.query.jobId ? String(req.query.jobId) : undefined);
+  if (!r) {
+    res.status(404).type('text/plain; charset=utf-8').send('Лог переноса в E3 не найден.');
+    return;
+  }
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  setDownloadDisposition(res, 'flux_e3_com_debug.log');
+  res.send(r.debugLog);
+});
+
 app.get('/api/v1/e3-bridge/poll', (req, res) => {
   const hostName = String(req.query.host || 'WINDOWS-E3');
   const wasOnline = isBridgeOnline();
@@ -767,18 +807,62 @@ app.post('/api/v1/e3-bridge/ack', (req, res) => {
       });
     }
   }
-  diagLogger.log(
-    ok ? 'INFO' : 'ERROR',
-    'E3-COM',
-    `Результат задания ${jobId || '?'} от ПК ${host || bridgeState.connectedHost || 'Windows'} (${ok ? 'OK' : 'FAIL'})`,
-    { details: String(message || '') }
-  );
+  const rawMessage = String(message || '');
+  const hostLabel = host || bridgeState.connectedHost || 'Windows';
+  const summary = parseE3BridgeSummary(rawMessage);
+  const jobKey = String(jobId || `job-${Date.now()}`);
+  const jobMode = e3JobModes.get(jobKey) ?? summary?.mode ?? null;
+  const isBuild = jobMode !== 'export';
+  const attrFailLines = rawMessage.split(/\r?\n/).filter((l) => l.includes("Не удалось записать атрибут '")).length;
+  e3JobResults.set(jobKey, {
+    jobId: jobKey,
+    host: hostLabel,
+    ok: Boolean(ok),
+    mode: jobMode,
+    summary,
+    debugLog: rawMessage,
+    finishedAt: Date.now(),
+  });
+  e3LastJobId = jobKey;
+  while (e3JobResults.size > E3_JOB_RESULTS_MAX) {
+    const oldest = e3JobResults.keys().next().value;
+    if (oldest === undefined) break;
+    e3JobResults.delete(oldest);
+  }
+  e3JobModes.delete(jobKey);
+
+  let level: 'INFO' | 'WARN' | 'ERROR' = 'INFO';
+  if (!ok || (isBuild && !summary) || (summary && summary.devFailed > 0)) {
+    level = 'ERROR';
+  } else if (
+    summary &&
+    (summary.attrWarn > 0 || summary.wiresFailed > 0 || summary.wiresGraphicOnly > 0 || summary.devNoSymbol > 0)
+  ) {
+    level = 'WARN';
+  } else if (!summary && attrFailLines > 0) {
+    level = 'WARN';
+  }
+  const text = summary
+    ? `Перенос в E3 (${jobKey}, ${hostLabel}): листов ${summary.sheets}/${summary.sheetsTotal}, изделий из БД ${summary.devNative}, динамических блоков ${summary.devBlock}, цепей ${summary.wires}/${summary.wiresTotal}, кабелей ${summary.cables}/${summary.cablesTotal}, предупреждений по атрибутам ${summary.attrWarn}` +
+      (summary.devFailed > 0 ? `, не создано изделий ${summary.devFailed}` : '')
+    : `Результат задания ${jobKey} от ПК ${hostLabel} (${ok ? 'OK' : 'FAIL'})${isBuild ? ': сводка E3_BRIDGE_SUMMARY не найдена в логе' : ''}`;
+  const detailParts: string[] = [];
+  if (summary) {
+    if (summary.missingAttrs.length) detailParts.push(`Отсутствуют атрибуты в БД E3: ${summary.missingAttrs.join(', ')}`);
+    if (summary.savedPath) detailParts.push(`savedPath: ${summary.savedPath}`);
+    if (summary.metaPath) detailParts.push(`metaPath: ${summary.metaPath}`);
+    detailParts.push('');
+  }
+  detailParts.push(rawMessage);
+  diagLogger.log(level, 'E3-COM', text, { details: detailParts.join('\n') });
   broadcastSseEvent({
     type: 'e3-bridge-log',
     jobId,
-    host: host || bridgeState.connectedHost || 'ПК',
+    host: hostLabel === 'Windows' ? 'ПК' : hostLabel,
     ok: Boolean(ok),
     message: String(message || (ok ? 'Выполнено в E³.series.' : 'Ошибка выполнения COM-скрипта.')),
+    summary,
+    hasDebugLog: rawMessage.length > 0,
   });
   res.json({ ok: true });
 });
@@ -901,6 +985,7 @@ app.post('/api/v1/projects/:id/e3-direct-open', async (req, res) => {
       script,
       createdAt: Date.now(),
     });
+    e3JobModes.set(jobId, mode);
     diagLogger.log('SYNC', 'E3-COM', `Задание ${jobId} (${mode}) поставлено в очередь для ${bridgeState.connectedHost}`);
     res.json({
       ok: true,
