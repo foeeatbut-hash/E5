@@ -344,3 +344,37 @@ test('packToolRailColumns and computeFocusLayoutMetrics split overflow items int
   assert.ok(constrained.toolRailGridCols >= 1);
   assert.ok(constrained.explorerLeft + constrained.explorerWidth + constrained.inspectorWidth < 900);
 });
+
+test('computeFocusLayoutMetrics expands leftPillMaxWidth cleanly for Symbol Editor tools without colliding with center tabs', () => {
+  for (const [vw, scale] of [
+    [1440, 100],
+    [1280, 100],
+    [1440, 130],
+  ] as const) {
+    const schematic = computeFocusLayoutMetrics({
+      viewportWidth: vw,
+      viewportHeight: 900,
+      uiScale: scale,
+      ribbonOpen: false,
+      explorerOpen: true,
+      inspectorCollapsed: false,
+      consoleOpen: false,
+    });
+    const ugo = computeFocusLayoutMetrics({
+      viewportWidth: vw,
+      viewportHeight: 900,
+      uiScale: scale,
+      ribbonOpen: false,
+      explorerOpen: false,
+      inspectorCollapsed: false,
+      consoleOpen: false,
+      isSymbolEditor: true,
+    });
+    assert.ok(ugo.leftPillMaxWidth > schematic.leftPillMaxWidth);
+    assert.ok(ugo.rightPillMaxWidth < schematic.rightPillMaxWidth);
+    const tabsLeft = ugo.sheetTabsCenterX - ugo.sheetTabsMaxWidth / 2;
+    const tabsRight = ugo.sheetTabsCenterX + ugo.sheetTabsMaxWidth / 2;
+    assert.ok(tabsLeft >= ugo.outerPad + ugo.leftPillMaxWidth + ugo.gutter - 1);
+    assert.ok(tabsRight <= vw - ugo.outerPad - ugo.rightPillMaxWidth - ugo.gutter + 1);
+  }
+});

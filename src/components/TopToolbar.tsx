@@ -101,12 +101,14 @@ import type {
   SchematicFontFamily,
   SheetFormat,
 } from '../core/e3Types';
+import { parseDxfToSymbolPrimitives } from '../core/dxfImporter';
 import {
   ATTRIBUTE_TEMPLATE_PRESETS,
   STROKE_STYLE_OPTIONS,
   SYMBOL_COLOR_PALETTE,
 } from '../core/symbolLibrary';
 import {
+  parseUgoBlockPayload,
   QUICK_SYMBOL_TEMPLATES,
   serializeUgoBlockPayload,
   type SymbolPresetId,
@@ -671,6 +673,8 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
 }) => {
   const isDark = project.visualSettings.theme === 'dark';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const ugoDxfInputRef = useRef<HTMLInputElement | null>(null);
+  const ugoBlkInputRef = useRef<HTMLInputElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
@@ -697,6 +701,25 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
   const [layersPopoverPos, setLayersPopoverPos] = useState<{ left: number; top?: number } | null>(null);
   const [ribbonQuickMenu, setRibbonQuickMenu] = useState<FocusQuickAccessMenuState | null>(null);
   const [menuCategory, setMenuCategory] = useState<AppMenuCategory>('file');
+  const [ugoSavedFlash, setUgoSavedFlash] = useState(false);
+  const [ugoActionFlash, setUgoActionFlash] = useState<string | null>(null);
+  const ugoFlashTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (ugoFlashTimerRef.current) window.clearTimeout(ugoFlashTimerRef.current);
+    };
+  }, []);
+
+  const flashUgoTopStatus = useCallback((msg: string, saved = false) => {
+    setUgoActionFlash(msg);
+    if (saved) setUgoSavedFlash(true);
+    if (ugoFlashTimerRef.current) window.clearTimeout(ugoFlashTimerRef.current);
+    ugoFlashTimerRef.current = window.setTimeout(() => {
+      setUgoActionFlash(null);
+      setUgoSavedFlash(false);
+    }, 2400);
+  }, []);
 
   const prevUiModeRef = useRef<UiWorkspaceMode>(uiMode);
   useEffect(() => {
@@ -732,6 +755,77 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
     }
     prevSymbolOpenRef.current = isSymbolEditorOpen;
   }, [isSymbolEditorOpen, uiMode, setRibbonCollapsed]);
+
+  const handleUgoTopSave = useCallback(() => {
+    if (!symbolWorkspace) return;
+    symbolWorkspace.onSaveCurrent();
+    flashUgoTopStatus('УГО сохранено в библиотеку', true);
+  }, [symbolWorkspace, flashUgoTopStatus]);
+
+  const handleUgoTopExportBlk = useCallback(() => {
+    if (!symbolWorkspace) return;
+    const payload = serializeUgoBlockPayload(symbolWorkspace.draft);
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const slug = (symbolWorkspace.draft.e3BlockName || symbolWorkspace.draft.name || 'ugo-block')
+      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+      .slice(0, 48);
+    a.download = `${slug || 'ugo_block'}.e3blk.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    flashUgoTopStatus(`Экспортирован блок ${slug || 'ugo_block'}.e3blk.json`);
+  }, [symbolWorkspace, flashUgoTopStatus]);
+
+  const handleUgoTopImportDxf = useCallback(
+    async (file: File) => {
+      if (!symbolWorkspace) return;
+      try {
+        const text = await file.text();
+        const d = symbolWorkspace.draft;
+        const parsed = parseDxfToSymbolPrimitives(text, {
+          gridStep: d.gridStep || 5,
+          snapToGrid: d.snapToGrid,
+        });
+        symbolWorkspace.onCommitGeometry(parsed.shapes, d.pins, {
+          width: parsed.width,
+          height: parsed.height,
+        });
+        flashUgoTopStatus(`DXF: +${parsed.stats.importedShapes} прим.`);
+      } catch (err) {
+        flashUgoTopStatus(err instanceof Error ? err.message : 'Ошибка чтения DXF');
+      }
+    },
+    [symbolWorkspace, flashUgoTopStatus]
+  );
+
+  const handleUgoTopImportBlk = useCallback(
+    async (file: File) => {
+      if (!symbolWorkspace) return;
+      try {
+        const text = await file.text();
+        const payload = parseUgoBlockPayload(text);
+        if (!payload) {
+          flashUgoTopStatus('Неверный формат .e3blk.json');
+          return;
+        }
+        if (symbolWorkspace.onImportBlockPayload) {
+          symbolWorkspace.onImportBlockPayload(payload);
+        } else {
+          symbolWorkspace.onCommitGeometry(payload.shapes, payload.pins, {
+            width: payload.width,
+            height: payload.height,
+          });
+        }
+        flashUgoTopStatus(`Загружен блок «${payload.name}»`);
+      } catch {
+        flashUgoTopStatus('Ошибка чтения .e3blk.json');
+      }
+    },
+    [symbolWorkspace, flashUgoTopStatus]
+  );
 
   useEffect(() => {
     if (ribbonCollapsed) {
@@ -867,6 +961,39 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           e.target.value = '';
         }}
       />
+      <input
+        ref={ugoDxfInputRef}
+        type="file"
+        accept=".dxf"
+        data-testid="ugo-top-import-dxf-input"
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) void handleUgoTopImportDxf(file);
+        }}
+      />
+      <input
+        ref={ugoBlkInputRef}
+        type="file"
+        accept=".e3blk.json,.json"
+        data-testid="ugo-top-import-blk-input"
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) void handleUgoTopImportBlk(file);
+        }}
+      />
+      {ugoActionFlash && (
+        <div
+          role="status"
+          data-testid="ugo-top-flash"
+          className="pointer-events-none fixed bottom-14 left-1/2 -translate-x-1/2 z-50 px-3 py-1 rounded-[7px] border border-[var(--flux-accent)]/45 flux-glass-surface shadow-lg text-[length:calc(11px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap"
+        >
+          {ugoActionFlash}
+        </div>
+      )}
 
       {/* Row 1: Focus Floating Pills | Hybrid 36px Header | Classic Emerald Header */}
       {uiMode === 'focus' ? (
@@ -878,7 +1005,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           <div
             data-testid="focus-top-left"
             style={focusLayout ? { maxWidth: focusLayout.leftPillMaxWidth } : undefined}
-            className="pointer-events-auto inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] pl-1.5 pr-2 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-hidden"
+            className="pointer-events-auto inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] pl-1.5 pr-2 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-x-auto no-scrollbar"
           >
             <button
               ref={menuBtnRef}
@@ -936,49 +1063,117 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             >
               <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
             </button>
-            {onSaveSessionNow && (
-              <button
-                type="button"
-                data-testid="toolbar-save-btn"
-                onClick={onSaveSessionNow}
-                title="Сохранить сессию в E3Flux (Ctrl+S · Ctrl+Shift+S — скачать файл .e3flux)"
-                aria-label="Сохранить сессию в E3Flux"
-                className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] shrink-0"
-              >
-                <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
-              </button>
+            {isSymbolEditorOpen && symbolWorkspace ? (
+              <>
+                <span className="h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
+                <button
+                  type="button"
+                  data-testid="ugo-top-new-symbol-btn"
+                  onClick={symbolWorkspace.onCreateNewBlankSymbol}
+                  title="Создать новое пустое УГО в новой вкладке"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>УГО</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-new-component-btn"
+                  onClick={symbolWorkspace.onCreateNewComponentFromSymbol}
+                  title="Создать новое изделие БД на базе текущего УГО"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Изделие</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-import-dxf-btn"
+                  onClick={() => ugoDxfInputRef.current?.click()}
+                  title="Импорт геометрии из DXF-файла прямо на холст УГО"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/50 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <FileCode2 className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Импорт DXF</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-import-blk-btn"
+                  onClick={() => ugoBlkInputRef.current?.click()}
+                  title="Загрузить отдельный блок библиотеки (.e3blk.json)"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/50 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Upload className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Блок .e3blk</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-export-blk-btn"
+                  onClick={handleUgoTopExportBlk}
+                  title="Экспортировать выбранное УГО в файл .e3blk.json"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/50 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Download className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Экспорт</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-save-btn"
+                  onClick={handleUgoTopSave}
+                  title="Сохранить УГО в библиотеку (Ctrl+S)"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold whitespace-nowrap shrink-0 transition-colors"
+                >
+                  {ugoSavedFlash ? <Check className="w-3 h-3 shrink-0" /> : <Save className="w-3 h-3 shrink-0" />}
+                  <span>{ugoSavedFlash ? 'Сохранено' : 'Сохранить'}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                {onSaveSessionNow && (
+                  <button
+                    type="button"
+                    data-testid="toolbar-save-btn"
+                    onClick={onSaveSessionNow}
+                    title="Сохранить сессию в E3Flux (Ctrl+S · Ctrl+Shift+S — скачать файл .e3flux)"
+                    aria-label="Сохранить сессию в E3Flux"
+                    className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[5px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] shrink-0"
+                  >
+                    <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
+                  </button>
+                )}
+                <button
+                  ref={exportBtnRef}
+                  type="button"
+                  data-testid="toolbar-export-menu-btn"
+                  aria-haspopup="menu"
+                  aria-expanded={exportMenuOpen}
+                  onClick={(e) => toggleExportMenu(e.currentTarget)}
+                  title="Экспорт и публикация (E³.series, PDF, DWG/DXF, CSV)"
+                  aria-label="Экспорт и публикация"
+                  className={`inline-flex items-center gap-0.5 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                    exportMenuOpen
+                      ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] border border-[var(--flux-accent)]/40'
+                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                  }`}
+                >
+                  <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
+                  <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                <span
+                  className="hidden lg:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0"
+                  aria-hidden="true"
+                />
+                <div
+                  data-testid="toolbar-active-filename"
+                  title={resolvedFilename}
+                  className="hidden lg:flex items-center w-[calc(140px*var(--flux-ui-scale))] shrink-0 overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))]"
+                >
+                  <span className="truncate w-full font-mono font-medium text-[var(--flux-text)]">
+                    {resolvedFilename}
+                  </span>
+                </div>
+              </>
             )}
-            <button
-              ref={exportBtnRef}
-              type="button"
-              data-testid="toolbar-export-menu-btn"
-              aria-haspopup="menu"
-              aria-expanded={exportMenuOpen}
-              onClick={(e) => toggleExportMenu(e.currentTarget)}
-              title="Экспорт и публикация (E³.series, PDF, DWG/DXF, CSV)"
-              aria-label="Экспорт и публикация"
-              className={`inline-flex items-center gap-0.5 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
-                exportMenuOpen
-                  ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] border border-[var(--flux-accent)]/40'
-                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
-              <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-            <span
-              className="hidden lg:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0"
-              aria-hidden="true"
-            />
-            <div
-              data-testid="toolbar-active-filename"
-              title={resolvedFilename}
-              className="hidden lg:flex items-center w-[calc(140px*var(--flux-ui-scale))] shrink-0 overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))]"
-            >
-              <span className="truncate w-full font-mono font-medium text-[var(--flux-text)]">
-                {resolvedFilename}
-              </span>
-            </div>
           </div>
 
           {/* Top-right floating glass pill */}
@@ -1222,47 +1417,115 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
               <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
             </button>
 
-            {onSaveSessionNow && (
-              <button
-                type="button"
-                data-testid="toolbar-save-btn"
-                onClick={onSaveSessionNow}
-                title="Сохранить сессию (Ctrl+S)"
-                aria-label="Сохранить сессию"
-                className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
-              >
-                <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
-              </button>
-            )}
-            <button
-              ref={exportBtnRef}
-              type="button"
-              data-testid="toolbar-export-menu-btn"
-              aria-haspopup="menu"
-              aria-expanded={exportMenuOpen}
-              onClick={(e) => toggleExportMenu(e.currentTarget)}
-              title="Экспорт и публикация (E³.series, PDF, DWG/DXF, CSV)"
-              aria-label="Экспорт и публикация"
-              className={`inline-flex items-center gap-0.5 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
-                exportMenuOpen
-                  ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] border border-[var(--flux-accent)]/40'
-                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
-              <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
+            {isSymbolEditorOpen && symbolWorkspace ? (
+              <>
+                <span className="h-4 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
+                <button
+                  type="button"
+                  data-testid="ugo-top-new-symbol-btn"
+                  onClick={symbolWorkspace.onCreateNewBlankSymbol}
+                  title="Создать новое пустое УГО в новой вкладке"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>УГО</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-new-component-btn"
+                  onClick={symbolWorkspace.onCreateNewComponentFromSymbol}
+                  title="Создать новое изделие БД на базе текущего УГО"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Изделие</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-import-dxf-btn"
+                  onClick={() => ugoDxfInputRef.current?.click()}
+                  title="Импорт геометрии из DXF-файла прямо на холст УГО"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <FileCode2 className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Импорт DXF</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-import-blk-btn"
+                  onClick={() => ugoBlkInputRef.current?.click()}
+                  title="Загрузить отдельный блок библиотеки (.e3blk.json)"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Upload className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Блок .e3blk</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-export-blk-btn"
+                  onClick={handleUgoTopExportBlk}
+                  title="Экспортировать выбранное УГО в файл .e3blk.json"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Download className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Экспорт</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-save-btn"
+                  onClick={handleUgoTopSave}
+                  title="Сохранить УГО в библиотеку (Ctrl+S)"
+                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[4px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold whitespace-nowrap shrink-0 transition-colors"
+                >
+                  {ugoSavedFlash ? <Check className="w-3 h-3 shrink-0" /> : <Save className="w-3 h-3 shrink-0" />}
+                  <span>{ugoSavedFlash ? 'Сохранено' : 'Сохранить'}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                {onSaveSessionNow && (
+                  <button
+                    type="button"
+                    data-testid="toolbar-save-btn"
+                    onClick={onSaveSessionNow}
+                    title="Сохранить сессию (Ctrl+S)"
+                    aria-label="Сохранить сессию"
+                    className="inline-flex items-center justify-center w-[calc(24px*var(--flux-ui-scale))] h-[calc(24px*var(--flux-ui-scale))] rounded-[4px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+                  >
+                    <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
+                  </button>
+                )}
+                <button
+                  ref={exportBtnRef}
+                  type="button"
+                  data-testid="toolbar-export-menu-btn"
+                  aria-haspopup="menu"
+                  aria-expanded={exportMenuOpen}
+                  onClick={(e) => toggleExportMenu(e.currentTarget)}
+                  title="Экспорт и публикация (E³.series, PDF, DWG/DXF, CSV)"
+                  aria-label="Экспорт и публикация"
+                  className={`inline-flex items-center gap-0.5 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[4px] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                    exportMenuOpen
+                      ? 'bg-[var(--flux-accent-soft)] text-[var(--flux-accent)] border border-[var(--flux-accent)]/40'
+                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                  }`}
+                >
+                  <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
+                  <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
 
-            <span className="hidden sm:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
-            <div
-              data-testid="toolbar-active-filename"
-              title={resolvedFilename}
-              className="hidden sm:flex items-center w-[calc(140px*var(--flux-ui-scale))] shrink-0 overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))]"
-            >
-              <span className="font-mono font-medium text-[var(--flux-text)] truncate w-full">
-                {resolvedFilename}
-              </span>
-            </div>
+                <span className="hidden sm:inline-block h-4 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
+                <div
+                  data-testid="toolbar-active-filename"
+                  title={resolvedFilename}
+                  className="hidden sm:flex items-center w-[calc(140px*var(--flux-ui-scale))] shrink-0 overflow-hidden text-[length:calc(11px*var(--flux-ui-scale))]"
+                >
+                  <span className="font-mono font-medium text-[var(--flux-text)] truncate w-full">
+                    {resolvedFilename}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex items-center justify-center flex-1 min-w-0 max-w-md">
@@ -1468,47 +1731,115 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
             >
               <Redo2 className="w-3.5 h-3.5" />
             </button>
-            {onSaveSessionNow && (
-              <button
-                type="button"
-                data-testid="toolbar-save-btn"
-                onClick={onSaveSessionNow}
-                title="Сохранить сессию (Ctrl+S)"
-                aria-label="Сохранить сессию"
-                className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
-              >
-                <Save className="w-3.5 h-3.5" />
-              </button>
-            )}
-            <button
-              ref={exportBtnRef}
-              type="button"
-              data-testid="toolbar-export-menu-btn"
-              aria-haspopup="menu"
-              aria-expanded={exportMenuOpen}
-              onClick={(e) => toggleExportMenu(e.currentTarget)}
-              title="Экспорт и публикация (E³.series, PDF, DWG/DXF, CSV)"
-              aria-label="Экспорт и публикация"
-              className={`inline-flex items-center gap-0.5 h-[calc(22px*var(--flux-ui-scale))] px-1 rounded-[2px] text-[length:calc(10px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
-                exportMenuOpen
-                  ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]'
-                  : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5" />
-              <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
+            {isSymbolEditorOpen && symbolWorkspace ? (
+              <>
+                <span className="h-3.5 w-px bg-[var(--flux-line)] mx-0.5 shrink-0" aria-hidden="true" />
+                <button
+                  type="button"
+                  data-testid="ugo-top-new-symbol-btn"
+                  onClick={symbolWorkspace.onCreateNewBlankSymbol}
+                  title="Создать новое пустое УГО в новой вкладке"
+                  className="inline-flex items-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>УГО</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-new-component-btn"
+                  onClick={symbolWorkspace.onCreateNewComponentFromSymbol}
+                  title="Создать новое изделие БД на базе текущего УГО"
+                  className="inline-flex items-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Изделие</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-import-dxf-btn"
+                  onClick={() => ugoDxfInputRef.current?.click()}
+                  title="Импорт геометрии из DXF-файла прямо на холст УГО"
+                  className="inline-flex items-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <FileCode2 className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Импорт DXF</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-import-blk-btn"
+                  onClick={() => ugoBlkInputRef.current?.click()}
+                  title="Загрузить отдельный блок библиотеки (.e3blk.json)"
+                  className="inline-flex items-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Upload className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Блок .e3blk</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-export-blk-btn"
+                  onClick={handleUgoTopExportBlk}
+                  title="Экспортировать выбранное УГО в файл .e3blk.json"
+                  className="inline-flex items-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-1.5 rounded-[2px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
+                >
+                  <Download className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
+                  <span>Экспорт</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="ugo-top-save-btn"
+                  onClick={handleUgoTopSave}
+                  title="Сохранить УГО в библиотеку (Ctrl+S)"
+                  className="inline-flex items-center gap-1 h-[calc(22px*var(--flux-ui-scale))] px-2 rounded-[2px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10px*var(--flux-ui-scale))] font-semibold whitespace-nowrap shrink-0 transition-colors"
+                >
+                  {ugoSavedFlash ? <Check className="w-3 h-3 shrink-0" /> : <Save className="w-3 h-3 shrink-0" />}
+                  <span>{ugoSavedFlash ? 'Сохранено' : 'Сохранить'}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                {onSaveSessionNow && (
+                  <button
+                    type="button"
+                    data-testid="toolbar-save-btn"
+                    onClick={onSaveSessionNow}
+                    title="Сохранить сессию (Ctrl+S)"
+                    aria-label="Сохранить сессию"
+                    className="inline-flex items-center justify-center w-[calc(22px*var(--flux-ui-scale))] h-[calc(22px*var(--flux-ui-scale))] rounded-[2px] text-[var(--flux-text-muted)] hover:text-[var(--flux-accent)] hover:bg-[var(--flux-hover)] transition-colors shrink-0"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  ref={exportBtnRef}
+                  type="button"
+                  data-testid="toolbar-export-menu-btn"
+                  aria-haspopup="menu"
+                  aria-expanded={exportMenuOpen}
+                  onClick={(e) => toggleExportMenu(e.currentTarget)}
+                  title="Экспорт и публикация (E³.series, PDF, DWG/DXF, CSV)"
+                  aria-label="Экспорт и публикация"
+                  className={`inline-flex items-center gap-0.5 h-[calc(22px*var(--flux-ui-scale))] px-1 rounded-[2px] text-[length:calc(10px*var(--flux-ui-scale))] font-medium transition-colors shrink-0 ${
+                    exportMenuOpen
+                      ? 'bg-[var(--flux-sel)] text-[var(--flux-accent)]'
+                      : 'text-[var(--flux-text-muted)] hover:text-[var(--flux-text)] hover:bg-[var(--flux-hover)]'
+                  }`}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <ChevronDown className={`w-2.5 h-2.5 opacity-70 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
 
-            <span className="hidden sm:inline-block h-3.5 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
-            <div
-              data-testid="toolbar-active-filename"
-              title={resolvedFilename}
-              className="hidden sm:flex items-center w-[calc(140px*var(--flux-ui-scale))] shrink-0 overflow-hidden text-[length:calc(10.5px*var(--flux-ui-scale))]"
-            >
-              <span className="font-mono font-medium text-[var(--flux-text)] truncate w-full">
-                {resolvedFilename}
-              </span>
-            </div>
+                <span className="hidden sm:inline-block h-3.5 w-px bg-[var(--flux-line)] mx-1 shrink-0" aria-hidden="true" />
+                <div
+                  data-testid="toolbar-active-filename"
+                  title={resolvedFilename}
+                  className="hidden sm:flex items-center w-[calc(140px*var(--flux-ui-scale))] shrink-0 overflow-hidden text-[length:calc(10.5px*var(--flux-ui-scale))]"
+                >
+                  <span className="font-mono font-medium text-[var(--flux-text)] truncate w-full">
+                    {resolvedFilename}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex-1 min-w-0" />

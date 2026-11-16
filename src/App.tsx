@@ -632,39 +632,6 @@ export default function App() {
     }
   }, [uiMode]);
 
-  const focusLayout = useMemo(
-    () =>
-      computeFocusLayoutMetrics({
-        viewportWidth: viewportSize.width,
-        viewportHeight: viewportSize.height,
-        uiScale,
-        ribbonOpen: focusRibbonOpen,
-        explorerOpen: focusExplorerOpen,
-        inspectorCollapsed: focusInspectorCollapsed,
-        consoleOpen: focusConsoleOpen,
-        showMinimap: isMinimapEnabled(project.visualSettings),
-        railItemCount: focusQuickAccessIds.length,
-        railItemIds: focusQuickAccessIds,
-        explorerWidthOverride: focusPanelSizes.explorerWidth,
-        inspectorWidthOverride: focusPanelSizes.inspectorWidth,
-        consoleHeightOverride: focusPanelSizes.consoleHeight,
-      }),
-    [
-      viewportSize.width,
-      viewportSize.height,
-      uiScale,
-      focusRibbonOpen,
-      focusExplorerOpen,
-      focusInspectorCollapsed,
-      focusConsoleOpen,
-      project.visualSettings.showMinimap,
-      focusQuickAccessIds,
-      focusPanelSizes.explorerWidth,
-      focusPanelSizes.inspectorWidth,
-      focusPanelSizes.consoleHeight,
-    ]
-  );
-
   const focusMultiCoordsRef = useRef<HTMLSpanElement | null>(null);
   const handleActiveViewportCoordsText = useCallback((coordsText: string) => {
     if (focusMultiCoordsRef.current) {
@@ -817,6 +784,41 @@ export default function App() {
     const savedAt = saveSymbolWorkspaceAutosave(symbolTabsState);
     setUgoAutosavedAt(savedAt);
   }, [symbolTabsState]);
+
+  const focusLayout = useMemo(
+    () =>
+      computeFocusLayoutMetrics({
+        viewportWidth: viewportSize.width,
+        viewportHeight: viewportSize.height,
+        uiScale,
+        ribbonOpen: focusRibbonOpen,
+        explorerOpen: focusExplorerOpen,
+        inspectorCollapsed: focusInspectorCollapsed,
+        consoleOpen: focusConsoleOpen,
+        showMinimap: isMinimapEnabled(project.visualSettings),
+        railItemCount: focusQuickAccessIds.length,
+        railItemIds: focusQuickAccessIds,
+        explorerWidthOverride: focusPanelSizes.explorerWidth,
+        inspectorWidthOverride: focusPanelSizes.inspectorWidth,
+        consoleHeightOverride: focusPanelSizes.consoleHeight,
+        isSymbolEditor: symbolDraft.open,
+      }),
+    [
+      viewportSize.width,
+      viewportSize.height,
+      uiScale,
+      focusRibbonOpen,
+      focusExplorerOpen,
+      focusInspectorCollapsed,
+      focusConsoleOpen,
+      project.visualSettings.showMinimap,
+      focusQuickAccessIds,
+      focusPanelSizes.explorerWidth,
+      focusPanelSizes.inspectorWidth,
+      focusPanelSizes.consoleHeight,
+      symbolDraft.open,
+    ]
+  );
 
   const [logs, setLogs] = useState<ProcessLogEntry[]>(() => [
     {

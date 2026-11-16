@@ -2,19 +2,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowRight,
-  Cpu,
   FilePlus2,
-  FolderKanban,
   FolderOpen,
   Layers,
   LayoutGrid,
   List,
   Moon,
-  PenTool,
   Pin,
   PinOff,
   Search,
-  Share2,
   Sun,
   Trash2,
   Upload,
@@ -637,164 +633,25 @@ export const StartMenuHub: React.FC<StartMenuHubProps> = ({
                 </span>
               </button>
 
-              {/* Dedicated Standalone Template Workspace Button */}
               <button
                 type="button"
-                data-testid="start-hub-nav-templates"
+                data-testid="start-hub-open-file-btn"
                 onPointerMove={trackWaveCursor}
                 onMouseEnter={(e) => bindHoverTarget(e.currentTarget, 0.72)}
                 onMouseLeave={() => bindHoverTarget(null)}
-                onClick={() => handleSectionSelect('templates')}
-                aria-pressed={activeLayer === 'templates'}
-                className={`antigravity-wave-row w-full h-[calc(34px*var(--flux-ui-scale))] px-3 rounded-[7px] border text-left flex items-center justify-between gap-2 transition-colors ${
-                  activeLayer === 'templates'
-                    ? 'border-[var(--flux-accent)]/60 bg-[var(--flux-accent-soft)]/55 text-[var(--flux-text)]'
-                    : 'border-[var(--flux-line)] bg-[var(--flux-surface-alt)]/70 hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
-                }`}
+                onClick={() => fileInputRef.current?.click()}
+                className="antigravity-wave-row w-full px-3 py-2 rounded-[7px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)]/70 hover:bg-[var(--flux-hover)] text-left flex items-center justify-between gap-2 transition-colors"
               >
                 <span className="inline-flex items-center gap-2 min-w-0">
-                  <Layers className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                  <span className="text-[length:calc(12px*var(--flux-ui-scale))] font-semibold truncate">
-                    Шаблоны проектов
+                  <Upload className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
+                  <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
+                    Открыть с диска
                   </span>
                 </span>
-                <span className="font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                  {customTemplates.length > 0 ? `${customTemplates.length} своих` : 'мастерская'}
+                <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
+                  .e3flux / .e3s
                 </span>
               </button>
-
-              <div className="grid grid-cols-1 gap-1 pt-1 border-t border-[var(--flux-line)]/70 antigravity-wave-cascade">
-                <button
-                  type="button"
-                  data-testid="start-hub-nav-projects"
-                  onPointerMove={trackWaveCursor}
-                  onClick={() => handleSectionSelect('hub')}
-                  aria-pressed={activeLayer === 'projects'}
-                  className={`relative antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] text-left flex items-center justify-between gap-2 transition-colors ${
-                    activeLayer === 'projects'
-                      ? 'text-[var(--flux-text)] font-semibold'
-                      : 'hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
-                  }`}
-                >
-                  {activeLayer === 'projects' && (
-                    <motion.span
-                      layoutId="start-hub-nav-active"
-                      transition={{ type: 'spring', stiffness: 440, damping: 34 }}
-                      className="absolute inset-0 rounded-[6px] bg-[var(--flux-accent-soft)]/60 border border-[var(--flux-accent)]/30"
-                      aria-hidden="true"
-                    />
-                  )}
-                  <span className="relative z-10 inline-flex items-center gap-2 min-w-0">
-                    <FolderKanban className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium truncate">
-                      Проекты и обзор
-                    </span>
-                  </span>
-                  <span className="relative z-10 font-mono tabular-nums text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                    {effectiveRecentEntries.length}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="start-hub-open-file-btn"
-                  onPointerMove={trackWaveCursor}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] hover:bg-[var(--flux-hover)] text-left flex items-center justify-between gap-2"
-                >
-                  <span className="inline-flex items-center gap-2 min-w-0">
-                    <Upload className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
-                      Открыть с диска
-                    </span>
-                  </span>
-                  <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                    .e3flux / .e3s
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="start-hub-hvac-wizard-btn"
-                  onPointerMove={trackWaveCursor}
-                  onClick={() => handleSectionSelect('hvac')}
-                  aria-pressed={activeLayer === 'hvac'}
-                  className={`relative antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] text-left flex items-center justify-between gap-2 transition-colors ${
-                    activeLayer === 'hvac'
-                      ? 'text-[var(--flux-text)] font-semibold'
-                      : 'hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
-                  }`}
-                >
-                  {activeLayer === 'hvac' && (
-                    <motion.span
-                      layoutId="start-hub-nav-active"
-                      transition={{ type: 'spring', stiffness: 440, damping: 34 }}
-                      className="absolute inset-0 rounded-[6px] bg-[var(--flux-accent-soft)]/60 border border-[var(--flux-accent)]/30"
-                      aria-hidden="true"
-                    />
-                  )}
-                  <span className="relative z-10 inline-flex items-center gap-2 min-w-0">
-                    <Cpu className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium truncate">
-                      Мастер ФСА / ОВиК
-                    </span>
-                  </span>
-                  <span className="relative z-10 font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                    автономно
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="start-hub-symbol-editor-btn"
-                  onPointerMove={trackWaveCursor}
-                  onMouseEnter={(e) => bindHoverTarget(e.currentTarget, 0.72)}
-                  onMouseLeave={() => bindHoverTarget(null)}
-                  onClick={() => triggerGridLockTransition(onOpenGlobalUgoWorkspace)}
-                  className="antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] hover:bg-[var(--flux-hover)] text-left flex items-center justify-between gap-2 transition-colors"
-                >
-                  <span className="inline-flex items-center gap-2 min-w-0">
-                    <PenTool className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] truncate">
-                      Редактор УГО и база
-                    </span>
-                  </span>
-                  <span className="font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                    холст УГО
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="start-hub-exchange-btn"
-                  onPointerMove={trackWaveCursor}
-                  onClick={() => handleSectionSelect('exchange')}
-                  aria-pressed={activeLayer === 'exchange'}
-                  className={`relative antigravity-wave-row w-full px-2.5 py-2 rounded-[6px] text-left flex items-center justify-between gap-2 transition-colors ${
-                    activeLayer === 'exchange'
-                      ? 'text-[var(--flux-text)] font-semibold'
-                      : 'hover:bg-[var(--flux-hover)] text-[var(--flux-text)]'
-                  }`}
-                >
-                  {activeLayer === 'exchange' && (
-                    <motion.span
-                      layoutId="start-hub-nav-active"
-                      transition={{ type: 'spring', stiffness: 440, damping: 34 }}
-                      className="absolute inset-0 rounded-[6px] bg-[var(--flux-accent-soft)]/60 border border-[var(--flux-accent)]/30"
-                      aria-hidden="true"
-                    />
-                  )}
-                  <span className="relative z-10 inline-flex items-center gap-2 min-w-0">
-                    <Share2 className="w-3.5 h-3.5 text-[var(--flux-accent)] shrink-0" />
-                    <span className="text-[length:calc(11.5px*var(--flux-ui-scale))] font-medium truncate">
-                      Центр обмена E³.series
-                    </span>
-                  </span>
-                  <span className="relative z-10 font-mono text-[length:calc(10px*var(--flux-ui-scale))] text-[var(--flux-text-muted)] shrink-0">
-                    COM / XML
-                  </span>
-                </button>
-              </div>
             </motion.div>
 
             {/* Quick CAD Templates */}
