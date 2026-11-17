@@ -155,20 +155,43 @@ export function openOrFocusSymbolTab(
   state: SymbolTabsState,
   draft: SymbolWorkspaceDraft,
   origin?: SymbolWorkspaceOrigin,
-  options?: { forceNewTab?: boolean }
+  options?: { forceNewTab?: boolean; refreshExisting?: 'always' | 'ifClean' }
 ): SymbolTabsState {
   const resolvedOrigin = origin ?? state.origin;
   const openDraft: SymbolWorkspaceDraft = { ...draft, open: true };
+  const refreshMode = options?.refreshExisting ?? 'ifClean';
 
   if (!options?.forceNewTab) {
     const existingIdx = findMatchingTabIndex(state.tabs, openDraft);
     if (existingIdx >= 0) {
       const existing = state.tabs[existingIdx];
+      const shouldRefresh =
+        refreshMode === 'always' || (refreshMode === 'ifClean' && !existing.draft.dirty);
+      const nextTabs = shouldRefresh
+        ? state.tabs.map((tab, idx) =>
+            idx === existingIdx
+              ? {
+                  ...tab,
+                  draft: {
+                    ...openDraft,
+                    open: true,
+                    tool: tab.draft.tool,
+                    activeStyle: openDraft.activeStyle || tab.draft.activeStyle,
+                    gridStep: openDraft.gridStep || tab.draft.gridStep,
+                    snapToGrid: tab.draft.snapToGrid,
+                  },
+                  undoStack: [],
+                  redoStack: [],
+                }
+              : tab
+          )
+        : state.tabs;
       return {
         ...state,
         open: true,
         origin: resolvedOrigin,
         activeTabId: existing.tabId,
+        tabs: nextTabs,
       };
     }
   }

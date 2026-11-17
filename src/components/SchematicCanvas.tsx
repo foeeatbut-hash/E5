@@ -83,9 +83,11 @@ import type {
   CadLayerStateMap,
   CadTool,
   CatalogItem,
+  CustomSymbolSpec,
   E3Annotation,
   E3Device,
   E3Project,
+  E3SymbolDef,
   E3Wire,
   PinDirection,
 } from '../core/e3Types';
@@ -143,6 +145,7 @@ interface InPlaceEditState {
 interface SchematicCanvasProps {
   project: E3Project;
   catalog: CatalogItem[];
+  symbolLibrary?: E3SymbolDef[];
   activeSheetId: string;
   openSheetIds?: string[];
   viewportIndex?: number;
@@ -253,6 +256,7 @@ interface SchematicCanvasProps {
 export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
   project,
   catalog,
+  symbolLibrary,
   activeSheetId,
   openSheetIds,
   viewportIndex = 0,
@@ -4008,10 +4012,24 @@ export const SchematicCanvas: React.FC<SchematicCanvasProps> = React.memo(({
               <g data-testid="layer-group-devices">
                 {curVisibleDevices.map((device) => {
                   const link = device.category === 'offpage_ref' ? offPageLinks.get(device.id) : undefined;
+                  const resolvedSymSource =
+                    !device.customSymbol || device.customSymbol.shapes.length === 0
+                      ? (symbolLibrary && symbolLibrary.length > 0 ? symbolLibrary : project.symbolLibrary || []).find(
+                          (sym) =>
+                            sym.isCustom &&
+                            sym.shapes.length > 0 &&
+                            ((device.symbolId && sym.id === device.symbolId) ||
+                              (device.e3BlockName && sym.e3BlockName === device.e3BlockName))
+                        )
+                      : undefined;
+                  const resolvedCustomSymbol: CustomSymbolSpec | undefined = resolvedSymSource
+                    ? { shapes: resolvedSymSource.shapes, showBodyBorder: false }
+                    : undefined;
                   return (
                     <SchematicSymbol
                       key={device.id}
                       device={device}
+                      resolvedCustomSymbol={resolvedCustomSymbol}
                       selected={selectedDeviceIdSet.has(device.id)}
                       locked={devicesLocked}
                       wiresLocked={wiresLocked || !wiresVisible}

@@ -1,0 +1,49 @@
+﻿=== 11/16/2026 13:53:26 mode= ===
+DBE 2023
+SetEnableInteractiveDialogs(0) = 0
+Backup: C:\Users\Public\Documents\Zuken\E3.series_2022\cdb\symbols.mdb.bak_E3ProMax
+Backup: C:\Users\Public\Documents\Zuken\E3.series_2022\cdb\components.mdb.bak_E3ProMax
+Tablitsy SymbolDB: DatabaseInfo, FUNCTION_ATTRIBUTES, FUNCTIONAL_PORTS, FUNCTIONAL_UNIT_STATES, FUNCTIONAL_UNITS, LOCKINFO, SheetInformation, SYMBOL_FUNCTION, SYMBOL_STATES, SymbolAttribute, SymbolData, SymbolDimension, SymbolGraphic, SymbolNodes, SymbolPoints, SymbolText
+  [DatabaseInfo] Description,Version,MINDBDLLVERSION
+  [FUNCTION_ATTRIBUTES] NAME,ID,ATTRIBUTE_NAME,COPY,ATTRIBUTE_VALUE,PORT_NUMBER,STATE_ID
+  [FUNCTIONAL_PORTS] NAME,ID,COPY,PORT,FLAGS
+  [FUNCTIONAL_UNIT_STATES] ID,NAME,FU_NAME,FU_ID,ORDER_NUM,FLAGS
+  [FUNCTIONAL_UNITS] NAME,ID,SYMBOL,TYPE
+  [LOCKINFO] ENTRY,VERSION,TYPE,USER,HOST,PID,TIME
+  [SheetInformation] DrawingArea,ENTRY,HorzLayout,LayoutType,Orientation,SheetType,VertLayout,PRINT_AREA
+  [SYMBOL_FUNCTION] LPNTR,LBNNUM,FUNAME,FUID,FUPORT,FUSUBID
+  [SYMBOL_STATES] ID,NAME,SYMBOL_ID,FU_STATE_ID,FUSUBID,ORDER_NUM,FLAGS
+  [SymbolAttribute] AttributeName,AttributeValue,Copy,ENTRY,VERSION,ID
+  [SymbolData] Class,DATEMAIN,Description,ENTRY,ENTRYTYP,LASTUPDT,LPNTR,LSHDES,LSHTYP,Norm,SYMINDEX,VERSION,VersionText,VSTATUS,FLAGS2,ID,FLAGS,SUBTYP
+  [SymbolDimension] ENTRY,LSHX1,LSHX2,LSHY1,LSHY2
+  [SymbolGraphic] COPY,ENTRY,Fillcolor,Fillmode,GraphicData,GraphicLevel,GraphicType,HatchData,Linecolor,Linetype,Linewidth,Flags,ID,STATE_ID
+  [SymbolNodes] COPY,ENTRY,Function,LBNNUM,LBSTUB,LIBNTY,LIBNX,LIBNY
+  [SymbolPoints] ENTRY,COPY,FLAGS,POSX,POSY
+  [SymbolText] COPY,ENTRY,Flags,FontName,FontStyle,LBNNUM,TextColor,THT,TJUST,TLEV,TMOD,TROT,TSTR,TTYPE,TX,TY,Flags2,SIZEX,SIZEY,Hyperlink,SOURCE
+NewSymbol(FLUX_TEST,1,"","",0) = 0
+GetActiveSymbolId = 17666
+Sym.SetId = 17666
+Sym.GetName = FLUX_TEST
+Sym.GetSymbolType = 14
+Graph.CreateRectangle(sid,0,0,20,10) = 18963
+Graph.CreateLine(sid,-5,5,0,5) = 18970
+Graph.CreateLine(sid,20,5,25,5) = 18257
+Text.Create(sid,0,2,2,FLUX) = -2
+Sym.ImportDXF(dxf,1,0,0,0,"",0) = -4
+Sym.PlaceSymbol(NODE,1,0,5,'',0) = -4
+Sym.PlaceSymbol(PIN,1,0,5,'',0) = -4
+Sym.PlaceSymbol(CONNECT,1,0,5,'',0) = -4
+Sym.PlaceSymbol(ANSCHLUSS,1,0,5,'',0) = -4
+Sym.GetNodeIds = 0
+Sym.GetGraphicIds = 3
+Sym.Save = 1
+NewComponent(FLUX_TEST_COMP,1,"","",0) = 0
+GetActiveComponentId = 18267
+Comp.SetId = 18267
+Comp.GetName = FLUX_TEST_COMP
+Comp.GetComponentType = 1
+Comp.AddAttributeValue(Description) = 17311
+Comp.Save = 1
+GetErrorCount = 0
+GetWarningCount = 9
+=== konec ===

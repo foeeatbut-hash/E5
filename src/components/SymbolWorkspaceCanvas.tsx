@@ -222,6 +222,8 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
   const activeTabKey = activeTabId || draft.symbolId;
 
   const [polyDraftPoints, setPolyDraftPoints] = useState<Array<{ x: number; y: number }>>([]);
+  const polyDraftPointsRef = useRef<Array<{ x: number; y: number }>>(polyDraftPoints);
+  polyDraftPointsRef.current = polyDraftPoints;
   const [dragState, setDragState] = useState<DragInteraction | null>(null);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [copyName, setCopyName] = useState('');
@@ -239,7 +241,49 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
     importFlashTimerRef.current = window.setTimeout(() => setImportFlash(null), 2800);
   }, []);
 
+  const flushPendingPolyline = useCallback(() => {
+    const pts = polyDraftPointsRef.current;
+    if (pts.length < 2) {
+      if (pts.length > 0) setPolyDraftPoints([]);
+      return null;
+    }
+    const nextShape: CustomSymbolShape = {
+      id: `sh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+      kind: 'polyline',
+      points: pts,
+      closed: false,
+      filled: false,
+      strokeColor: draft.activeStyle.strokeColor,
+      strokeWidth: draft.activeStyle.strokeWidth,
+      strokeStyle: draft.activeStyle.strokeStyle,
+    };
+    const nextShapes = [...draft.shapes, nextShape];
+    polyDraftPointsRef.current = [];
+    setPolyDraftPoints([]);
+    workspace.onCommitGeometry(nextShapes, draft.pins);
+    workspace.onSelectShape(nextShape.id);
+    return {
+      shapes: nextShapes,
+      pins: draft.pins,
+      width: draft.width,
+      height: draft.height,
+    };
+  }, [draft.activeStyle, draft.shapes, draft.pins, draft.width, draft.height, workspace]);
+
+  const flushPendingPolylineRef = useRef(flushPendingPolyline);
+  flushPendingPolylineRef.current = flushPendingPolyline;
+
+  useEffect(() => {
+    const reg = workspace.onRegisterPreSaveFlush;
+    if (!reg) return;
+    reg(() => flushPendingPolylineRef.current());
+    return () => {
+      reg(null);
+    };
+  }, [workspace.onRegisterPreSaveFlush]);
+
   const triggerSaveCurrent = useCallback(() => {
+    flushPendingPolylineRef.current();
     workspace.onSaveCurrent();
     setSavedFlash(true);
     if (savedFlashTimerRef.current) window.clearTimeout(savedFlashTimerRef.current);
@@ -767,6 +811,28 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
     setDragState(null);
   };
 
+  const handleWindowDragMoveRef = useRef<(e: MouseEvent) => void>(() => {});
+  handleWindowDragMoveRef.current = (e: MouseEvent) => {
+    handleCanvasMouseMove(e as unknown as React.MouseEvent<SVGSVGElement>);
+  };
+  const handleWindowDragUpRef = useRef<() => void>(() => {});
+  handleWindowDragUpRef.current = handleCanvasMouseUp;
+  const isDragging = dragState !== null;
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMove = (e: MouseEvent) => handleWindowDragMoveRef.current(e);
+    const onUp = () => handleWindowDragUpRef.current();
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('blur', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('blur', onUp);
+    };
+  }, [isDragging]);
+
   const renderedWidth = dragState?.kind === 'resize_bounds' ? dragState.curW : draft.width;
   const renderedHeight = dragState?.kind === 'resize_bounds' ? dragState.curH : draft.height;
 
@@ -1217,7 +1283,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             transform: 'translateX(-50%)',
             maxWidth: focusLayout.selectionBarMaxWidth,
           }}
-          className="no-print absolute z-20 inline-flex flex-wrap items-center justify-center gap-[3px] min-h-[calc(34px*var(--flux-ui-scale))] py-1 px-1.5 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg transition-[top,left] duration-150"
+          className="no-print absolute z-20 inline-flex flex-nowrap items-center gap-[3px] h-[calc(34px*var(--flux-ui-scale))] px-1.5 rounded-[9px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg overflow-x-auto no-scrollbar transition-[top,left] duration-150"
         >
           {/* Color Swatches */}
           <div className="flex items-center gap-0.5 shrink-0">
@@ -1285,7 +1351,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
             onChange={(e) =>
               workspace.onUpdateStyle({ strokeStyle: e.target.value as CustomSymbolStrokeStyle })
             }
-            className="hidden sm:inline-block h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(76px*var(--flux-ui-scale))] shrink-0"
+            className="hidden xl:inline-block h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(76px*var(--flux-ui-scale))] shrink-0"
           >
             {STROKE_STYLE_OPTIONS.map((opt) => (
               <option key={opt.id} value={opt.id}>
@@ -1340,7 +1406,7 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
               const v = e.target.value as SymbolPresetId | '';
               if (v) workspace.onApplyPresetShapes(v);
             }}
-            className="h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(88px*var(--flux-ui-scale))] shrink-0"
+            className="h-[calc(24px*var(--flux-ui-scale))] px-1 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] text-[length:calc(10.5px*var(--flux-ui-scale))] text-[var(--flux-text)] max-w-[calc(84px*var(--flux-ui-scale))] shrink-0"
           >
             <option value="">Заготовка…</option>
             <option value="contactor">Контактор KM</option>
@@ -1355,17 +1421,6 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
 
           <button
             type="button"
-            data-testid="symbol-ws-import-dxf-btn"
-            onClick={() => dxfFileInputRef.current?.click()}
-            title="Импортировать геометрию из DXF в примитивы УГО"
-            className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 transition-colors"
-          >
-            <FileCode2 className="w-3 h-3 text-[var(--flux-accent)]" />
-            <span>Импорт DXF</span>
-          </button>
-
-          <button
-            type="button"
             data-testid="symbol-ws-save-copy-btn"
             onClick={openSaveAsDialog}
             title="Сохранить копию УГО и изделия как новый элемент базы"
@@ -1377,24 +1432,36 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
 
           <button
             type="button"
-            data-testid="symbol-ws-export-json-btn"
-            onClick={exportBlockJson}
-            aria-label="Экспорт блока УГО в отдельный файл .e3blk.json"
-            title="Сохранить выбранное УГО в отдельный файл библиотеки (.e3blk.json)"
-            className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 transition-colors"
-          >
-            <Download className="w-3 h-3 text-[var(--flux-accent)]" />
-            <span>Экспорт блока</span>
-          </button>
-
-          <button
-            type="button"
             data-testid="symbol-ws-save-btn"
             onClick={triggerSaveCurrent}
             className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold whitespace-nowrap shrink-0 transition-colors"
           >
             {savedFlash ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
             <span>{savedFlash ? 'Сохранено' : 'Сохранить'}</span>
+          </button>
+
+          {origin === 'project' && (
+            <button
+              type="button"
+              data-testid="symbol-ws-place-btn"
+              onClick={workspace.onPlaceOnActiveSheet}
+              title="Сохранить блок и разместить изделие на активном листе схемы"
+              className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[var(--flux-text)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 transition-colors"
+            >
+              <Plus className="w-3 h-3 text-[var(--flux-accent)]" />
+              <span>На схему</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            data-testid="symbol-ws-close-btn"
+            onClick={workspace.onCloseWorkspace}
+            title={origin === 'hub' ? 'Выйти в стартовое меню' : 'Закрыть редактор УГО и вернуться на схему'}
+            className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium whitespace-nowrap shrink-0 transition-colors"
+          >
+            <X className="w-3 h-3" />
+            <span>{origin === 'hub' ? 'В меню' : 'Закрыть'}</span>
           </button>
         </div>
       )}
@@ -1494,7 +1561,6 @@ export const SymbolWorkspaceCanvas: React.FC<SymbolWorkspaceCanvasProps> = React
           }`}
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
-          onMouseUp={handleCanvasMouseUp}
           onDoubleClick={() => {
             if (draft.tool === 'polyline' && polyDraftPoints.length >= 2) {
               finalizePolyline(polyDraftPoints, false);

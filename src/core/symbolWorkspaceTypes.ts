@@ -131,6 +131,11 @@ export interface SymbolWorkspaceActions {
   onCreateNewComponentFromSymbol: () => void;
   onSaveCurrent: () => void;
   onSaveAsCopy: (copyName: string, copyBlockName?: string, copyArticle?: string) => void;
+  onRegisterPreSaveFlush?: (
+    flusher:
+      | (() => Partial<Pick<SymbolWorkspaceDraft, 'shapes' | 'pins' | 'width' | 'height'>> | null)
+      | null
+  ) => void;
   onPlaceOnActiveSheet: () => void;
   onDeleteCustomSymbol: (symbolId: string) => void;
   onCloseWorkspace: () => void;

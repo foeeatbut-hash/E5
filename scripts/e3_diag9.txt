@@ -1,0 +1,5 @@
+﻿=== 11/16/2026 15:37:10 ===
+### Poisk 'FLUX_REF'
+### Poisk 'FLUX_TEST_COMP'
+### Poisk 'FLUX_TEST'
+=== konec ===

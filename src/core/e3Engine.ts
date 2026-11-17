@@ -1,3 +1,4 @@
+// [AI-LOCKED] Рабочий отлаженный модуль переноса E3.series. НЕ изменять без явного запроса пользователя (см. AI_DO_NOT_TOUCH_E3_SCRIPTS.md).
 import { CAD_LAYER_ORDER, resolveCadLayers } from './cadLayers.ts';
 import { exportSheetsToDxf } from './dxfExporter.ts';
 import { E3_CATALOG } from './e3Catalog.ts';
@@ -30,6 +31,8 @@ import type {
   SignalType,
   TerminalPlanRow,
 } from './e3Types.ts';
+import { buildComponentGroups, cableEntryName, componentEntryFor, dbeSymbolName, gostFormatName } from './e3DbNames.ts';
+import { buildGostSheetGeometry, estimateStampTextWidth, fitStampCellText } from './gostFrame.ts';
 import { buildGostTableRenderModel } from './gostTables.ts';
 import { getSheetRevisionNumber, normalizeProjectSheetRevisions } from './sheetRevisions.ts';
 import { resolveDynamicSymbolText, sampleArcPoints } from './symbolLibrary.ts';
@@ -2828,6 +2831,8 @@ export function generateE3ComScript(
   const sheets = project?.sheets || [];
   const devices = project?.devices || [];
   const cables = project?.cables || [];
+  // Компоненты/символы, которые E3ProMax заводит в БД E3 (scripts/e3SymbolsToDbe.ts): то же именование
+  const dbGroups = buildComponentGroups(devices);
   const wires = project?.wires || [];
 
   const r2 = (n: number): number => Math.round((Number(n) || 0) * 100) / 100;
@@ -2879,13 +2884,42 @@ export function generateE3ComScript(
       const stampLines = stampAttrPairs(s)
         .map(([k, v]) => `    Call SafeSetSheetAttr(Sheet, ${varName}, "${vbsEsc(s.number + '. ' + s.name)}", "${vbsEsc(k)}", "${vbsEsc(v)}")`)
         .join('\n');
-      return `  ${varName} = CreateOrGetSheet(Prj, Sheet, "${vbsEsc(s.number + '. ' + s.name)}", "${vbsEsc(s.format)}", detectedFmt, ${idx === 1 ? 'True' : 'False'}, exIds, exCnt)
+      // Значения штампа: при своём ГОСТ-формате рамка и надписи граф — в символе формата, здесь только значения
+      let stampValueLines = '';
+      try {
+        if (project) {
+          const geo = buildGostSheetGeometry(s, project);
+          stampValueLines = geo.stamp.cells
+            .filter((c) => c.fieldKey && String(c.text || '').trim())
+            .flatMap((c) => {
+              const fit = fitStampCellText(String(c.text), c.width, c.height, c.fontSize || 8, c.bold);
+              const n = fit.lines.length || 1;
+              const top = c.y + (c.height - n * fit.lineHeight) / 2;
+              return fit.lines.map((ln, i) => {
+                const w = estimateStampTextWidth(ln, fit.fontSize, c.bold);
+                const tx = c.align === 'center' ? c.x + (c.width - w) / 2 : c.x + 4;
+                const ty = top + (i + 0.8) * fit.lineHeight;
+                return `    Call DrawCustomText(Graph, ${varName}, MapX(shX1_${idx}, shX2_${idx}, ${r2(tx)}, ${s.width || 1400}), MapY(shY1_${idx}, shY2_${idx}, ${r2(ty)}, ${s.height || 920}), "${vbsEsc(ln)}", Round(${r2(fit.fontSize * 0.75)} * (shX2_${idx} - shX1_${idx}) / ${s.width || 1400}, 2), 0, gIdsS, gCntS)`;
+              });
+            })
+            .join('\n');
+        }
+      } catch (e) {
+        stampValueLines = `    ' значения штампа не сформированы: ${vbsEsc(String((e as Error)?.message || e)).slice(0, 120)}`;
+      }
+      return `  gPreferFmt = "${vbsEsc(project ? gostFormatName(s, project) : '')}"
+  ${varName} = CreateOrGetSheet(Prj, Sheet, "${vbsEsc(s.number + '. ' + s.name)}", "${vbsEsc(s.format)}", detectedFmt, ${idx === 1 ? 'True' : 'False'}, exIds, exCnt)
   If ${varName} > 0 Then
     sheetsOk = sheetsOk + 1
     gSheetFluxIds(CStr(${varName})) = "${vbsEsc(s.id)}"
     Call GetSheetBounds(Sheet, ${varName}, "${vbsEsc(s.format)}", shX1_${idx}, shY1_${idx}, shX2_${idx}, shY2_${idx})
     gSheetBounds("${vbsEsc(s.id)}") = Array(${varName}, shX1_${idx}, shY1_${idx}, shX2_${idx}, shY2_${idx})
+    If gLastSheetFlx Then
+      gCntS = 0 : ReDim gIdsS(64)
+${stampValueLines}
+    Else
     Call DrawGostFrame(Graph, ${varName}, shX1_${idx}, shY1_${idx}, shX2_${idx}, shY2_${idx}, "${vbsEsc(tb.documentCode || '')}", "${vbsEsc(s.name)}", "${vbsEsc(tb.designer || '')}", "${vbsEsc(tb.organization || '')}", "${vbsEsc(tb.checker || '')}", ${s.number}, ${sheets.length})
+    End If
 ${stampLines}
   End If`;
     })
@@ -3078,7 +3112,8 @@ ${stampLines}
 
       return `  ' --- Изделие ${des} (${vbsEsc(d.componentName)}) [${vbsEsc(d.category)}] ---
   curMode = 0
-  curDevId = CreateOrPlaceFluxDevice(Prj, Dev, Sym, ${shVar}, ${bx1}, ${by1}, ${bx2}, ${by2}, ${rotE3}, "${des}", "${vbsEsc(d.componentName)}", "${vbsEsc(d.article)}", "${vbsEsc(d.e3BlockName)}", "${vbsEsc(d.manufacturer)}", curMode)
+  gDevCx = ${mx(d.x + (d.width || 0) / 2)} : gDevCy = ${my(d.y + (d.height || 0) / 2)}
+  curDevId = CreateOrPlaceFluxDevice(Prj, Dev, Sym, ${shVar}, ${bx1}, ${by1}, ${bx2}, ${by2}, ${rotE3}, "${des}", "${vbsEsc(d.componentName)}", "${vbsEsc(d.article)}", "${vbsEsc(d.e3BlockName)}", "${vbsEsc(d.manufacturer)}", "${vbsEsc(componentEntryFor(dbGroups, d))}", "${vbsEsc(dbeSymbolName(d))}", curMode)
   ReDim pinOk(${Math.max(1, d.pins.length)})
   If curDevId > 0 Then
     Call CountDeviceMode(curMode)
@@ -3267,7 +3302,7 @@ ${T(ann.x, ann.y + 12, ann.text, Number(((ann.fontSize || 12) * 0.26).toFixed(2)
   const cableLines = cables
     .map(
       (c) =>
-        `  If CreateFluxCable(Prj, Dev, "${vbsEsc(c.designation)}", "${vbsEsc(c.cableType)}", "${vbsEsc(c.fromDevice)}", "${vbsEsc(c.toDevice)}", ${Number(c.lengthMeters) || 0}, ${Number(c.coresCount) || 0}, "${vbsEsc(c.crossSection || '')}", ${vbBool(c.shielded)}, "${vbsEsc(c.id)}") Then cabOk = cabOk + 1`
+        `  If CreateFluxCable(Prj, Dev, "${vbsEsc(c.designation)}", "${vbsEsc(cableEntryName(c))}|${vbsEsc(c.cableType)}", "${vbsEsc(c.fromDevice)}", "${vbsEsc(c.toDevice)}", ${Number(c.lengthMeters) || 0}, ${Number(c.coresCount) || 0}, "${vbsEsc(c.crossSection || '')}", ${vbBool(c.shielded)}, "${vbsEsc(c.id)}") Then cabOk = cabOk + 1`
     )
     .join('\n');
 
@@ -3311,7 +3346,8 @@ Dim curDevId, curGrpId, curMode, gIds(), gCnt, wXs(), wYs(), pXs(), pYs(), pinOk
 Dim gLogAll, gLogPending, gPinPos, gDevByName, gKnownDevIds, gDevLoc, gSheetFluxIds, gSheetBounds, gMissingAttrs
 Dim gLastLoc, gIsNewProject, gStartSheetReused, gFillWarned, gMetaStatic
 Dim attrWarnCnt, devNativeCnt, devBlockCnt, devExistCnt, devNoSymCnt, devFailCnt, pinsPlacedCnt
-Dim tablesOk, calloutsOk, annOk
+Dim tablesOk, calloutsOk, annOk, gCompDb, gDevCx, gDevCy, gPreferFmt, gNoPad, gLastSheetFlx, gIdsS(), gCntS
+gNoPad = False : gPreferFmt = "" : gLastSheetFlx = False
 ${sheetDecl ? `Dim ${sheetDecl}` : ''}
 Set App = Nothing
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -3437,13 +3473,9 @@ Sub LogTrace(ByVal lvl, ByVal msg)
   Err.Clear
   If IsObject(App) Then
     If Not (App Is Nothing) Then
-      If lvl = "ERROR" Then
-        App.PutInfo 2, "[E3ProMax] " & msg
-      ElseIf lvl = "WARN" Then
-        App.PutInfo 1, "[E3ProMax] " & msg
-      Else
-        App.PutInfo 0, "[E3ProMax] " & msg
-      End If
+      ' Только в окно сообщений E3: PutInfo с 1/2 показывает модальное окно, которое в фоновом E3
+      ' (запуск через COM / агент) никто не закроет — перенос зависает
+      App.PutInfo 0, "[E3ProMax] [" & lvl & "] " & msg
     End If
   End If
   Err.Clear
@@ -3456,6 +3488,7 @@ Function MapX(ByVal xMin, ByVal xMax, ByVal fx, ByVal sw)
   usableW = xMax - xMin
   padX = usableW * 0.03
   If padX < 4 Then padX = 4
+  If gNoPad Then padX = 0
   MapX = Round(xMin + padX + (fx / sw) * (usableW - padX * 2), 2)
 End Function
 
@@ -3467,6 +3500,9 @@ Function MapY(ByVal yMin, ByVal yMax, ByVal fy, ByVal sh)
   padTop = usableH * 0.04
   If padBot < 25 Then padBot = 25
   If padTop < 6 Then padTop = 6
+  If gNoPad Then
+    padBot = 0 : padTop = 0
+  End If
   MapY = Round(yMax - padTop - (fy / sh) * (usableH - padBot - padTop), 2)
 End Function
 
@@ -3521,6 +3557,23 @@ Sub NormRect(ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByRef xMin, ByRef yMin, ByR
   End If
 End Sub
 
+Sub RebindJobObjects()
+  On Error Resume Next
+  Set Sheet = Prj.CreateSheetObject()
+  Set Dev = Prj.CreateDeviceObject()
+  Set Sym = Prj.CreateSymbolObject()
+  Set PinObj = Prj.CreatePinObject()
+  Set Graph = Prj.CreateGraphObject()
+  Set Con = Prj.CreateConnectionObject()
+  If Err.Number <> 0 Then
+    Call LogTrace("WARN", "RebindJobObjects: #" & Err.Number & " " & Err.Description)
+    Err.Clear
+  Else
+    Call LogTrace("INFO", "COM-объекты E3 пересозданы для проекта ID=" & Prj.GetId())
+  End If
+  On Error GoTo 0
+End Sub
+
 Sub BuildNativeE3sProject()
   Dim targetE3s, metaPath, prjName, ans, detectedFmt, exIds, exCnt
   Dim sheetsOk, devGfxOk, wiresOk, wiresErr, wiresGfx, cabOk, startRemoved, saveOk
@@ -3558,6 +3611,8 @@ Sub BuildNativeE3sProject()
     Call LogTrace("ERROR", "Ошибка открытия/создания проекта #" & Err.Number & ": " & Err.Description)
     Err.Clear
   End If
+  ' Объекты Sheet/Device/Symbol/... создавались до Prj.Close/Prj.Create — пересоздаём их для нового проекта.
+  If gIsNewProject Then Call RebindJobObjects()
   If Prj.GetId() <= 0 Then
     Err.Clear
     On Error GoTo 0
@@ -3696,11 +3751,39 @@ Function FindNewDeviceId(ByRef p)
   On Error GoTo 0
 End Function
 
-Function CreateOrPlaceFluxDevice(ByRef p, ByRef d, ByRef sm, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal rotDeg, ByVal des, ByVal compName, ByVal article, ByVal blockName, ByVal mfr, ByRef devMode)
+Function FindComponentEntry(ByVal key)
+  ' Поиск имени компонента (ENTRY) в БД компонентов E3 по ENTRY или ArticleNumber. Пустая строка — не найден.
+  On Error Resume Next
+  Dim rs, k
+  FindComponentEntry = ""
+  k = Trim(CStr(key))
+  If k = "" Then Exit Function
+  If IsEmpty(gCompDb) Then
+    Set gCompDb = Nothing
+    Set gCompDb = CreateObject("ADODB.Connection")
+    gCompDb.Open App.GetComponentDatabase()
+    If Err.Number <> 0 Then
+      Call LogTrace("WARN", "Нет доступа к БД компонентов E3 для поиска по артикулу: #" & Err.Number & " " & Err.Description)
+      Err.Clear
+      Set gCompDb = Nothing
+    End If
+  End If
+  If gCompDb Is Nothing Then Exit Function
+  k = Replace(k, "'", "''")
+  Set rs = gCompDb.Execute("SELECT TOP 1 ENTRY FROM ComponentData WHERE ENTRY='" & k & "' OR ArticleNumber='" & k & "'")
+  If Err.Number = 0 Then
+    If Not rs.EOF Then FindComponentEntry = CStr(rs("ENTRY"))
+    rs.Close
+  End If
+  Err.Clear
+  On Error GoTo 0
+End Function
+
+Function CreateOrPlaceFluxDevice(ByRef p, ByRef d, ByRef sm, ByVal shId, ByVal x1, ByVal y1, ByVal x2, ByVal y2, ByVal rotDeg, ByVal des, ByVal compName, ByVal article, ByVal blockName, ByVal mfr, ByVal entryName, ByVal symName, ByRef devMode)
   ' devMode: 1 = Режим А (изделие + символ из БД E3), 2 = Режим Б (динамический блок на листе),
   '          3 = изделие уже было в проекте, 4 = изделие без символа (только дерево проекта), 0 = не создано
   On Error Resume Next
-  Dim devId, xMin, yMin, xMax, yMax, keys, iK, cand, usedKey
+  Dim devId, xMin, yMin, xMax, yMax, keys, iK, cand, usedKey, entry
   devId = 0 : devMode = 0 : gLastLoc = "" : usedKey = ""
   CreateOrPlaceFluxDevice = 0
   Call NormRect(x1, y1, x2, y2, xMin, yMin, xMax, yMax)
@@ -3709,13 +3792,20 @@ Function CreateOrPlaceFluxDevice(ByRef p, ByRef d, ByRef sm, ByVal shId, ByVal x
   If gDevByName.Exists(UCase(Trim(des))) Then
     devId = gDevByName(UCase(Trim(des)))
     devMode = 3
-    Call LogTrace("INFO", "Изделие " & des & " уже существует в проекте E3 (ID=" & devId & ") — используется существующее")
+    ' То же изделие на другом листе/другим блоком: ставим его символ (гейт) с именем symName
+    If shId > 0 And symName <> "" Then
+      If PlaceNativeSymbol(d, sm, devId, shId, gDevCx, gDevCy, rotDeg, symName) Then
+        Call LogTrace("INFO", "Изделие " & des & ": размещён ещё один символ '" & symName & "' на листе " & shId)
+      Else
+        Call LogTrace("WARN", "Изделие " & des & ": символ '" & symName & "' для листа " & shId & " не найден среди символов изделия")
+      End If
+    End If
     CreateOrPlaceFluxDevice = devId
     Exit Function
   End If
 
   ' Режим А: компонент найден в БД E3 (артикул / имя блока / наименование)
-  keys = Array(article, blockName, compName)
+  keys = Array(entryName, article, blockName, compName)
   For iK = 0 To UBound(keys)
     cand = Trim(CStr(keys(iK)))
     If devId <= 0 And cand <> "" Then
@@ -3726,13 +3816,26 @@ Function CreateOrPlaceFluxDevice(ByRef p, ByRef d, ByRef sm, ByVal shId, ByVal x
         devId = 0
         Err.Clear
       End If
-      If devId > 0 Then usedKey = cand
+      If devId > 0 Then
+        usedKey = cand
+      Else
+        ' В E3 изделие создаётся по имени компонента (ENTRY), а не по артикулу: ищем ENTRY в БД компонентов
+        entry = FindComponentEntry(cand)
+        If entry <> "" And UCase(entry) <> UCase(cand) Then
+          devId = d.Create(des, "", "", entry, "", 0)
+          If Err.Number <> 0 Then
+            devId = 0
+            Err.Clear
+          End If
+          If devId > 0 Then usedKey = entry & " (артикул " & cand & ")"
+        End If
+      End If
     End If
   Next
   If devId > 0 Then
     gKnownDevIds(CStr(devId)) = True
     If shId > 0 Then
-      If PlaceNativeSymbol(d, sm, devId, shId, (xMin + xMax) / 2, (yMin + yMax) / 2, rotDeg) Then
+      If PlaceNativeSymbol(d, sm, devId, shId, gDevCx, gDevCy, rotDeg, symName) Then
         devMode = 1
         Call LogTrace("INFO", "Изделие " & des & ": Режим А — компонент '" & usedKey & "' из БД E3, ID=" & devId & ", символ размещён на листе " & shId)
       Else
@@ -3789,9 +3892,11 @@ Function CreateOrPlaceFluxDevice(ByRef p, ByRef d, ByRef sm, ByVal shId, ByVal x
   On Error GoTo 0
 End Function
 
-Function PlaceNativeSymbol(ByRef d, ByRef sm, ByVal devId, ByVal shId, ByVal cx, ByVal cy, ByVal rotDeg)
+Function PlaceNativeSymbol(ByRef d, ByRef sm, ByVal devId, ByVal shId, ByVal cx, ByVal cy, ByVal rotDeg, ByVal wantName)
+  ' Размещает неразмещённый символ изделия. wantName — имя символа (гейта), если у изделия их несколько;
+  ' если символа с таким именем нет — берётся первый неразмещённый (как раньше).
   On Error Resume Next
-  Dim symIds, symCnt, i, rotStr, res, chkSh, lx, ly, lg, lc, lr
+  Dim symIds, symCnt, i, rotStr, res, chkSh, lx, ly, lg, lc, lr, tn, pass, pick
   PlaceNativeSymbol = False
   d.SetId devId
   Err.Clear
@@ -3801,42 +3906,71 @@ Function PlaceNativeSymbol(ByRef d, ByRef sm, ByVal devId, ByVal shId, ByVal cx,
     symCnt = 0
     Err.Clear
   End If
-  If symCnt <= 0 Then Exit Function
+  If symCnt <= 0 Then
+    If wantName <> "" Then
+      Err.Clear
+      Dim lsid : lsid = sm.Load(wantName, "1")
+      If Err.Number = 0 And lsid > 0 Then
+        sm.SetId lsid
+        res = sm.Place(shId, cx, cy, rotStr)
+        If Err.Number <> 0 Then Err.Clear : res = sm.Place(shId, cx, cy)
+        If res > 0 Then PlaceNativeSymbol = True
+      End If
+      Err.Clear
+    End If
+    Exit Function
+  End If
   rotStr = ""
   If rotDeg <> 0 Then rotStr = CStr(rotDeg)
-  For i = 1 To symCnt
-    sm.SetId symIds(i)
-    lx = 0 : ly = 0 : chkSh = 0
-    chkSh = sm.GetSchemaLocation(lx, ly, lg, lc, lr)
-    If Err.Number <> 0 Then
-      chkSh = 0
-      Err.Clear
-    End If
-    If chkSh <= 0 Then
-      Err.Clear
-      res = sm.Place(shId, cx, cy, rotStr)
-      If Err.Number <> 0 Then
+  For pass = 1 To 2
+    For i = 1 To symCnt
+      sm.SetId symIds(i)
+      pick = True
+      If pass = 1 Then
+        tn = ""
+        tn = sm.GetSymbolTypeName()
         Err.Clear
-        res = sm.Place(shId, cx, cy, rotDeg)
+        pick = (wantName <> "" And UCase(Trim(tn)) = UCase(Trim(wantName)))
+      ElseIf wantName <> "" Then
+        pick = True
       End If
-      If Err.Number <> 0 Then
-        Err.Clear
-        res = sm.Place(shId, cx, cy)
+      If pick Then
+        lx = 0 : ly = 0 : chkSh = 0
+        chkSh = sm.GetSchemaLocation(lx, ly, lg, lc, lr)
+        If Err.Number <> 0 Then
+          chkSh = 0
+          Err.Clear
+        End If
+        If chkSh <= 0 Then
+          Err.Clear
+          res = sm.Place(shId, cx, cy, rotStr)
+          If Err.Number <> 0 Then
+            Err.Clear
+            res = sm.Place(shId, cx, cy, rotDeg)
+          End If
+          If Err.Number <> 0 Then
+            Err.Clear
+            res = sm.Place(shId, cx, cy)
+          End If
+          Err.Clear
+          chkSh = sm.GetSchemaLocation(lx, ly, lg, lc, lr)
+          If Err.Number <> 0 Then
+            chkSh = 0
+            Err.Clear
+          End If
+          If chkSh > 0 Then
+            gLastLoc = Array(lx, ly)
+            If Abs(lx - cx) > 0.3 Or Abs(ly - cy) > 0.3 Then Call LogTrace("WARN", "Символ изделия ID=" & devId & " встал в (" & Round(lx, 2) & ";" & Round(ly, 2) & "), а не в (" & Round(cx, 2) & ";" & Round(cy, 2) & ")")
+            PlaceNativeSymbol = True
+            If symCnt > 1 Then Call LogTrace("INFO", "У изделия ID=" & devId & " символов: " & symCnt & ", размещён '" & sm.GetSymbolTypeName() & "' на листе " & shId)
+            Err.Clear
+            On Error GoTo 0
+            Exit Function
+          End If
+        End If
       End If
-      Err.Clear
-      chkSh = sm.GetSchemaLocation(lx, ly, lg, lc, lr)
-      If Err.Number <> 0 Then
-        chkSh = 0
-        Err.Clear
-      End If
-    End If
-    If chkSh > 0 Then
-      gLastLoc = Array(lx, ly)
-      PlaceNativeSymbol = True
-      ' Размещаем основной символ; остальные (контакты, катушки) остаются в дереве для ручного размещения
-      If symCnt > 1 Then Call LogTrace("INFO", "У изделия ID=" & devId & " ещё " & (symCnt - 1) & " символ(ов) — доступны для размещения из дерева E3")
-      Exit For
-    End If
+    Next
+    If wantName = "" Then Exit For
   Next
   Err.Clear
   On Error GoTo 0
@@ -4117,46 +4251,74 @@ Function RemoveUnusedStartSheets(ByRef sh, ByRef exIds, ByVal exCnt)
 End Function
 
 Function SnapWireEndpoints(ByVal n, ByVal fromKey, ByVal toKey)
-  ' Подводит концы трассы (глобальные wXs/wYs) к фактическим координатам выводов в E3 с ортогональным изломом
-  Dim nx(), ny(), cnt, i, pos, tol
+  ' Подводит концы трассы (глобальные wXs/wYs) к фактическим координатам выводов в E3.
+  ' Близкий вывод (до 3 мм): конец трассы просто переносится в вывод (соседняя точка выравнивается) —
+  ' крошечные изломы E3 не принимает (Connection.Create = 0). Дальний вывод: ортогональный излом.
+  ' В конце удаляются повторяющиеся точки и сегменты короче 0,2 мм.
+  Dim nx(), ny(), cnt, i, pos, tol, near, horiz, outX(), outY(), m
   tol = 0.05
+  near = 3
   SnapWireEndpoints = n
   If n < 2 Then Exit Function
   ReDim nx(n + 4)
   ReDim ny(n + 4)
-  cnt = 0
+  For i = 1 To n
+    nx(i + 2) = wXs(i) : ny(i + 2) = wYs(i)
+  Next
+  Dim first, last
+  first = 3 : last = n + 2
   If fromKey <> "" Then
     If gPinPos.Exists(fromKey) Then
       pos = gPinPos(fromKey)
-      If Abs(pos(0) - wXs(1)) > tol Or Abs(pos(1) - wYs(1)) > tol Then
-        cnt = cnt + 1 : nx(cnt) = pos(0) : ny(cnt) = pos(1)
-        If Abs(pos(0) - wXs(1)) > tol And Abs(pos(1) - wYs(1)) > tol Then
-          cnt = cnt + 1 : nx(cnt) = wXs(1) : ny(cnt) = pos(1)
+      If Abs(pos(0) - nx(first)) > tol Or Abs(pos(1) - ny(first)) > tol Then
+        If Abs(pos(0) - nx(first)) <= near And Abs(pos(1) - ny(first)) <= near Then
+          horiz = (Abs(ny(first) - ny(first + 1)) < tol)
+          If horiz And last > first + 1 Then ny(first + 1) = pos(1)
+          If (Not horiz) And Abs(nx(first) - nx(first + 1)) < tol And last > first + 1 Then nx(first + 1) = pos(0)
+          nx(first) = pos(0) : ny(first) = pos(1)
+        Else
+          first = first - 1 : nx(first) = nx(first + 1) : ny(first) = pos(1)
+          first = first - 1 : nx(first) = pos(0) : ny(first) = pos(1)
         End If
       End If
     End If
   End If
-  For i = 1 To n
-    cnt = cnt + 1 : nx(cnt) = wXs(i) : ny(cnt) = wYs(i)
-  Next
   If toKey <> "" Then
     If gPinPos.Exists(toKey) Then
       pos = gPinPos(toKey)
-      If Abs(pos(0) - wXs(n)) > tol Or Abs(pos(1) - wYs(n)) > tol Then
-        If Abs(pos(0) - wXs(n)) > tol And Abs(pos(1) - wYs(n)) > tol Then
-          cnt = cnt + 1 : nx(cnt) = pos(0) : ny(cnt) = wYs(n)
+      If Abs(pos(0) - nx(last)) > tol Or Abs(pos(1) - ny(last)) > tol Then
+        If Abs(pos(0) - nx(last)) <= near And Abs(pos(1) - ny(last)) <= near Then
+          horiz = (Abs(ny(last) - ny(last - 1)) < tol)
+          If horiz And last - 1 >= first Then ny(last - 1) = pos(1)
+          If (Not horiz) And Abs(nx(last) - nx(last - 1)) < tol And last - 1 >= first Then nx(last - 1) = pos(0)
+          nx(last) = pos(0) : ny(last) = pos(1)
+        Else
+          last = last + 1 : nx(last) = pos(0) : ny(last) = ny(last - 1)
+          last = last + 1 : nx(last) = pos(0) : ny(last) = pos(1)
         End If
-        cnt = cnt + 1 : nx(cnt) = pos(0) : ny(cnt) = pos(1)
       End If
     End If
   End If
-  ' Массивы всегда точно по числу точек (без «хвоста» пустых элементов для Connection.Create)
-  ReDim wXs(cnt)
-  ReDim wYs(cnt)
-  For i = 1 To cnt
-    wXs(i) = nx(i) : wYs(i) = ny(i)
+  ' Без повторов и микросегментов
+  ReDim outX(last - first + 2)
+  ReDim outY(last - first + 2)
+  m = 0
+  For i = first To last
+    If m = 0 Then
+      m = 1 : outX(1) = nx(i) : outY(1) = ny(i)
+    ElseIf Abs(nx(i) - outX(m)) + Abs(ny(i) - outY(m)) >= 0.2 Then
+      m = m + 1 : outX(m) = nx(i) : outY(m) = ny(i)
+    ElseIf i = last Then
+      outX(m) = nx(i) : outY(m) = ny(i)
+    End If
   Next
-  SnapWireEndpoints = cnt
+  If m < 2 Then m = 2 : outX(2) = nx(last) : outY(2) = ny(last)
+  ReDim wXs(m)
+  ReDim wYs(m)
+  For i = 1 To m
+    wXs(i) = outX(i) : wYs(i) = outY(i)
+  Next
+  SnapWireEndpoints = m
 End Function
 
 Sub BuildFluxMetaStatic()
@@ -4203,12 +4365,37 @@ Function WriteFluxMetaFile(ByVal metaPath)
   On Error GoTo 0
 End Function
 
+Function SafeSheetName(ByVal n)
+  Dim r
+  r = Trim(CStr(n))
+  Do While InStr(r, "  ") > 0
+    r = Replace(r, "  ", " ")
+  Loop
+  r = Replace(r, ". ", "._")
+  SafeSheetName = Replace(r, " ", "_")
+End Function
+
+Function SheetNumberPart(ByVal n)
+  Dim p
+  n = Trim(CStr(n))
+  p = InStr(n, ".")
+  If p > 1 Then
+    SheetNumberPart = Trim(Left(n, p - 1))
+  Else
+    SheetNumberPart = Replace(n, " ", "_")
+  End If
+End Function
+
 Function CreateOrGetSheet(ByRef p, ByRef sh, ByVal shName, ByVal fmt, ByVal detectedFmt, ByVal isFirst, ByRef exIds, ByVal exCnt)
+  gLastSheetFlx = False
   On Error Resume Next
-  Dim res, newId, candList, cand, cyrFmt, dinFmt, iC, triedStr, lastErr
+  Dim res, newId, candList, cand, cyrFmt, dinFmt, iC, triedStr, lastErr, nameList, iNm, e3Name
   newId = 0
   triedStr = ""
   lastErr = ""
+  ' E3 не принимает пробелы в имени листа (Sheet.Create молча возвращает 0):
+  ' сначала "1._Силовая_цепь_380В", затем только номер листа "1".
+  nameList = Array(SafeSheetName(shName), SheetNumberPart(shName))
 
   If Left(fmt, 1) = "A" Then
     cyrFmt = "А" & Mid(fmt, 2)
@@ -4218,40 +4405,47 @@ Function CreateOrGetSheet(ByRef p, ByRef sh, ByVal shName, ByVal fmt, ByVal dete
     dinFmt = "DIN" & fmt
   End If
 
-  candList = Array(detectedFmt, fmt, dinFmt, "DIN " & fmt, cyrFmt, fmt & "_sp_1", fmt & "_1", "ГОСТ " & fmt, "ГОСТ_" & fmt, "GOST_" & fmt, fmt & "-ГОСТ", fmt & "_ГОСТ", "Форма 1", "A3", "DINA3", "А3", "A4", "DINA4", "А4", "")
+  ' Сначала формат того же размера, что лист E3ProMax (A2 -> DINA2): иначе чертёж сжимается в чужой формат,
+  ' а символы БД (в натуральную величину) налезают друг на друга. Формат стартового листа шаблона — только запасной.
+  candList = Array(gPreferFmt, fmt, dinFmt, "DIN " & fmt, cyrFmt, fmt & "_sp_1", fmt & "_1", "ГОСТ " & fmt, "ГОСТ_" & fmt, "GOST_" & fmt, fmt & "-ГОСТ", fmt & "_ГОСТ", detectedFmt, "Форма 1", "A3", "DINA3", "А3", "A4", "DINA4", "А4", "")
 
+  For iNm = 0 To UBound(nameList)
+  e3Name = nameList(iNm)
+  If newId <= 0 And e3Name <> "" Then
   For iC = 0 To UBound(candList)
     cand = Trim(CStr(candList(iC)))
-    If cand <> "" Or iC = UBound(candList) Then
+    If newId <= 0 And (cand <> "" Or iC = UBound(candList)) Then
       If triedStr <> "" Then triedStr = triedStr & ","
-      triedStr = triedStr & "'" & cand & "'"
+      triedStr = triedStr & "'" & e3Name & "'/'" & cand & "'"
       Err.Clear
-      res = sh.Create(0, shName, cand, 0, 0)
+      res = 0
+      res = sh.Create(0, e3Name, cand, 0, 0)
       If Err.Number = 450 Then
         Err.Clear
-        res = sh.Create(0, shName, cand, 0)
+        res = sh.Create(0, e3Name, cand, 0)
       End If
       If Err.Number = 0 Then
-        If res > 0 Then
-          newId = res
-        ElseIf sh.GetId() > 0 Then
-          newId = sh.GetId()
-        End If
+        If res > 0 Then newId = res
       Else
         lastErr = "#" & Err.Number & " " & Err.Description
         Err.Clear
       End If
       If newId > 0 Then
-        Call LogTrace("INFO", "Лист '" & shName & "' создан ID=" & newId & " (формат='" & cand & "')")
+        Call LogTrace("INFO", "Лист '" & shName & "' создан ID=" & newId & " (имя в E3='" & e3Name & "', формат='" & cand & "')")
+        ' Свой ГОСТ-формат E3ProMax: лист = холст E3ProMax 1:1, без полей
+        gLastSheetFlx = (gPreferFmt <> "" And UCase(cand) = UCase(gPreferFmt))
+        If gLastSheetFlx Then gNoPad = True
         Exit For
       End If
     End If
+  Next
+  End If
   Next
 
   If newId <= 0 And isFirst And exCnt > 0 Then
     Err.Clear
     sh.SetId exIds(1)
-    sh.SetName shName
+    sh.SetName SafeSheetName(shName)
     newId = exIds(1)
     gStartSheetReused = True
     Call LogTrace("WARN", "Не удалось создать новый лист '" & shName & "' через Sheet.Create (" & lastErr & "), переименован и использован стартовый лист шаблона ID=" & newId)
@@ -4754,7 +4948,7 @@ Function DrawWirePolyline(ByRef p, ByRef cn, ByRef g, ByVal shId, ByVal nPts, By
       Exit Function
     End If
   End If
-  Call LogTrace("WARN", "Connection.Create для цепи '" & lbl & "' не выполнен (#" & Err.Number & " " & Err.Description & ") — цепь нарисована графической линией")
+  Call LogTrace("WARN", "Connection.Create для цепи '" & lbl & "' не выполнен (#" & Err.Number & " " & Err.Description & ", res=" & res & ", точек=" & nPts & ", от (" & Round(xs(1), 1) & ";" & Round(ys(1), 1) & ") до (" & Round(xs(nPts), 1) & ";" & Round(ys(nPts), 1) & ")) — цепь нарисована графической линией")
   Err.Clear
   gid = 0
   gid = g.CreateLine(shId, nPts, xs, ys)
@@ -4771,9 +4965,20 @@ End Function
 
 Function CreateFluxCable(ByRef p, ByRef d, ByVal des, ByVal cabType, ByVal fDev, ByVal tDev, ByVal lenM, ByVal cores, ByVal crossSec, ByVal shielded, ByVal fluxId)
   On Error Resume Next
-  Dim cid, how
-  cid = 0 : how = ""
-  If cabType <> "" Then
+  Dim cid, how, cabEntry, cpos
+  cid = 0 : how = "" : cabEntry = ""
+  cpos = InStr(cabType, "|")
+  If cpos > 0 Then
+    cabEntry = Left(cabType, cpos - 1)
+    cabType = Mid(cabType, cpos + 1)
+  End If
+  If cabEntry <> "" Then
+    Err.Clear
+    cid = d.Create(des, "", "", cabEntry, "1", 0)
+    If Err.Number <> 0 Then cid = 0
+    If cid > 0 Then how = "Create(БД: " & cabEntry & ")"
+  End If
+  If cabType <> "" And cid <= 0 Then
     Err.Clear
     cid = d.CreateCable(des, "", "", cabType, "", 0)
     If Err.Number <> 0 Then cid = 0
@@ -4851,6 +5056,7 @@ Sub ExportActiveE3sToFluxJson()
       Err.Clear
       openRes = App.OpenProject(gImportFilePath)
     End If
+    If Prj.GetId() > 0 Then Call RebindJobObjects()
     If Err.Number <> 0 Or Prj.GetId() <= 0 Then
       Call LogTrace("ERROR", "Не удалось открыть .e3s через COM E3.series: #" & Err.Number & " " & Err.Description)
       Err.Clear

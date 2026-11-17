@@ -1,0 +1,41 @@
+﻿=== 11/16/2026 15:38:31 ===
+Open OK: Provider=Microsoft.ACE.OLEDB.16.0;Data Source=C:\Users\Public\Documents\Zuken\E3.series_2022\cdb\symbols.mdb
+  [SymbolData] ENTRY=FLUX_TEST | VERSION=1 | LPNTR=LS-E91C8E7A-77BD-4B24-A01F-7B956457C2D5 | LSHTYP=2 | LASTUPDT=11/16/2026 07:00:14
+  [SymbolData] ENTRY=FLX_GOST_QF_1P_10A | VERSION=1 | LPNTR=LS-D4CB161B-7911-4CF9-A0BD-6DBEF51D39EF | LSHTYP=2 | LASTUPDT=11/16/2026 08:25:48
+### FLUX_TEST (LPNTR=LS-E91C8E7A-77BD-4B24-A01F-7B956457C2D5)
+  [SymbolNodes] COPY=1 | ENTRY=LS-E91C8E7A-77BD-4B24-A01F-7B956457C2D5 | Function= | LBNNUM=1 | LBSTUB=0 | LIBNTY=0 | LIBNX=-50 | LIBNY=50
+  [SymbolNodes] COPY=2 | ENTRY=LS-E91C8E7A-77BD-4B24-A01F-7B956457C2D5 | Function= | LBNNUM=2 | LBSTUB=0 | LIBNTY=0 | LIBNX=250 | LIBNY=50
+  [SymbolText] (net strok)
+  [SymbolPoints] (net strok)
+  [SymbolDimension] ENTRY=LS-E91C8E7A-77BD-4B24-A01F-7B956457C2D5 | LSHX1=0 | LSHX2=0 | LSHY1=0 | LSHY2=0
+  [SymbolGraphic] COPY=1 | ENTRY=LS-E91C8E7A-77BD-4B24-A01F-7B956457C2D5 | Fillcolor=0 | Fillmode=0 | GraphicData=D[0;0;200;100] | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID= 
+  [SymbolGraphic] COPY=2 | ENTRY=LS-E91C8E7A-77BD-4B24-A01F-7B956457C2D5 | Fillcolor=0 | Fillmode=0 | GraphicData=D[-50;50;0;50] | GraphicLevel=1 | GraphicType=1 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID= 
+  [SymbolGraphic] COPY=3 | ENTRY=LS-E91C8E7A-77BD-4B24-A01F-7B956457C2D5 | Fillcolor=0 | Fillmode=0 | GraphicData=D[200;50;250;50] | GraphicLevel=1 | GraphicType=1 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID= 
+  [SYMBOL_FUNCTION] (net strok)
+### FLX_GOST_QF_1P_10A (LPNTR=LS-D4CB161B-7911-4CF9-A0BD-6DBEF51D39EF)
+  [SymbolNodes] (net strok)
+  [SymbolText] (net strok)
+  [SymbolPoints] (net strok)
+  [SymbolDimension] ENTRY=LS-D4CB161B-7911-4CF9-A0BD-6DBEF51D39EF | LSHX1=0 | LSHX2=0 | LSHY1=0 | LSHY2=0
+  [SymbolGraphic] COPY=1 | ENTRY=LS-D4CB161B-7911-4CF9-A0BD-6DBEF51D39EF | Fillcolor=0 | Fillmode=0 | GraphicData=D[-65;-100;65;100] | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=4.5 | Flags= | ID= | STATE_ID= 
+  [SymbolGraphic] COPY=2 | ENTRY=LS-D4CB161B-7911-4CF9-A0BD-6DBEF51D39EF | Fillcolor=0 | Fillmode=0 | GraphicData=D[0;125;0;55] | GraphicLevel=1 | GraphicType=1 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=4.5 | Flags= | ID= | STATE_ID= 
+  [SymbolGraphic] COPY=3 | ENTRY=LS-D4CB161B-7911-4CF9-A0BD-6DBEF51D39EF | Fillcolor=0 | Fillmode=0 | GraphicData=D[0;55;-25;-45] | GraphicLevel=1 | GraphicType=1 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=4.5 | Flags= | ID= | STATE_ID= 
+  [SymbolGraphic] COPY=4 | ENTRY=LS-D4CB161B-7911-4CF9-A0BD-6DBEF51D39EF | Fillcolor=0 | Fillmode=0 | GraphicData=D[0;-55;0;-125] | GraphicLevel=1 | GraphicType=1 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=4.5 | Flags= | ID= | STATE_ID= 
+  [SymbolGraphic] COPY=5 | ENTRY=LS-D4CB161B-7911-4CF9-A0BD-6DBEF51D39EF | Fillcolor=0 | Fillmode=0 | GraphicData=D[0;55;6,30000000000007] | GraphicLevel=1 | GraphicType=2 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=2.5 | Flags= | ID= | STATE_ID= 
+  [SYMBOL_FUNCTION] (net strok)
+### 264-701T (LPNTR=264-701T)
+  [SymbolNodes] COPY=1 | ENTRY=264-701T | Function= | LBNNUM=1 | LBSTUB=14 | LIBNTY=0 | LIBNX=20 | LIBNY=273
+  [SymbolNodes] COPY=2 | ENTRY=264-701T | Function= | LBNNUM=2 | LBSTUB=14 | LIBNTY=0 | LIBNX=20 | LIBNY=45
+  [SymbolText] COPY=1 | ENTRY=264-701T | Flags= | FontName=Arial | FontStyle= | LBNNUM=2 | TextColor= | THT=35 | TJUST=2 | TLEV=3 | TMOD=1 | TROT=90 | TSTR= | TTYPE=3 | TX=35 | TY=160 | Flags2=512 | SIZEX= | SIZEY= | Hyperlink= | SOURCE=
+  [SymbolText] COPY=2 | ENTRY=264-701T | Flags= | FontName=Arial | FontStyle= | LBNNUM= | TextColor= | THT=30 | TJUST=1 | TLEV=12 | TMOD=1 | TROT=90 | TSTR= | TTYPE=12 | TX=15 | TY=335 | Flags2=512 | SIZEX= | SIZEY= | Hyperlink= | SOURCE=
+  [SymbolPoints] (net strok)
+  [SymbolDimension] ENTRY=264-701T | LSHX1=0 | LSHX2=40 | LSHY1=0 | LSHY2=320
+  [SymbolGraphic] COPY=1 | ENTRY=264-701T | Fillcolor=275 | Fillmode=1 | GraphicData=D[0;0;40;0;40;320;0;320;0;0] | GraphicLevel=1 | GraphicType=7 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=2 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=D[0;185;40;185] | GraphicLevel=1 | GraphicType=1 | HatchData= | Linecolor=1 | Linetype=4 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=3 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=D[0;135;40;135] | GraphicLevel=1 | GraphicType=1 | HatchData= | Linecolor=1 | Linetype=4 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=4 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=D[10;195;30;220] | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=5 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=D[10;240;30,2348786219104;300] | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=6 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=D[10;125;30;100] | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=7 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=D[10;80;30,23487862191;20] | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SYMBOL_FUNCTION] (net strok)
+=== konec ===

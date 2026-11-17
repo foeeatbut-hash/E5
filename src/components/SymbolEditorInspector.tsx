@@ -59,6 +59,79 @@ const parseFiniteNum = (raw: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+interface DraftNumberInputProps {
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  ariaLabel: string;
+  onCommit: (next: number) => void;
+  className?: string;
+}
+
+const DraftNumberInput: React.FC<DraftNumberInputProps> = ({
+  value,
+  min,
+  max,
+  step,
+  ariaLabel,
+  onCommit,
+  className = 'cad-prop-input font-mono tabular-nums',
+}) => {
+  const [text, setText] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+
+  React.useEffect(() => {
+    if (!focused) {
+      setText(String(value));
+    }
+  }, [value, focused]);
+
+  const applyClamp = (n: number) => {
+    let next = n;
+    if (min !== undefined) next = Math.max(min, next);
+    if (max !== undefined) next = Math.min(max, next);
+    return next;
+  };
+
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      aria-label={ariaLabel}
+      value={text}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setText(raw);
+        const parsed = parseFiniteNum(raw);
+        if (parsed !== null) {
+          onCommit(applyClamp(parsed));
+        }
+      }}
+      onBlur={() => {
+        setFocused(false);
+        const parsed = parseFiniteNum(text);
+        if (parsed !== null) {
+          const clamped = applyClamp(parsed);
+          onCommit(clamped);
+          setText(String(clamped));
+        } else {
+          setText(String(value));
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        }
+      }}
+      className={className}
+    />
+  );
+};
+
 export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React.memo(({
   workspace,
   onCollapseFocusPanel,
@@ -322,18 +395,14 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                   <React.Fragment key={field}>
                     <span className="cad-prop-label">{lbl}</span>
                     <div className="cad-prop-cell">
-                      <input
-                        type="number"
-                        aria-label={`Координата ${lbl} линии`}
+                      <DraftNumberInput
+                        ariaLabel={`Координата ${lbl} линии`}
                         value={val}
-                        onChange={(e) => {
-                          const n = parseFiniteNum(e.target.value);
-                          if (n === null) return;
+                        onCommit={(n) =>
                           updateSelectedShape((s) =>
                             s.kind === 'line' ? { ...s, [field]: n } : s
-                          );
-                        }}
-                        className="cad-prop-input font-mono tabular-nums"
+                          )
+                        }
                       />
                     </div>
                   </React.Fragment>
@@ -351,20 +420,15 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                   <React.Fragment key={field}>
                     <span className="cad-prop-label">{lbl}</span>
                     <div className="cad-prop-cell">
-                      <input
-                        type="number"
+                      <DraftNumberInput
                         min={field === 'width' || field === 'height' ? 1 : undefined}
-                        aria-label={`Параметр ${lbl} прямоугольника`}
+                        ariaLabel={`Параметр ${lbl} прямоугольника`}
                         value={val}
-                        onChange={(e) => {
-                          const n = parseFiniteNum(e.target.value);
-                          if (n === null) return;
-                          const clamped = field === 'width' || field === 'height' ? Math.max(1, n) : n;
+                        onCommit={(n) =>
                           updateSelectedShape((s) =>
-                            s.kind === 'rect' ? { ...s, [field]: clamped } : s
-                          );
-                        }}
-                        className="cad-prop-input font-mono tabular-nums"
+                            s.kind === 'rect' ? { ...s, [field]: n } : s
+                          )
+                        }
                       />
                     </div>
                   </React.Fragment>
@@ -381,20 +445,15 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                   <React.Fragment key={field}>
                     <span className="cad-prop-label">{lbl}</span>
                     <div className="cad-prop-cell">
-                      <input
-                        type="number"
+                      <DraftNumberInput
                         min={field === 'r' ? 1 : undefined}
-                        aria-label={`Параметр ${lbl} окружности`}
+                        ariaLabel={`Параметр ${lbl} окружности`}
                         value={val}
-                        onChange={(e) => {
-                          const n = parseFiniteNum(e.target.value);
-                          if (n === null) return;
-                          const clamped = field === 'r' ? Math.max(1, n) : n;
+                        onCommit={(n) =>
                           updateSelectedShape((s) =>
-                            s.kind === 'circle' ? { ...s, [field]: clamped } : s
-                          );
-                        }}
-                        className="cad-prop-input font-mono tabular-nums"
+                            s.kind === 'circle' ? { ...s, [field]: n } : s
+                          )
+                        }
                       />
                     </div>
                   </React.Fragment>
@@ -413,20 +472,15 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
                   <React.Fragment key={field}>
                     <span className="cad-prop-label">{lbl}</span>
                     <div className="cad-prop-cell">
-                      <input
-                        type="number"
+                      <DraftNumberInput
                         min={field === 'r' ? 1 : undefined}
-                        aria-label={`Параметр ${lbl} дуги`}
+                        ariaLabel={`Параметр ${lbl} дуги`}
                         value={val}
-                        onChange={(e) => {
-                          const n = parseFiniteNum(e.target.value);
-                          if (n === null) return;
-                          const clamped = field === 'r' ? Math.max(1, n) : n;
+                        onCommit={(n) =>
                           updateSelectedShape((s) =>
-                            s.kind === 'arc' ? { ...s, [field]: clamped } : s
-                          );
-                        }}
-                        className="cad-prop-input font-mono tabular-nums"
+                            s.kind === 'arc' ? { ...s, [field]: n } : s
+                          )
+                        }
                       />
                     </div>
                   </React.Fragment>
@@ -483,22 +537,16 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
 
                   <span className="cad-prop-label">Кегль (px)</span>
                   <div className="cad-prop-cell">
-                    <input
-                      type="number"
+                    <DraftNumberInput
                       min={6}
                       max={32}
-                      aria-label="Размер шрифта текста"
+                      ariaLabel="Размер шрифта текста"
                       value={selectedShape.fontSize || 11}
-                      onChange={(e) => {
-                        const n = parseFiniteNum(e.target.value);
-                        if (n === null) return;
+                      onCommit={(n) =>
                         updateSelectedShape((s) =>
-                          s.kind === 'text'
-                            ? { ...s, fontSize: Math.max(6, Math.min(32, n)) }
-                            : s
-                        );
-                      }}
-                      className="cad-prop-input font-mono tabular-nums"
+                          s.kind === 'text' ? { ...s, fontSize: n } : s
+                        )
+                      }
                     />
                   </div>
                 </>
@@ -539,29 +587,19 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
 
               <span className="cad-prop-label">Смещение DX</span>
               <div className="cad-prop-cell">
-                <input
-                  type="number"
-                  aria-label="Смещение вывода DX"
+                <DraftNumberInput
+                  ariaLabel="Смещение вывода DX"
                   value={selectedPin.dx}
-                  onChange={(e) => {
-                    const n = parseFiniteNum(e.target.value);
-                    if (n !== null) updateSelectedPin({ dx: n });
-                  }}
-                  className="cad-prop-input font-mono tabular-nums"
+                  onCommit={(n) => updateSelectedPin({ dx: n })}
                 />
               </div>
 
               <span className="cad-prop-label">Смещение DY</span>
               <div className="cad-prop-cell">
-                <input
-                  type="number"
-                  aria-label="Смещение вывода DY"
+                <DraftNumberInput
+                  ariaLabel="Смещение вывода DY"
                   value={selectedPin.dy}
-                  onChange={(e) => {
-                    const n = parseFiniteNum(e.target.value);
-                    if (n !== null) updateSelectedPin({ dy: n });
-                  }}
-                  className="cad-prop-input font-mono tabular-nums"
+                  onCommit={(n) => updateSelectedPin({ dy: n })}
                 />
               </div>
 
@@ -652,41 +690,25 @@ export const SymbolEditorInspector: React.FC<SymbolEditorInspectorProps> = React
 
             <span className="cad-prop-label">Ширина (мм)</span>
             <div className="cad-prop-cell">
-              <input
-                type="number"
+              <DraftNumberInput
                 min={40}
                 max={480}
                 step={10}
-                aria-label="Ширина блока УГО в миллиметрах"
+                ariaLabel="Ширина блока УГО в миллиметрах"
                 value={draft.width}
-                onChange={(e) => {
-                  const n = parseFiniteNum(e.target.value);
-                  if (n === null) return;
-                  workspace.onUpdateDraftMeta({
-                    width: Math.max(40, Math.min(480, n)),
-                  });
-                }}
-                className="cad-prop-input font-mono tabular-nums"
+                onCommit={(n) => workspace.onUpdateDraftMeta({ width: n })}
               />
             </div>
 
             <span className="cad-prop-label">Высота (мм)</span>
             <div className="cad-prop-cell">
-              <input
-                type="number"
+              <DraftNumberInput
                 min={40}
                 max={480}
                 step={10}
-                aria-label="Высота блока УГО в миллиметрах"
+                ariaLabel="Высота блока УГО в миллиметрах"
                 value={draft.height}
-                onChange={(e) => {
-                  const n = parseFiniteNum(e.target.value);
-                  if (n === null) return;
-                  workspace.onUpdateDraftMeta({
-                    height: Math.max(40, Math.min(480, n)),
-                  });
-                }}
-                className="cad-prop-input font-mono tabular-nums"
+                onCommit={(n) => workspace.onUpdateDraftMeta({ height: n })}
               />
             </div>
           </div>

@@ -164,3 +164,72 @@ test('symbolTabs: autosaves and restores active UGO draft, tabs, and undo stack 
   clearSymbolWorkspaceAutosave(store);
   assert.equal(loadSymbolWorkspaceAutosave(store), null);
 });
+
+test('symbolTabs: openOrFocusSymbolTab refreshes clean tabs and respects refreshExisting modes', () => {
+  let state = createInitialSymbolTabsState();
+  const v1 = createPlaceholderSymbolDraft({
+    deviceId: 'dev-qf1',
+    symbolId: 'sym-qf1',
+    name: 'QF1 v1',
+    width: 120,
+    shapes: [{ id: 's1', kind: 'rect', x: 10, y: 10, width: 40, height: 40 }],
+    dirty: false,
+  });
+  state = openOrFocusSymbolTab(state, v1, 'project');
+  state = updateActiveSymbolTabDraft(state, (d) => ({ ...d, tool: 'rect', snapToGrid: false }));
+  // Re-clear dirty as tool toggle should keep clean semantics for this test
+  state = {
+    ...state,
+    tabs: state.tabs.map((t) => ({ ...t, draft: { ...t.draft, dirty: false } })),
+  };
+
+  // Reopen clean tab with updated v2 geometry -> should refresh draft while preserving tool/snap
+  const v2 = createPlaceholderSymbolDraft({
+    deviceId: 'dev-qf1',
+    symbolId: 'sym-qf1',
+    name: 'QF1 v2',
+    width: 240,
+    shapes: [
+      { id: 's1', kind: 'rect', x: 10, y: 10, width: 40, height: 40 },
+      { id: 's2', kind: 'circle', cx: 80, cy: 60, r: 20 },
+    ],
+    dirty: false,
+  });
+  state = openOrFocusSymbolTab(state, v2, 'project');
+  let activeDraft = getEffectiveSymbolDraft(state);
+  assert.equal(activeDraft.name, 'QF1 v2');
+  assert.equal(activeDraft.width, 240);
+  assert.equal(activeDraft.shapes.length, 2);
+  assert.equal(activeDraft.tool, 'rect');
+  assert.equal(activeDraft.snapToGrid, false);
+
+  // Make tab dirty, reopen with default ifClean -> must preserve unsaved edits
+  state = commitActiveTabGeometry(
+    state,
+    [{ id: 'unsaved', kind: 'line', x1: 0, y1: 0, x2: 50, y2: 50 }],
+    []
+  );
+  assert.equal(getEffectiveSymbolDraft(state).dirty, true);
+  state = openOrFocusSymbolTab(state, v1, 'project');
+  activeDraft = getEffectiveSymbolDraft(state);
+  assert.equal(activeDraft.shapes[0].id, 'unsaved');
+  assert.equal(activeDraft.dirty, true);
+
+  // Explicit refreshExisting: 'always' (used by CatalogItemModal -> edit UGO) replaces even dirty tab
+  const freshCatalogSeed = createPlaceholderSymbolDraft({
+    deviceId: 'dev-qf1',
+    symbolId: 'sym-qf1',
+    name: 'QF1 Fresh Seed',
+    width: 180,
+    shapes: [{ id: 'fresh-rect', kind: 'rect', x: 0, y: 0, width: 100, height: 60 }],
+    dirty: false,
+  });
+  state = openOrFocusSymbolTab(state, freshCatalogSeed, 'project', {
+    refreshExisting: 'always',
+  });
+  activeDraft = getEffectiveSymbolDraft(state);
+  assert.equal(activeDraft.name, 'QF1 Fresh Seed');
+  assert.equal(activeDraft.shapes[0].id, 'fresh-rect');
+  assert.equal(activeDraft.dirty, false);
+  assert.equal(getActiveSymbolTab(state)?.undoStack.length, 0);
+});

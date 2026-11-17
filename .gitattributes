@@ -1,0 +1,3 @@
+# Windows-скрипты обязаны иметь CRLF, иначе cmd.exe ломает строки с кириллицей
+*.cmd text eol=crlf
+*.bat text eol=crlf

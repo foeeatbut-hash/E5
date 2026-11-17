@@ -919,9 +919,123 @@ function execCscriptUnicode(
   });
 }
 
+async function prepareE3Database(proj: E3Project): Promise<void> {
+  const prepScript = path.resolve(process.cwd(), 'scripts', 'e3_prepare.ps1');
+  if (!fs.existsSync(prepScript)) return;
+  const projFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'flux-prep-')), 'project.json');
+  fs.writeFileSync(projFile, JSON.stringify(proj), 'utf8');
+  const started = Date.now();
+  diagLogger.log('INFO', 'E3-COM', 'Подготовка БД E3: символы, изделия, атрибуты...');
+  await new Promise<void>((resolveDone) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', prepScript, '-Project', projFile],
+      { cwd: process.cwd(), timeout: 300000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        const summary = String(stdout || '')
+          .split(/\r?\n/)
+          .filter((l) => /SUMMARY|ERR|ОШИБКА/.test(l))
+          .join('\n');
+        diagLogger.log(err ? 'WARN' : 'INFO', 'E3-COM', `Подготовка БД E3 завершена${err ? ' с ошибкой: ' + err.message : ''}`, {
+          durationMs: Date.now() - started,
+          details: summary || String(stderr || ''),
+        });
+        resolveDone();
+      }
+    );
+  });
+}
+
+app.post('/api/v1/e3/push-symbol', async (req, res) => {
+  try {
+    if (process.platform !== 'win32') {
+      res.status(400).json({ ok: false, error: 'Прямая отправка в БД E3.series поддерживается только на Windows.' });
+      return;
+    }
+    const b = req.body || {};
+    const blockName = String(b.e3BlockName || 'USER_UGO').trim() || 'USER_UGO';
+    const w = Math.max(20, Number(b.width) || 120);
+    const h = Math.max(20, Number(b.height) || 100);
+    const pins = Array.isArray(b.pins)
+      ? b.pins.map((p: any, i: number) => ({
+          id: String(p.id || `p-${i + 1}`),
+          name: String(p.name || i + 1),
+          dx: Number(p.dx) || 0,
+          dy: Number(p.dy) || 0,
+          direction: p.direction || 'left',
+          signalType: p.signalType || 'signal',
+        }))
+      : [];
+    const customSymbol = Array.isArray(b.shapes) && b.shapes.length > 0
+      ? { width: w, height: h, shapes: b.shapes }
+      : undefined;
+    const seed = createSeedProject();
+    const baseSheet = seed.sheets[0];
+    const baseDev = seed.devices[0];
+    const tempProj: E3Project = {
+      ...seed,
+      id: 'temp-push-symbol',
+      fluxProjectKey: 'temp-push-symbol',
+      name: 'Push Symbol',
+      sheets: [{ ...baseSheet, id: 's1', number: 1, name: 'S1', format: 'A3', width: 1400, height: 920 }],
+      devices: [{
+        ...baseDev,
+        id: 'dev-1',
+        elementId: 'el-1',
+        sheetId: 's1',
+        designation: '-' + (String(b.defaultPrefix || 'K').trim() || 'K') + '1',
+        category: b.category || 'relay',
+        componentName: String(b.componentName || blockName),
+        article: String(b.article || blockName),
+        manufacturer: String(b.manufacturer || 'Собств. база'),
+        e3BlockName: blockName,
+        x: 200,
+        y: 200,
+        width: w,
+        height: h,
+        rotation: 0,
+        pins,
+        attributes: Array.isArray(b.attributes) ? b.attributes : [],
+        customSymbol,
+      }],
+      wires: [],
+      cables: [],
+      annotations: [],
+    };
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flux-push-sym-'));
+    const projFile = path.join(tmpDir, 'project.json');
+    fs.writeFileSync(projFile, JSON.stringify(tempProj), 'utf8');
+    const tsxCli = path.resolve(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
+    const dbeScript = path.resolve(process.cwd(), 'scripts', 'e3SymbolsToDbe.ts');
+    const runStep = (extraArgs: string[]) =>
+      new Promise<{ code: number; out: string }>((resolveStep) => {
+        execFile(
+          process.execPath,
+          [tsxCli, dbeScript, '--project', projFile, ...extraArgs],
+          { cwd: process.cwd(), timeout: 120000, windowsHide: true },
+          (err, stdout, stderr) => {
+            resolveStep({
+              code: err ? 1 : 0,
+              out: [String(stdout || ''), String(stderr || '')].filter(Boolean).join('\n').trim(),
+            });
+          }
+        );
+      });
+    const rSym = await runStep([]);
+    const rComp = await runStep(['--components']);
+    res.json({ ok: rSym.code === 0 && rComp.code === 0, blockName, symOut: rSym.out, compOut: rComp.out });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 app.post('/api/v1/projects/:id/e3-direct-open', async (req, res) => {
   const proj = getOrDefaultProject(req.params.id);
   const mode = req.body?.mode === 'export' ? 'export' : 'build';
+  // Перед переносом: недостающие символы/изделия/атрибуты заводятся в БД E3 (scripts/e3_prepare.ps1)
+  if (process.platform === 'win32' && mode === 'build' && req.body?.prepareDb !== false) {
+    await prepareE3Database(proj);
+  }
   const script = generateE3ComScript(proj, mode);
 
   if (process.platform === 'win32') {

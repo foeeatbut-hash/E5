@@ -62,7 +62,7 @@ test('symbolDesigner snaps coordinates, infers pin direction and generates next 
   assert.equal(nextPinName([{ name: '1' }, { name: '2' }, { name: '3' }]), '4');
 });
 
-test('normalizeCustomSymbolSpec clamps geometry and snaps pins onto symbol bounds', () => {
+test('normalizeCustomSymbolSpec preserves non-clipped geometry and snaps bounds and pins', () => {
   const preset = buildSymbolDesignerPreset('sensor_circle');
   assert.equal(preset.width, 100);
   assert.ok(preset.shapes.length >= 4);
@@ -86,12 +86,12 @@ test('normalizeCustomSymbolSpec clamps geometry and snaps pins onto symbol bound
   const line = normalized.customSymbol.shapes[0];
   assert.equal(line.kind, 'line');
   if (line.kind === 'line') {
-    assert.equal(line.x1, 0);
-    assert.equal(line.x2, 40);
+    assert.equal(line.x1, -10);
+    assert.equal(line.x2, 999);
   }
   const circle = normalized.customSymbol.shapes[2];
   if (circle.kind === 'circle') {
-    assert.ok(circle.r <= 20);
+    assert.equal(circle.r, 99);
   }
   const txt = normalized.customSymbol.shapes[3];
   if (txt.kind === 'text') {

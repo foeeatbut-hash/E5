@@ -1,0 +1,97 @@
+﻿=== 11/16/2026 13:57:01 ===
+### Poisk 'FLUX_TEST'
+  [LOCKINFO] ENTRY=FLUX_TEST | VERSION=1 | TYPE=153 | USER=corp\raupov.khkh | HOST=KR-WS-DT-20 | PID=26764 | TIME=1794812009
+  [SymbolData] Class= | DATEMAIN=11/16/2026 06:53:30 | Description= | ENTRY=FLUX_TEST | ENTRYTYP= | LASTUPDT=11/16/2026 06:53:30 | LPNTR=LS-E91C8E7A-77BD-4B24-A01F-7B956457C2D5 | LSHDES= | LSHTYP=2 | Norm=0 | SYMINDEX= | VERSION=1 | VersionText= | VSTATUS=C | FLAGS2=0 | ID=2DCE35AB-40AC-4288-A2E2-7AC839957770 | FLAGS=0 | SUBTYP=0
+### Poisk 'FLUX_TEST_COMP'
+  [ComponentData] ArticleNumber= | Class-main= | Class= | DATEMAIN=11/16/2026 06:54:34 | Description=E3ProMax test | DeviceLetterCode= | ENTRY=FLUX_TEST_COMP | ENTRYTYP= | Flags=32 | LASTUPDT=11/16/2026 06:54:34 | LPNTR= | MPNTR= | SPNTR= | Supplier= | VERSION=1 | VersionText= | VSTATUS=C | ID=3736278B-D6BD-4875-85DD-156612A95FE6 | SUBTYP=
+  [LOCKINFO] ENTRY=FLUX_TEST_COMP | VERSION=1 | TYPE=145 | USER=corp\raupov.khkh | HOST=KR-WS-DT-20 | PID=26764 | TIME=1794812039
+Primer simvola s 2 vyvodami: 264-701T
+### Poisk '264-701T'
+  [SymbolAttribute] AttributeName=.SCHEMATIC_TYPE | AttributeValue=0 | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=.View | AttributeValue=Top view | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_castellano | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_chinese | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_deutsch | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_english | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_francais | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_italiano | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_japanese | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_nederlands | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_portugues | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Class_russian | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Description_chinese | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Description_deutsch | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Description_english | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolAttribute] AttributeName=Description_portugues | AttributeValue= | Copy=1 | ENTRY=264-701T | VERSION=1 | ID=71
+  [SymbolData] Class= | DATEMAIN=02/13/2002 15:43:58 | Description= | ENTRY=264-701T | ENTRYTYP=0 | LASTUPDT=08/07/2003 19:46:17 | LPNTR=264-701T | LSHDES= | LSHTYP=61 | Norm=0 | SYMINDEX=0 | VERSION=1 | VersionText=Zuken E3 GmbH | VSTATUS=C | FLAGS2= | ID=71 | FLAGS=0 | SUBTYP=
+  [SymbolDimension] ENTRY=264-701T | LSHX1=0 | LSHX2=40 | LSHY1=0 | LSHY2=320
+  [SymbolGraphic] COPY=1 | ENTRY=264-701T | Fillcolor=275 | Fillmode=1 | GraphicData=BIN[80]:000000000000000000000000000000000000000000004440000000000000000000000000000044400000000000007440 | GraphicLevel=1 | GraphicType=7 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=2 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=BIN[32]:0000000000000000000000000020674000000000000044400000000000206740 | GraphicLevel=1 | GraphicType=1 | HatchData= | Linecolor=1 | Linetype=4 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=3 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=BIN[32]:00000000000000000000000000E0604000000000000044400000000000E06040 | GraphicLevel=1 | GraphicType=1 | HatchData= | Linecolor=1 | Linetype=4 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=4 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=BIN[32]:000000000000244000000000006068400000000000003E400000000000806B40 | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=5 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=BIN[32]:00000000000024400000000000006E4080A25F01213C3E400000000000C07240 | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=6 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=BIN[32]:00000000000024400000000000405F400000000000003E400000000000005940 | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolGraphic] COPY=7 | ENTRY=264-701T | Fillcolor=0 | Fillmode=0 | GraphicData=BIN[32]:0000000000002440000000000000544000A25F01213C3E400000000000003440 | GraphicLevel=1 | GraphicType=3 | HatchData= | Linecolor=1 | Linetype=1 | Linewidth=1 | Flags= | ID= | STATE_ID=
+  [SymbolNodes] COPY=1 | ENTRY=264-701T | Function= | LBNNUM=1 | LBSTUB=14 | LIBNTY=0 | LIBNX=20 | LIBNY=273
+  [SymbolNodes] COPY=2 | ENTRY=264-701T | Function= | LBNNUM=2 | LBSTUB=14 | LIBNTY=0 | LIBNX=20 | LIBNY=45
+  [SymbolText] COPY=1 | ENTRY=264-701T | Flags= | FontName=Arial | FontStyle= | LBNNUM=2 | TextColor= | THT=35 | TJUST=2 | TLEV=3 | TMOD=1 | TROT=90 | TSTR= | TTYPE=3 | TX=35 | TY=160 | Flags2=512 | SIZEX= | SIZEY= | Hyperlink= | SOURCE=
+  [SymbolText] COPY=2 | ENTRY=264-701T | Flags= | FontName=Arial | FontStyle= | LBNNUM= | TextColor= | THT=30 | TJUST=1 | TLEV=12 | TMOD=1 | TROT=90 | TSTR= | TTYPE=12 | TX=15 | TY=335 | Flags2=512 | SIZEX= | SIZEY= | Hyperlink= | SOURCE=
+### Poisk '264-701T'
+  [OutlineSymbols] Entry=M_264-701 | OutlineNumber=1 | Symbol=264-701T | ViewNumber=0
+Primer komponenta: 317219 LPNTR=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7
+### Poisk '317219'
+  [ComponentAttribute] AttributeName=.HYPERLINK | AttributeValue=http://www.klemsan.com.tr/default.asp?L=TR&mid=productdetail&CatID=246&ProductID=2187 | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=.PREVIEW_SYMBOL | AttributeValue=317219 | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=AttachedDocument | AttributeValue=http://www.klemsan.com.tr/printpdf.asp?L=TR&ProductID=2185&CatID=246 | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_castellano | AttributeValue=Borne | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_chinese | AttributeValue=端子 | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_deutsch | AttributeValue=Klemme | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_english | AttributeValue=Terminal | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_francais | AttributeValue=Borne | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_italiano | AttributeValue=Morsetti | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_japanese | AttributeValue=ターミナル | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_nederlands | AttributeValue=klem | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_polish | AttributeValue=Złączka listwowa | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_portugues | AttributeValue=Bornes | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_russian | AttributeValue=Клеммы (Электрика) | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Class_turkce | AttributeValue=Klemensleri | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=DB_User | AttributeValue=BB | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Description_castellano | AttributeValue=317219; PIK 2,5 ND-A; 2.5 mm2; Terminal de Doble Nivel, Conexión por Tornillo; Gris | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Description_deutsch | AttributeValue=317219; PIK 2,5 ND-A; 2.5 mm2; Doppelstock Klemme mit Diode, Schraubverbindung; Grau | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Description_english | AttributeValue=317219; PIK 2,5 ND-A; 2.5 mm2; Double-Deck Terminal with Diode, Screw Connection; Grey | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentAttribute] AttributeName=Description_italiano | AttributeValue=317219; PIK 2,5 ND-A; 2.5 mm2; Morsetto Doppio Livello con Diodo, Connessione a Vite; Grigio | Copy=1 | ENTRY=317219 | VERSION=1 | BundleID=0 | NODENO=0 | Flags=0 | ID=00E0FC46-7A2E-462B-942D-C02A2744840B
+  [ComponentData] ArticleNumber=317219 | Class-main=Electric | Class=Terminal | DATEMAIN=02/19/2015 14:38:12 | Description=317219; PIK 2,5 ND-A; 2.5 mm2; Double-Deck Terminal with Diode, Screw Connection; Grey | DeviceLetterCode=X | ENTRY=317219 | ENTRYTYP=25 | Flags= | LASTUPDT=02/19/2015 14:38:12 | LPNTR=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | MPNTR=M_317219 | SPNTR= | Supplier=Klemsan | VERSION=1 | VersionText=Zuken E3 GmbH | VSTATUS=C | ID=00E0FC46-7A2E-462B-942D-C02A2744840B | SUBTYP=
+### Poisk 'LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7'
+  [ComponentData] ArticleNumber=317219 | Class-main=Electric | Class=Terminal | DATEMAIN=02/19/2015 14:38:12 | Description=317219; PIK 2,5 ND-A; 2.5 mm2; Double-Deck Terminal with Diode, Screw Connection; Grey | DeviceLetterCode=X | ENTRY=317219 | ENTRYTYP=25 | Flags= | LASTUPDT=02/19/2015 14:38:12 | LPNTR=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | MPNTR=M_317219 | SPNTR= | Supplier=Klemsan | VERSION=1 | VersionText=Zuken E3 GmbH | VSTATUS=C | ID=00E0FC46-7A2E-462B-942D-C02A2744840B | SUBTYP=
+  [Gate] CCTNAME=ZUK03-02-18 | COPY=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7
+  [Gate] CCTNAME=ZUK03-02-18 | COPY=2 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7
+  [GatePinRelation] ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | GateNumber=1 | NodeNumber=4 | PinNumber=1 | Representation=0
+  [GatePinRelation] ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | GateNumber=1 | NodeNumber=5 | PinNumber=2 | Representation=0
+  [GatePinRelation] ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | GateNumber=1 | NodeNumber=7 | PinNumber=2 | Representation=0
+  [GatePinRelation] ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | GateNumber=1 | NodeNumber=6 | PinNumber=6 | Representation=0
+  [GatePinRelation] ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | GateNumber=2 | NodeNumber=4 | PinNumber=3 | Representation=0
+  [GatePinRelation] ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | GateNumber=2 | NodeNumber=5 | PinNumber=4 | Representation=0
+  [GatePinRelation] ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | GateNumber=2 | NodeNumber=7 | PinNumber=4 | Representation=0
+  [GatePinRelation] ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | GateNumber=2 | NodeNumber=6 | PinNumber=5 | Representation=0
+  [Pin] COPY=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | Flags=128 | FUNCT=0 | LPINEQV=11 | NPINEQV=11 | PHYSPIN=$ | PINEQUIV=0 | PINNAME= | TPNPRIO=0 | FLAGS2=0
+  [Pin] COPY=2 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | Flags=128 | FUNCT=0 | LPINEQV=11 | NPINEQV=11 | PHYSPIN=$ | PINEQUIV=0 | PINNAME= | TPNPRIO=0 | FLAGS2=0
+  [Pin] COPY=3 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | Flags=128 | FUNCT=0 | LPINEQV=12 | NPINEQV=12 | PHYSPIN=$ | PINEQUIV=0 | PINNAME= | TPNPRIO=0 | FLAGS2=0
+  [Pin] COPY=4 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | Flags=128 | FUNCT=0 | LPINEQV=12 | NPINEQV=12 | PHYSPIN=$ | PINEQUIV=0 | PINNAME= | TPNPRIO=0 | FLAGS2=0
+  [Pin] COPY=5 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | Flags=128 | FUNCT=0 | LPINEQV=12 | NPINEQV=12 | PHYSPIN=$ | PINEQUIV=0 | PINNAME= | TPNPRIO=0 | FLAGS2=0
+  [Pin] COPY=6 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | Flags=128 | FUNCT=0 | LPINEQV=11 | NPINEQV=11 | PHYSPIN=$ | PINEQUIV=0 | PINNAME= | TPNPRIO=0 | FLAGS2=0
+  [PinAttribute] AttributeName=Max_CrossSection | AttributeValue=4.00 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=1
+  [PinAttribute] AttributeName=Min_CrossSection | AttributeValue=0.20 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=1
+  [PinAttribute] AttributeName=.BRIDGE | AttributeValue=1 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=2
+  [PinAttribute] AttributeName=Max_CrossSection | AttributeValue=4.00 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=2
+  [PinAttribute] AttributeName=Min_CrossSection | AttributeValue=0.20 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=2
+  [PinAttribute] AttributeName=Max_CrossSection | AttributeValue=4.00 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=3
+  [PinAttribute] AttributeName=Min_CrossSection | AttributeValue=0.20 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=3
+  [PinAttribute] AttributeName=.BRIDGE | AttributeValue=1 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=4
+  [PinAttribute] AttributeName=Max_CrossSection | AttributeValue=4.00 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=4
+  [PinAttribute] AttributeName=Min_CrossSection | AttributeValue=0.20 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=4
+  [PinAttribute] AttributeName=Max_CrossSection | AttributeValue=4.00 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=5
+  [PinAttribute] AttributeName=Min_CrossSection | AttributeValue=0.20 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=5
+  [PinAttribute] AttributeName=Max_CrossSection | AttributeValue=4.00 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=6
+  [PinAttribute] AttributeName=Min_CrossSection | AttributeValue=0.20 | Copy=1 | ENTRY=LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7 | PinNumber=6
+### Poisk 'LC-FF3B054E-DA90-487C-B1A4-1A6F32980EE7'
+=== konec ===

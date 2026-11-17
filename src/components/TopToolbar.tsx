@@ -1005,8 +1005,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
           <div
             data-testid="focus-top-left"
             style={focusLayout ? { maxWidth: focusLayout.leftPillMaxWidth } : undefined}
-            className="pointer-events-auto inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] pl-1.5 pr-2 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-x-auto no-scrollbar"
+            className="pointer-events-auto inline-flex items-center gap-0.5 h-[calc(34px*var(--flux-ui-scale))] pl-1.5 pr-1.5 rounded-[8px] border border-[var(--flux-line-strong)] flux-glass-surface shadow-lg min-w-0 overflow-hidden"
           >
+            <div className="inline-flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto no-scrollbar">
             <button
               ref={menuBtnRef}
               type="button"
@@ -1084,47 +1085,40 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                   className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface)] hover:bg-[var(--flux-hover)] text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
                 >
                   <Plus className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
-                  <span>Изделие</span>
+                  <span className="hidden xl:inline">Изделие</span>
                 </button>
                 <button
                   type="button"
                   data-testid="ugo-top-import-dxf-btn"
                   onClick={() => ugoDxfInputRef.current?.click()}
                   title="Импорт геометрии из DXF-файла прямо на холст УГО"
+                  aria-label="Импорт DXF"
                   className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/50 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
                 >
                   <FileCode2 className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
-                  <span>Импорт DXF</span>
+                  <span className="hidden 2xl:inline">Импорт DXF</span>
                 </button>
                 <button
                   type="button"
                   data-testid="ugo-top-import-blk-btn"
                   onClick={() => ugoBlkInputRef.current?.click()}
                   title="Загрузить отдельный блок библиотеки (.e3blk.json)"
+                  aria-label="Импорт блока .e3blk"
                   className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/50 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
                 >
                   <Upload className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
-                  <span>Блок .e3blk</span>
+                  <span className="hidden 2xl:inline">Блок .e3blk</span>
                 </button>
                 <button
                   type="button"
                   data-testid="ugo-top-export-blk-btn"
                   onClick={handleUgoTopExportBlk}
                   title="Экспортировать выбранное УГО в файл .e3blk.json"
+                  aria-label="Экспорт блока .e3blk.json"
                   className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-1.5 rounded-[5px] border border-[var(--flux-line)] bg-[var(--flux-surface-alt)] hover:bg-[var(--flux-hover)] hover:border-[var(--flux-accent)]/50 text-[length:calc(10.5px*var(--flux-ui-scale))] font-medium text-[var(--flux-text)] whitespace-nowrap shrink-0 transition-colors"
                 >
                   <Download className="w-3 h-3 text-[var(--flux-accent)] shrink-0" />
-                  <span>Экспорт</span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="ugo-top-save-btn"
-                  onClick={handleUgoTopSave}
-                  title="Сохранить УГО в библиотеку (Ctrl+S)"
-                  className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold whitespace-nowrap shrink-0 transition-colors"
-                >
-                  {ugoSavedFlash ? <Check className="w-3 h-3 shrink-0" /> : <Save className="w-3 h-3 shrink-0" />}
-                  <span>{ugoSavedFlash ? 'Сохранено' : 'Сохранить'}</span>
+                  <span className="hidden 2xl:inline">Экспорт</span>
                 </button>
               </>
             ) : (
@@ -1173,6 +1167,19 @@ export const TopToolbar: React.FC<TopToolbarProps> = React.memo(({
                   </span>
                 </div>
               </>
+            )}
+            </div>
+            {isSymbolEditorOpen && symbolWorkspace && (
+              <button
+                type="button"
+                data-testid="ugo-top-save-btn"
+                onClick={handleUgoTopSave}
+                title="Сохранить УГО в библиотеку (Ctrl+S)"
+                className="inline-flex items-center gap-1 h-[calc(24px*var(--flux-ui-scale))] px-2 rounded-[5px] bg-[var(--flux-accent-solid)] hover:bg-[var(--flux-accent-solid-hover)] text-white text-[length:calc(10.5px*var(--flux-ui-scale))] font-semibold whitespace-nowrap shrink-0 transition-colors"
+              >
+                {ugoSavedFlash ? <Check className="w-3 h-3 shrink-0" /> : <Save className="w-3 h-3 shrink-0" />}
+                <span>{ugoSavedFlash ? 'Сохранено' : 'Сохранить'}</span>
+              </button>
             )}
           </div>
 

@@ -25,6 +25,7 @@ interface CatalogItemModalProps {
   onSave: (item: CatalogItem) => void;
   onOpenFullSymbolEditor?: (draftSeed: {
     catalogItemId?: string;
+    symbolId?: string;
     name: string;
     e3BlockName: string;
     category: DeviceCategory;
@@ -211,6 +212,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
       article: article.trim() || 'CUSTOM-01',
       manufacturer: manufacturer.trim() || 'Собств. база',
       e3BlockName: e3BlockName.trim() || `FSA_${(defaultPrefix || 'DEV').toUpperCase()}`,
+      symbolId: editingItem?.symbolId,
       width,
       height,
       pins: finalPins,
@@ -320,6 +322,7 @@ export const CatalogItemModal: React.FC<CatalogItemModalProps> = ({
                     onClose();
                     onOpenFullSymbolEditor({
                       catalogItemId: editingItem?.id,
+                      symbolId: editingItem?.symbolId,
                       name: componentName.trim() || e3BlockName.trim() || 'Новое УГО',
                       e3BlockName:
                         e3BlockName.trim() || `FSA_${(defaultPrefix || 'DEV').toUpperCase()}`,

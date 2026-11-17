@@ -1,6 +1,6 @@
 import React from 'react';
 import { resolveSchematicCssFont } from '../core/e3Catalog';
-import type { E3Device, E3VisualSettings } from '../core/e3Types';
+import type { CustomSymbolSpec, E3Device, E3VisualSettings } from '../core/e3Types';
 import type { FsaMatrixData } from '../core/hvacBuilder';
 import {
   describeSvgArcPath,
@@ -10,6 +10,7 @@ import {
 
 interface SchematicSymbolProps {
   device: E3Device;
+  resolvedCustomSymbol?: CustomSymbolSpec;
   selected: boolean;
   locked?: boolean;
   wiresLocked?: boolean;
@@ -30,6 +31,7 @@ interface SchematicSymbolProps {
 
 export const SchematicSymbol: React.FC<SchematicSymbolProps> = React.memo(({
   device,
+  resolvedCustomSymbol,
   selected,
   locked = false,
   wiresLocked = false,
@@ -61,10 +63,16 @@ export const SchematicSymbol: React.FC<SchematicSymbolProps> = React.memo(({
   const renderBody = () => {
     const w = device.width;
     const h = device.height;
-    if (device.customSymbol && device.customSymbol.shapes.length > 0) {
+    const effectiveCustomSymbol =
+      device.customSymbol && device.customSymbol.shapes.length > 0
+        ? device.customSymbol
+        : resolvedCustomSymbol && resolvedCustomSymbol.shapes.length > 0
+          ? resolvedCustomSymbol
+          : null;
+    if (effectiveCustomSymbol && effectiveCustomSymbol.shapes.length > 0) {
       return (
         <g data-testid={`custom-symbol-${device.id}`}>
-          {device.customSymbol.shapes.map((sh) => {
+          {effectiveCustomSymbol.shapes.map((sh) => {
             const shapeStroke = selected ? 'var(--flux-accent)' : sh.strokeColor || stroke;
             const dasharray = resolveShapeStrokeDasharray(sh);
             if (sh.kind === 'line') {

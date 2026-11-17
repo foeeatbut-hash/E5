@@ -98,6 +98,7 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
   const [article, setArticle] = useState('USER-UGO-01');
   const [manufacturer, setManufacturer] = useState('Собств. УГО');
   const [category, setCategory] = useState<DeviceCategory>('relay');
+  const [e3PushStatus, setE3PushStatus] = useState<'idle' | 'sending' | 'ok' | 'err'>('idle');
   const [e3BlockName, setE3BlockName] = useState('GOST_USER_BLOCK');
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -921,6 +922,38 @@ export const SymbolDesignerModal: React.FC<SymbolDesignerModalProps> = ({
                   Отмена
                 </button>
                 <button
+            type="button"
+            disabled={e3PushStatus === 'sending'}
+            onClick={async () => {
+              setE3PushStatus('sending');
+              try {
+                const r = await fetch('/api/v1/e3/push-symbol', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    e3BlockName: e3BlockName.trim() || `UGO_${(defaultPrefix || 'K').toUpperCase()}`,
+                    width,
+                    height,
+                    shapes,
+                    pins,
+                    article,
+                    manufacturer,
+                    componentName,
+                    defaultPrefix,
+                    category,
+                  }),
+                });
+                const j = await r.json();
+                setE3PushStatus(j.ok ? 'ok' : 'err');
+              } catch {
+                setE3PushStatus('err');
+              }
+            }}
+            className="h-8 px-3 rounded border border-[var(--flux-line)] text-[length:calc(12px*var(--flux-ui-scale))] text-[var(--flux-text)] hover:bg-[var(--flux-hover)] disabled:opacity-50"
+          >
+            {e3PushStatus === 'sending' ? 'Отправка...' : e3PushStatus === 'ok' ? 'В E3 ✓' : e3PushStatus === 'err' ? 'Ошибка E3' : 'Отправить в E3'}
+          </button>
+          <button
                   type="button"
                   data-testid="symbol-designer-save-btn"
                   onClick={handleCommit}

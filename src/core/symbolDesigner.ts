@@ -50,6 +50,11 @@ export function nextPinName(existing: Array<Pick<E3Pin, 'name'>>): string {
   return String(n);
 }
 
+function clampDraftNumber(value: number, fallback: number, min = -1200, max = 1200): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
 export function normalizeCustomSymbolSpec(
   width: number,
   height: number,
@@ -61,57 +66,57 @@ export function normalizeCustomSymbolSpec(
   customSymbol: CustomSymbolSpec;
   pins: Omit<E3Pin, 'id'>[];
 } {
-  const cleanW = Math.max(40, Math.min(400, snapSymbolCoord(width || 120, 10)));
-  const cleanH = Math.max(40, Math.min(400, snapSymbolCoord(height || 100, 10)));
+  const cleanW = Math.max(40, Math.min(480, snapSymbolCoord(width || 120, 10)));
+  const cleanH = Math.max(40, Math.min(480, snapSymbolCoord(height || 100, 10)));
 
   const cleanShapes: CustomSymbolShape[] = shapes.map((sh) => {
     if (sh.kind === 'line') {
       return {
         ...sh,
-        x1: Math.max(0, Math.min(cleanW, sh.x1)),
-        y1: Math.max(0, Math.min(cleanH, sh.y1)),
-        x2: Math.max(0, Math.min(cleanW, sh.x2)),
-        y2: Math.max(0, Math.min(cleanH, sh.y2)),
+        x1: clampDraftNumber(sh.x1, 0),
+        y1: clampDraftNumber(sh.y1, 0),
+        x2: clampDraftNumber(sh.x2, cleanW),
+        y2: clampDraftNumber(sh.y2, cleanH),
       };
     }
     if (sh.kind === 'polyline') {
       return {
         ...sh,
         points: (sh.points || []).map((pt) => ({
-          x: Math.max(0, Math.min(cleanW, pt.x)),
-          y: Math.max(0, Math.min(cleanH, pt.y)),
+          x: clampDraftNumber(pt.x, 0),
+          y: clampDraftNumber(pt.y, 0),
         })),
       };
     }
     if (sh.kind === 'rect') {
       return {
         ...sh,
-        x: Math.max(0, Math.min(cleanW - 4, sh.x)),
-        y: Math.max(0, Math.min(cleanH - 4, sh.y)),
-        width: Math.max(4, Math.min(cleanW, sh.width)),
-        height: Math.max(4, Math.min(cleanH, sh.height)),
+        x: clampDraftNumber(sh.x, 0),
+        y: clampDraftNumber(sh.y, 0),
+        width: clampDraftNumber(sh.width, 20, 1, 1200),
+        height: clampDraftNumber(sh.height, 20, 1, 1200),
       };
     }
     if (sh.kind === 'circle') {
       return {
         ...sh,
-        cx: Math.max(4, Math.min(cleanW - 4, sh.cx)),
-        cy: Math.max(4, Math.min(cleanH - 4, sh.cy)),
-        r: Math.max(3, Math.min(Math.min(cleanW, cleanH) / 2, sh.r)),
+        cx: clampDraftNumber(sh.cx, cleanW / 2),
+        cy: clampDraftNumber(sh.cy, cleanH / 2),
+        r: clampDraftNumber(sh.r, 12, 1, 600),
       };
     }
     if (sh.kind === 'arc') {
       return {
         ...sh,
-        cx: Math.max(4, Math.min(cleanW - 4, sh.cx)),
-        cy: Math.max(4, Math.min(cleanH - 4, sh.cy)),
-        r: Math.max(3, Math.min(Math.min(cleanW, cleanH) / 2, sh.r)),
+        cx: clampDraftNumber(sh.cx, cleanW / 2),
+        cy: clampDraftNumber(sh.cy, cleanH / 2),
+        r: clampDraftNumber(sh.r, 14, 1, 600),
       };
     }
     return {
       ...sh,
-      x: Math.max(2, Math.min(cleanW - 4, sh.x)),
-      y: Math.max(8, Math.min(cleanH - 2, sh.y)),
+      x: clampDraftNumber(sh.x, cleanW / 2),
+      y: clampDraftNumber(sh.y, cleanH / 2),
       text: sh.text.trim() || 'УГО',
     };
   });

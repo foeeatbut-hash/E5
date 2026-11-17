@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { cableEntryName } from './e3DbNames.ts';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -304,7 +305,12 @@ test('E3.series 2022 COM VBScript embeds project sheets, 1-based graphics/wires,
   assert.ok(buildVbs.includes('Prj.SaveAs(targetE3s)'));
   assert.ok(buildVbs.includes('Call BuildNativeE3sProject()'));
   // Ensure Sheet.Create passes integer 0 for 'before' instead of empty string "" (Type Mismatch #13 fix)
-  assert.ok(buildVbs.includes('sh.Create(0, shName, cand, 0, 0)'));
+  assert.ok(buildVbs.includes('sh.Create(0, e3Name, cand, 0, 0)'));
+  // E3 отклоняет имена листов с пробелами: имя санитизируется, затем пробуется только номер листа
+  assert.ok(buildVbs.includes('Function SafeSheetName('));
+  assert.ok(buildVbs.includes('nameList = Array(SafeSheetName(shName), SheetNumberPart(shName))'));
+  // Изделие ищется в БД компонентов E3 по ArticleNumber -> ENTRY
+  assert.ok(buildVbs.includes('Function FindComponentEntry('));
   assert.ok(!buildVbs.includes('sh.Create(0, shName, cand, 0, "")'));
   // Ensure 1-based VBScript arrays for Zuken COM lines/wires
   assert.ok(buildVbs.includes('Dim xs(2), ys(2)'));
@@ -879,7 +885,7 @@ test('COM script: cable parameters are created and export reads cores/shield fro
   const seed = createSeedProject();
   const vbs = generateE3ComScript(seed, 'build');
   for (const c of seed.cables) {
-    const re = `CreateFluxCable(Prj, Dev, "${c.designation}", "${c.cableType}", "${c.fromDevice}", "${c.toDevice}", ${c.lengthMeters}, ${c.coresCount}, "${c.crossSection}", ${c.shielded ? 'True' : 'False'}, "${c.id}")`;
+    const re = `CreateFluxCable(Prj, Dev, "${c.designation}", "${cableEntryName(c)}|${c.cableType}", "${c.fromDevice}", "${c.toDevice}", ${c.lengthMeters}, ${c.coresCount}, "${c.crossSection}", ${c.shielded ? 'True' : 'False'}, "${c.id}")`;
     assert.ok(vbs.includes(re), re);
   }
   const exp = generateE3ComScript(seed, 'export', 'C:\\x\\a.e3s');

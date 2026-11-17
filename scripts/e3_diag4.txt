@@ -1,0 +1,295 @@
+﻿=== 11/16/2026 13:49:19 ===
+--- ProgID CT.* v reestre ---
+CT.Application
+CT.Application.1
+CT.Attribute
+CT.Attribute.1
+CT.AttributeDefinition
+CT.AttributeDefinition.1
+CT.BinData
+CT.BinData.1
+CT.Board
+CT.Board.1
+CT.Bundle
+CT.Bundle.1
+CT.CavityPart
+CT.CavityPart.1
+CT.Client
+CT.Client.1
+CT.Clipboard
+CT.Clipboard.1
+CT.Clone
+CT.Clone.1
+CT.Component
+CT.Component.1
+CT.Connection
+CT.Connection.1
+CT.ConnectLine
+CT.ConnectLine.1
+CT.DbeApplication
+CT.DbeApplication.1
+CT.DbeAttribute
+CT.DbeAttribute.1
+CT.DbeComponent
+CT.DbeComponent.1
+CT.DbeGraph
+CT.DbeGraph.1
+CT.DbeModel
+CT.DbeModel.1
+CT.DbeModelPin
+CT.DbeModelPin.1
+CT.DbeNode
+CT.DbeNode.1
+CT.DbeSymbol
+CT.DbeSymbol.1
+CT.DbeText
+CT.DbeText.1
+CT.Device
+CT.Device.1
+CT.Dimension
+CT.Dimension.1
+CT.DllInterface
+CT.DllInterface.1
+CT.E3Starter
+CT.EmbeddedObject
+CT.EmbeddedObject.1
+CT.ExternalDocument
+CT.ExternalDocument.1
+CT.Field
+CT.Field.1
+CT.FunctionalPort
+CT.FunctionalPort.1
+CT.FunctionalUnit
+CT.FunctionalUnit.1
+CT.Graph
+CT.Graph.1
+CT.Group
+CT.Group.1
+CT.InfoApplication
+CT.InfoApplication.1
+CT.Job
+CT.Job.1
+CT.Layer
+CT.Layer.1
+CT.Module
+CT.Module.1
+CT.ModulePort
+CT.ModulePort.1
+CT.Net
+CT.Net.1
+CT.NetSegment
+CT.NetSegment.1
+CT.Option
+CT.Option.1
+CT.Outline
+CT.Outline.1
+CT.Pin
+CT.Pin.1
+CT.Sheet
+CT.Sheet.1
+CT.Signal
+CT.Signal.1
+CT.SignalClass
+CT.SignalClass.1
+CT.Slot
+CT.Slot.1
+CT.State
+CT.State.1
+CT.StructureNode
+CT.StructureNode.1
+CT.Supply
+CT.Supply.1
+CT.Symbol
+CT.Symbol.1
+CT.Testpoint
+CT.Testpoint.1
+CT.Text
+CT.Text.1
+CT.Tree
+CT.Tree.1
+CT.UserMenuItem
+CT.UserMenuItem.1
+CT.Variant
+CT.Variant.1
+CT.Wespe
+CT.Wespe.1
+CT.DbeApplication: OK
+--- DbeApplication ---
+  int ActivateOutputWindow (int)
+  int AvoidAutomaticClosing (int)
+  int BeginForeignTask ()
+  int BringToForeground ()
+  void ClearOutputWindow ()
+  void ClearResultWindow ()
+  IDispatch CreateDbeAttributeObject ()
+  IDispatch CreateDbeComponentObject ()
+  IDispatch CreateDbeGraphObject ()
+  IDispatch CreateDbeModelObject ()
+  IDispatch CreateDbeModelPinObject ()
+  IDispatch CreateDbeNodeObject ()
+  IDispatch CreateDbeSymbolObject ()
+  IDispatch CreateDbeTextObject ()
+  int DeleteComponent (string, string)
+  int DeleteModel (string)
+  int DeleteSymbol (string, string)
+  int DeleteWorkspaceConfiguration (string)
+  int Display ()
+  int EditComponent (string, string)
+  int EditComponentWithPreconditions (string, string, Variant, int)
+  int EditModel (string)
+  int EditSymbol (string, string)
+  int EnableCOM (string)
+  int EnableLogfile (int)
+  int EndForeignTask ()
+  int FreeLicense (string)
+  int FreeLicensePermanent (string)
+  string fullname ()
+  int GetActiveComponentId ()
+  int GetActiveModelId ()
+  int GetActiveSymbolId ()
+  string GetActualDatabase ()
+  int GetAvailableLanguages (Variant)
+  string GetBuild ()
+  string GetComponentDatabase ()
+  string GetComponentDatabaseTableSchema ()
+  int GetComponentIds (Variant)
+  string GetConfigurationDatabase ()
+  string GetConfigurationDatabaseTableSchema ()
+  string GetCurrentWorkspaceConfiguration ()
+  int GetDatabaseTableSelectedComponents (Variant, Variant)
+  int GetDatabaseTreeSelectedComponents (Variant, Variant)
+  int GetDatabaseTreeSelectedModels (Variant)
+  int GetDatabaseTreeSelectedSymbols (Variant, Variant)
+  int GetDefinedDatabaseConnectionStrings (string, Variant, Variant, Variant)
+  int GetDefinedDatabases (Variant)
+  int GetEnableInteractiveDialogs ()
+  int GetErrorCount ()
+  string GetFullName ()
+  int GetId ()
+  int GetInfoCount ()
+  int GetInstallationLanguage ()
+  string GetInstallationPath ()
+  string GetLanguageDatabase ()
+  string GetLanguageDatabaseTableSchema ()
+  int GetLicense (string)
+  int GetLicensePermanent (string)
+  string GetLogfileName (int)
+  Variant GetModalWindow ()
+  int GetModelIds (Variant)
+  string GetName ()
+  IDispatch GetPluginObject (Variant)
+  int GetPrintCropMarks ()
+  int GetPrinterColour ()
+  double GetPrinterLinewidth ()
+  int GetPrinterMargins (Variant, Variant, Variant, Variant)
+  string GetPrinterName ()
+  int GetPrintPageNumbers ()
+  int GetPrintSheetOrder ()
+  int GetPrintSplitPages ()
+  Variant GetProcessProperty (string)
+  int GetProjectInformation (Variant, Variant, Variant)
+  string GetProvider (string)
+  string GetRegistryVersion ()
+  Variant GetScriptArguments ()
+  int GetScriptReturn ()
+  string GetSymbolDatabase ()
+  string GetSymbolDatabaseTableSchema ()
+  int GetSymbolIds (Variant)
+  string GetTemplateFileDBE ()
+  int GetTestMark (int)
+  string GetTranslatedText (string, string)
+  int GetTrigger (string, Variant)
+  int GetTriggerReturn ()
+  int GetUseSheetOrientation ()
+  string GetVersion ()
+  int GetWarningCount ()
+  int GetWorkspaceConfigurations (Variant, string)
+  string GetWorkspaceName ()
+  int Include (string)
+  int IsBasic ()
+  int IsBoard ()
+  int IsCable ()
+  int IsCaddy ()
+  int IsCaddyBasic ()
+  int IsCaddyDemo ()
+  int IsCaddyEconomy ()
+  int IsDemo ()
+  int IsEconomy ()
+  int IsFluid ()
+  int IsFormboard ()
+  int IsFunctionalDesign ()
+  int IsLogic ()
+  int IsMultiuser ()
+  int IsPanel ()
+  int IsRedliner ()
+  int IsSchema ()
+  int IsScriptRunning ()
+  int IsSmallBusiness ()
+  int IsStudent ()
+  int IsViewer ()
+  int IsViewPlus ()
+  int IsWago ()
+  int IsWagoDemo ()
+  int IsWire ()
+  int IsWireWorks ()
+  int LoadWorkspaceConfigurationFromFile (string, string)
+  int Maximize ()
+  int Minimize ()
+  int NewComponent (string, string, string, string, int)
+  int NewComponentWithPreconditions (string, string, string, string, Variant, int)
+  int NewModel (string, string, int)
+  int NewSymbol (string, string, string, string, int)
+  int PutError (int, string, int)
+  int PutErrorEx (int, string, int, int, int, int)
+  int PutInfo (int, string, int)
+  int PutInfoEx (int, string, int, int, int, int)
+  int PutMessage (string, int)
+  int PutMessageEx (int, string, int, int, int, int)
+  int PutVerifyEx (int, string, int, int, int, int)
+  int PutWarning (int, string, int)
+  int PutWarningEx (int, string, int, int, int, int)
+  int Quit ()
+  int ResetErrorCount ()
+  int ResetInfoCount ()
+  int ResetWarningCount ()
+  int RestoreWorkspaceConfiguration (string)
+  int Run (string, Variant)
+  int SaveWorkspaceConfiguration (string)
+  Variant ScriptArguments ()
+  string ScriptFullName ()
+  string ScriptName ()
+  int SelectComponentFromTable (Variant, Variant)
+  int SetActualDatabase (string)
+  int SetChildWindowState (int)
+  int SetDefinedDatabaseConnectionStrings (string, string, string, string)
+  int SetEnableInteractiveDialogs (int)
+  int SetLanguageDatabase (string)
+  int SetLogfileName (string, int)
+  int SetModalWindow (Variant)
+  int SetPrintCropMarks (int)
+  int SetPrinterCollate (int)
+  int SetPrinterColour (int)
+  int SetPrinterCopies (int)
+  double SetPrinterLinewidth (double)
+  int SetPrinterMargins (double, double, double, double)
+  int SetPrinterName (string)
+  int SetPrintPageNumbers (int)
+  int SetPrintSheetOrder (int)
+  int SetPrintSplitPages (int)
+  int SetScriptReturn (int)
+  int SetTemplateFileDBE (string)
+  int SetTestMark (int, int)
+  int SetTrigger (string, string, int)
+  int SetTriggerReturn (int)
+  int SetUseSheetOrientation (int)
+  int ShowNormal ()
+  int ShowPluginWindow (int, string)
+  int ShowWindow (int, int)
+  int Sleep (int)
+  int SortArrayByIndex (Variant, int, int, int, int)
+  int SortArrayByIndexEx (Variant, Variant)
+CreateDbeJobObject(): Сбой вызова метода из-за отсутствия в [System.__ComObject] метода с именем "CreateDbeJobObject".
+CreateJobObject(): Сбой вызова метода из-за отсутствия в [System.__ComObject] метода с именем "CreateJobObject".
+--- DbeJob ---
+(null)
+=== konec ===

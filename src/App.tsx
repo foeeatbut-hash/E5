@@ -772,6 +772,9 @@ export default function App() {
   );
   const symbolDraftRef = useRef<SymbolWorkspaceDraft>(symbolDraft);
   symbolDraftRef.current = symbolDraft;
+  const preSaveUgoFlushRef = useRef<
+    (() => Partial<Pick<SymbolWorkspaceDraft, 'shapes' | 'pins' | 'width' | 'height'>> | null) | null
+  >(null);
   const activeSymbolTab = useMemo(
     () =>
       symbolTabsState.tabs.find((t) => t.tabId === symbolTabsState.activeTabId) ||
@@ -2934,16 +2937,21 @@ export default function App() {
 
   const openDeviceSymbolInWorkspace = useCallback(
     (dev: E3Device) => {
+      const existingSym = mergedSymbolLibrary.find(
+        (s) => (dev.symbolId && s.id === dev.symbolId) || (dev.e3BlockName && s.e3BlockName === dev.e3BlockName)
+      );
       const shapes =
         dev.customSymbol && dev.customSymbol.shapes.length > 0
           ? structuredClone(dev.customSymbol.shapes)
-          : extractBuiltInSymbolShapes(
-              dev.category,
-              dev.width,
-              dev.height,
-              dev.e3BlockName,
-              dev.pins
-            );
+          : existingSym && existingSym.shapes.length > 0
+            ? structuredClone(existingSym.shapes)
+            : extractBuiltInSymbolShapes(
+                dev.category,
+                dev.width,
+                dev.height,
+                dev.e3BlockName,
+                dev.pins
+              );
       const pins = dev.pins.map(({ id: _id, ...rest }) => ({ ...rest }));
       const matchingCat = mergedCatalog.find(
         (c) => (dev.symbolId && c.symbolId === dev.symbolId) || c.e3BlockName === dev.e3BlockName
@@ -2955,10 +2963,10 @@ export default function App() {
           {
             open: true,
             targetMode: 'device',
-            symbolId: dev.symbolId || `sym-${dev.e3BlockName || dev.id}`,
+            symbolId: dev.symbolId || existingSym?.id || `sym-${dev.e3BlockName || dev.id}`,
             catalogItemId: matchingCat?.id,
             deviceId: dev.id,
-            name: `${dev.designation} (${dev.e3BlockName})`,
+            name: existingSym?.name || `${dev.designation} (${dev.e3BlockName})`,
             e3BlockName: dev.e3BlockName,
             category: dev.category,
             width: dev.width,
@@ -2991,12 +2999,13 @@ export default function App() {
         `Открыто УГО аппарата ${dev.designation} (${dev.e3BlockName}) для редактирования.`
       );
     },
-    [mergedCatalog, ensureSymbolEditorDocksVisible, appendLog]
+    [mergedCatalog, mergedSymbolLibrary, ensureSymbolEditorDocksVisible, appendLog]
   );
 
   const openCatalogSeedInWorkspace = useCallback(
     (seed: {
       catalogItemId?: string;
+      symbolId?: string;
       name: string;
       e3BlockName: string;
       category: DeviceCategory;
@@ -3011,16 +3020,21 @@ export default function App() {
       pins: Omit<E3Pin, 'id'>[];
       customSymbol?: CustomSymbolSpec;
     }) => {
+      const linkedSym = seed.symbolId
+        ? mergedSymbolLibrary.find((s) => s.id === seed.symbolId)
+        : mergedSymbolLibrary.find((s) => s.e3BlockName === seed.e3BlockName);
       const shapes =
         seed.customSymbol && seed.customSymbol.shapes.length > 0
           ? structuredClone(seed.customSymbol.shapes)
-          : extractBuiltInSymbolShapes(
-              seed.category,
-              seed.width,
-              seed.height,
-              seed.e3BlockName,
-              seed.pins
-            );
+          : linkedSym && linkedSym.shapes.length > 0
+            ? structuredClone(linkedSym.shapes)
+            : extractBuiltInSymbolShapes(
+                seed.category,
+                seed.width,
+                seed.height,
+                seed.e3BlockName,
+                seed.pins
+              );
       setSymbolTabsState((prev) => {
         const targetOrigin = prev.open ? prev.origin : 'project';
         const baseState = prev.origin !== targetOrigin ? createInitialSymbolTabsState() : prev;
@@ -3029,7 +3043,7 @@ export default function App() {
           {
             open: true,
             targetMode: 'component',
-            symbolId: `sym-${seed.e3BlockName || Date.now().toString(36)}`,
+            symbolId: seed.symbolId || linkedSym?.id || `sym-${seed.e3BlockName || Date.now().toString(36)}`,
             catalogItemId: seed.catalogItemId,
             deviceId: undefined,
             name: seed.name,
@@ -3053,14 +3067,15 @@ export default function App() {
             snapToGrid: symbolDraftRef.current.snapToGrid,
             selectedShapeId: null,
             selectedPinIndex: null,
-            dirty: true,
+            dirty: false,
           },
-          targetOrigin
+          targetOrigin,
+          { refreshExisting: 'always' }
         );
       });
       ensureSymbolEditorDocksVisible();
     },
-    [ensureSymbolEditorDocksVisible]
+    [mergedSymbolLibrary, ensureSymbolEditorDocksVisible]
   );
 
   const createNewBlankSymbolInWorkspace = useCallback(
@@ -3100,7 +3115,38 @@ export default function App() {
     setFocusInspectorCollapsed(false);
     const curTabs = symbolTabsStateRef.current;
     if (curTabs.origin === 'hub' && curTabs.tabs.length > 0) {
-      setSymbolTabsState((prev) => ({ ...prev, open: true }));
+      setSymbolTabsState((prev) => ({
+        ...prev,
+        open: true,
+        tabs: prev.tabs.map((tab) => {
+          if (tab.draft.dirty) return tab;
+          const latestSym = mergedSymbolLibrary.find(
+            (s) => s.id === tab.draft.symbolId || s.e3BlockName === tab.draft.e3BlockName
+          );
+          if (!latestSym || latestSym.shapes.length === 0) return tab;
+          const latestCat =
+            (tab.draft.catalogItemId && mergedCatalog.find((c) => c.id === tab.draft.catalogItemId)) ||
+            mergedCatalog.find((c) => c.symbolId === latestSym.id || c.e3BlockName === latestSym.e3BlockName);
+          return {
+            ...tab,
+            draft: {
+              ...tab.draft,
+              open: true,
+              name: latestSym.name,
+              e3BlockName: latestSym.e3BlockName,
+              category: latestSym.category,
+              width: latestSym.width,
+              height: latestSym.height,
+              shapes: structuredClone(latestSym.shapes),
+              pins: structuredClone(latestSym.defaultPins),
+              componentName: latestCat?.componentName || tab.draft.componentName,
+              article: latestCat?.article || tab.draft.article,
+              manufacturer: latestCat?.manufacturer || tab.draft.manufacturer,
+              attributes: latestCat ? structuredClone(latestCat.defaultAttributes) : tab.draft.attributes,
+            },
+          };
+        }),
+      }));
       ensureSymbolEditorDocksVisible();
       appendLog('INFO', 'E3-CORE', 'Открыт глобальный редактор УГО и базы изделий.');
       return;
@@ -3114,6 +3160,7 @@ export default function App() {
   }, [
     customSymbols,
     mergedSymbolLibrary,
+    mergedCatalog,
     openSymbolInWorkspace,
     createNewBlankSymbolInWorkspace,
     ensureSymbolEditorDocksVisible,
@@ -3204,8 +3251,10 @@ export default function App() {
 
   const saveSymbolWorkspace = useCallback(
     (draftOverride?: SymbolWorkspaceDraft): { sym: E3SymbolDef; catalogItem: CatalogItem } => {
+      const flushed = preSaveUgoFlushRef.current?.() ?? null;
       const curState = symbolTabsStateRef.current;
-      const d = draftOverride || getEffectiveSymbolDraft(curState);
+      const baseDraft = draftOverride || getEffectiveSymbolDraft(curState);
+      const d = flushed ? { ...baseDraft, ...flushed } : baseDraft;
       const norm = normalizeCustomSymbolSpec(d.width, d.height, d.shapes, d.pins);
       const cleanBlock = d.e3BlockName.trim() || 'E3_CUSTOM_BLK';
       const cleanSymId = d.symbolId || `sym-${cleanBlock}`;
@@ -3259,17 +3308,32 @@ export default function App() {
         handleSaveCustomCatalogItem(savedCat);
       }
 
-      if (curState.origin === 'project') {
+      const curProj = docStateRef.current.present;
+      const hasProjectTargets =
+        curProj.devices.some(
+          (dev) =>
+            (d.targetMode === 'device' && d.deviceId === dev.id) ||
+            dev.symbolId === savedSym.id ||
+            dev.e3BlockName === cleanBlock
+        ) ||
+        (curProj.symbolLibrary || []).some(
+          (s) => s.id === savedSym.id || s.e3BlockName === cleanBlock
+        );
+
+      if (curState.origin === 'project' || hasProjectTargets) {
         commitProject((prev) => {
           const prevLib = prev.symbolLibrary || [];
           const symIdx = prevLib.findIndex((s) => s.id === savedSym.id);
           const nextLib =
             symIdx >= 0 ? prevLib.map((s) => (s.id === savedSym.id ? savedSym : s)) : [...prevLib, savedSym];
 
+          const touchedIds = new Set<string>();
           const nextDevices = prev.devices.map((dev) => {
             const isTargetDev = d.targetMode === 'device' && d.deviceId === dev.id;
-            const isSharedSym = dev.symbolId === savedSym.id || (!d.deviceId && dev.e3BlockName === cleanBlock);
+            const isSharedSym =
+              dev.symbolId === savedSym.id || (!d.deviceId && dev.e3BlockName === cleanBlock);
             if (!isTargetDev && !isSharedSym) return dev;
+            touchedIds.add(dev.id);
 
             const updatedPins: E3Pin[] = norm.pins.map((p, idx) => ({
               ...p,
@@ -3297,10 +3361,7 @@ export default function App() {
 
           let nextWires = prev.wires;
           for (const dev of nextDevices) {
-            if (
-              (d.targetMode === 'device' && d.deviceId === dev.id) ||
-              dev.symbolId === savedSym.id
-            ) {
+            if (touchedIds.has(dev.id)) {
               nextWires = rerouteDeviceWires(dev, nextDevices, nextWires, prev.sheets);
             }
           }
@@ -3314,10 +3375,13 @@ export default function App() {
             wires: nextWires,
           };
         });
+        const flushedSession = saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+        setLastSavedAt(flushedSession.savedAt);
+        setRecentProjects(flushedSession.recent);
       }
 
-      setSymbolTabsState((prev) =>
-        updateActiveSymbolTabDraft(prev, (curr) => ({
+      setSymbolTabsState((prev) => {
+        const next = updateActiveSymbolTabDraft(prev, (curr) => ({
           ...curr,
           symbolId: savedSym.id,
           catalogItemId: savedCat.id,
@@ -3326,12 +3390,17 @@ export default function App() {
           shapes: norm.customSymbol.shapes,
           pins: norm.pins,
           dirty: false,
-        }))
-      );
+        }));
+        symbolTabsStateRef.current = next;
+        const savedUgoAt = saveSymbolWorkspaceAutosave(next);
+        if (savedUgoAt) setUgoAutosavedAt(savedUgoAt);
+        return next;
+      });
+
       appendLog(
         'SYNC',
         'E3-CORE',
-        `Сохранён блок УГО «${savedSym.name}» (${cleanBlock}, ${norm.customSymbol.shapes.length} прим., ${norm.pins.length} выв.) в библиотеку${curState.origin === 'project' ? ' и проект' : ''}.`
+        `Сохранён блок УГО «${savedSym.name}» (${cleanBlock}, ${norm.customSymbol.shapes.length} прим., ${norm.pins.length} выв.) в библиотеку${curState.origin === 'project' || hasProjectTargets ? ' и проект' : ''}.`
       );
       return { sym: savedSym, catalogItem: savedCat };
     },
@@ -3340,8 +3409,10 @@ export default function App() {
 
   const saveSymbolAsCopyWorkspace = useCallback(
     (copyName: string, copyBlockName?: string, copyArticle?: string) => {
+      const flushed = preSaveUgoFlushRef.current?.() ?? null;
       const curState = symbolTabsStateRef.current;
-      const curDraft = getEffectiveSymbolDraft(curState);
+      const baseDraft = getEffectiveSymbolDraft(curState);
+      const curDraft = flushed ? { ...baseDraft, ...flushed } : baseDraft;
       const norm = normalizeCustomSymbolSpec(
         curDraft.width,
         curDraft.height,
@@ -3393,6 +3464,9 @@ export default function App() {
           updatedAt: new Date().toISOString(),
           symbolLibrary: [...(prev.symbolLibrary || []), newSym],
         }));
+        const flushedSession = saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+        setLastSavedAt(flushedSession.savedAt);
+        setRecentProjects(flushedSession.recent);
       }
 
       setSymbolTabsState((prev) =>
@@ -3722,11 +3796,17 @@ export default function App() {
         saveSymbolWorkspace();
       },
       onSaveAsCopy: saveSymbolAsCopyWorkspace,
+      onRegisterPreSaveFlush: (flusher) => {
+        preSaveUgoFlushRef.current = flusher;
+      },
       onPlaceOnActiveSheet: () => {
         if (symbolTabsStateRef.current.origin !== 'project') return;
         const { catalogItem } = saveSymbolWorkspace();
         setSymbolTabsState((prev) => closeAllSymbolWorkspace(prev));
         handlePlaceCatalogItem(catalogItem);
+        const flushedSession = saveActiveSession(docStateRef.current.present, activeSheetIdRef.current);
+        setLastSavedAt(flushedSession.savedAt);
+        setRecentProjects(flushedSession.recent);
       },
       onDeleteCustomSymbol: (symId: string) => {
         setCustomSymbols((prev) => {
@@ -7969,6 +8049,7 @@ export default function App() {
                   <SchematicCanvas
                     project={project}
                     catalog={mergedCatalog}
+                    symbolLibrary={mergedSymbolLibrary}
                     uiMode={uiMode}
                     focusConsoleOpen={focusConsoleOpen}
                     onToggleFocusConsole={handleToggleFocusConsole}

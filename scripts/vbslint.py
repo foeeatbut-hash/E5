@@ -7,6 +7,7 @@ import re, sys
 src = open(sys.argv[1], encoding='utf-8').read()
 lines = src.split('\n')
 BUILTIN = set(x.lower() for x in """Abs Array Asc CBool CByte CDate CDbl Chr CInt CLng CreateObject CStr Date Day Err Exp Fix GetObject Hex Hour InStr InStrRev Int IsArray IsEmpty IsNull IsNumeric IsObject Join LBound LCase Left Len LTrim Mid Minute Month MsgBox Now Oct Replace Right Rnd Round RTrim Second Sgn Space Split Sqr StrComp String Trim UBound UCase Year WScript vbCrLf vbCr vbLf vbCritical vbExclamation vbInformation vbQuestion vbYesNoCancel vbYes vbNo vbCancel True False Nothing Empty Null And Or Not Mod Is Then Else ElseIf End If For To Step Next Each In Do Loop While Wend Until Sub Function Call Dim ReDim Preserve Set Exit Select Case On Error Resume GoTo Option Explicit ByVal ByRef Me New Const Xor Eqv Imp Rem""".split())
+RESERVED=set(x.lower() for x in """and as boolean byref byte byval call case class const currency debug dim do double each else elseif empty end endif enum eqv erase error event exit false for function get goto if imp implements in integer is let like long loop lset me mod new next not nothing null on optional or paramarray preserve private public raiseevent redim rem resume rset select set shared single static stop sub then to true type typeof until variant wend while with xor""".split())
 def strip(l):
     out=''; i=0; ins=False
     while i<len(l):
@@ -49,6 +50,7 @@ for n,raw in enumerate(lines,1):
             if md.group(1)=='dim':
                 tgt=procs[cur]['locals'] if cur else globals_
                 for nm in names:
+                    if nm in RESERVED: errs.append(f"{n}: reserved word used as variable name: {nm}")
                     if nm in tgt: errs.append(f"{n}: Name redefined {nm}")
                     if cur and nm in procs[cur]['params']: errs.append(f"{n}: Dim shadows param {nm}")
                     tgt.add(nm)
